@@ -1,145 +1,93 @@
-UE5-MCP-VR-Orchestrator
-A Multi-Agent LLM Orchestration Framework for Unreal Engine 5 VR Games powered by Model Context Protocol (MCP) and LangGraph.
+# OmniAgent VR System
 
+A Multi-Agent LLM Orchestration Framework for Unreal Engine 5 VR Games, powered by **Model Context Protocol (MCP)** and **LangGraph**.
 
-📖 Overview
-This repository implements a novel architecture for immersive VR games where Non-Player Characters (NPCs) and game worlds are driven by Large Language Models (LLMs). Unlike simple chatbots, this system solves the "Disconnected Model Problem" by orchestrating four specialized agents via the Model Context Protocol (MCP).
+## 📖 Overview
 
-It bridges the gap between probabilistic AI (LLMs) and deterministic game engines (UE5) using a Hybrid Input Pipeline (Voice + Semantic Gestures) and LangGraph state machines.
+This project implements the **Remote Cortex Pattern**, where the heavy lifting of reasoning and state management is offloaded to a Python-based **Cognitive Engine**, while **Unreal Engine 5** focuses on rendering and immersive VR interaction.
 
-🏗 Architecture
-The system is built on a "Mixture of Experts" (MoE) pattern, orchestrating four distinct agents:
+The system orchestrates four specialized agents to create a dynamic, living world:
 
-Narrative Agent (World Manager): Manages dynamic storytelling, RAG-based lore retrieval, and scene direction.
+1.  **Supervisor (Narrative)**: Manages global plot and delegates tasks.
+2.  **Dialogue (Character)**: Generates persona-driven conversations with long-term memory.
+3.  **Rules (Referee)**: Enforces game logic with deterministic validation (Clamping).
+4.  **Interface (Mediator)**: Interprets multimodal inputs (Voice + Gesture) using **GesPrompt**.
 
-Character Agent (Actor): Handles NPC persona, emotions, memory, and TTS/Audio2Face synchronization.
+## 🏗 Architecture
 
-Rules Agent (Referee): A deterministic logic engine that validates actions against game rules and calculates outcomes (e.g., dice rolls, inventory checks) returning strict JSON.
+### Remote Cortex Pattern
 
-Interface Agent (Mediator): Interprets multimodal VR inputs (Voice + Gesture Tags) into semantic intent.
+- **Cognitive Engine (Python)**: Handles all high-level logic, state management, and LLM inferences.
+- **Unreal Project (C++)**: Acts as a "Body", sending sensor data (Voice, Gaze, Gestures) and executing actions (Move, Speak, Spawn).
+- **Communication**: Asynchronous WebSocket connection for real-time performance.
 
-
-Data Flow
-VR Input (Voice/Gesture) → UE5 Pre-processing → MCP Client → LangGraph Router → Specialized Agents → JSON Output → UE5 Blackboard → Behavior Tree Execution
-
-
-✨ Key Features
-MCP Integration: Standardized protocol for exposing UE5 state (Health, Inventory, World State) as AI context resources.
-
-Semantic Gesture Recognition: Converts raw VR motion controller data into semantic tags (e.g., Gesture:Wave, Action:Point + Target:Door) before sending to LLM.
-
-Deterministic Rule Enforcement: Prevents AI hallucinations by forcing rule-based logic to validate game state changes via MCP Tools.
-
-Async Behavior Tree: Custom BTTask_AsyncLLM nodes that handle streaming responses without blocking the game thread, utilizing filler animations for latency masking.
-
-Low Latency Pipeline: Parallel processing of logic and audio generation (TTS) with NVIDIA Audio2Face integration.
-
-
-🛠 TechStack
-Host Engine: Unreal Engine 5.5+ (C++ & Blueprints)
-
-MCP Server: Python 3.12, FastMCP
-
-Orchestration: LangGraph, LangChain
-
-LLM Provider: Claude 3.5 Sonnet (Recommended) or GPT-4o
-
-VR Inputs: Meta XR Plugin / VR Expansion Plugin (for gesture tagging)
-
-Lip Sync: NVIDIA Audio2Face / OVR LipSync
-
-
-🚀 Getting Started
-Prerequisites
-Unreal Engine 5.5 or later
-
-Python 3.12+ installed and added to PATH
-
-Visual Studio 2022 (for C++ compilation)
-
-API Keys for Anthropic/OpenAI and ElevenLabs (optional)
-
-Installation
-1. Clone the Repositorybash git clone https://github.com/jukanmi/UE5-MCP-VR-Orchestrator.git
-
-2. Python Environment Setup Navigate to the Server directory and install dependencies:
-
-```Bash
-cd Server
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-Unreal Plugin Setup
-```
-
-3. Unreal Plugin Setup
-
-    Copy the Plugins/UE5_MCP_Bridge folder into your project's Plugins directory.
-  
-    Regenerate Visual Studio project files and compile.
-
-    Enable the plugin in Edit > Plugins.
-
-4. Configuration
-
-    Create a .env file in the Server directory with your API keys:
-
-```코드 스니펫
-ANTHROPIC_API_KEY=sk-ant-...
-ELEVENLABS_API_KEY=...
-Usage
-Start the MCP Server:
-```
-
-Usage
-
-1. Start the MCP Server:
-
-```Bash
-python server/main.py
-```
-
-2. Open your Unreal Engine project.
-
-3. Ensure the MCP Subsystem is connected (check Output Log).
-
-4. Play in VR Preview.
-
-## 📂 Project Structure
+### Directory Structure
 
 ```directory
-UE5-MCP-VR-Orchestrator/
-├── Content/                # UE5 Assets (Blueprints, Maps)
-├── Plugins/
-│   └── UE5_MCP_Bridge/     # C++ Plugin for WebSocket/MCP communication
-├── Server/
-│   ├── agents/             # LangGraph Agent definitions
-│   │   ├── narrative.py
-│   │   ├── character.py
-│   │   ├── rules.py
-│   │   └── interface.py
-│   ├── tools/              # MCP Tools (Dice, Inventory, Quest)
-│   ├── main.py             # Entry point
-│   └── requirements.txt
-├── Config/                 # Agent Personas and Rulesets (JSON/YAML)
-└── README.md
+/OmniAgent_VR_System
+├── 📂 CognitiveEngine               # Python-based Agent Server (FastAPI + LangGraph)
+│   ├── 📂 app
+│   │   ├── 📂 agents                # Agent Logic (Supervisor, Dialogue, Rules)
+│   │   ├── 📂 schemas               # [Strict Data Contracts] Pydantic V2
+│   │   │   ├── 📄 actions.py         # ActionBatch with Clamp Logic
+│   │   │   ├── 📄 game_state.py      # Vector3D & Entity Validation
+│   │   │   └── 📄 vr_context.py      # GesPrompt (Voice + Gesture)
+│   │   └── 📄 main.py                # WebSocket Entry Point
+│   └── 📄 requirements.txt
+├── 📂 UnrealProject                 # UE5 Simulation Environment
+│   └── 📂 Source/Network            # C++ WebSocket Client
+└── 📂 SharedData                    # Common Constants
 ```
 
-🗓 Roadmap
-[ ] Phase 1: Basic WebSocket connection between UE5 and Python MCP Server.
+## ✨ Key Technical Features
 
-[ ] Phase 2: Implement "Rules Agent" with JSON-structured output for inventory management.
+### 1. Strict Data Contracts (Pydantic V2)
 
-[ ] Phase 3: Integrate VR Gesture semantic tagging (Pointing/Grabbing).
+To prevent LLM hallucinations from crashing the game engine, all agent outputs are strictly validated on the Python side.
 
-[ ] Phase 4: LangGraph orchestration of the 4-agent loop.
+- **Clamping**: Damage values > 100 are automatically clamped.
+- **Validation**: `Vector3D` coordinates must be finite (no NaN/Inf).
+- **ActionBatch**: Ensures all actions sent to UE5 are well-formed.
 
-[ ] Phase 5: Optimization (Streaming TTS & Latency Masking).
+### 2. GesPrompt (Multimodal Interface)
 
-🤝 Contributing
-Contributions are welcome! Please check the CONTRIBUTING.md for guidelines on how to submit Pull Requests.
+The **Interface Agent** fuses voice transcriptions with VR gesture data to resolve deictic references.
 
-📄 License
-This project is licensed under the  License - see the(LICENSE) file for details.
+- _Player says_: "Open **this**." + _Gaze/Point_: [Door_42]
+- _System interprets_: `Intent: Open(Target=Door_42)`
 
-Note: This is an experimental project exploring the intersection of Generative AI and Game Development. Performance may vary based on hardware and API latency.
+### 3. Agent Orchestration
+
+- **Supervisor**: The "Brain" that decides which agent should handle the current request.
+- **Dialogue**: Uses `memory_summary` in Persona YAMLs to remember past interactions.
+- **Rules**: Validates actions against game rules before they happen.
+
+## Getting Started (Phase 1: Foundation)
+
+### Prerequisites
+
+- Python 3.10+
+- Unreal Engine 5.5+
+- `pip install -r CognitiveEngine/requirements.txt`
+
+### Running the Cognitive Engine
+
+```bash
+cd OmniAgent_VR_System/CognitiveEngine
+python -m uvicorn app.main:app --port 8000
+```
+
+_Server will start at `ws://localhost:8000/ws/ue5`_
+
+### Unreal Engine Setup
+
+1.  Open `UnrealProject`
+2.  Ensure `WebSockets` plugin is enabled.
+3.  The `WebSocketClient` class handles connection to the Python server.
+
+## � Roadmap
+
+- [x] **Phase 1: Foundation** (Monorepo, Schemas, Basic Network)
+- [ ] **Phase 2: Agent Logic** (LangGraph Implementation, Persona Loading)
+- [ ] **Phase 3: Integration** (UE5 Behavior Trees, Audio2Face)
+- [ ] **Phase 4: Optimization** (Streaming Responses, Latency Masking)

@@ -1,0 +1,9 @@
+mcp
+langgraph
+langchain
+fastapi
+uvicorn
+# Data Contract validation - Strict V2 required
+pydantic>=2.0
+python-dotenv
+websockets
