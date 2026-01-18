@@ -1,3 +1,9 @@
+<!--
+File: README.md
+Purpose: Project Documentation.
+Overview of the OmniAgent VR System, Architecture (Remote Cortex), and Implementation Status.
+-->
+
 # OmniAgent VR System
 
 A Multi-Agent LLM Orchestration Framework for Unreal Engine 5 VR Games, powered by **Model Context Protocol (MCP)** and **LangGraph**.
@@ -8,10 +14,10 @@ This project implements the **Remote Cortex Pattern**, where the heavy lifting o
 
 The system orchestrates four specialized agents to create a dynamic, living world:
 
-1.  **Supervisor (Narrative)**: Manages global plot and delegates tasks.
-2.  **Dialogue (Character)**: Generates persona-driven conversations with long-term memory.
-3.  **Rules (Referee)**: Enforces game logic with deterministic validation (Clamping).
-4.  **Interface (Mediator)**: Interprets multimodal inputs (Voice + Gesture) using **GesPrompt**.
+1. **Supervisor (Narrative)**: Manages global plot and delegates tasks.
+2. **Dialogue (Character)**: Generates persona-driven conversations with long-term memory.
+3. **Rules (Referee)**: Enforces game logic with deterministic validation (Clamping).
+4. **Interface (Mediator)**: Interprets multimodal inputs (Voice + Gesture) using **GesPrompt**.
 
 ## 🏗 Architecture
 
@@ -81,9 +87,9 @@ _Server will start at `ws://localhost:8000/ws/ue5`_
 
 ### Unreal Engine Setup
 
-1.  Open `UnrealProject`
-2.  Ensure `WebSockets` plugin is enabled.
-3.  The `WebSocketClient` class handles connection to the Python server.
+1. Open `UnrealProject`
+2. Ensure `WebSockets` plugin is enabled.
+3. The `WebSocketClient` class handles connection to the Python server.
 
 ## � Roadmap
 

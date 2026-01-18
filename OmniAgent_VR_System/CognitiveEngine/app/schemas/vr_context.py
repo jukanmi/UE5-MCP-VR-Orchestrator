@@ -1,3 +1,8 @@
+"""
+File: vr_context.py
+Purpose: Defines the 'GesPrompt' structure for Multimodal Input.
+Combines Voice Transcript with Gesture Data to enable deictic resolution (interpreting "this/that").
+"""
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from .game_state import Vector3D

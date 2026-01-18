@@ -1,4 +1,8 @@
+# File: requirements.txt
+# Purpose: Python Dependencies for the Cognitive Engine.
+# Key Constraints: pydantic>=2.0 for Strict Data Contracts.
 mcp
+
 langgraph
 langchain
 fastapi
@@ -7,3 +11,5 @@ uvicorn
 pydantic>=2.0
 python-dotenv
 websockets
+PyYAML
+langchain-openai

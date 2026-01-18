@@ -1,3 +1,8 @@
+"""
+File: game_state.py
+Purpose: Defines Pydantic V2 models for World Information (Entity, Vector3D).
+Includes validation to prevent NaN/Infinity coordinates from crashing the engine.
+"""
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 import math
