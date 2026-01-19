@@ -13,3 +13,4 @@ python-dotenv
 websockets
 PyYAML
 langchain-openai
+langchain-google-genai
