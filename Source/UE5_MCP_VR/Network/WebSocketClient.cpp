@@ -28,6 +28,29 @@ void UWebSocketClient::SendData(FString JsonData)
     if (WebSocket && WebSocket->IsConnected())
     {
         WebSocket->Send(JsonData);
+        UE_LOG(LogTemp, Log, TEXT("Sent Data: %s"), *JsonData);
+    }
+}
+
+void UWebSocketClient::SendTestPayload()
+{
+    FString TestJson = TEXT("{"
+        "\"player_id\": \"Player_1\","
+        "\"text_input\": \"저 문을 열어줘\","
+        "\"gesture\": {"
+            "\"type\": \"Point\","
+            "\"target_actor_id\": \"Door_42\","
+            "\"confidence\": 0.9"
+        "},"
+        "\"world_context\": {"
+            "\"nearby_actors\": [\"Door_42\", \"Box_01\"]"
+        "}"
+    "}");
+
+    if (WebSocket && WebSocket->IsConnected())
+    {
+        WebSocket->Send(TestJson);
+        UE_LOG(LogTemp, Log, TEXT("Sent Test Payload: %s"), *TestJson);
     }
 }
 

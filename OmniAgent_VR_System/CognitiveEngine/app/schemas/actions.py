@@ -29,7 +29,7 @@ class RejectResult(BaseModel):
     rejected: bool = True
 
 class GameAction(BaseModel):
-    action_type: Literal["Move", "Attack", "Interact", "Emote"]
+    action_type: Literal["Move", "Attack", "Interact", "Emote", "Speak"]
     target_id: Optional[str] = None
     parameters: dict = Field(default_factory=dict)
     

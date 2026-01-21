@@ -23,7 +23,6 @@ def get_llm(model_provider="google", temperature=0.0):
         # Google GenAI (Gemma/Gemini)
         # Note: Ensure langchain-google-genai is installed and GOOGLE_API_KEY is set.
         # "gemini-2.0-flash" is a good placeholder for high-performance efficient models.
-        # If specifically Gemma 2 27b is available via API, change model name here.
         return ChatGoogleGenerativeAI(
             model="gemini-2.5-flash", 
             temperature=temperature,
