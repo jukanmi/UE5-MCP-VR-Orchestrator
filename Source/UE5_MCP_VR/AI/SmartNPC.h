@@ -2,10 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "Utils/MCPJsonUtils.h" // For FGameAction struct
+#include "../Utils/MCPJsonUtils.h" // For FGameAction struct
 #include "SmartNPC.generated.h"
 
-UCLASS()
+UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter
 {
     GENERATED_BODY()
@@ -37,6 +37,18 @@ protected:
     // Speak text
     UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
     void ExecuteSpeak(const FString& Text);
+
+    // Emote
+    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
+    void ExecuteEmote(const FString& EmoteName);
+
+    // Attack
+    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
+    void ExecuteAttack(const FString& TargetID);
+
+    // Interact
+    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
+    void ExecuteInteract(const FString& TargetID);
 
     // Generic fallback or other actions (Attack, Interact)
     UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")

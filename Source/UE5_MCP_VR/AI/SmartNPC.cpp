@@ -1,6 +1,6 @@
 #include "SmartNPC.h"
 #include "NPCManager.h"
-#include "Utils/MCPMathUtils.h"
+#include "../Utils/MCPMathUtils.h"
 #include "Kismet/GameplayStatics.h"
 
 ASmartNPC::ASmartNPC()

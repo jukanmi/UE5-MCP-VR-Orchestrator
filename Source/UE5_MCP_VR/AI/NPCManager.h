@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
-#include "Network/WebSocketClient.h"
+#include "../Network/WebSocketClient.h"
 #include "NPCManager.generated.h"
 
 class ASmartNPC;
@@ -11,7 +11,7 @@ class ASmartNPC;
  * Global Router for NPC Actions.
  * Listens to WebSocket and dispatches actions to registered SmartNPCs.
  */
-UCLASS()
+UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API UNPCManager : public UGameInstanceSubsystem
 {
     GENERATED_BODY()
