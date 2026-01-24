@@ -22,9 +22,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
     void SendData(FString JsonData);
 
-    UFUNCTION(BlueprintCallable, Category = "MCP Network")
-    void SendTestPayload();
-
     // event dispatchers
     UPROPERTY(BlueprintAssignable, Category = "MCP Network")
     FOnWebSocketMessage OnMessageReceived;
