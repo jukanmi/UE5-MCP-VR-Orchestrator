@@ -52,8 +52,34 @@ def interface_node(state: AgentState) -> dict:
     # Format Gesture Data for Prompt
     gestures_desc = []
     for g in vr_context.gestures:
-        gestures_desc.append(f"- Type: {g.gesture_type}, Target: {g.target_entity_id}, Hand: {g.hand}")
+        desc = f"- Type: {g.gesture_type}, Target: {g.target_entity_id}, Hand: {g.hand}"
+        if g.location:
+            desc += f", Location: {g.location}"
+        if g.held_object_id:
+            desc += f", Holding: {g.held_object_id}"
+        gestures_desc.append(desc)
     gesture_str = "\n".join(gestures_desc) if gestures_desc else "None"
+
+    # --- Fast Reflex (Hardcoded Logic for Latency Masking) ---
+    def check_fast_reflex(text: str) -> Optional[Intent]:
+        text_lower = text.lower()
+        # Safety/Stop
+        if any(w in text_lower for w in ["멈춰", "그만", "stop", "halt"]):
+            return Intent(action_type="Wait", raw_query=text, confidence=1.0)
+        # Simple Greeting
+        if any(w in text_lower for w in ["안녕", "hello", "hi"]):
+            return Intent(action_type="Talk", raw_query=text, confidence=1.0)
+        return None
+
+    reflex = check_fast_reflex(transcript)
+    if reflex:
+        print(f"Reflex Triggered: {reflex.action_type}")
+        return {
+            "analysis": {"intent": reflex},
+            "current_speaker": "Interface",
+            "next": "Supervisor"
+        }
+    # ---------------------------------------------------------
 
     # LLM Setup
     try:

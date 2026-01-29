@@ -27,6 +27,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     virtual void ProcessAction(const FGameAction& Action);
 
+    /**
+     * Clears physical state (velocity, animation overlay, specific variables) 
+     * when a policy is aborted or expires.
+     */
+    virtual void ClearPhysicalState();
+
+
 protected:
     // --- Blueprint Implementable Events (Engine Logic) ---
 

@@ -13,6 +13,8 @@ class GestureData(BaseModel):
     confidence: float
     target_entity_id: Optional[str] = None
     direction: Optional[Vector3D] = None
+    location: Optional[Vector3D] = None  # Hand location for "here/there" reference
+    held_object_id: Optional[str] = None  # Context: What is the hand holding?
 
 class GesPrompt(BaseModel):
     """

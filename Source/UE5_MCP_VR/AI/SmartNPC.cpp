@@ -75,3 +75,14 @@ void ASmartNPC::ProcessAction(const FGameAction& Action)
         ExecuteGenericAction(Type, TargetParam);
     }
 }
+
+void ASmartNPC::ClearPhysicalState()
+{
+    // Default implementation: Can be overriden by Blueprint or Subclasses.
+    StopAnimMontage();
+    if (GetController())
+    {
+        GetController()->StopMovement();
+    }
+}
+
