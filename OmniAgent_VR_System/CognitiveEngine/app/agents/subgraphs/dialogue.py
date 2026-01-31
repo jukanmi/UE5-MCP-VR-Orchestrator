@@ -34,6 +34,7 @@ Do not output ActionBatch directly.
 Output Format:
 
 One or more SpeakAction proposals in structured JSON.
+Ensure "action_type" is strictly "Speak".
 Do not include narration or explanations."""
 
 def load_persona(path: str):

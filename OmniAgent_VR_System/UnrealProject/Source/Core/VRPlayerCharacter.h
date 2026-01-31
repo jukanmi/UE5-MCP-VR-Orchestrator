@@ -6,6 +6,9 @@
 #include "GameFramework/Character.h"
 #include "../Network/WebSocketClient.h"
 #include "../UI/ChatWidget.h"
+#include "InputActionValue.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
 #include "VRPlayerCharacter.generated.h"
 
 UCLASS()
@@ -47,6 +50,31 @@ public:
 
 	// Input Actions
 	void ToggleChat();
+
+	/** MappingContext */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputMappingContext* DefaultMappingContext;
+
+	/** Toggle Chat Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* ToggleChatAction;
+
+	/** Move Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* MoveAction;
+
+	/** Look Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* LookAction;
+
+	/** Jump Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* JumpAction;
+	
+	// --- Movement ---
+	void Move(const FInputActionValue& Value);
+	void Look(const FInputActionValue& Value);
+
 	
 	// --- Interaction ---
 	void DetectNearbyNPC();

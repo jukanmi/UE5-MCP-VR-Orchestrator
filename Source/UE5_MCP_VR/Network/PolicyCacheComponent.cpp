@@ -4,6 +4,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
 #include "../AI/SmartNPC.h" 
 
 // Blackboard Keys (Assumed names, verify with user project)
@@ -39,10 +40,10 @@ void UPolicyCacheComponent::HandlePolicyUpdate(const FString& JsonPayload)
     if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
     {
         // Parse basic fields
-        if (JsonObject->HasField("trace_id")) CurrentPolicy.TraceID = JsonObject->GetStringField("trace_id");
-        if (JsonObject->HasField("policy_version")) 
+        if (JsonObject->HasField(TEXT("trace_id"))) CurrentPolicy.TraceID = JsonObject->GetStringField(TEXT("trace_id"));
+        if (JsonObject->HasField(TEXT("policy_version"))) 
         {
-            int32 NewVersion = JsonObject->GetIntegerField("policy_version");
+            int32 NewVersion = JsonObject->GetIntegerField(TEXT("policy_version"));
             if (NewVersion > CurrentPolicy.PolicyVersion)
             {
                 // New policy version, reset decision index or handle monotonic increment logic needed?
@@ -54,16 +55,16 @@ void UPolicyCacheComponent::HandlePolicyUpdate(const FString& JsonPayload)
             }
             CurrentPolicy.PolicyVersion = NewVersion; 
         }
-        if (JsonObject->HasField("issued_at")) CurrentPolicy.IssuedAt = JsonObject->GetNumberField("issued_at");
-        if (JsonObject->HasField("ttl")) CurrentPolicy.TTL = JsonObject->GetNumberField("ttl");
-        if (JsonObject->HasField("target_guid")) CurrentPolicy.TargetGuid = JsonObject->GetStringField("target_guid");
-        if (JsonObject->HasField("base_seed")) CurrentPolicy.BaseSeed = JsonObject->GetIntegerField("base_seed");
+        if (JsonObject->HasField(TEXT("issued_at"))) CurrentPolicy.IssuedAt = JsonObject->GetNumberField(TEXT("issued_at"));
+        if (JsonObject->HasField(TEXT("ttl"))) CurrentPolicy.TTL = JsonObject->GetNumberField(TEXT("ttl"));
+        if (JsonObject->HasField(TEXT("target_guid"))) CurrentPolicy.TargetGuid = JsonObject->GetStringField(TEXT("target_guid"));
+        if (JsonObject->HasField(TEXT("base_seed"))) CurrentPolicy.BaseSeed = JsonObject->GetIntegerField(TEXT("base_seed"));
         
         // Traits (Optional in Patch, Required in Base. Here we just overwrite if present)
-        if (JsonObject->HasField("aggression")) CurrentPolicy.Aggression = JsonObject->GetNumberField("aggression");
-        if (JsonObject->HasField("fear")) CurrentPolicy.Fear = JsonObject->GetNumberField("fear");
-        if (JsonObject->HasField("vigilance")) CurrentPolicy.Vigilance = JsonObject->GetNumberField("vigilance");
-        if (JsonObject->HasField("policy_flags")) CurrentPolicy.PolicyFlags = JsonObject->GetIntegerField("policy_flags");
+        if (JsonObject->HasField(TEXT("aggression"))) CurrentPolicy.Aggression = JsonObject->GetNumberField(TEXT("aggression"));
+        if (JsonObject->HasField(TEXT("fear"))) CurrentPolicy.Fear = JsonObject->GetNumberField(TEXT("fear"));
+        if (JsonObject->HasField(TEXT("vigilance"))) CurrentPolicy.Vigilance = JsonObject->GetNumberField(TEXT("vigilance"));
+        if (JsonObject->HasField(TEXT("policy_flags"))) CurrentPolicy.PolicyFlags = JsonObject->GetIntegerField(TEXT("policy_flags"));
 
         // Validate GUID strict
         FGuid TargetGuidStruct;

@@ -43,6 +43,18 @@ void AVRPlayerCharacter::BeginPlay()
 			ChatWidgetInstance->WebSocketClient = WebSocketClient; // Pass WS reference
 		}
 	}
+
+	// 3. Enhanced Input Subsystem에 IMC 등록 (이 부분이 누락됨)
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+        {
+            if (DefaultMappingContext)
+            {
+                Subsystem->AddMappingContext(DefaultMappingContext, 0);
+            }
+        }
+    }
 }
 
 // Called every frame
@@ -58,7 +70,69 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	PlayerInputComponent->BindAction("ToggleChat", IE_Pressed, this, &AVRPlayerCharacter::ToggleChat);
+	// Set up Enhanced Input
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		if (ToggleChatAction)
+		{
+			EnhancedInputComponent->BindAction(ToggleChatAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::ToggleChat);
+		}
+
+		// Move
+		if (MoveAction)
+		{
+			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AVRPlayerCharacter::Move);
+		}
+
+		// Look
+		if (LookAction)
+		{
+			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AVRPlayerCharacter::Look);
+		}
+
+		// Jump
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		}
+	}
+}
+
+void AVRPlayerCharacter::Move(const FInputActionValue& Value)
+{
+	// input is a Vector2D
+	FVector2D MovementVector = Value.Get<FVector2D>();
+
+	if (Controller != nullptr)
+	{
+		// find out which way is forward
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		// get forward vector
+		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	
+		// get right vector 
+		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+		// add movement 
+		AddMovementInput(ForwardDirection, MovementVector.Y);
+		AddMovementInput(RightDirection, MovementVector.X);
+	}
+}
+
+void AVRPlayerCharacter::Look(const FInputActionValue& Value)
+{
+	// input is a Vector2D
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+
+	if (Controller != nullptr)
+	{
+		// add yaw and pitch input to controller
+		AddControllerYawInput(LookAxisVector.X);
+		AddControllerPitchInput(LookAxisVector.Y);
+	}
 }
 
 void AVRPlayerCharacter::ToggleChat()
