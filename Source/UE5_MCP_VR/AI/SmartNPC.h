@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
 #include "SmartNPC.generated.h"
 
@@ -21,6 +22,10 @@ public:
     // Unique ID for routing (e.g. "Guard_1")
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
     FString AgentID;
+
+    // Behavior Tree to run for this NPC
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
+    UBehaviorTree* BehaviorTreeAsset;
 
     // Defines how to handle an action (Switch logic)
     // Hybrid: C++ parses params -> Calls BP Event

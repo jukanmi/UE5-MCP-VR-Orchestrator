@@ -131,7 +131,7 @@ void AVRPlayerCharacter::Look(const FInputActionValue& Value)
 	{
 		// add yaw and pitch input to controller
 		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		AddControllerPitchInput(-LookAxisVector.Y);
 	}
 }
 
@@ -155,8 +155,10 @@ void AVRPlayerCharacter::ToggleChat()
 		ChatWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 		PC->bShowMouseCursor = true;
 		
-		FInputModeUIOnly InputMode;
-		InputMode.SetWidgetToFocus(ChatWidgetInstance->TakeWidget());
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(ChatWidgetInstance->GetCachedWidget());
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+
 		PC->SetInputMode(InputMode);
 	}
 }
