@@ -60,6 +60,22 @@ def interface_node(state: AgentState) -> dict:
         gestures_desc.append(desc)
     gesture_str = "\n".join(gestures_desc) if gestures_desc else "None"
 
+    # --- Emergency Interrupt (High Priority) ---
+    if vr_context.last_event in ["Hit", "Ambush"]:
+        print(f"!!! EMERGENCY INTERRUPT: {vr_context.last_event} !!!")
+        # Force a defensive intent regardless of voice
+        return {
+            "analysis": {"intent": Intent(
+                action_type="Attack", # Counter-attack or Defend
+                target_reference="Attacker",
+                raw_query=f"[System Event: {vr_context.last_event}]",
+                confidence=1.0
+            )},
+            "current_speaker": "Interface",
+            "next": "Supervisor"
+        }
+    # -------------------------------------------
+
     # --- Fast Reflex (Hardcoded Logic for Latency Masking) ---
     def check_fast_reflex(text: str) -> Optional[Intent]:
         text_lower = text.lower()
@@ -86,19 +102,25 @@ def interface_node(state: AgentState) -> dict:
         llm = get_llm(temperature=0.0)
         structured_llm = llm.with_structured_output(Intent)
         
+        # Format Stats
+        stats_str = "None"
+        if vr_context.stats:
+            stats_str = ", ".join([f"{k}: {v}" for k, v in vr_context.stats.items()])
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", INTERFACE_SYSTEM_PROMPT),
             ("human", """
             User Transcript: "{transcript}"
             Gesture Data:
             {gestures}
+            NPC Stats: {stats}
             
             Based on the above, extract the user's Intent.
             """)
         ])
         
         chain = prompt | structured_llm
-        intent = chain.invoke({"transcript": transcript, "gestures": gesture_str})
+        intent = chain.invoke({"transcript": transcript, "gestures": gesture_str, "stats": stats_str})
         
         # Add debug info for raw query if missing
         if not intent.raw_query:

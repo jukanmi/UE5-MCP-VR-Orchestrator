@@ -122,10 +122,90 @@ void ASmartNPC::ClearPhysicalState()
 {
     // Default implementation: Can be overriden by Blueprint or Subclasses.
     // ToDo::상태 초기화 로직 구현 (애니메이션 몽타주 중지, 이동 정지 등)
+
+    // Stop Logic
     StopAnimMontage();
-    if (GetController())
+    if (AController* C = GetController())
     {
-        GetController()->StopMovement();
+        C->StopMovement();
     }
+}
+
+bool ASmartNPC::TryReflexAction(float Difficulty)
+{
+    float SuccessChance = CurrentStats.Agility * 100.0f;
+    float Roll = FMath::RandRange(0.0f, 100.0f);
+    
+    bool bSuccess = SuccessChance > Roll;
+    
+    if (bSuccess)
+    {
+        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %f < %f)"), *AgentID, Roll, SuccessChance);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %f >= %f)"), *AgentID, Roll, SuccessChance);
+        ExecuteEmote("Panic"); 
+    }
+
+    return bSuccess;
+}
+
+void ASmartNPC::AbortCurrentAction()
+{
+    UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: ABORTING Action %s"), *AgentID, *CurrentActionID);
+    CurrentActionID = TEXT("");
+    ClearPhysicalState();
+}
+
+void ASmartNPC::RequestEmergencyCognition(FString EventType, FString Description)
+{
+    AbortCurrentAction();
+
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            double Time = FPlatformTime::Seconds();
+            
+            FString JsonPayload = FString::Printf(
+                TEXT("{"
+                "\"player_id\": \"%s\","
+                "\"voice_transcript\": \"[EVENT: %s - %s]\","
+                "\"timestamp\": %f,"
+                "\"last_event\": \"%s\","
+                "\"stats\": {"
+                    "\"hp\": %f,"
+                    "\"max_hp\": %f,"
+                    "\"agility\": %f,"
+                    "\"perception\": %f"
+                "}"
+                "}"),
+                *AgentID,
+                *EventType, *Description,
+                Time,
+                *EventType,
+                CurrentStats.Hp, CurrentStats.MaxHp, CurrentStats.Agility, CurrentStats.Perception
+            );
+
+            Manager->SendEvent(JsonPayload);
+        }
+    }
+}
+
+float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
+{
+    float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    
+    CurrentStats.Hp -= ActualDamage;
+    if (CurrentStats.Hp < 0) CurrentStats.Hp = 0;
+
+    UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s Took Damage: %f. HP: %f"), *AgentID, ActualDamage, CurrentStats.Hp);
+
+    bool bReflex = TryReflexAction(50.0f); 
+    
+    RequestEmergencyCognition(TEXT("Hit"), FString::Printf(TEXT("Took %f Damage"), ActualDamage));
+
+    return ActualDamage;
 }
 

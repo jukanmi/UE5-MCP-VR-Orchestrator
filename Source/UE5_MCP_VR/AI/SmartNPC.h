@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
+#include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
 UCLASS(BlueprintType, Blueprintable)
@@ -37,6 +38,33 @@ public:
      * when a policy is aborted or expires.
      */
     virtual void ClearPhysicalState();
+
+    // --- Reflex & Interrupt System ---
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Stats")
+    FCharacterAttributes CurrentStats;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI")
+    FString CurrentActionID;
+
+    // Checks Agility vs Difficulty. Returns true if successful.
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    bool TryReflexAction(float Difficulty);
+
+    // Stops current LLM action (move, speak) immediately.
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void AbortCurrentAction();
+
+    /**
+     * Emergency Interrupt:
+     * 1. Abort current action.
+     * 2. Send "Emergency" signal to Cognitive Engine with context.
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void RequestEmergencyCognition(FString EventType, FString Description);
+
+    // Hook for damage (Override in BP or C++)
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
 
 protected:

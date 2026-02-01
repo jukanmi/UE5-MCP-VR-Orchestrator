@@ -7,9 +7,10 @@
 #include "GameFramework/PlayerController.h"
 #include "../AI/SmartNPC.h"
 #include "Serialization/JsonSerializer.h"
-#include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/DamageEvents.h"
+#include "DrawDebugHelpers.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
@@ -95,6 +96,12 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		{
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		}
+
+		// Fire/Attack
+		if (FireAction)
+		{
+			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::PerformAttack);
 		}
 	}
 }
@@ -255,5 +262,54 @@ void AVRPlayerCharacter::OnWebSocketMessage(const FString& Message)
 				ChatWidgetInstance->AddMessageToHistory(TEXT("System"), JsonObject->GetStringField(TEXT("error")));
 			}
 		}
+	}
+}
+
+void AVRPlayerCharacter::PerformAttack()
+{
+	if (!GetController()) return;
+
+	// Get camera location and forward direction
+	FVector CameraLocation;
+	FRotator CameraRotation;
+	GetController()->GetPlayerViewPoint(CameraLocation, CameraRotation);
+
+	FVector Start = CameraLocation;
+	FVector ForwardVector = CameraRotation.Vector();
+	FVector End = Start + (ForwardVector * AttackRange);
+
+	// Line Trace
+	FHitResult HitResult;
+	FCollisionQueryParams CollisionParams;
+	CollisionParams.AddIgnoredActor(this);
+
+	bool bHit = GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		Start,
+		End,
+		ECC_Pawn, // Or ECC_Visibility
+		CollisionParams
+	);
+
+	if (bHit && HitResult.GetActor())
+	{
+		AActor* HitActor = HitResult.GetActor();
+		UE_LOG(LogTemp, Log, TEXT("Player Attack Hit: %s"), *HitActor->GetName());
+
+		// Apply Damage
+		FPointDamageEvent DamageEvent;
+		DamageEvent.HitInfo = HitResult;
+		DamageEvent.ShotDirection = ForwardVector;
+		DamageEvent.DamageTypeClass = UDamageType::StaticClass();
+
+		HitActor->TakeDamage(AttackDamage, DamageEvent, GetController(), this);
+
+		// Optional: Visual feedback (draw debug line)
+		DrawDebugLine(GetWorld(), Start, HitResult.Location, FColor::Red, false, 1.0f, 0, 2.0f);
+	}
+	else
+	{
+		// Miss - draw debug line to show attack direction
+		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.0f);
 	}
 }

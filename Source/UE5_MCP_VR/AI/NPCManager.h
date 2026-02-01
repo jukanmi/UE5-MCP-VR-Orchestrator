@@ -32,6 +32,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void BindSocket(UWebSocketClient* Socket);
 
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void SendEvent(const FString& JsonData);
+
 private:
     // Handles message from WebSocket
     UFUNCTION()

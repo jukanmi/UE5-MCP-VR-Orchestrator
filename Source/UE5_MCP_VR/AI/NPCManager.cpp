@@ -42,6 +42,14 @@ void UNPCManager::BindSocket(UWebSocketClient* Socket)
     }
 }
 
+void UNPCManager::SendEvent(const FString& JsonData)
+{
+    if (BoundSocket)
+    {
+        BoundSocket->SendData(JsonData);
+    }
+}
+
 void UNPCManager::HandleMessage(const FString& JsonMessage)
 {
     // Parse Batch

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "../AI/CharacterAttributes.h"
 #include "../Network/WebSocketClient.h"
 #include "../UI/ChatWidget.h"
 #include "InputActionValue.h"
@@ -23,6 +24,9 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	FCharacterAttributes CurrentStats;
 
 public:	
 	// Called every frame
@@ -70,10 +74,23 @@ public:
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
+
+	/** Fire/Attack Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* FireAction;
 	
 	// --- Movement ---
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+
+	// --- Combat ---
+	void PerformAttack();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float AttackDamage = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float AttackRange = 3000.0f; // 30m
 
 	
 	// --- Interaction ---
