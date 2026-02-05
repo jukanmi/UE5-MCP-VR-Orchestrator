@@ -28,8 +28,10 @@ void UWebSocketClient::SendData(FString JsonData)
     if (WebSocket && WebSocket->IsConnected())
     {
         WebSocket->Send(JsonData);
+        UE_LOG(LogTemp, Log, TEXT("Sent Data: %s"), *JsonData);
     }
 }
+
 
 void UWebSocketClient::OnConnected()
 {

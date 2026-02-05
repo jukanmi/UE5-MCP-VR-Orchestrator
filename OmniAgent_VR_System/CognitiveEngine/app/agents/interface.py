@@ -52,27 +52,75 @@ def interface_node(state: AgentState) -> dict:
     # Format Gesture Data for Prompt
     gestures_desc = []
     for g in vr_context.gestures:
-        gestures_desc.append(f"- Type: {g.gesture_type}, Target: {g.target_entity_id}, Hand: {g.hand}")
+        desc = f"- Type: {g.gesture_type}, Target: {g.target_entity_id}, Hand: {g.hand}"
+        if g.location:
+            desc += f", Location: {g.location}"
+        if g.held_object_id:
+            desc += f", Holding: {g.held_object_id}"
+        gestures_desc.append(desc)
     gesture_str = "\n".join(gestures_desc) if gestures_desc else "None"
+
+    # --- Emergency Interrupt (High Priority) ---
+    if vr_context.last_event in ["Hit", "Ambush"]:
+        print(f"!!! EMERGENCY INTERRUPT: {vr_context.last_event} !!!")
+        # Force a defensive intent regardless of voice
+        return {
+            "analysis": {"intent": Intent(
+                action_type="Attack", # Counter-attack or Defend
+                target_reference="Attacker",
+                raw_query=f"[System Event: {vr_context.last_event}]",
+                confidence=1.0
+            )},
+            "current_speaker": "Interface",
+            "next": "Supervisor"
+        }
+    # -------------------------------------------
+
+    # --- Fast Reflex (Hardcoded Logic for Latency Masking) ---
+    def check_fast_reflex(text: str) -> Optional[Intent]:
+        text_lower = text.lower()
+        # Safety/Stop
+        if any(w in text_lower for w in ["멈춰", "그만", "stop", "halt"]):
+            return Intent(action_type="Wait", raw_query=text, confidence=1.0)
+        # Simple Greeting
+        if any(w in text_lower for w in ["안녕", "hello", "hi"]):
+            return Intent(action_type="Talk", raw_query=text, confidence=1.0)
+        return None
+
+    reflex = check_fast_reflex(transcript)
+    if reflex:
+        print(f"Reflex Triggered: {reflex.action_type}")
+        return {
+            "analysis": {"intent": reflex},
+            "current_speaker": "Interface",
+            "next": "Supervisor"
+        }
+    # ---------------------------------------------------------
 
     # LLM Setup
     try:
         llm = get_llm(temperature=0.0)
         structured_llm = llm.with_structured_output(Intent)
         
+        # Format Stats
+        stats_str = "None"
+        if vr_context.stats:
+            stats_str = ", ".join([f"{k}: {v}" for k, v in vr_context.stats.items()])
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", INTERFACE_SYSTEM_PROMPT),
             ("human", """
             User Transcript: "{transcript}"
             Gesture Data:
             {gestures}
+            NPC Stats: {stats}
             
             Based on the above, extract the user's Intent.
             """)
         ])
         
         chain = prompt | structured_llm
-        intent = chain.invoke({"transcript": transcript, "gestures": gesture_str})
+        intent = chain.invoke({"transcript": transcript, "gestures": gesture_str, "stats": stats_str})
         
         # Add debug info for raw query if missing
         if not intent.raw_query:

@@ -8,11 +8,21 @@ Purpose: FastAPI Entry Point for the Cognitive Engine.
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .schemas.vr_context import GesPrompt
 from .schemas.actions import ActionBatch
+from .schemas.behavior_policy import BehaviorPolicy, PatchPolicy
+from typing import Union
 from .agents.state import AgentState
 from .graph import app_graph
 import json
 
 app = FastAPI()
+
+def serialize_policy_update(policy: Union[BehaviorPolicy, PatchPolicy]) -> str:
+    """Helper to envelope a policy update for UE consumption."""
+    return json.dumps({
+        "type": "policy_update",
+        "payload": policy.model_dump()
+    })
+
 
 @app.get("/")
 async def root():
