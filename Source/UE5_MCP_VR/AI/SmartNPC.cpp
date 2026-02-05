@@ -2,6 +2,7 @@
 #include "NPCManager.h"
 #include "SmartNPCAIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "../Utils/MCPMathUtils.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -25,6 +26,9 @@ void ASmartNPC::BeginPlay()
             Manager->RegisterNPC(AgentID, this);
         }
     }
+
+    // Initialize derived stats and apply movement speeds
+    RefreshStats();
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -131,20 +135,22 @@ void ASmartNPC::ClearPhysicalState()
     }
 }
 
+//
 bool ASmartNPC::TryReflexAction(float Difficulty)
 {
-    float SuccessChance = CurrentStats.Agility * 100.0f;
+    // Use Dexterity for reflex checks (Dex 10 = 10% base chance, scaled by difficulty)
+    float SuccessChance = static_cast<float>(CurrentStats.BaseStats.Dexterity) - Difficulty;
     float Roll = FMath::RandRange(0.0f, 100.0f);
     
     bool bSuccess = SuccessChance > Roll;
     
     if (bSuccess)
     {
-        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %f < %f)"), *AgentID, Roll, SuccessChance);
+        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %.1f < %.1f)"), *AgentID, Roll, SuccessChance);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %f >= %f)"), *AgentID, Roll, SuccessChance);
+        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %.1f >= %.1f)"), *AgentID, Roll, SuccessChance);
         ExecuteEmote("Panic"); 
     }
 
@@ -177,15 +183,18 @@ void ASmartNPC::RequestEmergencyCognition(FString EventType, FString Description
                 "\"stats\": {"
                     "\"hp\": %f,"
                     "\"max_hp\": %f,"
-                    "\"agility\": %f,"
-                    "\"perception\": %f"
+                    "\"dexterity\": %d,"
+                    "\"perception\": %d"
                 "}"
                 "}"),
                 *AgentID,
                 *EventType, *Description,
                 Time,
                 *EventType,
-                CurrentStats.Hp, CurrentStats.MaxHp, CurrentStats.Agility, CurrentStats.Perception
+                CurrentStats.Resources.Health, 
+                CurrentStats.Resources.MaxHealth, 
+                CurrentStats.BaseStats.Dexterity, 
+                CurrentStats.BaseStats.Perception
             );
 
             Manager->SendEvent(JsonPayload);
@@ -197,15 +206,58 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 {
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     
-    CurrentStats.Hp -= ActualDamage;
-    if (CurrentStats.Hp < 0) CurrentStats.Hp = 0;
+    // Apply damage to Resources.Health
+    CurrentStats.Resources.Health -= ActualDamage;
+    if (CurrentStats.Resources.Health < 0) CurrentStats.Resources.Health = 0;
 
-    UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s Took Damage: %f. HP: %f"), *AgentID, ActualDamage, CurrentStats.Hp);
+    UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s Took Damage: %.1f. HP: %.1f/%.1f"), 
+        *AgentID, ActualDamage, CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);
 
+    // Attempt reflex action (difficulty 50)
     bool bReflex = TryReflexAction(50.0f); 
     
-    RequestEmergencyCognition(TEXT("Hit"), FString::Printf(TEXT("Took %f Damage"), ActualDamage));
+    RequestEmergencyCognition(TEXT("Hit"), FString::Printf(TEXT("Took %.1f Damage"), ActualDamage));
 
     return ActualDamage;
 }
 
+void ASmartNPC::ApplyMovementSpeed()
+{
+    UCharacterMovementComponent* MovementComp = GetCharacterMovement();
+    if (!MovementComp)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: No CharacterMovementComponent found!"), *AgentID);
+        return;
+    }
+
+    // Apply calculated speeds from CharacterAttributes
+    // MaxWalkSpeed is the primary speed used by AI navigation
+    MovementComp->MaxWalkSpeed = CurrentStats.Movement.WalkSpeed;
+    MovementComp->MaxWalkSpeedCrouched = CurrentStats.Movement.CrouchSpeed;
+    
+    // Note: RunSpeed and SprintSpeed need to be applied via gameplay logic
+    // (e.g., setting MaxWalkSpeed dynamically based on movement state)
+    
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Applied Movement Speeds - Walk: %.1f, Crouch: %.1f (Dex: %d)"),
+        *AgentID,
+        CurrentStats.Movement.WalkSpeed,
+        CurrentStats.Movement.CrouchSpeed,
+        CurrentStats.BaseStats.Dexterity);
+}
+
+void ASmartNPC::RefreshStats()
+{
+    // Recalculate all derived stats from base stats
+    CurrentStats.RecalculateCombatStats();
+    
+    // Apply movement speeds to CharacterMovementComponent
+    ApplyMovementSpeed();
+    
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Stats Refreshed - HP: %.1f/%.1f, Walk: %.1f, Run: %.1f, Sprint: %.1f"),
+        *AgentID,
+        CurrentStats.Resources.Health,
+        CurrentStats.Resources.MaxHealth,
+        CurrentStats.Movement.WalkSpeed,
+        CurrentStats.Movement.RunSpeed,
+        CurrentStats.Movement.SprintSpeed);
+}

@@ -64,9 +64,6 @@ def rules_node(state: AgentState):
         ("human", f"""
         Incoming Intent: {json.dumps(i_dict)}
         
-        World Constants:
-        MAX_DAMAGE = 100
-        
         Task: 
         Convert this Intent into a valid GameAction. 
         If it violates rules (e.g. Fly), return an action with action_type='Emote' and parameters={{'emotion': 'Confused'}} or similar, OR just try to map it and let Validation fail?

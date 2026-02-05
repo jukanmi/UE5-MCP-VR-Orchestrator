@@ -66,6 +66,20 @@ public:
     // Hook for damage (Override in BP or C++)
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
+    /**
+     * Apply movement speeds from CurrentStats to CharacterMovementComponent.
+     * Call this after modifying CurrentStats.BaseStats.Dexterity or after RecalculateCombatStats().
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
+    void ApplyMovementSpeed();
+
+    /**
+     * Recalculate all derived stats and apply them.
+     * Call this when base stats change.
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
+    void RefreshStats();
+
 
 protected:
     // --- Blueprint Implementable Events (Engine Logic) ---
