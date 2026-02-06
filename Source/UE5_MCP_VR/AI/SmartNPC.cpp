@@ -71,6 +71,7 @@ void ASmartNPC::ProcessAction(const FGameAction& Action)
 
     // Set ActionType as Enum
     BB->SetValueAsEnum(ASmartNPCAIController::Key_ActionType, (uint8)ActionState);
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB ActionType set to: %d"), *AgentID, (int32)ActionState);
 
     if (ActionState == ESmartNPCActionState::Move)
     {
@@ -86,10 +87,14 @@ void ASmartNPC::ProcessAction(const FGameAction& Action)
         // Use coordinates directly - they're already in Unreal units
         FVector TargetLoc(X, Y, Z);
         
-        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Moving to: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, X, Y, Z);
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s Moving to: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, X, Y, Z);
         
         // Update Blackboard Key
         BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, TargetLoc);
+        
+        // Verify Blackboard was set
+        FVector TestLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB TargetLocation verified: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, TestLoc.X, TestLoc.Y, TestLoc.Z);
     }
     else if (ActionState == ESmartNPCActionState::Speak)
     {

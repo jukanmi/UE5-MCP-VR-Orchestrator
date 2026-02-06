@@ -19,12 +19,24 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
 
 	if (ASmartNPC* NPC = Cast<ASmartNPC>(InPawn))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] Possessed NPC: %s"), *NPC->AgentID);
+		
 		// If the NPC has a defined Behavior Tree, initialize it
 		if (NPC->BehaviorTreeAsset && NPC->BehaviorTreeAsset->BlackboardAsset)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] Starting BT: %s with BB: %s"), 
+				*NPC->BehaviorTreeAsset->GetName(),
+				*NPC->BehaviorTreeAsset->BlackboardAsset->GetName());
+			
 			// Start Behavior Tree
 			// RunBehaviorTree automatically initializes the Blackboard component
-			RunBehaviorTree(NPC->BehaviorTreeAsset);
+			bool bSuccess = RunBehaviorTree(NPC->BehaviorTreeAsset);
+			UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] RunBehaviorTree result: %s"), 
+				bSuccess ? TEXT("SUCCESS") : TEXT("FAILED"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[SmartNPCAIController] NPC %s has no BehaviorTreeAsset or BlackboardAsset!"), *NPC->AgentID);
 		}
 	}
 }

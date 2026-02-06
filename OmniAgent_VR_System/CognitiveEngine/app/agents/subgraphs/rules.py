@@ -45,6 +45,17 @@ def rules_node(state: AgentState):
     """
     analysis = state.get("analysis", {})
     intent_data = analysis.get("intent")
+    vr_context = state.get("vr_context")
+    
+    # Get the NPC that should perform the action (who player is looking at)
+    target_npc_id = "Unknown"
+    if vr_context:
+        if hasattr(vr_context, 'looking_at_entity_id'):
+            target_npc_id = vr_context.looking_at_entity_id or "Unknown"
+        elif isinstance(vr_context, dict):
+            target_npc_id = vr_context.get("looking_at_entity_id", "Unknown")
+    
+    print(f"[Rules] Target NPC (looking_at): {target_npc_id}")
     
     # 1. Check for Intent
     if not intent_data:
@@ -77,8 +88,9 @@ def rules_node(state: AgentState):
             }
         )
         
+        # Use target_npc_id as agent_id so NPCManager knows which NPC to command
         batch = ActionBatch(
-            agent_id="RulesAgent",
+            agent_id=target_npc_id,  # Changed from "RulesAgent" to actual NPC ID!
             actions=[game_action],
             reasoning=f"Move to {target_ref}"
         )

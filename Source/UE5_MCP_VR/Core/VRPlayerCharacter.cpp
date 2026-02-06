@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../AI/SmartNPC.h"
+#include "../AI/NPCManager.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
 #include "Engine/OverlapResult.h"
@@ -58,7 +59,20 @@ void AVRPlayerCharacter::BeginPlay()
         }
     }
 
-    // 4. Initialize derived stats and apply movement speeds
+    // 4. Bind WebSocket to NPCManager so it receives ActionBatch messages
+    if (WebSocketClient)
+    {
+        if (UGameInstance* GI = GetGameInstance())
+        {
+            if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+            {
+                Manager->BindSocket(WebSocketClient);
+                UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
+            }
+        }
+    }
+
+    // 5. Initialize derived stats and apply movement speeds
     RefreshStats();
 }
 

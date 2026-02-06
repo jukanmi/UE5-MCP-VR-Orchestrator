@@ -56,21 +56,27 @@ void UNPCManager::HandleMessage(const FString& JsonMessage)
     FActionBatch Batch;
     if (UMCPJsonUtils::ParseActionBatch(JsonMessage, Batch))
     {
-        // For now, we ignore Batch.AgentID (or use it as a global filter)
-        // and iterate through actions.
-        for (const FGameAction& Action : Batch.Actions)
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received ActionBatch for: %s"), *Batch.AgentID);
+        
+        // Find the NPC by Batch.AgentID (e.g., "Elara")
+        if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
         {
-            if (ASmartNPC** NPC = NPCMap.Find(Action.TargetID))
+            if (*NPC)
             {
-                if (*NPC)
+                // Process all actions for this NPC
+                for (const FGameAction& Action : Batch.Actions)
                 {
                     (*NPC)->ProcessAction(Action);
                 }
             }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("NPCManager: Target NPC '%s' not found."), *Action.TargetID);
-            }
         }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse ActionBatch from message"));
     }
 }
