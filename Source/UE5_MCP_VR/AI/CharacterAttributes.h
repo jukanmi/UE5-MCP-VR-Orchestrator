@@ -21,6 +21,9 @@ struct FBaseStats
     int32 Dexterity = 10;  // 회피, 명중률, 이동속도
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Stats|Physical", meta = (ClampMin = "1", ClampMax = "999"))
+    int32 Agility = 10;  // 공격속도, 크리티컬 확률
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Stats|Physical", meta = (ClampMin = "1", ClampMax = "999"))
     int32 Constitution = 10;  // 체력, 지구력, 독/질병 저항
 
     // Mental Attributes
@@ -311,6 +314,98 @@ struct FCharacterAttributes
         constexpr float BaseSprint = 500.0f;
         
         // Calculate asymptotic factor: 0 at Dex≤10, approaches 1 as Dex→∞
+        const float DexDiff = FMath::Max(0.0f, static_cast<float>(BaseStats.Dexterity) - BaseDex);
+        const float AsymptoticFactor = DexDiff / (DexDiff + K);
+        
+        Movement.WalkSpeed = BaseWalk + (MaxSpeed - BaseWalk) * AsymptoticFactor;
+        Movement.RunSpeed = BaseRun + (MaxSpeed - BaseRun) * AsymptoticFactor;
+        Movement.SprintSpeed = BaseSprint + (MaxSpeed - BaseSprint) * AsymptoticFactor;
+    }
+};
+
+
+/**
+ * Player-specific Character Attributes
+ * Same as FCharacterAttributes but WITHOUT FBehavioralTraits (AI-only).
+ * Use this for player characters.
+ */
+USTRUCT(BlueprintType)
+struct FPlayerAttributes
+{
+    GENERATED_BODY()
+
+    // Base TRPG Stats (능력치)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FBaseStats BaseStats;
+
+    // Dynamic Resources (자원)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameResources Resources;
+
+    // Derived Combat Stats (전투)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FCombatStats Combat;
+
+    // Movement (이동)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FMovementStats Movement;
+
+    // Active Status Effects (상태이상)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (Bitmask, BitmaskEnum = "EStatusEffect"))
+    uint8 StatusEffects = 0;
+
+    // Level & Experience
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
+    int32 Level = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
+    int32 Experience = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
+    int32 ExperienceToNextLevel = 100;
+
+    FPlayerAttributes() {}
+
+    // Helper: Apply Status Effect
+    void AddStatusEffect(EStatusEffect Effect)
+    {
+        StatusEffects |= static_cast<uint8>(Effect);
+    }
+
+    void RemoveStatusEffect(EStatusEffect Effect)
+    {
+        StatusEffects &= ~static_cast<uint8>(Effect);
+    }
+
+    bool HasStatusEffect(EStatusEffect Effect) const
+    {
+        return (StatusEffects & static_cast<uint8>(Effect)) != 0;
+    }
+
+    // Helper: Recalculate Combat Stats from Base Stats (same as FCharacterAttributes)
+    void RecalculateCombatStats()
+    {
+        Combat.AttackPower = BaseStats.Strength * 1.5f;
+        Combat.MagicPower = BaseStats.Intelligence * 1.5f;
+        Combat.Defense = BaseStats.Constitution * 1.0f;
+        Combat.MagicResist = BaseStats.Wisdom * 1.0f;
+        Combat.CriticalChance = BaseStats.Agility * 0.5f + BaseStats.Luck * 0.3f;
+        Combat.DodgeChance = BaseStats.Dexterity * 0.5f;
+        Combat.Accuracy = 70.0f + BaseStats.Dexterity * 0.3f;
+
+        Resources.MaxHealth = 50.0f + BaseStats.Constitution * 5.0f;
+        Resources.MaxMana = 20.0f + BaseStats.Intelligence * 3.0f + BaseStats.Wisdom * 2.0f;
+        Resources.MaxStamina = 50.0f + BaseStats.Constitution * 2.0f + BaseStats.Dexterity * 2.0f;
+
+        // Movement Speed Calculation with Asymptotic Scaling
+        constexpr float MaxSpeed = 600.0f;
+        constexpr float BaseDex = 10.0f;
+        constexpr float K = 50.0f;
+        
+        constexpr float BaseWalk = 200.0f;
+        constexpr float BaseRun = 400.0f;
+        constexpr float BaseSprint = 500.0f;
+        
         const float DexDiff = FMath::Max(0.0f, static_cast<float>(BaseStats.Dexterity) - BaseDex);
         const float AsymptoticFactor = DexDiff / (DexDiff + K);
         

@@ -30,7 +30,7 @@ void UChatWidget::SendChatMessage()
 	// Structure matches: OmniAgent_VR_System/CognitiveEngine/app/schemas/vr_context.py
 	
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
-	JsonObject->SetStringField("player_id", "Player_1"); // Hardcoded for now
+	JsonObject->SetStringField("player_id", "Player_1");
 	JsonObject->SetStringField("voice_transcript", MessageText);
 	JsonObject->SetNumberField("timestamp", FDateTime::UtcNow().ToUnixTimestamp());
 	
@@ -42,6 +42,20 @@ void UChatWidget::SendChatMessage()
 	if (!CurrentTargetNPCID.IsEmpty())
 	{
 		JsonObject->SetStringField("looking_at_entity_id", CurrentTargetNPCID);
+	}
+
+	// Add Player Location for "come here" type commands
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APawn* Pawn = PC->GetPawn())
+		{
+			FVector PlayerLoc = Pawn->GetActorLocation();
+			TSharedPtr<FJsonObject> PlayerLocObject = MakeShareable(new FJsonObject);
+			PlayerLocObject->SetNumberField("x", PlayerLoc.X);
+			PlayerLocObject->SetNumberField("y", PlayerLoc.Y);
+			PlayerLocObject->SetNumberField("z", PlayerLoc.Z);
+			JsonObject->SetObjectField("player_location", PlayerLocObject);
+		}
 	}
 
 	FString JsonString;

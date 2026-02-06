@@ -12,23 +12,29 @@ import json
 
 from ...utils.llm_factory import get_llm
 from langchain_core.prompts import ChatPromptTemplate
-# ... (Imports preserved)
 
-# SYSTEM PROMPT (Verbatim)
+# SYSTEM PROMPT
 RULES_SYSTEM_PROMPT = """Role: Rules Agent
 
 You are the authority on game rules.
 
 Responsibilities:
-Validate all numeric parameters proposed by other agents.
-Apply clamping based on predefined rule limits.
-Reject or correct invalid actions.
-Map 'Intent' to specific 'GameAction' types.
+- Validate all numeric parameters proposed by other agents.
+- Apply clamping based on predefined rule limits.
+- Reject or correct invalid actions.
+- Map 'Intent' to specific 'GameAction' types.
+
+Valid GameAction Types:
+- Move: Movement to a target location or entity
+- Attack: Combat action against a target
+- Interact: Object interaction (open, grab, use)
+- Emote: Emotional expression
+- Wait: Stop/pause
 
 Constraints:
-Do not generate narrative text.
-Do not decide intent or dialogue.
-Output structured data only.
+- Do not generate narrative text.
+- Do not decide intent or dialogue.
+- Output structured data only.
 """
 
 def rules_node(state: AgentState):
@@ -45,32 +51,65 @@ def rules_node(state: AgentState):
          return {"next": "End"}
          
     # Extract intent fields safely
-    # (Assuming intent_data is Pydantic object, but dict check safe)
     if hasattr(intent_data, 'model_dump'):
         i_dict = intent_data.model_dump()
     elif isinstance(intent_data, dict):
         i_dict = intent_data
     else:
-        # Fallback
         i_dict = {"action_type": "Unknown", "raw_query": str(intent_data)}
 
+    action_type = i_dict.get("action_type", "Unknown")
+
+    # --- Fast Path for Move with Location (Skip LLM) ---
+    if action_type == "Move" and i_dict.get("target_location"):
+        target_loc = i_dict["target_location"]
+        target_ref = i_dict.get("target_reference", "Player_1")
+        
+        print(f"[Rules] Fast Path: Move to {target_ref} at {target_loc}")
+        
+        game_action = GameAction(
+            action_type="Move",
+            target_id=target_ref,
+            parameters={
+                "x": target_loc.get("x", 0),
+                "y": target_loc.get("y", 0),
+                "z": target_loc.get("z", 0)
+            }
+        )
+        
+        batch = ActionBatch(
+            agent_id="RulesAgent",
+            actions=[game_action],
+            reasoning=f"Move to {target_ref}"
+        )
+        
+        return {
+            "action_batch": batch,
+            "current_speaker": "Rules",
+            "next": "End"
+        }
+    # ---------------------------------------------------
+
     # 2. LLM Resolution (Intent -> GameAction construction plan)
-    # We ask LLM to fill the GameAction schema based on the Intent.
     llm = get_llm(temperature=0.0)
     structured_llm = llm.with_structured_output(GameAction)
     
+    # Serialize intent to string to avoid template variable issues
+    intent_json = json.dumps(i_dict, ensure_ascii=False)
+    
     prompt = ChatPromptTemplate.from_messages([
         ("system", RULES_SYSTEM_PROMPT),
-        ("human", f"""
-        Incoming Intent: {json.dumps(i_dict)}
-        
-        Task: 
-        Convert this Intent into a valid GameAction. 
-        If it violates rules (e.g. Fly), return an action with action_type='Emote' and parameters={{'emotion': 'Confused'}} or similar, OR just try to map it and let Validation fail?
-        
-        Actually, if it's invalid, you should probably try to map it and let the system catch it, or map to 'Emote'.
-        If the user wants to 'Attack' with 9999 damage, put 9999. My internal validator will clamp it.
-        """)
+        ("human", """
+Incoming Intent: {intent_json}
+
+Task: 
+Convert this Intent into a valid GameAction.
+- For Move intents: set action_type="Move" and include x, y, z in parameters if target_location is provided
+- For Attack intents: set action_type="Attack" with damage values
+- For Talk/Chat intents: set action_type="Emote" 
+- If the action is impossible (e.g. Fly), set action_type="Emote" with appropriate parameters
+- If damage values are excessive, include them anyway - internal validator will clamp.
+""")
     ])
     
     actions = []
@@ -78,13 +117,7 @@ def rules_node(state: AgentState):
     
     try:
         chain = prompt | structured_llm
-        game_action = chain.invoke({})
-        
-        # 3. Add to list (Pydantic validator runs HERE during instantiation/re-validation)
-        # Note: structured_llm returns an object that is *already* validated by Pydantic if using .with_structured_output(PydanticModel)
-        # But we want to ensure our *custom* logic (Clamping) runs.
-        # Pydantic V2 validates on init.
-        
+        game_action = chain.invoke({"intent_json": intent_json})
         actions.append(game_action)
         
     except Exception as e:
