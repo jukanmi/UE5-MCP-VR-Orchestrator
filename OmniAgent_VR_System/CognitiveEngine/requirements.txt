@@ -14,3 +14,7 @@ websockets
 PyYAML
 langchain-openai
 langchain-google-genai
+langchain-ollama
+langchain-community
+faiss-cpu
+sentence-transformers

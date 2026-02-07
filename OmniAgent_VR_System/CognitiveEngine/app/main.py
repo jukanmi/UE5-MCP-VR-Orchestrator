@@ -40,19 +40,23 @@ async def websocket_ue5_endpoint(websocket: WebSocket):
             try:
                 # 1. Validation (Strict Pydantic)
                 input_data = json.loads(data)
+                print(f"[Main] Raw input_data: {input_data}")
+                
                 ges_prompt = GesPrompt(**input_data)
-                print(f"Received GesPrompt from: {ges_prompt.player_id}")
+                print(f"[Main] Parsed GesPrompt: player_id={ges_prompt.player_id}, transcript={ges_prompt.voice_transcript}")
+                print(f"[Main] GesPrompt player_location: {ges_prompt.player_location}")
                 
                 # 2. Build Initial State
                 initial_state = AgentState(
                     messages=[],
                     vr_context=ges_prompt,
-                    game_state=None, # In real implementation, this would be updated via MCP
+                    game_state=None,
                     next="",
                     current_speaker="",
                     analysis={},
                     action_batch=None
                 )
+                print(f"[Main] initial_state vr_context: {initial_state.get('vr_context')}")
                 
                 # 3. Run Graph
                 print("Running Graph...")

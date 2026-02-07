@@ -25,8 +25,9 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
+	// Player Stats (FPlayerAttributes: no behavioral traits, UI controls instead of AI)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
-	FCharacterAttributes CurrentStats;
+	FPlayerAttributes CurrentStats;
 
 public:	
 	// Called every frame
@@ -34,6 +35,19 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+	// --- Stats Management ---
+	
+	/** Apply movement speeds from CurrentStats to CharacterMovementComponent. */
+	UFUNCTION(BlueprintCallable, Category = "Stats")
+	void ApplyMovementSpeed();
+
+	/** Recalculate all derived stats and apply them. Call when base stats change. */
+	UFUNCTION(BlueprintCallable, Category = "Stats")
+	void RefreshStats();
+
+	// Override TakeDamage to apply to Resources.Health
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
 	// --- Network ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP Network")
@@ -86,6 +100,7 @@ public:
 	// --- Combat ---
 	void PerformAttack();
 
+	// AttackDamage is now derived from CurrentStats.Combat.AttackPower, but can be overridden
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float AttackDamage = 25.0f;
 

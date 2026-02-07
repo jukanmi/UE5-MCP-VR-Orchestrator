@@ -44,4 +44,7 @@ public:
 	
     // Target Actor Object (e.g. for interacting/attacking)
 	static const FName Key_TargetActor;
+
+	// Speech Text (for Speak action)
+	static const FName Key_SpeakText;
 };

@@ -71,32 +71,40 @@ void ASmartNPC::ProcessAction(const FGameAction& Action)
 
     // Set ActionType as Enum
     BB->SetValueAsEnum(ASmartNPCAIController::Key_ActionType, (uint8)ActionState);
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB ActionType set to: %d"), *AgentID, (int32)ActionState);
 
     if (ActionState == ESmartNPCActionState::Move)
     {
-        // Default Params
+        // Coordinates from ActionBatch are already in Unreal units (from player_location)
         float X = 0.0f;
-        float Y = 0.0f; 
-        // float Speed = 200.0f; // Speed might need to be set on CharacterMovement or also in BB
+        float Y = 0.0f;
+        float Z = 0.0f;
 
         if (const FString* Val = P.Find(TEXT("x"))) X = FCString::Atof(**Val);
         if (const FString* Val = P.Find(TEXT("y"))) Y = FCString::Atof(**Val);
-        // if (const FString* Val = P.Find(TEXT("speed"))) Speed = FCString::Atof(**Val);
+        if (const FString* Val = P.Find(TEXT("z"))) Z = FCString::Atof(**Val);
 
-        // Convert Math (Input X, Y assumed to be Meters on Ground)
-        FVector TargetLoc = UMCPMathUtils::ConvertToUnrealLocation(X, Y, 0.0f);
+        // Use coordinates directly - they're already in Unreal units
+        FVector TargetLoc(X, Y, Z);
+        
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s Moving to: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, X, Y, Z);
         
         // Update Blackboard Key
         BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, TargetLoc);
+        
+        // Verify Blackboard was set
+        FVector TestLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB TargetLocation verified: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, TestLoc.X, TestLoc.Y, TestLoc.Z);
     }
     else if (ActionState == ESmartNPCActionState::Speak)
     {
-        // ToDo::말하기 구현 (현재는 BP Event 호출로 처리 중, 필요시 Blackboard 연동)
-        
         FString Text = TEXT("...");
         if (const FString* Val = P.Find(TEXT("text"))) Text = *Val;
 
+        // Set SpeakText in Blackboard for BT to handle
+        BB->SetValueAsString(ASmartNPCAIController::Key_SpeakText, Text);
         ExecuteSpeak(Text);
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Speak text set to: \"%s\""), *AgentID, *Text);
     }
     else if (ActionState == ESmartNPCActionState::Attack)
     {
