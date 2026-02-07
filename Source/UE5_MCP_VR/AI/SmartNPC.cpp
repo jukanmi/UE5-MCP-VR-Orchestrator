@@ -98,12 +98,13 @@ void ASmartNPC::ProcessAction(const FGameAction& Action)
     }
     else if (ActionState == ESmartNPCActionState::Speak)
     {
-        // ToDo::말하기 구현 (현재는 BP Event 호출로 처리 중, 필요시 Blackboard 연동)
-        
         FString Text = TEXT("...");
         if (const FString* Val = P.Find(TEXT("text"))) Text = *Val;
 
+        // Set SpeakText in Blackboard for BT to handle
+        BB->SetValueAsString(ASmartNPCAIController::Key_SpeakText, Text);
         ExecuteSpeak(Text);
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Speak text set to: \"%s\""), *AgentID, *Text);
     }
     else if (ActionState == ESmartNPCActionState::Attack)
     {

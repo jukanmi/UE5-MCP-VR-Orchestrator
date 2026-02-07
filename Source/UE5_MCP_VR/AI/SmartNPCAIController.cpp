@@ -8,6 +8,7 @@
 const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
 const FName ASmartNPCAIController::Key_ActionType(TEXT("ActionType"));
 const FName ASmartNPCAIController::Key_TargetActor(TEXT("TargetActor"));
+const FName ASmartNPCAIController::Key_SpeakText(TEXT("SpeakText"));
 
 ASmartNPCAIController::ASmartNPCAIController()
 {

@@ -10,7 +10,7 @@ from ..schemas.intent import Intent
 from ..utils.llm_factory import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 
-# SYSTEM PROMPT (Enhanced with action_type list)
+# SYSTEM PROMPT (Enhanced with target_npc extraction)
 INTERFACE_SYSTEM_PROMPT = """Role: Interface Agent (Mediator)
 
 You translate player input into structured intent.
@@ -21,9 +21,18 @@ Inputs may include:
 - Contextual references from the engine
 
 Responsibilities:
+- Extract NPC names from the conversation (e.g., "엘라라", "Elara", "제임스", "James")
 - Resolve deictic expressions such as "this", "that", "over there".
 - Fuse speech and gesture into explicit references.
 - Produce clean, ambiguity-free intent representations.
+
+TARGET_NPC EXTRACTION:
+- If the player mentions an NPC by name, set target_npc to that name.
+- Examples:
+  - "엘라라 이리와" → target_npc = "Elara"
+  - "제임스 공격해" → target_npc = "James"
+  - "이리와" (no name) → target_npc = null
+- Normalize Korean names to English (엘라라 → Elara, 제임스 → James)
 
 VALID action_type VALUES (MUST use one of these):
 - "Move" : Movement commands (이동해, 와, 따라와, 가, 앞으로, 뒤로, 접근해, 여기로)
@@ -110,35 +119,9 @@ def interface_node(state: AgentState) -> dict:
         }
     # -------------------------------------------
 
-    # --- Fast Reflex (Hardcoded Logic for Latency Masking) ---
-    def check_fast_reflex(text: str) -> Optional[Intent]:
-        text_lower = text.lower()
-        # Safety/Stop
-        if any(w in text_lower for w in ["멈춰", "그만", "stop", "halt"]):
-            return Intent(action_type="Wait", raw_query=text, confidence=1.0)
-        # Simple Greeting
-        if any(w in text_lower for w in ["안녕", "hello", "hi"]):
-            return Intent(action_type="Talk", raw_query=text, confidence=1.0)
-        # Movement commands - include player location!
-        if any(w in text_lower for w in ["이동해", "여기로 와", "내 앞으로", "따라와", "이리 와", "이리와", "와라", "와"]):
-            return Intent(
-                action_type="Move", 
-                target_reference="Player_1",
-                target_location=player_loc,  # Include player location!
-                raw_query=text, 
-                confidence=1.0
-            )
-        return None
-
-    reflex = check_fast_reflex(transcript)
-    if reflex:
-        print(f"Reflex Triggered: {reflex.action_type}, target_location: {reflex.target_location}")
-        return {
-            "analysis": {"intent": reflex},
-            "current_speaker": "Interface",
-            "next": "Supervisor"
-        }
-    # ---------------------------------------------------------
+    # --- All Intent Recognition via LLM ---
+    # No more hardcoded keyword matching - LLM handles everything
+    print(f"[Interface] Processing with LLM: '{transcript}'")
 
     # LLM Setup
     try:

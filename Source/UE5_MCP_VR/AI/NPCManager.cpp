@@ -58,21 +58,41 @@ void UNPCManager::HandleMessage(const FString& JsonMessage)
     {
         UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received ActionBatch for: %s"), *Batch.AgentID);
         
-        // Find the NPC by Batch.AgentID (e.g., "Elara")
-        if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
+        // Check for broadcast mode
+        if (Batch.AgentID.Equals(TEXT("broadcast"), ESearchCase::IgnoreCase))
         {
-            if (*NPC)
+            // Send to ALL registered NPCs
+            UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting to %d NPCs"), NPCMap.Num());
+            
+            for (auto& Pair : NPCMap)
             {
-                // Process all actions for this NPC
-                for (const FGameAction& Action : Batch.Actions)
+                if (Pair.Value)
                 {
-                    (*NPC)->ProcessAction(Action);
+                    for (const FGameAction& Action : Batch.Actions)
+                    {
+                        Pair.Value->ProcessAction(Action);
+                    }
                 }
             }
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
+            // Find the NPC by Batch.AgentID (e.g., "Elara")
+            if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
+            {
+                if (*NPC)
+                {
+                    // Process all actions for this NPC
+                    for (const FGameAction& Action : Batch.Actions)
+                    {
+                        (*NPC)->ProcessAction(Action);
+                    }
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
+            }
         }
     }
     else

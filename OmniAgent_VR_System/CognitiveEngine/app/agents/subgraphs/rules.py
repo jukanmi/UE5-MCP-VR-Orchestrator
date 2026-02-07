@@ -47,27 +47,28 @@ def rules_node(state: AgentState):
     intent_data = analysis.get("intent")
     vr_context = state.get("vr_context")
     
-    # Get the NPC that should perform the action (who player is looking at)
-    target_npc_id = "Unknown"
-    if vr_context:
-        if hasattr(vr_context, 'looking_at_entity_id'):
-            target_npc_id = vr_context.looking_at_entity_id or "Unknown"
-        elif isinstance(vr_context, dict):
-            target_npc_id = vr_context.get("looking_at_entity_id", "Unknown")
-    
-    print(f"[Rules] Target NPC (looking_at): {target_npc_id}")
-    
-    # 1. Check for Intent
+    # Extract intent fields first to get target_npc
     if not intent_data:
          return {"next": "End"}
          
-    # Extract intent fields safely
     if hasattr(intent_data, 'model_dump'):
         i_dict = intent_data.model_dump()
     elif isinstance(intent_data, dict):
         i_dict = intent_data
     else:
         i_dict = {"action_type": "Unknown", "raw_query": str(intent_data)}
+    
+    # --- Target NPC Selection ---
+    # Priority: 1) NPC name mentioned in conversation, 2) broadcast to all
+    target_npc_id = "broadcast"
+    
+    # Check if NPC name was extracted from conversation by Interface Agent
+    npc_from_conversation = i_dict.get("target_npc")
+    if npc_from_conversation and npc_from_conversation.strip():
+        target_npc_id = npc_from_conversation.strip()
+        print(f"[Rules] Target from conversation: {target_npc_id}")
+    else:
+        print(f"[Rules] No NPC specified, broadcasting to all")
 
     action_type = i_dict.get("action_type", "Unknown")
 
@@ -88,9 +89,8 @@ def rules_node(state: AgentState):
             }
         )
         
-        # Use target_npc_id as agent_id so NPCManager knows which NPC to command
         batch = ActionBatch(
-            agent_id=target_npc_id,  # Changed from "RulesAgent" to actual NPC ID!
+            agent_id=target_npc_id,  # broadcast or specific NPC
             actions=[game_action],
             reasoning=f"Move to {target_ref}"
         )
