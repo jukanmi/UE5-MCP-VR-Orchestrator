@@ -5,7 +5,9 @@
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "../AI/SmartNPC.h"
+#include "../AI/NPCManager.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
 #include "Engine/OverlapResult.h"
@@ -45,7 +47,7 @@ void AVRPlayerCharacter::BeginPlay()
 		}
 	}
 
-	// 3. Enhanced Input Subsystem에 IMC 등록 (이 부분이 누락됨)
+	// 3. Enhanced Input Subsystem에 IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
         if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
@@ -56,6 +58,22 @@ void AVRPlayerCharacter::BeginPlay()
             }
         }
     }
+
+    // 4. Bind WebSocket to NPCManager so it receives ActionBatch messages
+    if (WebSocketClient)
+    {
+        if (UGameInstance* GI = GetGameInstance())
+        {
+            if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+            {
+                Manager->BindSocket(WebSocketClient);
+                UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
+            }
+        }
+    }
+
+    // 5. Initialize derived stats and apply movement speeds
+    RefreshStats();
 }
 
 // Called every frame
@@ -312,4 +330,63 @@ void AVRPlayerCharacter::PerformAttack()
 		// Miss - draw debug line to show attack direction
 		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.0f);
 	}
+}
+
+void AVRPlayerCharacter::ApplyMovementSpeed()
+{
+	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
+	if (!MovementComp)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] No CharacterMovementComponent found!"));
+		return;
+	}
+
+	// Apply calculated speeds from PlayerAttributes
+	MovementComp->MaxWalkSpeed = CurrentStats.Movement.WalkSpeed;
+	MovementComp->MaxWalkSpeedCrouched = CurrentStats.Movement.CrouchSpeed;
+	
+	UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] Applied Movement Speeds - Walk: %.1f, Crouch: %.1f (Dex: %d)"),
+		CurrentStats.Movement.WalkSpeed,
+		CurrentStats.Movement.CrouchSpeed,
+		CurrentStats.BaseStats.Dexterity);
+}
+
+void AVRPlayerCharacter::RefreshStats()
+{
+	// Recalculate all derived stats from base stats
+	CurrentStats.RecalculateCombatStats();
+	
+	// Apply movement speeds to CharacterMovementComponent
+	ApplyMovementSpeed();
+	
+	// Update AttackDamage from Combat stats if desired (optional)
+	// AttackDamage = CurrentStats.Combat.AttackPower;
+	
+	UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] Stats Refreshed - HP: %.1f/%.1f, Walk: %.1f, Run: %.1f, Sprint: %.1f"),
+		CurrentStats.Resources.Health,
+		CurrentStats.Resources.MaxHealth,
+		CurrentStats.Movement.WalkSpeed,
+		CurrentStats.Movement.RunSpeed,
+		CurrentStats.Movement.SprintSpeed);
+}
+
+float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
+{
+	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	
+	// Apply damage to Resources.Health
+	CurrentStats.Resources.Health -= ActualDamage;
+	if (CurrentStats.Resources.Health < 0) CurrentStats.Resources.Health = 0;
+
+	UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] Took Damage: %.1f. HP: %.1f/%.1f"), 
+		ActualDamage, CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);
+
+	// Check for death
+	if (CurrentStats.Resources.Health <= 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
+		// ToDo: Handle player death (respawn, game over, etc.)
+	}
+
+	return ActualDamage;
 }

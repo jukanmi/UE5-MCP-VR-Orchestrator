@@ -56,21 +56,47 @@ void UNPCManager::HandleMessage(const FString& JsonMessage)
     FActionBatch Batch;
     if (UMCPJsonUtils::ParseActionBatch(JsonMessage, Batch))
     {
-        // For now, we ignore Batch.AgentID (or use it as a global filter)
-        // and iterate through actions.
-        for (const FGameAction& Action : Batch.Actions)
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received ActionBatch for: %s"), *Batch.AgentID);
+        
+        // Check for broadcast mode
+        if (Batch.AgentID.Equals(TEXT("broadcast"), ESearchCase::IgnoreCase))
         {
-            if (ASmartNPC** NPC = NPCMap.Find(Action.TargetID))
+            // Send to ALL registered NPCs
+            UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting to %d NPCs"), NPCMap.Num());
+            
+            for (auto& Pair : NPCMap)
+            {
+                if (Pair.Value)
+                {
+                    for (const FGameAction& Action : Batch.Actions)
+                    {
+                        Pair.Value->ProcessAction(Action);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Find the NPC by Batch.AgentID (e.g., "Elara")
+            if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
             {
                 if (*NPC)
                 {
-                    (*NPC)->ProcessAction(Action);
+                    // Process all actions for this NPC
+                    for (const FGameAction& Action : Batch.Actions)
+                    {
+                        (*NPC)->ProcessAction(Action);
+                    }
                 }
             }
             else
             {
-                UE_LOG(LogTemp, Warning, TEXT("NPCManager: Target NPC '%s' not found."), *Action.TargetID);
+                UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
             }
         }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse ActionBatch from message"));
     }
 }
