@@ -11,50 +11,46 @@ from ..utils.llm_factory import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 
 # SYSTEM PROMPT (Enhanced with target_npc extraction)
-INTERFACE_SYSTEM_PROMPT = """Role: Interface Agent (Mediator)
+INTERFACE_SYSTEM_PROMPT = """Role: Interface Agent (Action Specialist)
 
-You translate player input into structured intent.
+You are an Action Analyst. Rapidly translate player input into structured Action Intents.
+NOTE: Pure dialogue has already been filtered out. Your job is to analyze PHYSICAL ACTIONS.
 
-Inputs may include:
-- Spoken text
-- Gesture metadata (e.g. pointing_at_actor_id)
-- Contextual references from the engine
+Inputs:
+- Spoken text (Command)
+- Gesture metadata (Pointing, Grabbing)
+- Contextual references
 
 Responsibilities:
-- Extract NPC names from the conversation (e.g., "엘라라", "Elara", "제임스", "James")
-- Resolve deictic expressions such as "this", "that", "over there".
-- Fuse speech and gesture into explicit references.
-- Produce clean, ambiguity-free intent representations.
+- Extract specific physical actions: "Move", "Attack", "Interact", "Emote", "Wait".
+- Resolve targets: Who or What is the target? (e.g., "Door", "Goblin", "Elara").
+- Fuse speech + gesture: "Attack that" + Pointing -> Attack TargetID.
 
 TARGET_NPC EXTRACTION:
-- If the player mentions an NPC by name, set target_npc to that name.
-- Examples:
-  - "엘라라 이리와" → target_npc = "Elara"
-  - "제임스 공격해" → target_npc = "James"
-  - "이리와" (no name) → target_npc = null
-- Normalize Korean names to English (엘라라 → Elara, 제임스 → James)
+- If action targets an NPC, extract the name (e.g., "Elara", "James").
 
-VALID action_type VALUES (MUST use one of these):
-- "Move" : Movement commands (이동해, 와, 따라와, 가, 앞으로, 뒤로, 접근해, 여기로)
-- "Attack" : Combat actions (공격해, 때려, 싸워)
-- "Interact" : Object interactions (열어, 집어, 사용해, 줘)
-- "Talk" : Conversation/dialogue requests (말해, 대화해, 이야기해)
-- "Wait" : Stop/pause commands (멈춰, 기다려, 그만)
-- "Emote" : Emotional expressions (웃어, 울어, 인사해)
-- "Unknown" : Cannot determine intent
+VALID action_type VALUES (Strict):
+- "Move" : Movement (이동해, 와, 가, 앞으로, 따라와)
+- "Attack" : Combat (공격해, 때려, 싸워, 죽여)
+- "Interact" : Objects (열어, 집어, 켜, 꺼, 줘)
+- "Emote" : Expressive (웃어, 울어, 춤춰)
+- "Wait" : Stop/Halt (멈춰, 기다려)
+- "Unknown" : If truly ambiguous (e.g., "어...")
 
-CRITICAL:
-- "이동해", "와", "내 앞으로 와", "여기로 와", "따라와" → action_type = "Move"
-- Movement requests MUST use action_type "Move", NOT "Talk"
+CRITICAL EXAMPLES:
+- "이리와" → action_type = "Move", target_reference="Player_1"
+- "저 문 열어" → action_type = "Interact", target_reference="Door"
+- "엘라라 공격해" → action_type = "Attack", target_npc="Elara"
+- "따라와" → action_type = "Move"
+- "앞으로 가" → action_type = "Move", target_location={front_vector}
 
 Constraints:
-- Do not generate actions directly.
-- Do not apply rules or validation.
-- Do not guess missing references; ask for clarification if unresolved.
+- Do NOT output "Talk" or "Speak".
+- Do not produce ActionBatch, only Intent JSON.
+- If unsure, output "Unknown".
 
 Output:
-Structured intent objects only.
-No ActionBatch, no engine commands."""
+Structured intent objects only."""
 
 def interface_node(state: AgentState) -> dict:
     """
@@ -119,67 +115,107 @@ def interface_node(state: AgentState) -> dict:
         }
     # -------------------------------------------
 
-    # --- All Intent Recognition via LLM ---
-    # No more hardcoded keyword matching - LLM handles everything
-    print(f"[Interface] Processing with LLM: '{transcript}'")
-
-    # LLM Setup
-    try:
-        llm = get_llm(temperature=0.0)
-        structured_llm = llm.with_structured_output(Intent)
-        
-        # Format Stats
-        stats_str = "None"
-        if vr_context.stats:
-            stats_str = ", ".join([f"{k}: {v}" for k, v in vr_context.stats.items()])
-
-        # Include player location in context
-        player_loc_str = "None"
-        if player_loc:
-            player_loc_str = f"x={player_loc['x']}, y={player_loc['y']}, z={player_loc['z']}"
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", INTERFACE_SYSTEM_PROMPT),
-            ("human", """
-            User Transcript: "{transcript}"
-            Gesture Data:
-            {gestures}
-            NPC Stats: {stats}
-            Player Location: {player_location}
-            
-            Based on the above, extract the user's Intent.
-            If the command is about movement toward the player (e.g. "come here", "이리와"), 
-            set target_reference to "Player_1" and use the player_location for target_location.
-            """)
-        ])
-        
-        chain = prompt | structured_llm
-        intent = chain.invoke({
-            "transcript": transcript, 
-            "gestures": gesture_str, 
-            "stats": stats_str,
-            "player_location": player_loc_str
-        })
-        
-        # If Move intent but no location, try to add player location
-        if intent.action_type == "Move" and not intent.target_location and player_loc:
-            intent.target_location = player_loc
-            intent.target_reference = intent.target_reference or "Player_1"
-        
-        # Add debug info for raw query if missing
-        if not intent.raw_query:
-            intent.raw_query = transcript
-
-    except Exception as e:
-        print(f"LLM Error in Interface: {e}. Falling back to Unknown.")
-        intent = Intent(
-            action_type="Unknown",
-            raw_query=transcript,
-            confidence=0.0
-        )
+    # --- 1. Fast Classification via RoBERTa ---
+    from ..utils.intent_classifier import classify_intent
     
+    print(f"[Interface] Classifying with RoBERT: '{transcript}'")
+    intent_type = classify_intent(transcript)
+    print(f"[Interface] Classifier result: {intent_type}")
+    
+    # Path A: Fast Track for Dialogue
+    if intent_type == "speak":
+        target_npc = extract_target_npc(transcript)
+        print(f"[Interface] Fast Track result: Talk -> {target_npc}")
+        intent = Intent(
+            action_type="Talk",
+            target_npc=target_npc,
+            raw_query=transcript,
+            confidence=0.95
+        )
+        return {
+            "analysis": {"intent": intent},
+            "current_speaker": "Interface",
+            "next": "Supervisor"
+        }
+
+    # Path B: Deep Analysis via Gemini CLI (for Actions)
+    # If RoBERTa says "else" (Move, Attack, Interact...), we need specific details.
+    
+    import json
+    import subprocess
+    import re
+
+    # Construct Prompt for CLI
+    cli_system_prompt = INTERFACE_SYSTEM_PROMPT + "\n\nConvert this 'GesPrompt' context into a JSON Intent."
+    
+    # Serialize Context
+    context_json = vr_context.model_dump_json()
+    full_prompt = f"{cli_system_prompt}\n\n[Input Context]:\n{context_json}"
+    
+    print(f"[Interface] Calling Gemini CLI for Action Analysis...")
+    
+    intent = None
+    
+    try:
+        # Call CLI
+        cmd = [
+            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
+            f"gemini '{full_prompt}'"
+        ]
+        # Run process
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        
+        if result.returncode == 0:
+            output = result.stdout
+            # Extract JSON
+            json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
+            clean_json = json_match.group(1).strip() if json_match else output.strip()
+            
+            # Parse
+            data = json.loads(clean_json)
+            intent = Intent(**data)
+            print(f"[Interface] CLI Success: {intent.action_type} -> {intent.target_npc}")
+        else:
+            print(f"[Interface] CLI Error: {result.stderr}")
+            
+    except Exception as e:
+        print(f"[Interface] CLI Exception: {e}")
+
+    # Fallback if CLI fails but intent was 'action'
+    if not intent:
+        print("[Interface] CLI Failed, using Fallback Action.")
+        intent = Intent(
+            action_type="Unknown", # Let Dialogue agent handle fallback or ask clarification
+            raw_query=transcript,
+            confidence=0.3
+        )
+
     return {
         "analysis": {"intent": intent},
         "current_speaker": "Interface",
         "next": "Supervisor"
     }
+
+
+def extract_target_npc(transcript: str) -> Optional[str]:
+    """
+    Extract NPC name from transcript by checking for file existence in the personas directory.
+    Only recognizes exact English names (case-insensitive) that have a .yaml persona file.
+    """
+    from pathlib import Path
+    
+    # Path to the personas directory
+    personas_dir = Path(__file__).parent / "personas"
+    
+    # Get all .yaml filenames (lowercase) as valid NPC names
+    # This scans subdirectories like 'core' and 'generic'
+    valid_names = [f.stem for f in personas_dir.glob("**/*.yaml")]
+    
+    # Check for name existence in transcript
+    for name in valid_names:
+        if name.lower() in transcript.lower():
+            # Return the original case if possible, or just the filename stem
+            return name.capitalize() if name.lower() == "elara" else name # Basic normalization
+            
+    return None
+

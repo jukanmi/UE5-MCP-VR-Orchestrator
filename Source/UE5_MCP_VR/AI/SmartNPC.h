@@ -28,6 +28,19 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
     UBehaviorTree* BehaviorTreeAsset;
 
+    // --- Vision Config (Applied to AI Controller) ---
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float SightRadius = 3000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float LoseSightRadius = 3500.0f;
+
+    @UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float SightAngle = 60.0f; // Half-angle (e.g. 60 = 120 degree FOV)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")
+    float HearingRange = 3000.0f; // 30m hearing range
+
     // Defines how to handle an action (Switch logic)
     // Hybrid: C++ parses params -> Calls BP Event
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")

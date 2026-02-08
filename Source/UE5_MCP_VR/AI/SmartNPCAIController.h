@@ -2,6 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "AIController.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISenseConfig_Hearing.h"
 #include "SmartNPCAIController.generated.h"
 
 // Define Action State Enum
@@ -31,8 +34,23 @@ public:
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
 
-    // ToDo::AI Perception Component 추가 및 설정 (시각/청각 감지)
+    // ToDo::AI Perception Component 추가 및 설정 (청각 감지)
     // ToDo::TeamID 설정 (피아식별)
+    /** AI Perception Component for vision/hearing */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    UAIPerceptionComponent* PerceptionComp;
+
+    /** Sight Sense configuration */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    UAISenseConfig_Sight* SightConfig;
+
+    /** Hearing Sense configuration */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    UAISenseConfig_Hearing* HearingConfig;
+
+    /** Callback for perception updates */
+    UFUNCTION()
+    void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 
 public:
 	// --- Blackboard Keys ---

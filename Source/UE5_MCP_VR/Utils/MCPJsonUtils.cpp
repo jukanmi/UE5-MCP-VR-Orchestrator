@@ -27,47 +27,40 @@ bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
             if (!ActionObj.IsValid()) continue;
 
             FGameAction NewAction;
-            // Parse common fields
+            // 1. Parse common fields
             NewAction.ActionType = ActionObj->GetStringField(TEXT("action_type"));
             
-            // Optional TargetID
-            if (ActionObj->HasField(TEXT("target_id")))
+            // 2. Collect ALL fields into Parameters for flexibility
+            // This ensures top-level fields like 'text' in SpeakAction are captured
+            for (const auto& Pair : ActionObj->Values)
             {
-                NewAction.TargetID = ActionObj->GetStringField(TEXT("target_id"));
-            }
-            else if (ActionObj->HasField(TEXT("target_listener")))
-            {
-                NewAction.TargetID = ActionObj->GetStringField(TEXT("target_listener"));
-            }
+                FString Key = Pair.Key;
+                
+                // Skip metadata fields already handled or handled separately
+                if (Key == TEXT("action_type")) continue;
 
-            // Parse Parameters Map (Mixed Types -> String)
-            const TSharedPtr<FJsonObject>* ParamsObj;
-            if (ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
-            {
-                for (const auto& Pair : (*ParamsObj)->Values)
+                // Handle Target IDs
+                if (Key == TEXT("target_id") || Key == TEXT("target_listener"))
                 {
-                    FString Key = Pair.Key;
-                    TSharedPtr<FJsonValue> Value = Pair.Value;
-                    FString StringValue;
-
-                    switch (Value->Type)
-                    {
-                    case EJson::String:
-                        StringValue = Value->AsString();
-                        break;
-                    case EJson::Number:
-                        // Convert number to string
-                        StringValue = FString::SanitizeFloat(Value->AsNumber());
-                        break;
-                    case EJson::Boolean:
-                        StringValue = Value->AsBool() ? TEXT("true") : TEXT("false");
-                        break;
-                    default:
-                        StringValue = TEXT("UnknownType");
-                        break;
-                    }
-                    NewAction.Parameters.Add(Key, StringValue);
+                    NewAction.TargetID = Pair.Value->AsString();
+                    // Still add to parameters for backward compatibility in logic
+                    NewAction.Parameters.Add(Key, NewAction.TargetID);
+                    continue;
                 }
+
+                // Handle nested 'parameters' object if it exists (legacy support)
+                if (Key == TEXT("parameters") && Pair.Value->Type == EJson::Object)
+                {
+                    TSharedPtr<FJsonObject> SubParams = Pair.Value->AsObject();
+                    for (const auto& SubPair : SubParams->Values)
+                    {
+                        NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                    }
+                    continue;
+                }
+
+                // Add everything else as a string
+                NewAction.Parameters.Add(Key, Pair.Value->AsString());
             }
 
             OutBatch.Actions.Add(NewAction);

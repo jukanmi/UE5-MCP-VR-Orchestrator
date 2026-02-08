@@ -13,6 +13,8 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
@@ -20,6 +22,14 @@ AVRPlayerCharacter::AVRPlayerCharacter()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+    // AI Perception Stimuli Source
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    if (StimuliSource)
+    {
+        // Register this actor as a source for Sight sense
+        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
+        StimuliSource->RegisterWithPerceptionSystem();
+    }
 }
 
 // Called when the game starts or when spawned

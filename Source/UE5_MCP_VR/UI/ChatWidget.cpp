@@ -3,6 +3,7 @@
 
 #include "ChatWidget.h"
 #include "Components/TextBlock.h"
+#include "Perception/AISense_Hearing.h"
 #include "JsonObjectConverter.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
@@ -55,6 +56,11 @@ void UChatWidget::SendChatMessage()
 			PlayerLocObject->SetNumberField("y", PlayerLoc.Y);
 			PlayerLocObject->SetNumberField("z", PlayerLoc.Z);
 			JsonObject->SetObjectField("player_location", PlayerLocObject);
+
+			// --- [NEW] Trigger engine noise event for AI Hearing ---
+			// Loudness 1.0 (Normal speech), Range is controlled by NPC's HearingRange
+			UAISense_Hearing::ReportNoiseEvent(GetWorld(), PlayerLoc, 1.0f, Pawn, 0.0f);
+			UE_LOG(LogTemp, Log, TEXT("[ChatWidget] Reported Speech Noise at %s"), *PlayerLoc.ToString());
 		}
 	}
 

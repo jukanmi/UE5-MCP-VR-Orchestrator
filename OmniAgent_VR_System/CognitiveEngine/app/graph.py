@@ -36,8 +36,8 @@ workflow.add_conditional_edges(
 )
 
 # Agents return to Supervisor to allow fallback logic or aggregation
-workflow.add_edge("Rules", "Supervisor")
-workflow.add_edge("Dialogue", END) # Dialogue ends the turn
+workflow.add_edge("Dialogue", "Rules")
+workflow.add_edge("Rules", END)
 
 # Compile
 app_graph = workflow.compile()

@@ -1,161 +1,84 @@
-"""
-File: rules.py
-Purpose: Rules Agent (Referee).
-1. Validates player actions against Game Rules using System Prompt.
-2. Returns deterministic ActionBatch with strict schema validation.
-3. Uses RejectResult for invalid actions.
-"""
-from ..state import AgentState
-from ...schemas.actions import ActionBatch, GameAction, RejectResult
-from ...schemas.intent import Intent
 import json
+import subprocess
+import re
+from ..state import AgentState
+from ...schemas.actions import ActionBatch, GameAction, WORLD_CONSTANTS
 
-from ...utils.llm_factory import get_llm
-from langchain_core.prompts import ChatPromptTemplate
+# SYSTEM PROMPT for Rules Validator
+RULES_VALIDATOR_PROMPT_TEMPLATE = """Role: Game Rules Referee
+You are an expert at game balance and safety.
 
-# SYSTEM PROMPT
-RULES_SYSTEM_PROMPT = """Role: Rules Agent
+Task:
+Validate and correct the 'Proposed ActionBatch' based on the 'Original Intent'.
 
-You are the authority on game rules.
+Rules:
+1. Action Type Alignment: Ensure the action matches the player's intent.
+2. Numeric Clamping (Global Constants):
+   - Attack damage MUST NOT exceed {MAX_DAMAGE}.
+   - Health adjustments MUST NOT exceed {MAX_HEALTH}.
+   - Inventory operations MUST respect {MAX_INVENTORY_SLOTS} slots.
+3. Logical Consistency: If intent is "Move to Door", target_id should be "Door".
 
-Responsibilities:
-- Validate all numeric parameters proposed by other agents.
-- Apply clamping based on predefined rule limits.
-- Reject or correct invalid actions.
-- Map 'Intent' to specific 'GameAction' types.
-
-Valid GameAction Types:
-- Move: Movement to a target location or entity
-- Attack: Combat action against a target
-- Interact: Object interaction (open, grab, use)
-- Emote: Emotional expression
-- Wait: Stop/pause
-
-Constraints:
-- Do not generate narrative text.
-- Do not decide intent or dialogue.
-- Output structured data only.
+Output ONLY valid JSON matching the ActionBatch schema:
+{{"agent_id": "string", "actions": [{{"action_type": "string", "target_id": "string", "parameters": {{}}}}], "reasoning": "string"}}
 """
+
+# Populate prompt with constants at module level
+RULES_VALIDATOR_PROMPT = RULES_VALIDATOR_PROMPT_TEMPLATE.format(**WORLD_CONSTANTS)
+
+def call_gemini_cli(prompt_text):
+    """Calls Gemini CLI via subprocess to bypass API limits."""
+    try:
+        cmd = [
+            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
+            f"gemini '{prompt_text}'"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        if result.returncode != 0: return None
+        output = result.stdout
+        # Extract JSON from markdown
+        json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
+        return json_match.group(1).strip() if json_match else output.strip()
+    except: return None
 
 def rules_node(state: AgentState):
     """
-    Rules Agent (Referee).
-    Uses LLM to decide HOW to execute the Intent (Resolution),
-    Then Pydantic Schema enforces the 'Safety' (Validation).
+    Rules Agent (LLM-powered via CLI).
+    Referees the proposed actions from Dialogue Agent.
     """
+    batch = state.get("action_batch")
     analysis = state.get("analysis", {})
     intent_data = analysis.get("intent")
-    vr_context = state.get("vr_context")
     
-    # Extract intent fields first to get target_npc
-    if not intent_data:
-         return {"next": "End"}
-         
-    if hasattr(intent_data, 'model_dump'):
-        i_dict = intent_data.model_dump()
-    elif isinstance(intent_data, dict):
-        i_dict = intent_data
-    else:
-        i_dict = {"action_type": "Unknown", "raw_query": str(intent_data)}
-    
-    # --- Target NPC Selection ---
-    # Priority: 1) NPC name mentioned in conversation, 2) broadcast to all
-    target_npc_id = "broadcast"
-    
-    # Check if NPC name was extracted from conversation by Interface Agent
-    npc_from_conversation = i_dict.get("target_npc")
-    if npc_from_conversation and npc_from_conversation.strip():
-        target_npc_id = npc_from_conversation.strip()
-        print(f"[Rules] Target from conversation: {target_npc_id}")
-    else:
-        print(f"[Rules] No NPC specified, broadcasting to all")
+    if not batch:
+        return {"next": "End", "current_speaker": "Rules"}
 
-    action_type = i_dict.get("action_type", "Unknown")
-
-    # --- Fast Path for Move with Location (Skip LLM) ---
-    if action_type == "Move" and i_dict.get("target_location"):
-        target_loc = i_dict["target_location"]
-        target_ref = i_dict.get("target_reference", "Player_1")
-        
-        print(f"[Rules] Fast Path: Move to {target_ref} at {target_loc}")
-        
-        game_action = GameAction(
-            action_type="Move",
-            target_id=target_ref,
-            parameters={
-                "x": target_loc.get("x", 0),
-                "y": target_loc.get("y", 0),
-                "z": target_loc.get("z", 0)
-            }
-        )
-        
-        batch = ActionBatch(
-            agent_id=target_npc_id,  # broadcast or specific NPC
-            actions=[game_action],
-            reasoning=f"Move to {target_ref}"
-        )
-        
-        return {
-            "action_batch": batch,
-            "current_speaker": "Rules",
-            "next": "End"
-        }
-    # ---------------------------------------------------
-
-    # 2. LLM Resolution (Intent -> GameAction construction plan)
-    llm = get_llm(temperature=0.0)
-    structured_llm = llm.with_structured_output(GameAction)
+    # Prepare Context for LLM Referee
+    intent_str = json.dumps(intent_data.model_dump() if hasattr(intent_data, 'model_dump') else intent_data, ensure_ascii=False)
+    batch_str = json.dumps(batch.model_dump(), ensure_ascii=False)
     
-    # Serialize intent to string to avoid template variable issues
-    intent_json = json.dumps(i_dict, ensure_ascii=False)
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", RULES_SYSTEM_PROMPT),
-        ("human", """
-Incoming Intent: {intent_json}
+    prompt = f"{RULES_VALIDATOR_PROMPT}\n\n[Original Intent]:\n{intent_str}\n\n[Proposed ActionBatch]:\n{batch_str}\n\nVerify and Correct the batch."
 
-Task: 
-Convert this Intent into a valid GameAction.
-- For Move intents: set action_type="Move" and include x, y, z in parameters if target_location is provided
-- For Attack intents: set action_type="Attack" with damage values
-- For Talk/Chat intents: set action_type="Emote" 
-- If the action is impossible (e.g. Fly), set action_type="Emote" with appropriate parameters
-- If damage values are excessive, include them anyway - internal validator will clamp.
-""")
-    ])
+    # Call LLM 심판 (via CLI)
+    cli_result = call_gemini_cli(prompt)
     
-    actions = []
-    rejection = None
-    
-    try:
-        chain = prompt | structured_llm
-        game_action = chain.invoke({"intent_json": intent_json})
-        actions.append(game_action)
-        
-    except Exception as e:
-        print(f"Rules LLM Error: {e}")
-        rejection = RejectResult(reason=f"Rule Processing Failed: {str(e)}")
-
-    # 4. Final Packaging
-    if rejection:
-         batch = ActionBatch(
-            agent_id="RulesAgent",
-            actions=[],
-            reasoning=f"REJECTED: {rejection.reason}"
-        )
-    else:
+    if cli_result:
         try:
-            batch = ActionBatch(
-                agent_id="RulesAgent",
-                actions=actions,
-                reasoning=f"Processed intent: {i_dict.get('action_type')}"
-            )
+            data = json.loads(cli_result)
+            # Ensure proper schema mapping
+            new_batch = ActionBatch(**data)
+            # Final safety check: ensure parameters are strings for C++
+            for action in new_batch.actions:
+                if action.parameters:
+                    action.parameters = {str(k): str(v) for k, v in action.parameters.items()}
+            
+            print(f"[Rules] Corrected action via CLI. Reason: {new_batch.reasoning}")
+            batch = new_batch
         except Exception as e:
-             batch = ActionBatch(
-                agent_id="RulesAgent",
-                actions=[],
-                reasoning=f"REJECTED: Schema Validation Failed - {e}"
-            )
+            print(f"[Rules] CLI Parse Error, using original batch: {e}")
+            batch.reasoning += " | Rules Notice: Verification failed, kept original."
+    else:
+        print("[Rules] CLI Unavailable, using original batch.")
 
     return {
         "action_batch": batch,

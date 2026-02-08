@@ -59,8 +59,9 @@ def supervisor_node(state: AgentState):
         # Ensure it's accessed correctly
         action_type = getattr(intent, "action_type", "Unknown")
         
-        if action_type in ["Attack", "Interact", "Move"]:
-            return {"next": "Rules", "current_speaker": "Supervisor"}
+        if action_type in ["Attack", "Interact", "Move", "Action"]:
+            # Route to Dialogue for initial generation (Brain)
+            return {"next": "Dialogue", "current_speaker": "Supervisor"}
         else:
             return {"next": "Dialogue", "current_speaker": "Supervisor"}
 

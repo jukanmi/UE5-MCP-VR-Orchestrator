@@ -25,7 +25,7 @@ MODELS = {
     "gemma": "gemma-3-27b-it",           # Alias for 27B
     # Google AI Studio - Gemini (for structured output)
     "gemini": "gemini-2.5-flash",        # Gemini 2.5 Flash (fast)
-    "gemini-3": "Gemini 3 Flash",        # Gemini 3 Flash (fast)
+    "gemini-3": "gemini-3-flash",        # Gemini 3 Flash (fast)
     # OpenAI
     "openai": "gpt-5-nano",              # GPT-5 Nano
 }
