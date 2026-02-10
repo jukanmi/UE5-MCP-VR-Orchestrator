@@ -3,11 +3,12 @@ File: interface.py
 Purpose: Interface Agent (Mediator).
 Translates GesPrompt (Voice + Gesture) into structured Intent using the System Prompt.
 """
+import json
 from typing import Dict, Any, Optional
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 from ..schemas.intent import Intent
-from ..utils.llm_factory import get_llm
+from ..utils.llm_factory import get_llm, call_gemini_cli
 from langchain_core.prompts import ChatPromptTemplate
 
 # SYSTEM PROMPT (Enhanced with target_npc extraction)
@@ -141,10 +142,6 @@ def interface_node(state: AgentState) -> dict:
     # Path B: Deep Analysis via Gemini CLI (for Actions)
     # If RoBERTa says "else" (Move, Attack, Interact...), we need specific details.
     
-    import json
-    import subprocess
-    import re
-
     # Construct Prompt for CLI
     cli_system_prompt = INTERFACE_SYSTEM_PROMPT + "\n\nConvert this 'GesPrompt' context into a JSON Intent."
     
@@ -156,30 +153,19 @@ def interface_node(state: AgentState) -> dict:
     
     intent = None
     
-    try:
-        # Call CLI
-        cmd = [
-            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
-            f"gemini '{full_prompt}'"
-        ]
-        # Run process
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-        
-        if result.returncode == 0:
-            output = result.stdout
-            # Extract JSON
-            json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
-            clean_json = json_match.group(1).strip() if json_match else output.strip()
-            
+    # Call CLI using centralized function
+    cli_result = call_gemini_cli(full_prompt, extract_json=True)
+    
+    if cli_result:
+        try:
             # Parse
-            data = json.loads(clean_json)
+            data = json.loads(cli_result)
             intent = Intent(**data)
             print(f"[Interface] CLI Success: {intent.action_type} -> {intent.target_npc}")
-        else:
-            print(f"[Interface] CLI Error: {result.stderr}")
-            
-    except Exception as e:
-        print(f"[Interface] CLI Exception: {e}")
+        except Exception as e:
+            print(f"[Interface] CLI Parse Error: {e}")
+    else:
+        print(f"[Interface] CLI Failed")
 
     # Fallback if CLI fails but intent was 'action'
     if not intent:

@@ -8,7 +8,12 @@ from typing import Optional, List
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
+# Try to use new langchain_huggingface, fallback to old if not available
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Base paths
 KNOWLEDGE_BASE_PATH = "app/agents/knowledge"
@@ -131,11 +136,21 @@ def retrieve_context(agent_id: str, query: str, k: int = 3) -> str:
         # Format context
         context_parts = []
         for i, doc in enumerate(docs, 1):
+            # Safety check: skip if page_content is None
+            if not doc.page_content:
+                continue
+                
             source = os.path.basename(doc.metadata.get("source", "unknown"))
-            context_parts.append(f"[{source}] {doc.page_content}")
+            # Clean content and ensure it's a string
+            content = str(doc.page_content).strip()
+            if content:
+                context_parts.append(f"[{source}] {content}")
+        
+        if not context_parts:
+            return ""
         
         context = "\n\n".join(context_parts)
-        print(f"[RAG] Retrieved {len(docs)} chunks for {agent_id}")
+        print(f"[RAG] Retrieved {len(context_parts)} valid chunks for {agent_id}")
         return context
         
     except Exception as e:

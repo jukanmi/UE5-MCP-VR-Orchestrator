@@ -3,6 +3,8 @@
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
 
 // Define Key Names
 const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
@@ -89,8 +91,8 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
     if (Stimulus.WasSuccessfullySensed())
     {
         // 1. Identify which sense triggered this
-        FAISenseID SightID = UAISense_Sight::GetSenseID();
-        FAISenseID HearingID = UAISense_Hearing::GetSenseID();
+        FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
+        FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
 
         if (Stimulus.Type == SightID)
         {

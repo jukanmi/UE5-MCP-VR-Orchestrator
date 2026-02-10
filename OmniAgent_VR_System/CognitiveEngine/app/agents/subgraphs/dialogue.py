@@ -9,9 +9,7 @@ Purpose: Character Agent (Persona & Dialogue) with RAG.
 import yaml
 import os
 import json
-import subprocess
-import re
-from ...utils.llm_factory import get_dialogue_llm
+from ...utils.llm_factory import get_dialogue_llm, call_gemini_cli
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
@@ -25,20 +23,6 @@ ACTION_SYSTEM_PROMPT = """Role: Action Generator
 Valid GameAction Types: Move, Attack, Interact, Emote, Wait.
 Output ONLY JSON matching: {"action_type": "string", "target_id": "string", "parameters": {"key": "value"}}
 """
-
-def call_gemini_cli(prompt_text):
-    """Calls Gemini CLI via subprocess to bypass API limits."""
-    try:
-        cmd = [
-            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
-            f"gemini '{prompt_text}'"
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-        if result.returncode != 0: return None
-        output = result.stdout
-        json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
-        return json_match.group(1).strip() if json_match else output.strip()
-    except: return None
 
 def load_persona(agent_id: str):
     """

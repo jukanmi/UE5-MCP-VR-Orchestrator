@@ -35,7 +35,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
     float LoseSightRadius = 3500.0f;
 
-    @UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
     float SightAngle = 60.0f; // Half-angle (e.g. 60 = 120 degree FOV)
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")

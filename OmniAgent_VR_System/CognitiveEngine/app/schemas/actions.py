@@ -20,9 +20,9 @@ except FileNotFoundError:
 
 class SpeakAction(BaseModel):
     action_type: Literal["Speak"] = "Speak"
+    executor_npc_id: str  # 추가: 이 액션을 실행할 NPC ID
     text: str
     emotion: str = "Neutral"
-    target_listener: Optional[str] = None
 
 class RejectResult(BaseModel):
     reason: str
@@ -30,22 +30,10 @@ class RejectResult(BaseModel):
 
 class GameAction(BaseModel):
     action_type: Literal["Move", "Attack", "Interact", "Emote", "Speak"]
+    executor_npc_id: str  # 추가: 이 액션을 실행할 NPC ID
     target_id: Optional[str] = None
     parameters: dict = Field(default_factory=dict)
     
-    # Validation for Damage Clamping
-    @model_validator(mode='after')
-    def clamp_damage_values(self):
-        if self.action_type == "Attack":
-            params = self.parameters
-            if "damage" in params:
-                raw_damage = params["damage"]
-                max_dmg = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
-                
-                if isinstance(raw_damage, (int, float)) and raw_damage > max_dmg:
-                    print(f"WARNING: Clamping damage from {raw_damage} to {max_dmg}")
-                    self.parameters["damage"] = max_dmg
-        return self
 
 class ActionBatch(BaseModel):
     agent_id: str

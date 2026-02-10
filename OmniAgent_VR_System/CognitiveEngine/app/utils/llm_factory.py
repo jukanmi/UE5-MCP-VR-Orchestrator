@@ -3,8 +3,13 @@ File: llm_factory.py
 Purpose: Centralized LLM Provider.
 Supports Ollama (local), Gemini, Gemma, and OpenAI models.
 Includes NPC importance-based model selection for dialogue.
+Also provides Gemini CLI wrapper for quota-free operations.
 """
 import os
+import subprocess
+import re
+import json
+from typing import Optional
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -38,10 +43,14 @@ DIALOGUE_MODELS = {
 }
 
 # Default model - change this to switch globally
-DEFAULT_MODEL = "gemini-3"  # Options: "qwen", "llama", "gemma", "gemini", "gemini-3", "openai"
+DEFAULT_MODEL = "gemini"  # Options: "qwen", "llama", "gemma", "gemini", "gemini-3", "openai"
 
 # Ollama server URL (default: localhost)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
+
+# Gemini CLI command (default: "gemini")
+# Set this in .env if you need a custom path, e.g., GEMINI_CLI_COMMAND="C:\path\to\gemini.exe"
+GEMINI_CLI_COMMAND = os.getenv("GEMINI_CLI_COMMAND", "gemini")
 
 def get_llm(model_name: str = None, temperature: float = 0.0):
     """
@@ -124,4 +133,67 @@ def get_dialogue_llm(importance: str = "normal", temperature: float = 0.7):
     print(f"[LLM Factory] Dialogue model for '{importance}' importance: {MODELS[model_key]}")
     
     return get_llm(model_name=model_key, temperature=temperature)
+
+
+def call_gemini_cli(prompt_text: str, extract_json: bool = True) -> Optional[str]:
+    """
+    Calls Gemini CLI via subprocess to bypass API quota limits.
+    
+    Args:
+        prompt_text: The prompt to send to Gemini CLI
+        extract_json: If True, attempts to extract JSON from markdown code blocks
+    
+    Returns:
+        The CLI output (raw or extracted JSON string), or None if failed
+    
+    Usage:
+        # Get raw output
+        result = call_gemini_cli("Analyze this text")
+        
+        # Get extracted JSON
+        json_str = call_gemini_cli("Generate JSON for...", extract_json=True)
+        data = json.loads(json_str)
+    """
+    try:
+        # Build command using configured CLI path
+        cmd = [
+            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
+            f"{GEMINI_CLI_COMMAND} '{prompt_text}'"
+        ]
+        
+        print(f"[LLM Factory] Calling Gemini CLI: {GEMINI_CLI_COMMAND}")
+        
+        # Run subprocess with increased timeout
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            encoding='utf-8',
+            timeout=60  # Increased from 30s to 60s
+        )
+        
+        if result.returncode != 0:
+            print(f"[LLM Factory] CLI Error (code {result.returncode}): {result.stderr}")
+            return None
+        
+        output = result.stdout
+        
+        # Extract JSON from markdown if requested
+        if extract_json:
+            json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
+            if json_match:
+                extracted = json_match.group(1).strip()
+                print(f"[LLM Factory] CLI Success: Extracted JSON ({len(extracted)} chars)")
+                return extracted
+            else:
+                print("[LLM Factory] CLI Warning: No JSON block found, returning raw output")
+        
+        return output.strip()
+        
+    except subprocess.TimeoutExpired:
+        print("[LLM Factory] CLI Timeout: Command took longer than 60 seconds")
+        return None
+    except Exception as e:
+        print(f"[LLM Factory] CLI Exception: {e}")
+        return None
 
