@@ -1,7 +1,34 @@
 """
-File: rules.py
-Purpose: Rules Agent (Referee) - Pure Python Validation.
-Validates ActionBatch against game rules without LLM calls to save tokens.
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File: rules.py                                                              ║
+║ Role: VALIDATOR (Game Rules Referee)                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
+║   Validate ActionBatch against game rules. Clamp out-of-bounds values,      ║
+║   reject invalid actions, and ensure UE5 can safely execute all commands.   ║
+║                                                                              ║
+║ INPUT:  ActionBatch (from Interface Output)                                 ║
+║ OUTPUT: ActionBatch (validated and clamped)                                 ║
+║                                                                              ║
+║ VALIDATION RULES:                                                            ║
+║   • Movement speed: [0, MAX_SPEED]                                          ║
+║   • Attack damage: [0, MAX_DAMAGE]                                          ║
+║   • Interaction range: [0, MAX_INTERACTION_RANGE]                           ║
+║   • Required fields: executor_npc_id, action_type must exist                ║
+║                                                                              ║
+║ CLAMPING STRATEGY:                                                           ║
+║   - Out-of-range values → clamp to min/max (log correction)                 ║
+║   - Missing required fields → REJECT action entirely                        ║
+║   - Invalid action_type → REJECT action entirely                            ║
+║                                                                              ║
+║ REJECTION BEHAVIOR:                                                          ║
+║   If critical violations occur, mark batch with "REJECTED" in reasoning.    ║
+║   Supervisor will detect this and loop back to Dialogue for retry.          ║
+║                                                                              ║
+║ DESIGN PRINCIPLE:                                                            ║
+║   Pure Python validation - NO LLM CALLS. This saves tokens and ensures      ║
+║   deterministic, fast validation. Rules are defined in WORLD_CONSTANTS.     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import json
 from ..state import AgentState

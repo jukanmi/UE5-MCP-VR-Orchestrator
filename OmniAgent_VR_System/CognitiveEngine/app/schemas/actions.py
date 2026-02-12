@@ -29,7 +29,7 @@ class RejectResult(BaseModel):
     rejected: bool = True
 
 class GameAction(BaseModel):
-    action_type: Literal["Move", "Attack", "Interact", "Emote", "Speak"]
+    action_type: Literal["Move", "Attack", "Interact", "Emote", "Speak", "Wait"]
     executor_npc_id: str  # 추가: 이 액션을 실행할 NPC ID
     target_id: Optional[str] = None
     parameters: dict = Field(default_factory=dict)

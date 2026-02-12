@@ -1,77 +1,98 @@
 """
-File: supervisor.py
-Purpose: Supervisor Agent / Main Orchestrator.
-1. Implements System Prompt for high-level coordination.
-2. Routes to 'Rules' or 'Dialogue' based on Interface Intent.
-3. Handles Fallback: If Rules reject, commands Dialogue to explain why.
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File: supervisor.py                                                         ║
+║ Role: ORCHESTRATOR (Pipeline Conductor)                                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
+║   Route state between agents in the correct order. Handle errors,           ║
+║   fallbacks, and ensure the pipeline completes successfully.                ║
+║                                                                              ║
+║ ORCHESTRATION FLOW:                                                          ║
+║   Interface_Input → Dialogue → Interface_Output → Rules → END              ║
+║                                                                              ║
+║ ROUTING LOGIC (based on current_speaker):                                   ║
+║   - "Interface_Input"  → route to Dialogue                                  ║
+║   - "Dialogue"         → route to Interface_Output                          ║
+║   - "Interface_Output" → route to Rules                                     ║
+║   - "Rules"            → END (or fallback to Dialogue if rejected)          ║
+║                                                                              ║
+║ ERROR HANDLING:                                                              ║
+║   - Empty natural_context → warn but continue                               ║
+║   - Empty raw_response → inject fallback "(confused)"                       ║
+║   - Empty ActionBatch → create minimal SpeakAction("...", Confused)         ║
+║   - Rules rejection → loop back to Dialogue for explanation                 ║
+║                                                                              ║
+║ BACKWARD COMPATIBILITY:                                                      ║
+║   - Supports legacy "Interface" speaker (routes to Dialogue)                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 from typing import Literal
 from .state import AgentState
-from ..schemas.intent import Intent
-from ..schemas.actions import ActionBatch, SpeakAction, GameAction
+from ..schemas.actions import ActionBatch, SpeakAction
 
-SUPERVISOR_SYSTEM_PROMPT = """Role: Supervisor Agent
-
-You coordinate the outputs of other agents.
-
-You do not invent actions yourself unless required to resolve conflicts.
-
-Responsibilities:
-
-Receive proposed actions from Dialogue and Rules agents.
-
-Resolve conflicts (e.g. mutually exclusive actions).
-
-Ensure action order is logically consistent.
-
-Produce a single ActionBatch for one agent_id.
-
-Constraints:
-
-Do not change numeric values unless instructed by Rules.
-
-Do not add new action types.
-
-Do not interpret or execute actions.
-
-Output:
-
-One validated ActionBatch object only.
-
-No explanations, no commentary."""
 
 def supervisor_node(state: AgentState):
     """
-    Supervisor Node.
-    Orchestrates the workflow.
-    """
-    current_speaker = state.get("current_speaker")
-    analysis = state.get("analysis", {})
-    intent_data = analysis.get("intent")
+    Supervisor/Orchestrator Node.
     
-    # 1. Routing from Interface
-    if current_speaker == "Interface":
-        # Check Intent
-        if not intent_data:
-            return {"next": "End"}
-        
-        intent = intent_data # It's already an object hopefully, or dict if serialized
-        # Ensure it's accessed correctly
-        action_type = getattr(intent, "action_type", "Unknown")
-        
-        if action_type in ["Attack", "Interact", "Move", "Action"]:
-            # Route to Dialogue for initial generation (Brain)
-            return {"next": "Dialogue", "current_speaker": "Supervisor"}
-        else:
-            return {"next": "Dialogue", "current_speaker": "Supervisor"}
-
-    # 2. Handling Return from Rules (Fallback Logic)
+    Routes between agents based on current_speaker.
+    Handles fallback and error recovery.
+    
+    Flow:
+    1. From Interface_Input → route to Dialogue
+    2. From Dialogue → route to Interface_Output
+    3. From Interface_Output → route to Rules
+    4. From Rules → End (or Fallback if rejected)
+    """
+    current_speaker = state.get("current_speaker", "")
+    
+    print(f"[Supervisor] Routing from: {current_speaker}")
+    
+    # 1. After Interface Input → Go to Dialogue
+    if current_speaker == "Interface_Input":
+        natural_context = state.get("natural_context", "")
+        if not natural_context:
+            print("[Supervisor] WARNING: Empty natural_context from Interface Input")
+        return {
+            "next": "Dialogue",
+            "current_speaker": "Supervisor"
+        }
+    
+    # 2. After Dialogue → Go to Interface Output
+    if current_speaker == "Dialogue":
+        raw_response = state.get("raw_response", "")
+        if not raw_response:
+            print("[Supervisor] WARNING: Empty raw_response from Dialogue")
+            return {
+                "raw_response": '"..." (confused)',
+                "next": "Interface_Output",
+                "current_speaker": "Supervisor"
+            }
+        return {
+            "next": "Interface_Output",
+            "current_speaker": "Supervisor"
+        }
+    
+    # 3. After Interface Output → Go to Rules
+    if current_speaker == "Interface_Output":
+        action_batch = state.get("action_batch")
+        if not action_batch or not action_batch.actions:
+            print("[Supervisor] WARNING: Empty ActionBatch from Interface Output")
+            npc_id = state.get("target_npc", "Elara")
+            return {
+                "action_batch": _create_fallback_batch(npc_id),
+                "next": "Rules",
+                "current_speaker": "Supervisor"
+            }
+        return {
+            "next": "Rules",
+            "current_speaker": "Supervisor"
+        }
+    
+    # 4. After Rules → End or Fallback
     if current_speaker == "Rules":
         action_batch = state.get("action_batch")
         
-        # Check for Rejection or Empty Batch
-        # We assume Rules might set a flag or we check the batch content
-        # For now, if batch claims "Rejected" in reasoning or is empty but intent was action
         rejected = False
         if action_batch:
             if "REJECTED" in (action_batch.reasoning or ""):
@@ -80,25 +101,45 @@ def supervisor_node(state: AgentState):
                 rejected = True
         else:
             rejected = True
-            
+        
         if rejected:
-            # Fallback: Ask Dialogue to explain
-            # We enforce this by setting next to Dialogue, and providing context
+            print("[Supervisor] Action REJECTED by Rules, requesting fallback...")
             return {
-                "next": "Dialogue", 
+                "next": "Dialogue",
                 "current_speaker": "Supervisor_Fallback",
-                "messages": ["System: Action was rejected. Explain to user."]
+                "natural_context": "System: Your previous action was rejected by game rules. Respond with speech only.",
             }
         
-        return {"next": "End"} # Success
-
-    # 3. Handling Return from Dialogue
-    if current_speaker == "Dialogue":
+        print("[Supervisor] Pipeline complete!")
         return {"next": "End"}
-        
-    # Default Entry (if called directly or handling other states)
+    
+    # Legacy: From old Interface → route to Dialogue (backward compatibility)
+    if current_speaker == "Interface":
+        return {
+            "next": "Dialogue",
+            "current_speaker": "Supervisor"
+        }
+    
+    # Default
+    print(f"[Supervisor] Unknown speaker: {current_speaker}, ending pipeline")
     return {"next": "End"}
 
-def should_continue(state: AgentState) -> Literal["Dialogue", "Rules", "End", "Supervisor"]:
-    # We might need to loop back to Supervisor if we update the graph
-    return state["next"]
+
+def should_continue(state: AgentState) -> Literal[
+    "Interface_Input", "Dialogue", "Interface_Output", "Rules", "End"
+]:
+    """Determine next node based on state."""
+    return state.get("next", "End")
+
+
+def _create_fallback_batch(npc_id: str) -> ActionBatch:
+    """Create a minimal fallback ActionBatch."""
+    return ActionBatch(
+        agent_id=npc_id,
+        actions=[SpeakAction(
+            executor_npc_id=npc_id,
+            text="...",
+            emotion="Confused"
+        )],
+        reasoning="Supervisor Fallback: Empty batch received"
+    )

@@ -1,10 +1,32 @@
 """
-File: dialogue.py
-Purpose: Character Agent (Persona & Dialogue) with RAG.
-1. Loads Persona YAML dynamically based on AgentID.
-2. Retrieves relevant knowledge via RAG.
-3. Generates in-character responses using System Prompt.
-4. Outputs SpeakAction only.
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File: dialogue.py                                                           ║
+║ Role: CREATIVE RESPONSE GENERATOR (LLM #2 - Core Intelligence)             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
+║   Generate natural, in-character NPC responses based on persona, context,   ║
+║   and conversational history. Outputs free-form text with speech, actions,  ║
+║   and emotions - NOT structured data.                                       ║
+║                                                                              ║
+║ INPUT:  natural_context (str) - What player wants/said                      ║
+║ OUTPUT: raw_response (str) - Free-form NPC reaction                         ║
+║                                                                              ║
+║ OUTPUT FORMAT (CRITICAL):                                                   ║
+║   "Speech in quotes" (emotion in parentheses) *physical action in asterisks*║
+║                                                                              ║
+║ PERSONA SYSTEM:                                                              ║
+║   - Loads YAML persona files (name, role, traits, memory)                   ║
+║   - Uses RAG for contextual knowledge retrieval                             ║
+║   - Maintains conversation history via memory_manager                       ║
+║                                                                              ║
+║ LLM SELECTION:                                                               ║
+║   - High importance NPCs → Gemma 3 API (premium quality)                    ║
+║   - Normal NPCs → Gemini CLI (cost-effective)                               ║
+║                                                                              ║
+║ EXAMPLE:                                                                     ║
+║   IN:  "Player is pointing at door and asking to open it"                   ║
+║   OUT: "Of course! (cheerfully) *walks to door and opens it*"               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import yaml
 import os
@@ -14,15 +36,41 @@ from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
 from ..state import AgentState
-from ...schemas.actions import ActionBatch, SpeakAction, GameAction
+
 
 PERSONAS_BASE_PATH = "app/agents/personas"
 
-# SYSTEM PROMPT for CLI Actions
-ACTION_SYSTEM_PROMPT = """Role: Action Generator
-Valid GameAction Types: Move, Attack, Interact, Emote, Wait.
-Output ONLY JSON matching: {"action_type": "string", "target_id": "string", "parameters": {"key": "value"}}
-"""
+
+# System Prompt for free-form response generation
+DIALOGUE_SYSTEM_PROMPT = """You are {name}, a {role}.
+Personality traits: {traits}
+
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
+
+Relevant context: {rag_context}
+Conversation history: {chat_history}
+
+RESPONSE FORMAT (CRITICAL - follow exactly):
+- Use "double quotes" for everything you SAY out loud
+- Use *asterisks* for PHYSICAL ACTIONS you perform (movement, combat, interaction)
+- Use (parentheses) for your EMOTION or tone
+
+RESPONSE EXAMPLES:
+- "Of course, I'll open it!" (cheerfully) *walks to the door and opens it*
+- "Stay back!" (angrily) *draws sword and attacks the enemy*
+- "I understand." (sadly) *nods slowly*
+- "Follow me!" (determined) *runs ahead quickly*
+- "Let me take a closer look." (curious) *walks over and examines the object*
+
+RULES:
+- Always include speech in "quotes"
+- Always include at least one emotion in (parentheses)
+- Include *physical actions* when the context implies movement or interaction
+- Stay in character based on your personality traits
+- Max 2-3 sentences of speech
+- Be natural and expressive"""
+
 
 def load_persona(agent_id: str):
     """
@@ -40,7 +88,8 @@ def load_persona(agent_id: str):
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
-    # Fallback to default if not found
+
+    # Fallback to default
     default_path = os.path.join(PERSONAS_BASE_PATH, "core", "elara.yaml")
     print(f"[Dialogue] Persona '{agent_id}' not found, using default: {default_path}")
     if os.path.exists(default_path):
@@ -49,31 +98,49 @@ def load_persona(agent_id: str):
             
     return None
 
+
 def dialogue_node(state: AgentState):
     """
-    Combined Brain: 
-    - Speech -> Gemma 3 (API)
-    - Others -> Gemini CLI (Quota Saving)
+    Dialogue Agent (LLM #2).
+    
+    Generates free-form NPC response using persona and context.
+    Does NOT create ActionBatch — that's Interface Output's job.
+    
+    Input: AgentState with natural_context (str) and target_npc (str)
+    Output: AgentState with raw_response (str)
     """
-    analysis = state.get("analysis", {})
-    intent_data = analysis.get("intent")
-    vr_context = state.get("vr_context")
+    natural_context = state.get("natural_context", "")
+    target_npc = state.get("target_npc", "Elara")
     
-    # 1. Identity & Context
-    agent_id = "Elara" # Default
-    if intent_data:
-        if hasattr(intent_data, 'target_npc') and intent_data.target_npc:
-            agent_id = intent_data.target_npc
-        elif isinstance(intent_data, dict) and intent_data.get("target_npc"):
-            agent_id = intent_data.get("target_npc")
+    # --- Legacy compatibility: fall back to old analysis/intent flow ---
+    if not natural_context:
+        analysis = state.get("analysis", {})
+        intent_data = analysis.get("intent")
+        if intent_data:
+            user_input = getattr(intent_data, 'raw_query', None)
+            if isinstance(intent_data, dict):
+                user_input = intent_data.get("raw_query", "")
+                target_npc = intent_data.get("target_npc", target_npc)
+            elif hasattr(intent_data, 'target_npc') and intent_data.target_npc:
+                target_npc = intent_data.target_npc
+            natural_context = f"Player said: \"{user_input}\""
     
-    # Fallback to what player is looking at if agent_id is default
-    if agent_id == "Elara" and vr_context:
-        if hasattr(vr_context, 'looking_at_entity_id') and vr_context.looking_at_entity_id:
-            agent_id = vr_context.looking_at_entity_id
-        elif isinstance(vr_context, dict) and vr_context.get("looking_at_entity_id"):
-            agent_id = vr_context.get("looking_at_entity_id")
+    # Determine agent ID
+    agent_id = target_npc
+    
+    # Fallback to vr_context looking_at
+    if agent_id == "Elara":
+        vr_context = state.get("vr_context")
+        if vr_context:
+            looking_at = None
+            if hasattr(vr_context, 'looking_at_entity_id'):
+                looking_at = vr_context.looking_at_entity_id
+            elif isinstance(vr_context, dict):
+                looking_at = vr_context.get("looking_at_entity_id")
+            if looking_at:
+                agent_id = looking_at
 
+    # Load persona
     persona = load_persona(agent_id) or {"name": agent_id, "importance": "normal"}
     persona_name = persona.get('name', agent_id)
     persona_role = persona.get('role', 'Inhabitant')
@@ -83,79 +150,78 @@ def dialogue_node(state: AgentState):
     memory_summary = '; '.join(memory.get('key_events', [])) if memory.get('key_events') else 'None'
     sentiment = memory.get("sentiment", "Neutral")
 
-    user_input = intent_data.raw_query if intent_data and hasattr(intent_data, 'raw_query') else "..."
-    if isinstance(intent_data, dict):
-        action_type = intent_data.get("action_type", "Unknown")
-    else:
-        action_type = intent_data.action_type if intent_data and hasattr(intent_data, 'action_type') else "Unknown"
+    # Extract user input for RAG/memory
+    user_input = natural_context
 
-    final_actions = []
-    reasoning = []
-
-    # --- Common Context Retrieval ---
+    # Retrieve context via RAG and memory
     rag_context = retrieve_context(agent_id, user_input, k=3)
     chat_history = get_conversation_context(agent_id, k=5)
 
-    # --- PATH A: Speech (Gemma 3 API) ---
-    if action_type in ["Speak", "Chat", "Talk", "Unknown"]:
-        llm = get_dialogue_llm(importance=persona.get('importance', 'normal'), temperature=0.7)
-        
-        system_content = f"""You are {persona_name}, a {persona_role}.
-Traits: {persona_traits}
-Memory: {memory_summary}
-Sentiment: {sentiment}
-
-Relevant Knowledge: {rag_context if rag_context else "None"}
-History: {chat_history if chat_history else "No history"}
-
-Task: Respond in character naturally. Max 2-3 sentences. No narration."""
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "{system_msg}"),
-            ("human", "Player: {user_input}")
-        ])
-        
-        try:
-            response = (prompt | llm).invoke({
-                "system_msg": system_content,
-                "user_input": user_input
-            })
-            response_text = response.content if hasattr(response, 'content') else str(response)
-            clean_text = response_text.strip().replace('"', '')
-            final_actions.append(SpeakAction(text=clean_text, emotion="Neutral"))
-            add_conversation(agent_id, user_input, clean_text)
-            reasoning.append("Gemma3 Speech Generated")
-        except Exception as e:
-            print(f"Speech Error: {e}")
-
-    # --- PATH B: Game Actions (Gemini CLI) ---
-    if action_type not in ["Speak", "Chat", "Talk", "Wait", "Unknown"]:
-        intent_json = json.dumps(intent_data.model_dump() if hasattr(intent_data, 'model_dump') else intent_data)
-        
-        # Inject context into CLI prompt for smarter actions
-        context_block = f"Context:\n- History: {chat_history}\n- Knowledge: {rag_context}"
-        cli_prompt = f"{ACTION_SYSTEM_PROMPT}\n\n{context_block}\n\nConvert this Intent to JSON:\n{intent_json}"
-        
-        cli_result = call_gemini_cli(cli_prompt)
-        if cli_result:
-            try:
-                data = json.loads(cli_result)
-                if "parameters" in data and isinstance(data["parameters"], dict):
-                    data["parameters"] = {str(k): str(v) for k, v in data["parameters"].items()}
-                final_actions.append(GameAction(**data))
-                reasoning.append(f"CLI Resolved action: {action_type}")
-            except Exception as e:
-                print(f"CLI Action Parse Error: {e}")
-
-    # 3. Final Packaging
-    batch = ActionBatch(
-        agent_id=persona_name,
-        actions=final_actions or [SpeakAction(text="...", emotion="Neutral")],
-        reasoning="; ".join(reasoning)
+    # Build system prompt with persona info
+    system_content = DIALOGUE_SYSTEM_PROMPT.format(
+        name=persona_name,
+        role=persona_role,
+        traits=persona_traits,
+        memory=memory_summary,
+        sentiment=sentiment,
+        rag_context=rag_context if rag_context else "None",
+        chat_history=chat_history if chat_history else "No previous conversation"
     )
 
+    print(f"[Dialogue] Agent: {persona_name} | Context: '{natural_context[:60]}...'")
+
+    raw_response = None
+
+    # --- Choose LLM based on NPC importance ---
+    importance = persona.get('importance', 'normal')
+    
+    if importance in ['high', 'core']:
+        # High importance NPC → Use Gemma 3 API for quality
+        print(f"[Dialogue] Using Gemma 3 API (importance: {importance})")
+        
+        try:
+            llm = get_dialogue_llm(importance=importance, temperature=0.7)
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "{system_msg}"),
+                ("human", "Context: {context}")
+            ])
+            
+            response = (prompt | llm).invoke({
+                "system_msg": system_content,
+                "context": natural_context
+            })
+            raw_response = response.content if hasattr(response, 'content') else str(response)
+            raw_response = raw_response.strip()
+            print(f"[Dialogue] Gemma 3 response: '{raw_response[:80]}...'")
+        except Exception as e:
+            print(f"[Dialogue] Gemma 3 Error: {e}")
+    
+    if not raw_response:
+        # Normal NPC or API failed → Use Gemini CLI
+        print(f"[Dialogue] Using Gemini CLI (importance: {importance})")
+        
+        cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
+        raw_response = call_gemini_cli(cli_prompt, extract_json=False)
+        
+        if raw_response:
+            raw_response = raw_response.strip()
+            print(f"[Dialogue] CLI response: '{raw_response[:80]}...'")
+    
+    # Fallback if everything fails
+    if not raw_response:
+        print("[Dialogue] All LLMs failed, using fallback response")
+        raw_response = f'"..." (confused) *looks at the player silently*'
+
+    # Save to conversation memory
+    # Extract just the speech part for memory
+    import re
+    speech_parts = re.findall(r'"([^"]+)"', raw_response)
+    speech_for_memory = speech_parts[0] if speech_parts else raw_response[:100]
+    add_conversation(agent_id, user_input, speech_for_memory)
+
     return {
-        "action_batch": batch,
+        "raw_response": raw_response,
+        "target_npc": persona_name,
         "current_speaker": "Dialogue",
-        "next": "Rules"
+        "next": "Interface_Output"
     }
