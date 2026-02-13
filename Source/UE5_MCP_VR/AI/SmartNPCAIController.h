@@ -65,4 +65,14 @@ public:
 
 	// Speech Text (for Speak action)
 	static const FName Key_SpeakText;
+
+	// --- New Orchestra Blackboard Keys ---
+	/** High-level behavior mode (ENPCBehaviorMode) */
+	static const FName Key_BehaviorMode;
+
+	/** Specific action enum value (uint8) */
+	static const FName Key_SubAction;
+
+	/** JSON Parameters for the action */
+	static const FName Key_ActionParameters;
 };

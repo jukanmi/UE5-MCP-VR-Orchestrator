@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
+#include "BTTasks/BTTask_BaseDefinitions.h" // For FModeActionRequest and Enums
 #include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
