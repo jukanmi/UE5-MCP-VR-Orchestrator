@@ -52,18 +52,51 @@ Relevant context: {rag_context}
 Conversation history: {chat_history}
 
 RESPONSE FORMAT (CRITICAL - follow exactly):
-- Use "double quotes" for everything you SAY out loud
-- Use *asterisks* for PHYSICAL ACTIONS you perform (movement, combat, interaction)
-- Use (parentheses) for your EMOTION or tone
+1. FIRST LINE: [Mode: <mode>] [Facial: <expression>]
+   - Mode MUST be one of: Combat, Social, Task, Investigation, Lifestyle
+   - Facial MUST be one of: Neutral, Happy, Sad, Angry, Fear, Surprised, Disgusted, Tired, Pain
+
+2. SECOND LINE ONWARDS: Your natural response
+   - Use "double quotes" for everything you SAY out loud
+   - Use *asterisks* for PHYSICAL ACTIONS you perform (movement, combat, interaction)
+   - Use (parentheses) for your EMOTION or tone
 
 RESPONSE EXAMPLES:
-- "Of course, I'll open it!" (cheerfully) *walks to the door and opens it*
-- "Stay back!" (angrily) *draws sword and attacks the enemy*
-- "I understand." (sadly) *nods slowly*
-- "Follow me!" (determined) *runs ahead quickly*
-- "Let me take a closer look." (curious) *walks over and examines the object*
+[Mode: Social] [Facial: Happy]
+"Of course, I'll open it!" (cheerfully) *walks to the door and opens it*
+
+[Mode: Combat] [Facial: Angry]
+"Stay back!" (furiously) *draws sword and attacks the enemy*
+
+[Mode: Social] [Facial: Sad]
+"I understand." (sadly) *nods slowly*
+
+[Mode: Investigation] [Facial: Surprised]
+"What's that sound?" (alarmed) *turns toward the noise*
+
+[Mode: Lifestyle] [Facial: Tired]
+"I need rest..." (exhausted) *sits down on the bench*
+
+MODE SELECTION GUIDE:
+- Combat: Fighting, defending, fleeing from danger
+- Social: Talking, trading, following, emotional interaction
+- Task: Picking up items, using objects, crafting, eating
+- Investigation: Searching, tracking, observing, scouting
+- Lifestyle: Sitting, sleeping, reading, idle activities
+
+FACIAL EXPRESSION GUIDE:
+- Neutral: Default, calm state
+- Happy: Joy, satisfaction, friendliness
+- Sad: Sorrow, disappointment, grief
+- Angry: Rage, frustration, hostility
+- Fear: Terror, anxiety, panic
+- Surprised: Shock, amazement, confusion
+- Disgusted: Revulsion, contempt, distaste
+- Tired: Exhaustion, fatigue, weariness
+- Pain: Physical suffering, injury
 
 RULES:
+- ALWAYS start with [Mode: X] [Facial: Y] on the first line
 - Always include speech in "quotes"
 - Always include at least one emotion in (parentheses)
 - Include *physical actions* when the context implies movement or interaction
@@ -210,17 +243,43 @@ def dialogue_node(state: AgentState):
     # Fallback if everything fails
     if not raw_response:
         print("[Dialogue] All LLMs failed, using fallback response")
-        raw_response = f'"..." (confused) *looks at the player silently*'
+        raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
+
+    # --- Parse Mode and FacialState from response ---
+    import re
+    
+    mode = "Social"  # Default
+    facial_state = "Neutral"  # Default
+    
+    # Extract [Mode: X] and [Facial: Y] from first line
+    mode_match = re.search(r'\[Mode:\s*(\w+)\]', raw_response, re.IGNORECASE)
+    facial_match = re.search(r'\[Facial:\s*(\w+)\]', raw_response, re.IGNORECASE)
+    
+    if mode_match:
+        mode = mode_match.group(1)
+        print(f"[Dialogue] Parsed Mode: {mode}")
+    else:
+        print(f"[Dialogue] WARNING: No Mode found in response, using default: {mode}")
+    
+    if facial_match:
+        facial_state = facial_match.group(1)
+        print(f"[Dialogue] Parsed FacialState: {facial_state}")
+    else:
+        print(f"[Dialogue] WARNING: No FacialState found in response, using default: {facial_state}")
+    
+    # Remove the [Mode: X] [Facial: Y] line from raw_response for cleaner output
+    raw_response_clean = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
 
     # Save to conversation memory
     # Extract just the speech part for memory
-    import re
-    speech_parts = re.findall(r'"([^"]+)"', raw_response)
-    speech_for_memory = speech_parts[0] if speech_parts else raw_response[:100]
+    speech_parts = re.findall(r'"([^"]+)"', raw_response_clean)
+    speech_for_memory = speech_parts[0] if speech_parts else raw_response_clean[:100]
     add_conversation(agent_id, user_input, speech_for_memory)
 
     return {
-        "raw_response": raw_response,
+        "raw_response": raw_response_clean,
+        "behavior_mode": mode,
+        "facial_state": facial_state,
         "target_npc": persona_name,
         "current_speaker": "Dialogue",
         "next": "Interface_Output"
