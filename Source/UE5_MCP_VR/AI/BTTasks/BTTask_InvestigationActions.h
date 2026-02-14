@@ -41,13 +41,7 @@ enum class EInvestigationAction : uint8
 	 */
 	Track         UMETA(DisplayName = "Track"),
 
-	/**
-	 * Observe(TargetID)
-	 * 대상을 관찰하여 정보를 수집한다 (적 감시 등).
-	 * Parameters:
-	 *   - TargetID  (FString): 관찰 대상 Actor ID
-	 */
-	Observe       UMETA(DisplayName = "Observe"),
+
 
 	/**
 	 * Scout(AreaRadius)
@@ -57,11 +51,5 @@ enum class EInvestigationAction : uint8
 	 */
 	Scout         UMETA(DisplayName = "Scout"),
 
-	/**
-	 * Report(Info)
-	 * 발견한 정보를 아군 NPC에게 보고/공유한다.
-	 * Parameters:
-	 *   - Info  (FString): 보고할 정보 내용
-	 */
-	Report        UMETA(DisplayName = "Report")
+
 };

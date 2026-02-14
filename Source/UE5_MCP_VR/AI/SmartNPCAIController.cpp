@@ -14,6 +14,7 @@ const FName ASmartNPCAIController::Key_SpeakText(TEXT("SpeakText"));
 const FName ASmartNPCAIController::Key_BehaviorMode(TEXT("BehaviorMode"));
 const FName ASmartNPCAIController::Key_SubAction(TEXT("SubAction"));
 const FName ASmartNPCAIController::Key_ActionParameters(TEXT("ActionParameters"));
+const FName ASmartNPCAIController::Key_FacialState(TEXT("FacialState"));
 
 ASmartNPCAIController::ASmartNPCAIController()
 {

@@ -81,10 +81,5 @@ enum class ELifestyleAction : uint8
 	 */
 	Sing          UMETA(DisplayName = "Sing"),
 
-	/**
-	 * IdleAction()
-	 * 가벼운 대기 행동 (하품, 기지개, 두리번거림 등).
-	 * Parameters: 없음 (랜덤 선택)
-	 */
-	IdleAction    UMETA(DisplayName = "IdleAction")
+
 };

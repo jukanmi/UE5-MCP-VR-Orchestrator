@@ -5,6 +5,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../Utils/MCPMathUtils.h"
 #include "Kismet/GameplayStatics.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -269,3 +271,145 @@ void ASmartNPC::RefreshStats()
         CurrentStats.Movement.RunSpeed,
         CurrentStats.Movement.SprintSpeed);
 }
+
+void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
+{
+    ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController());
+    if (!AI) return;
+    UBlackboardComponent* BB = AI->GetBlackboardComponent();
+    if (!BB) return;
+
+    // 1. Behavior Mode
+    ENPCBehaviorMode Mode = ENPCBehaviorMode::None;
+    const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
+    if (ModeEnum)
+    {
+        int64 Val = ModeEnum->GetValueByName(FName(*Batch.BehaviorMode));
+        if (Val == INDEX_NONE)
+        {
+            Val = ModeEnum->GetValueByName(FName(*FString::Printf(TEXT("ENPCBehaviorMode::%s"), *Batch.BehaviorMode)));
+        }
+        if (Val != INDEX_NONE)
+        {
+            Mode = (ENPCBehaviorMode)Val;
+        }
+    }
+    BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Mode);
+
+    // 2. Facial State
+    EFacialState Facial = EFacialState::Neutral;
+    const UEnum* FacialEnum = StaticEnum<EFacialState>();
+    if (FacialEnum)
+    {
+        int64 Val = FacialEnum->GetValueByName(FName(*Batch.FacialState));
+        if (Val == INDEX_NONE)
+        {
+            Val = FacialEnum->GetValueByName(FName(*FString::Printf(TEXT("EFacialState::%s"), *Batch.FacialState)));
+        }
+        if (Val != INDEX_NONE)
+        {
+            Facial = (EFacialState)Val;
+        }
+    }
+    BB->SetValueAsEnum(ASmartNPCAIController::Key_FacialState, (uint8)Facial);
+
+    // 3. Actions (Use first action for now)
+    if (Batch.Actions.Num() > 0)
+    {
+        const FGameAction& Action = Batch.Actions[0];
+        BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, Action.ActionType);
+
+        TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
+        for (const auto& Pair : Action.Parameters)
+        {
+            JsonObj->SetStringField(Pair.Key, Pair.Value);
+        }
+        if (!Action.TargetID.IsEmpty())
+        {
+            JsonObj->SetStringField(TEXT("TargetID"), Action.TargetID);
+        }
+
+        // Serialize Parameters
+        FString OutputString;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+        FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
+        BB->SetValueAsString(ASmartNPCAIController::Key_ActionParameters, OutputString);
+
+        // Handle Target Location for Move actions specifically if provided in params
+        if (Action.Parameters.Contains(TEXT("x")) && Action.Parameters.Contains(TEXT("y")) && Action.Parameters.Contains(TEXT("z")))
+        {
+             FVector Loc;
+             Loc.X = FCString::Atof(*Action.Parameters[TEXT("x")]);
+             Loc.Y = FCString::Atof(*Action.Parameters[TEXT("y")]);
+             Loc.Z = FCString::Atof(*Action.Parameters[TEXT("z")]);
+             BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+        }
+        
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Set BehaviorMode: %s, SubAction: %s"), *AgentID, *UEnum::GetValueAsString(Mode), *Action.ActionType);
+    }
+}
+
+// --- Debug Functions ---
+
+void ASmartNPC::Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, FString TargetID, FString Content, FString ExtraParamsJson)
+{
+    FActionBatch Batch;
+    Batch.AgentID = AgentID;
+    
+    // Convert Enum to String (Remove Prefix for cleaner log, though ExecuteActionBatch handles full name too)
+    FString ModeStr = UEnum::GetValueAsString(Mode);
+    if (ModeStr.Contains(TEXT("::")))
+    {
+        ModeStr.Split(TEXT("::"), nullptr, &ModeStr);
+    }
+    Batch.BehaviorMode = ModeStr;
+    
+    Batch.FacialState = TEXT("Neutral");
+
+    FGameAction Action;
+    Action.ActionType = ActionName;
+    Action.TargetID = TargetID;
+
+    if (!Content.IsEmpty())
+    {
+        Action.Parameters.Add(TEXT("Content"), Content);
+    }
+
+    if (!ExtraParamsJson.IsEmpty())
+    {
+        TSharedPtr<FJsonObject> JsonObj;
+        TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ExtraParamsJson);
+        // Deserialize and add to params
+        if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+        {
+            for (auto& Pair : JsonObj->Values)
+            {
+                Action.Parameters.Add(Pair.Key, Pair.Value->AsString());
+            }
+        }
+    }
+
+    Batch.Actions.Add(Action);
+
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] Manually executing action: %s - %s"), *ModeStr, *ActionName);
+    ExecuteActionBatch(Batch);
+}
+
+void ASmartNPC::Debug_Test_Social_Dialogue()
+{
+    Debug_ExecuteAction(ENPCBehaviorMode::Common, TEXT("Dialogue"), TEXT("Player"), TEXT("Hello! This is a debug test."), TEXT(""));
+}
+
+void ASmartNPC::Debug_Test_Common_Move()
+{
+    // Test Move to current location + forward 200 units
+    FVector Target = GetActorLocation() + GetActorForwardVector() * 200.0f;
+    FString Params = FString::Printf(TEXT("{\"x\": \"%f\", \"y\": \"%f\", \"z\": \"%f\"}"), Target.X, Target.Y, Target.Z);
+    Debug_ExecuteAction(ENPCBehaviorMode::Common, TEXT("Move"), TEXT(""), TEXT(""), Params);
+}
+
+void ASmartNPC::Debug_Test_Combat_Attack()
+{
+    Debug_ExecuteAction(ENPCBehaviorMode::Combat, TEXT("Attack"), TEXT("Player"), TEXT(""), TEXT(""));
+}
+

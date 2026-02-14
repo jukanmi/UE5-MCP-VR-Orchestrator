@@ -95,8 +95,15 @@ public:
     void RefreshStats();
 
 
-protected:
+    /**
+     * Executes a batch of actions including Behavior Mode and Facial State.
+     * Replaces ProcessAction for the new architecture.
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    virtual void ExecuteActionBatch(const FActionBatch& Batch);
+
     // --- Blueprint Implementable Events (Engine Logic) ---
+    // Moved to public so BTTasks can call them
 
     // Move to location with speed
     UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
@@ -121,4 +128,28 @@ protected:
     // Generic fallback or other actions (Attack, Interact)
     UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
     void ExecuteGenericAction(const FString& ActionType, const FString& TargetID);
+
+public:
+    // --- Debug / Testing ---
+    
+    /** 
+     * Manually trigger an action for testing.
+     * Fill in the parameters and click the button in Details panel.
+     */
+    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
+    void Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, FString TargetID, FString Content, FString ExtraParamsJson);
+
+    // Preset: Test Social Dialogue
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Social_Dialogue();
+
+    // Preset: Test Common Move
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Common_Move();
+
+    // Preset: Test Combat Attack
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Combat_Attack();
+
+protected:
 };

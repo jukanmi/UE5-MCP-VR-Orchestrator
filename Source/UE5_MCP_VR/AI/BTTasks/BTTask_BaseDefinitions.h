@@ -57,7 +57,8 @@ enum class ENPCBehaviorMode : uint8
 	Social         UMETA(DisplayName = "Social"),          // 사교 모드
 	Task           UMETA(DisplayName = "Task"),            // 상호작용/작업 모드
 	Investigation  UMETA(DisplayName = "Investigation"),   // 탐색/조사 모드
-	Lifestyle      UMETA(DisplayName = "Lifestyle")        // 생활/대기 모드
+	Lifestyle      UMETA(DisplayName = "Lifestyle"),       // 생활/대기 모드
+	Common         UMETA(DisplayName = "Common")           // 공용/기본 액션 모드
 };
 
 /**

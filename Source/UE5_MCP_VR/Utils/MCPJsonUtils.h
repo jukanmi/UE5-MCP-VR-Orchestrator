@@ -29,6 +29,12 @@ struct FActionBatch
     FString AgentID;
 
     UPROPERTY(BlueprintReadWrite, Category = "MCP")
+    FString BehaviorMode;
+
+    UPROPERTY(BlueprintReadWrite, Category = "MCP")
+    FString FacialState;
+
+    UPROPERTY(BlueprintReadWrite, Category = "MCP")
     TArray<FGameAction> Actions;
 };
 

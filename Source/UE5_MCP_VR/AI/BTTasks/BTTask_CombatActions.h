@@ -60,14 +60,6 @@ enum class ECombatAction : uint8
 	Flee             UMETA(DisplayName = "Flee"),
 
 	/**
-	 * UseCombatItem(PotionID)
-	 * 전투 중 급박한 아이템 사용 (포션 등).
-	 * Parameters:
-	 *   - PotionID  (FString): 사용할 아이템 ID
-	 */
-	UseCombatItem    UMETA(DisplayName = "UseCombatItem"),
-
-	/**
 	 * SignalAllies(SignalType)
 	 * 아군에게 신호를 보낸다 (지원 요청, 포위 명령 등).
 	 * Parameters:

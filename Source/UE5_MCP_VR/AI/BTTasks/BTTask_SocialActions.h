@@ -27,14 +27,7 @@ enum class ESocialAction : uint8
 {
 	None         UMETA(DisplayName = "None"),
 
-	/**
-	 * Dialogue(Content, Tone)
-	 * 대화를 생성하고 발화한다.
-	 * Parameters:
-	 *   - Content  (FString): 대화 내용 (LLM이 생성한 텍스트)
-	 *   - Tone     (FString): 어조 ("Friendly", "Hostile", "Nervous" 등)
-	 */
-	Dialogue     UMETA(DisplayName = "Dialogue"),
+
 
 	/**
 	 * Trade(TargetID, Offer, Request)

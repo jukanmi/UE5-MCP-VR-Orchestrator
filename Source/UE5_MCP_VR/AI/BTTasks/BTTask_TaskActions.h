@@ -66,11 +66,5 @@ enum class ETaskAction : uint8
 	 */
 	Repair       UMETA(DisplayName = "Repair"),
 
-	/**
-	 * EatDrink(ItemID)
-	 * 비전투 상황에서 음식/음료를 섭취한다.
-	 * Parameters:
-	 *   - ItemID  (FString): 소비할 아이템 ID
-	 */
-	EatDrink     UMETA(DisplayName = "EatDrink")
+
 };

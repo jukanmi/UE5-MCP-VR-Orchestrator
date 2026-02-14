@@ -75,4 +75,7 @@ public:
 
 	/** JSON Parameters for the action */
 	static const FName Key_ActionParameters;
+
+	/** Facial expression state (EFacialState) */
+	static const FName Key_FacialState;
 };
