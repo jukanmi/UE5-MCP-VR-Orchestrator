@@ -49,4 +49,7 @@ class UE5_MCP_VR_API UMCPJsonUtils : public UBlueprintFunctionLibrary
 public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     static bool ParseActionBatch(FString Json, FActionBatch& OutBatch);
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
+    static bool ParseActionBatchArray(FString Json, TArray<FActionBatch>& OutBatches);
 };

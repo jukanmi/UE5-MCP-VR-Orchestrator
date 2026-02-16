@@ -8,16 +8,7 @@
 #include "SmartNPCAIController.generated.h"
 
 // Define Action State Enum
-UENUM(BlueprintType)
-enum class ESmartNPCActionState : uint8
-{
-    Idle        UMETA(DisplayName = "Idle"),
-    Move        UMETA(DisplayName = "Move"),
-    Speak       UMETA(DisplayName = "Speak"),
-    Attack      UMETA(DisplayName = "Attack"),
-    Interact    UMETA(DisplayName = "Interact"),
-    Generic     UMETA(DisplayName = "Generic")
-};
+
 
 /**
  * AI Controller for SmartNPC.
@@ -57,14 +48,11 @@ public:
 	// Target Location Vector (e.g. for MoveTo)
 	static const FName Key_TargetLocation;
 	
-    // Action Type (Enum: ESmartNPCActionState)
-	static const FName Key_ActionType;
-	
     // Target Actor Object (e.g. for interacting/attacking)
 	static const FName Key_TargetActor;
 
-	// Speech Text (for Speak action)
-	static const FName Key_SpeakText;
+	// Speech Text (for Dialogue action)
+	static const FName Key_DialogueText;
 
 	// --- New Orchestra Blackboard Keys ---
 	/** High-level behavior mode (ENPCBehaviorMode) */

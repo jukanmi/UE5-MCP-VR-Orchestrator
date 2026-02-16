@@ -255,42 +255,7 @@ void AVRPlayerCharacter::OnWebSocketMessage(const FString& Message)
 	TSharedPtr<FJsonObject> JsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
 
-	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
-	{
-		// Check for "actions" array
-		const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-		if (JsonObject->TryGetArrayField(TEXT("actions"), ActionsArray))
-		{
-			for (const auto& ActionValue : *ActionsArray)
-			{
-				TSharedPtr<FJsonObject> ActionObj = ActionValue->AsObject();
-				if (ActionObj.IsValid())
-				{
-					FString ActionType = ActionObj->GetStringField(TEXT("action_type"));
-					if (ActionType == TEXT("Speak"))
-					{
-						FString Text = ActionObj->GetStringField(TEXT("text"));
-						// Ideally get sender ID too, but defaulting to "NPC" or deriving from context
-						FString AgentID = JsonObject->GetStringField(TEXT("agent_id")); // Batch level agent ID
-						
-						if (ChatWidgetInstance)
-						{
-							ChatWidgetInstance->AddMessageToHistory(AgentID, Text);
-						}
-					}
-				}
-			}
-		}
-		
-		// Also handle direct error messages or generic logging
-		if (JsonObject->HasField(TEXT("error")))
-		{
-			if (ChatWidgetInstance)
-			{
-				ChatWidgetInstance->AddMessageToHistory(TEXT("System"), JsonObject->GetStringField(TEXT("error")));
-			}
-		}
-	}
+	
 }
 
 void AVRPlayerCharacter::PerformAttack()

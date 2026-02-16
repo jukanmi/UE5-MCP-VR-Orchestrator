@@ -45,13 +45,7 @@ EBTNodeResult::Type UBTTask_TaskAction::ExecuteTask(UBehaviorTreeComponent& Owne
 
 	switch (Action)
 	{
-	case ETaskAction::UseObject:
-		{
-			FString ObjectID = Params.FindRef(TEXT("ObjectID"));
-			NPC->ExecuteInteract(ObjectID);
-		}
-		break;
-	
+
 	default:
 		// PickUp, Drop, Craft, Repair → ExecuteGenericAction
 		FString TargetID = Params.FindRef(TEXT("ItemID"));

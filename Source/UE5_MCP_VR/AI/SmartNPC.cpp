@@ -7,6 +7,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
+#include "../Utils/DiceSystem.h"
+#include "NPCActionKeys.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -47,89 +49,47 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
+FString ASmartNPC::GetBehaviorModeFromAction(const FString& ActionType) const
+{
+    if (ActionType.Contains(NPCActionKeys::Action_Attack) || 
+        ActionType.Contains(NPCActionKeys::Action_Block) || 
+        ActionType.Contains(NPCActionKeys::Action_Dodge))
+    {
+        return NPCActionKeys::Mode_Combat;
+    }
+    if (ActionType.Contains(NPCActionKeys::Action_PickUp) || 
+        ActionType.Contains(NPCActionKeys::Action_Craft))
+    {
+        return NPCActionKeys::Mode_Task;
+    }
+    if (ActionType.Contains(NPCActionKeys::Action_Scan) || 
+        ActionType.Contains(NPCActionKeys::Action_Investigate))
+    {
+        return NPCActionKeys::Mode_Investigation;
+    }
+    if (ActionType.Contains(NPCActionKeys::Action_Sleep) || 
+        ActionType.Contains(NPCActionKeys::Action_Sit))
+    {
+        return NPCActionKeys::Mode_Lifestyle;
+    }
+    return NPCActionKeys::Mode_Common;
+}
+
 void ASmartNPC::ProcessAction(const FGameAction& Action)
 {
-    const FString& Type = Action.ActionType;
-    const TMap<FString, FString>& P = Action.Parameters;
-
-    ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController());
-    if (!AI || !AI->GetBlackboardComponent())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] No valid AI Controller or Blackboard provided for %s"), *GetName());
-        // Fallback or just return
-        return;
-    }
-
-    UBlackboardComponent* BB = AI->GetBlackboardComponent();
-
-    // Reset previous command keys if necessary, or just overwrite.
+    // Wrap generic ProcessAction into the new Batch system for compatibility
+    FActionBatch Batch;
+    Batch.AgentID = AgentID;
     
-    // Resolve Action Type String to Enum
-    ESmartNPCActionState ActionState = ESmartNPCActionState::Generic;
-    if (Type == TEXT("Move")) ActionState = ESmartNPCActionState::Move;
-    else if (Type == TEXT("Speak")) ActionState = ESmartNPCActionState::Speak;
-    else if (Type == TEXT("Attack")) ActionState = ESmartNPCActionState::Attack;
-    else if (Type == TEXT("Interact")) ActionState = ESmartNPCActionState::Interact;
+    // Simple heuristic to map legacy actions to new Modes
+    Batch.BehaviorMode = GetBehaviorModeFromAction(Action.ActionType);
 
-    // Set ActionType as Enum
-    BB->SetValueAsEnum(ASmartNPCAIController::Key_ActionType, (uint8)ActionState);
-    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB ActionType set to: %d"), *AgentID, (int32)ActionState);
+    Batch.FacialState = NPCActionKeys::Value_Neutral; 
+    Batch.Actions.Add(Action);
 
-    if (ActionState == ESmartNPCActionState::Move)
-    {
-        // Coordinates from ActionBatch are already in Unreal units (from player_location)
-        float X = 0.0f;
-        float Y = 0.0f;
-        float Z = 0.0f;
-
-        if (const FString* Val = P.Find(TEXT("x"))) X = FCString::Atof(**Val);
-        if (const FString* Val = P.Find(TEXT("y"))) Y = FCString::Atof(**Val);
-        if (const FString* Val = P.Find(TEXT("z"))) Z = FCString::Atof(**Val);
-
-        // Use coordinates directly - they're already in Unreal units
-        FVector TargetLoc(X, Y, Z);
-        
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s Moving to: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, X, Y, Z);
-        
-        // Update Blackboard Key
-        BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, TargetLoc);
-        
-        // Verify Blackboard was set
-        FVector TestLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB TargetLocation verified: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, TestLoc.X, TestLoc.Y, TestLoc.Z);
-    }
-    else if (ActionState == ESmartNPCActionState::Speak)
-    {
-        FString Text = TEXT("...");
-        if (const FString* Val = P.Find(TEXT("text"))) Text = *Val;
-
-        // Set SpeakText in Blackboard for BT to handle
-        BB->SetValueAsString(ASmartNPCAIController::Key_SpeakText, Text);
-        ExecuteSpeak(Text);
-        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Speak text set to: \"%s\""), *AgentID, *Text);
-    }
-    else if (ActionState == ESmartNPCActionState::Attack)
-    {
-        // ToDo::공격 구현 - TargetID를 사용하여 실제 Actor를 찾고 Blackboard Key_TargetActor에 할당하는 로직 필요
-        // 예: AActor* Target = FindActorByID(TargetParam);
-        // BB->SetValueAsObject(ASmartNPCAIController::Key_TargetActor, Target);
-        
-        FString TargetParam = Action.TargetID;
-        ExecuteAttack(TargetParam);
-    }
-    else if (ActionState == ESmartNPCActionState::Interact)
-    {
-        // ToDo::상호작용 구현 - 공격과 마찬가지로 대상 Actor 식별 및 Blackboard 설정 필요
-        
-        FString TargetParam = Action.TargetID;
-        ExecuteInteract(TargetParam);
-    }
-    else
-    {
-        // ToDo::기타 일반 액션 처리
-        FString TargetParam = Action.TargetID;
-        ExecuteGenericAction(Type, TargetParam);
-    }
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] ProcessAction called (Legacy wrapper). Redirecting to ExecuteActionBatch as Mode: %s"), *Batch.BehaviorMode);
+    
+    ExecuteActionBatch(Batch);
 }
 
 void ASmartNPC::ClearPhysicalState()
@@ -145,23 +105,19 @@ void ASmartNPC::ClearPhysicalState()
     }
 }
 
-//
-bool ASmartNPC::TryReflexAction(float Difficulty)
+bool ASmartNPC::TryReflexAction(int Difficulty)
 {
-    // Use Dexterity for reflex checks (Dex 10 = 10% base chance, scaled by difficulty)
-    float SuccessChance = static_cast<float>(CurrentStats.BaseStats.Dexterity) - Difficulty;
-    float Roll = FMath::RandRange(0.0f, 100.0f);
-    
-    bool bSuccess = SuccessChance > Roll;
+    // Use Dexterity for reflex check via centralized Dice System
+    FDiceResult Result;
+    bool bSuccess = UDiceSystem::CheckReflex((float)CurrentStats.BaseStats.Dexterity, Difficulty, Result);
     
     if (bSuccess)
     {
-        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %.1f < %.1f)"), *AgentID, Roll, SuccessChance);
+        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %.1f < %.1f)"), *AgentID, Result.RollValue, Result.TargetValue);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %.1f >= %.1f)"), *AgentID, Roll, SuccessChance);
-        ExecuteEmote("Panic"); 
+        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %.1f >= %.1f)"), *AgentID, Result.RollValue, Result.TargetValue);
     }
 
     return bSuccess;
@@ -222,10 +178,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 
     UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s Took Damage: %.1f. HP: %.1f/%.1f"), 
         *AgentID, ActualDamage, CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);
-
-    // Attempt reflex action (difficulty 50)
-    bool bReflex = TryReflexAction(50.0f); 
-    
+  
     RequestEmergencyCognition(TEXT("Hit"), FString::Printf(TEXT("Took %.1f Damage"), ActualDamage));
 
     return ActualDamage;
@@ -272,81 +225,92 @@ void ASmartNPC::RefreshStats()
         CurrentStats.Movement.SprintSpeed);
 }
 
+
 void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
+{
+    // 1. Update Blackboard State (Behavior Mode, Facial State)
+    UpdateBehaviorState(Batch);
+
+    // 2. Dispatch Actions (Queueing or Parallel Execution)
+    DispatchActions(Batch.Actions);
+
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Executed Batch. Mode: %s, Facial: %s, Actions: %d"), 
+        *AgentID, *Batch.BehaviorMode, *Batch.FacialState, Batch.Actions.Num());
+}
+
+void ASmartNPC::UpdateBehaviorState(const FActionBatch& Batch)
 {
     ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController());
     if (!AI) return;
     UBlackboardComponent* BB = AI->GetBlackboardComponent();
     if (!BB) return;
 
-    // 1. Behavior Mode
-    ENPCBehaviorMode Mode = ENPCBehaviorMode::None;
+    // Behavior Mode
+    ENPCBehaviorMode Mode = ENPCBehaviorMode::Common; // Default
     const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
     if (ModeEnum)
     {
+        // Try direct name match first, then full scoped name
         int64 Val = ModeEnum->GetValueByName(FName(*Batch.BehaviorMode));
         if (Val == INDEX_NONE)
         {
-            Val = ModeEnum->GetValueByName(FName(*FString::Printf(TEXT("ENPCBehaviorMode::%s"), *Batch.BehaviorMode)));
+             Val = ModeEnum->GetValueByName(FName(*FString::Printf(TEXT("ENPCBehaviorMode::%s"), *Batch.BehaviorMode)));
         }
-        if (Val != INDEX_NONE)
-        {
-            Mode = (ENPCBehaviorMode)Val;
-        }
+        
+        if (Val != INDEX_NONE) Mode = (ENPCBehaviorMode)Val;
     }
     BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Mode);
 
-    // 2. Facial State
-    EFacialState Facial = EFacialState::Neutral;
+    // Facial State
+    EFacialState Facial = EFacialState::Neutral; // Default
     const UEnum* FacialEnum = StaticEnum<EFacialState>();
     if (FacialEnum)
     {
         int64 Val = FacialEnum->GetValueByName(FName(*Batch.FacialState));
         if (Val == INDEX_NONE)
         {
-            Val = FacialEnum->GetValueByName(FName(*FString::Printf(TEXT("EFacialState::%s"), *Batch.FacialState)));
+             Val = FacialEnum->GetValueByName(FName(*FString::Printf(TEXT("EFacialState::%s"), *Batch.FacialState)));
         }
-        if (Val != INDEX_NONE)
-        {
-            Facial = (EFacialState)Val;
-        }
+
+        if (Val != INDEX_NONE) Facial = (EFacialState)Val;
     }
     BB->SetValueAsEnum(ASmartNPCAIController::Key_FacialState, (uint8)Facial);
+    
+    // Sync Local State
+    CurrentFacialState = Facial;
+}
 
-    // 3. Actions (Use first action for now)
-    if (Batch.Actions.Num() > 0)
+void ASmartNPC::DispatchActions(const TArray<FGameAction>& Actions)
+{
+    for (const FGameAction& Action : Actions)
     {
-        const FGameAction& Action = Batch.Actions[0];
-        BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, Action.ActionType);
-
-        TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
-        for (const auto& Pair : Action.Parameters)
+        // 1. Critical Stop Command
+        if (Action.ActionType.Equals(NPCActionKeys::Action_Stop, ESearchCase::IgnoreCase))
         {
-            JsonObj->SetStringField(Pair.Key, Pair.Value);
-        }
-        if (!Action.TargetID.IsEmpty())
-        {
-            JsonObj->SetStringField(TEXT("TargetID"), Action.TargetID);
+            StopAllActions();
+            continue; 
         }
 
-        // Serialize Parameters
-        FString OutputString;
-        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-        FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
-        BB->SetValueAsString(ASmartNPCAIController::Key_ActionParameters, OutputString);
-
-        // Handle Target Location for Move actions specifically if provided in params
-        if (Action.Parameters.Contains(TEXT("x")) && Action.Parameters.Contains(TEXT("y")) && Action.Parameters.Contains(TEXT("z")))
+        // 2. Parallel Action: Dialogue
+        if (Action.ActionType.Equals(NPCActionKeys::Action_Dialogue, ESearchCase::IgnoreCase))
         {
-             FVector Loc;
-             Loc.X = FCString::Atof(*Action.Parameters[TEXT("x")]);
-             Loc.Y = FCString::Atof(*Action.Parameters[TEXT("y")]);
-             Loc.Z = FCString::Atof(*Action.Parameters[TEXT("z")]);
-             BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+            FString TextContent = Action.Parameters.FindRef(NPCActionKeys::Key_Text);
+            if (TextContent.IsEmpty()) TextContent = Action.Parameters.FindRef(NPCActionKeys::Key_Content); // Fallback
+
+            FString Emotion = Action.Parameters.FindRef(NPCActionKeys::Key_Emotion);
+            if (Emotion.IsEmpty()) Emotion = NPCActionKeys::Value_Neutral;
+            
+            ExecuteDialogue(TextContent, Emotion);
         }
-        
-        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Set BehaviorMode: %s, SubAction: %s"), *AgentID, *UEnum::GetValueAsString(Mode), *Action.ActionType);
+        else
+        {
+            // 3. Physical/Sequenced Action -> Enqueue
+            ActionQueue.Enqueue(Action);
+        }
     }
+    
+    // Try to start processing if idle
+    ProcessNextAction();
 }
 
 // --- Debug Functions ---
@@ -364,7 +328,7 @@ void ASmartNPC::Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, F
     }
     Batch.BehaviorMode = ModeStr;
     
-    Batch.FacialState = TEXT("Neutral");
+    Batch.FacialState = NPCActionKeys::Value_Neutral;
 
     FGameAction Action;
     Action.ActionType = ActionName;
@@ -372,7 +336,7 @@ void ASmartNPC::Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, F
 
     if (!Content.IsEmpty())
     {
-        Action.Parameters.Add(TEXT("Content"), Content);
+        Action.Parameters.Add(NPCActionKeys::Key_Content, Content);
     }
 
     if (!ExtraParamsJson.IsEmpty())
@@ -411,5 +375,318 @@ void ASmartNPC::Debug_Test_Common_Move()
 void ASmartNPC::Debug_Test_Combat_Attack()
 {
     Debug_ExecuteAction(ENPCBehaviorMode::Combat, TEXT("Attack"), TEXT("Player"), TEXT(""), TEXT(""));
+}
+
+void ASmartNPC::Debug_Test_Orchestra_Pipeline()
+{
+    // Simulate a JSON message from Cognitive Engine
+    // Contains array of batches: One for THIS npc (Social Mode, Happy, Dialogue + Move), one for another.
+    FString MockJson = FString::Printf(
+        TEXT("["
+             "  {"
+             "    \"agent_id\": \"%s\","
+             "    \"behavior_mode\": \"Social\","
+             "    \"facial_state\": \"Happy\","
+             "    \"actions\": ["
+             "      { \"action_type\": \"Dialogue\", \"text\": \"First, I speak!\", \"emotion\": \"Happy\" },"
+             "      { \"action_type\": \"Move\", \"target_id\": \"Point A\", \"speed\": \"500\" },"
+             "      { \"action_type\": \"Wait\", \"duration\": \"2.0\" },"
+             "      { \"action_type\": \"Move\", \"target_id\": \"Point B\", \"speed\": \"300\" }"
+             "    ]"
+             "  },"
+             "  {"
+             "    \"agent_id\": \"Ghost_NPC\","
+             "    \"behavior_mode\": \"Combat\","
+             "    \"facial_state\": \"Angry\","
+             "    \"actions\": ["
+             "      { \"action_type\": \"Dialogue\", \"text\": \"I will stop you!\", \"emotion\": \"Angry\" },"
+             "      { \"action_type\": \"Attack\", \"target_id\": \"Player\" },"
+             "      { \"action_type\": \"Stop\" }" 
+             "    ]"
+             "  }"
+             "]"),
+        *AgentID
+    );
+
+    UE_LOG(LogTemp, Log, TEXT("[Debug] Testing Orchestra Pipeline with JSON: %s"), *MockJson);
+
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            // Inject the message directly into HandleMessage (via introspection or public method if available, 
+            // but since HandleMessage is private/protected and bound to delegate, we might need a public trigger 
+            // OR just call BindSocket logic. 
+            // However, for testing, let's assume we can't call private HandleMessage easily without reflection 
+            // or making it public. 
+            // Let's modify NPCManager to have a public 'Debug_InjectMessage' or similar, 
+            // OR just cast/call if it was public (it's private in header).
+            
+            // Re-checking NPCManager.h... HandleMessage is private UFUNCTION.
+            // But we can use FindFunction to call it via ProcessEvent!
+            
+            UFunction* Func = Manager->FindFunction(TEXT("HandleMessage"));
+            if (Func)
+            {
+                struct FParams
+                {
+                    FString Msg;
+                };
+                FParams Params;
+                Params.Msg = MockJson;
+                Manager->ProcessEvent(Func, &Params);
+            }
+        }
+    }
+}
+
+
+// --- Default C++ Implementations ---
+/**
+ * Move to a specific location
+ * @param TargetLocation: Target location to move to
+ * @param MoveType: Type of movement (Walk, Run, Sprint)
+ * @param AcceptanceRadius: Radius to accept the move
+ */
+void ASmartNPC::ExecuteMoveToLocation(FVector TargetLocation, int MoveType, float AcceptanceRadius)
+{
+    // Move
+    if (AAIController* AI = Cast<AAIController>(GetController()))
+    {
+        // Simple Move to Location
+        AI->MoveToLocation(TargetLocation, AcceptanceRadius);
+    }
+}
+
+/**
+ * Keep distance from a target actor
+ * @param TargetActor: Target actor to keep distance from
+ * @param Distance: Distance to keep from the target actor
+ * @param Speed: Speed to move at
+ */
+void ASmartNPC::ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed)
+{
+    if (!TargetActor) return;
+
+    // Apply Speed
+    if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+    {
+        Movement->MaxWalkSpeed = (Speed > 0) ? Speed : CurrentStats.Movement.RunSpeed;
+    }
+
+    // Calculate Target Position
+    FVector Direction = GetActorLocation() - TargetActor->GetActorLocation();
+    Direction.Normalize();
+    FVector TargetPos = TargetActor->GetActorLocation() + Direction * Distance;
+
+    // Move
+    if (AAIController* AI = Cast<AAIController>(GetController()))
+    {
+        AI->MoveToLocation(TargetPos, 50.f); 
+    }
+}
+
+/**
+ * Wait for a specific duration
+ * @param Duration: Duration to wait
+ */
+void ASmartNPC::ExecuteWait(float Duration)
+{
+    // Just stop movement
+    if (AController* C = GetController())
+    {
+        C->StopMovement();
+    }
+    
+    // Note: The actual "Wait" delay is usually handled by the Behavior Tree Task.
+    // This event is for any immediate visual reaction associated with waiting.
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s : Waiting for %.1f seconds"), *AgentID, Duration);
+}
+
+/**
+ * Execute dialogue
+ * @param DialogueText: Dialogue text to display
+ * @param EmotionID: Emotion ID to use
+ */
+void ASmartNPC::ExecuteDialogue(const FString& DialogueText, const FString& EmotionID)
+{
+    // Log dialogue. In a real game, this would spawn a widget or play sound.
+    UE_LOG(LogTemp, Log, TEXT("[Dialogue] %s (%s): \"%s\""), *AgentID, *EmotionID, *DialogueText);
+}
+
+/**
+ * Face a specific location
+ * @param TargetLocation: Location to face
+ * @param TurnSpeed: Speed to turn at
+ */
+void ASmartNPC::ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed)
+{
+    if (AAIController* AI = Cast<AAIController>(GetController()))
+    {
+        AI->SetFocalPoint(TargetLocation);
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Start Facing %s (Delegate to BT Task or AIController)"), *AgentID, *TargetLocation.ToString());
+    }
+}
+
+/**
+ * Perform attack
+ * @param TargetActor: Target actor to attack
+ * @param AttackType: Attack type to use
+ */
+void ASmartNPC::ExecutePerformAttack(AActor* TargetActor, const FString& AttackType)
+{
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Attacks %s with %s"), *AgentID, TargetActor ? *TargetActor->GetName() : NPCActionKeys::Value_None, *AttackType);
+
+    // Stop movement to attack
+    if (AController* C = GetController())
+    {
+        C->StopMovement();
+    }
+
+    // Turn towards target
+    if (TargetActor)
+    {
+        if (AAIController* AI = Cast<AAIController>(GetController()))
+        {
+            AI->SetFocus(TargetActor);
+        }
+    }
+}
+
+/**
+ * Defend
+ * @param bStartDefend: Start or stop defending
+ */
+void ASmartNPC::ExecuteDefend(bool bStartDefend)
+{
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Defend: %s"), *AgentID, bStartDefend ? TEXT("START") : TEXT("END"));
+}
+
+/**
+ * Roll
+ */
+void ASmartNPC::ExecuteRoll()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Rolls"), *AgentID);
+}
+
+/**
+ * Perform hand signal
+ * @param SignalName: Name of the hand signal to perform
+ */
+void ASmartNPC::ExecuteHandSignal(const FString& SignalName)
+{
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Hand Signal: %s"), *AgentID, *SignalName);
+}
+
+/**
+ * Perform emote
+ * @param EmoteName: Name of the emote to perform
+ */
+void ASmartNPC::ExecuteEmote(const FString& EmoteName)
+{
+     UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Emote: %s"), *AgentID, *EmoteName);
+}
+
+// --- Action Queue System ---
+
+/**
+ * Stop all actions
+ */
+void ASmartNPC::StopAllActions()
+{
+    // 1. Clear Queue
+    ActionQueue.Empty();
+    bIsBusy = false;
+    CurrentActionID = NPCActionKeys::Value_None;
+
+    // 2. Clear Blackboard
+    if (ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController()))
+    {
+        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
+        {
+            BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, TEXT("Idle"));
+            BB->ClearValue(ASmartNPCAIController::Key_TargetLocation);
+            BB->ClearValue(ASmartNPCAIController::Key_TargetActor);
+        }
+        AI->StopMovement();
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Stopped All Actions and Cleared Queue."), *AgentID);
+}
+
+/**
+ * Process next action in the queue
+ */
+void ASmartNPC::ProcessNextAction()
+{
+    if (bIsBusy) return;
+    if (ActionQueue.IsEmpty()) return;
+
+    FGameAction Action;
+    if (ActionQueue.Dequeue(Action))
+    {
+        bIsBusy = true;
+        CurrentActionID = Action.ActionType;
+        
+        ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController());
+        if (!AI) 
+        {
+            // No controller? Finish immediately.
+            OnActionCompleted();
+            return;
+        }
+
+        UBlackboardComponent* BB = AI->GetBlackboardComponent();
+        if (!BB) return;
+
+        // Set Blackboard Keys to trigger Behavior Tree
+        BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, Action.ActionType);
+
+        TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
+        for (const auto& Pair : Action.Parameters)
+        {
+            JsonObj->SetStringField(Pair.Key, Pair.Value);
+        }
+        if (!Action.TargetID.IsEmpty())
+        {
+            JsonObj->SetStringField(NPCActionKeys::Key_TargetID, Action.TargetID);
+        }
+
+        FString OutputString;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+        FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
+        BB->SetValueAsString(ASmartNPCAIController::Key_ActionParameters, OutputString);
+
+        // Handle Target Location
+        if (Action.Parameters.Contains(NPCActionKeys::Loc_X) && 
+            Action.Parameters.Contains(NPCActionKeys::Loc_Y) && 
+            Action.Parameters.Contains(NPCActionKeys::Loc_Z))
+        {
+             FVector Loc;
+             Loc.X = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_X]);
+             Loc.Y = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_Y]);
+             Loc.Z = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_Z]);
+             BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Starting Action %s (Queue Remaining: %d)"), *AgentID, *Action.ActionType, ActionQueue.IsEmpty() ? 0 : 1);
+        
+        // Timeout or failsafe? 
+        // For now, relies on Behavior Tree calling OnActionCompleted via Task
+    }
+}
+
+/**
+ * Called when an action is completed
+ */
+void ASmartNPC::OnActionCompleted()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Action %s Completed."), *AgentID, *CurrentActionID);
+    bIsBusy = false;
+    CurrentActionID = NPCActionKeys::Value_None;
+    
+    // Process next item in queue
+    ProcessNextAction();
 }
 

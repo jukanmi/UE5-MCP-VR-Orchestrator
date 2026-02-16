@@ -16,7 +16,6 @@ class UE5_MCP_VR_API ASmartNPC : public ACharacter
 public:
     ASmartNPC();
 
-protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -24,6 +23,16 @@ public:
     // Unique ID for routing (e.g. "Guard_1")
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
     FString AgentID;
+
+    // Movement Types for speed control
+    UENUM(BlueprintType)
+    enum class EMoveType : uint8
+    {
+        Walk,
+        Run,
+        Sprint,
+        Crouch
+    };
 
     // Behavior Tree to run for this NPC
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
@@ -61,73 +70,95 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI")
     FString CurrentActionID;
 
-    // Checks Agility vs Difficulty. Returns true if successful.
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    bool TryReflexAction(float Difficulty);
+    // --- Facial State ---
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Facial")
+    EFacialState CurrentFacialState = EFacialState::Neutral;
 
-    // Stops current LLM action (move, speak) immediately.
+    // --- Action Queue System ---
+    TQueue<FGameAction> ActionQueue;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "MCP|AI|Queue")
+    bool bIsBusy = false;
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
+    void ProcessNextAction();
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
+    void OnActionCompleted();
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
+    void StopAllActions();
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    bool TryReflexAction(int Difficulty);
+
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void AbortCurrentAction();
 
-    /**
-     * Emergency Interrupt:
-     * 1. Abort current action.
-     * 2. Send "Emergency" signal to Cognitive Engine with context.
-     */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void RequestEmergencyCognition(FString EventType, FString Description);
 
     // Hook for damage (Override in BP or C++)
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
-    /**
-     * Apply movement speeds from CurrentStats to CharacterMovementComponent.
-     * Call this after modifying CurrentStats.BaseStats.Dexterity or after RecalculateCombatStats().
-     */
     UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
     void ApplyMovementSpeed();
 
-    /**
-     * Recalculate all derived stats and apply them.
-     * Call this when base stats change.
-     */
     UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
     void RefreshStats();
 
+    // --- BTTask Action ---
 
-    /**
-     * Executes a batch of actions including Behavior Mode and Facial State.
-     * Replaces ProcessAction for the new architecture.
-     */
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    virtual void ExecuteActionBatch(const FActionBatch& Batch);
+    // 1. Movement
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
 
-    // --- Blueprint Implementable Events (Engine Logic) ---
-    // Moved to public so BTTasks can call them
+    // 2. Keep Distance
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed = 300.f);
 
-    // Move to location with speed
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteMove(FVector TargetLocation, float Speed);
+    // 3. Wait (Custom idle/wait behavior)
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteWait(float Duration);
 
-    // Speak text
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteSpeak(const FString& Text);
+    // 4. Dialogue (Rich dialogue with emotion/metadata)
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteDialogue(const FString& DialogueText, const FString& EmotionID);
 
-    // Emote
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteEmote(const FString& EmoteName);
+    // 5. Rotate Body
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed = 5.f);
 
-    // Attack
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteAttack(const FString& TargetID);
+    // 6. Attack (Specific attack type)
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecutePerformAttack(AActor* TargetActor, const FString& AttackType);
 
-    // Interact
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteInteract(const FString& TargetID);
+    // 7. Defend
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteDefend(bool bStartDefend);
 
-    // Generic fallback or other actions (Attack, Interact)
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteGenericAction(const FString& ActionType, const FString& TargetID);
+    // 8. Roll/Dodge
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteRoll();
+
+    // 9. Hand Signal
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteHandSignal(const FString& SignalName);
+
+    // 10. Emote
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    virtual void ExecuteEmote(const FString& EmoteName);
+
+protected:
+    // --- Helper implementation for Action Batch ---
+    virtual void UpdateBehaviorState(const struct FActionBatch& Batch);
+    virtual void DispatchActions(const TArray<FGameAction>& Actions);
+    
+    // Helper to determine behavior mode from action string
+    FString GetBehaviorModeFromAction(const FString& ActionType) const;
+    
+    // --- Original Protected Section ---
+
 
 public:
     // --- Debug / Testing ---
@@ -150,6 +181,10 @@ public:
     // Preset: Test Combat Attack
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Combat_Attack();
+
+    // Integration Test: Simulate Full Pipeline
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Orchestra_Pipeline();
 
 protected:
 };

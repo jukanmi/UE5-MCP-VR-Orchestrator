@@ -16,10 +16,8 @@
  *   [Selector: Task Root]
  *     ├─ [Sequence: PickUp]    → BTTask_TaskAction(PickUp)
  *     ├─ [Sequence: Drop]      → BTTask_TaskAction(Drop)
- *     ├─ [Sequence: UseObject] → BTTask_TaskAction(UseObject)
  *     ├─ [Sequence: Craft]     → BTTask_TaskAction(Craft)
  *     ├─ [Sequence: Repair]    → BTTask_TaskAction(Repair)
- *     └─ [Sequence: EatDrink]  → BTTask_TaskAction(EatDrink)
  */
 UENUM(BlueprintType)
 enum class ETaskAction : uint8
@@ -41,14 +39,6 @@ enum class ETaskAction : uint8
 	 *   - ItemID  (FString): 버릴 아이템 ID
 	 */
 	Drop         UMETA(DisplayName = "Drop"),
-
-	/**
-	 * UseObject(ObjectID)
-	 * 오브젝트와 상호작용한다 (문 열기, 레버 당기기 등).
-	 * Parameters:
-	 *   - ObjectID  (FString): 상호작용할 오브젝트 ID
-	 */
-	UseObject    UMETA(DisplayName = "UseObject"),
 
 	/**
 	 * Craft(RecipeID)

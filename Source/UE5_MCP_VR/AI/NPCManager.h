@@ -45,4 +45,7 @@ private:
 
     UPROPERTY()
     UWebSocketClient* BoundSocket;
+
+    // Helper to process a single batch
+    void ProcessActionBatch(const struct FActionBatch& Batch);
 };

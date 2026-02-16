@@ -69,3 +69,89 @@ bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
 
     return true;
 }
+/**
+ * @brief Parses a JSON string containing an array of action batches.
+ * @param Json The JSON string to parse.
+ * @param OutBatches The array to store the parsed action batches.
+ * @return true if the JSON was parsed successfully, false otherwise.
+ */
+bool UMCPJsonUtils::ParseActionBatchArray(FString Json, TArray<FActionBatch>& OutBatches)
+{
+    // 1. Create Reader
+    TArray<TSharedPtr<FJsonValue>> RootArray;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+
+    // 2. Deserialize
+    if (!FJsonSerializer::Deserialize(Reader, RootArray))
+    {
+        return false;
+    }
+
+    // 3. Loop through array
+    for (const TSharedPtr<FJsonValue>& Val : RootArray)
+    {
+        TSharedPtr<FJsonObject> BatchObj = Val->AsObject();
+        if (!BatchObj.IsValid()) continue;
+
+        FActionBatch NewBatch;
+        
+        // Extract Agent ID
+        NewBatch.AgentID = BatchObj->GetStringField(TEXT("agent_id"));
+        NewBatch.BehaviorMode = BatchObj->GetStringField(TEXT("behavior_mode"));
+        NewBatch.FacialState = BatchObj->GetStringField(TEXT("facial_state"));
+
+        // Extract Actions
+        const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
+        if (BatchObj->TryGetArrayField(TEXT("actions"), ActionsArray))
+        {
+            for (const TSharedPtr<FJsonValue>& ActionVal : *ActionsArray)
+            {
+                TSharedPtr<FJsonObject> ActionObj = ActionVal->AsObject();
+                if (!ActionObj.IsValid()) continue;
+
+                FGameAction NewAction;
+                // 1. Parse common fields
+                NewAction.ActionType = ActionObj->GetStringField(TEXT("action_type"));
+                
+                // 2. Collect ALL fields into Parameters
+                for (const auto& Pair : ActionObj->Values)
+                {
+                    FString Key = Pair.Key;
+                    
+                    if (Key == TEXT("action_type")) continue;
+
+                    // Handle Target IDs
+                    if (Key == TEXT("target_id") || Key == TEXT("target_listener") || Key == TEXT("executor_npc_id"))
+                    {
+                        if (Key == TEXT("target_id"))
+                        {
+                            NewAction.TargetID = Pair.Value->AsString();
+                        }
+                        NewAction.Parameters.Add(Key, Pair.Value->AsString());
+                        continue;
+                    }
+
+                    // Handle nested 'parameters' object
+                    if (Key == TEXT("parameters") && Pair.Value->Type == EJson::Object)
+                    {
+                        TSharedPtr<FJsonObject> SubParams = Pair.Value->AsObject();
+                        for (const auto& SubPair : SubParams->Values)
+                        {
+                            NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                        }
+                        continue;
+                    }
+
+                    // Add everything else as string
+                    NewAction.Parameters.Add(Key, Pair.Value->AsString());
+                }
+
+                NewBatch.Actions.Add(NewAction);
+            }
+        }
+        
+        OutBatches.Add(NewBatch);
+    }
+
+    return true;
+}

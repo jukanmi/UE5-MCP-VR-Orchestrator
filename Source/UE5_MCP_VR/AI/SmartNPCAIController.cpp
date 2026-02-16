@@ -8,9 +8,9 @@
 
 // Define Key Names
 const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
-const FName ASmartNPCAIController::Key_ActionType(TEXT("ActionType"));
+
 const FName ASmartNPCAIController::Key_TargetActor(TEXT("TargetActor"));
-const FName ASmartNPCAIController::Key_SpeakText(TEXT("SpeakText"));
+const FName ASmartNPCAIController::Key_DialogueText(TEXT("DialogueText"));
 const FName ASmartNPCAIController::Key_BehaviorMode(TEXT("BehaviorMode"));
 const FName ASmartNPCAIController::Key_SubAction(TEXT("SubAction"));
 const FName ASmartNPCAIController::Key_ActionParameters(TEXT("ActionParameters"));

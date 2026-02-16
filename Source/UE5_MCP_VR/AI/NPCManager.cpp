@@ -2,6 +2,7 @@
 #include "SmartNPC.h"
 #include "../Utils/MCPJsonUtils.h"
 #include "Engine/GameInstance.h"
+#include "NPCActionKeys.h"
 
 void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -52,51 +53,58 @@ void UNPCManager::SendEvent(const FString& JsonData)
 
 void UNPCManager::HandleMessage(const FString& JsonMessage)
 {
-    // Parse Batch
-    FActionBatch Batch;
-    if (UMCPJsonUtils::ParseActionBatch(JsonMessage, Batch))
+    // 1. Try Parse as Batch Array (Standard)
+    TArray<FActionBatch> Batches;
+    if (UMCPJsonUtils::ParseActionBatchArray(JsonMessage, Batches))
     {
-        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received ActionBatch for: %s"), *Batch.AgentID);
-        
-        // Check for broadcast mode
-        if (Batch.AgentID.Equals(TEXT("broadcast"), ESearchCase::IgnoreCase))
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received %d ActionBatches"), Batches.Num());
+
+        for (const FActionBatch& Batch : Batches)
         {
-            // Send to ALL registered NPCs
-            UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting to %d NPCs"), NPCMap.Num());
-            
-            for (auto& Pair : NPCMap)
+            ProcessActionBatch(Batch);
+        }
+        return;
+    }
+
+    // 2. Fallback: Parse as Single Object (Legacy Support)
+    FActionBatch SingleBatch;
+    if (UMCPJsonUtils::ParseActionBatch(JsonMessage, SingleBatch))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Received Legacy Single Batch for: %s"), *SingleBatch.AgentID);
+        ProcessActionBatch(SingleBatch);
+        return;
+    }
+
+    // 3. Error Case
+    UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse message."));
+}
+
+void UNPCManager::ProcessActionBatch(const FActionBatch& Batch)
+{
+    // Case A: Broadcast (All NPCs)
+    if (Batch.AgentID.Equals(NPCActionKeys::Agent_Broadcast, ESearchCase::IgnoreCase))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting to %d NPCs"), NPCMap.Num());
+        for (auto& Pair : NPCMap)
+        {
+            if (ASmartNPC* NPC = Pair.Value)
             {
-                if (Pair.Value)
-                {
-                    for (const FGameAction& Action : Batch.Actions)
-                    {
-                        Pair.Value->ProcessAction(Action);
-                    }
-                }
+                NPC->ExecuteActionBatch(Batch);
             }
         }
-        else
+        return;
+    }
+
+    // Case B: Targeted (Specific NPC)
+    if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
+    {
+        if (ASmartNPC* ValidNPC = *NPC)
         {
-            // Find the NPC by Batch.AgentID (e.g., "Elara")
-            if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
-            {
-                if (*NPC)
-                {
-                    // Process all actions for this NPC
-                    for (const FGameAction& Action : Batch.Actions)
-                    {
-                        (*NPC)->ProcessAction(Action);
-                    }
-                }
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
-            }
+            ValidNPC->ExecuteActionBatch(Batch);
         }
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse ActionBatch from message"));
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not registered!"), *Batch.AgentID);
     }
 }

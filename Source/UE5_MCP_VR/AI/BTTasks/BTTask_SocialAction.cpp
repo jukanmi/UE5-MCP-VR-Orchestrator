@@ -3,6 +3,7 @@
 #include "AIController.h"
 #include "../SmartNPC.h"
 #include "../SmartNPCAIController.h"
+#include "../NPCActionKeys.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -40,8 +41,15 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 
 	// Resolve Enum from String
 	const UEnum* EnumPtr = StaticEnum<ESocialAction>();
-	int64 EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ESocialAction::%s"), *SubActionStr)));
-	ESocialAction Action = (ESocialAction)EnumValue;
+	int64 EnumValue = EnumPtr->GetValueByName(FName(*SubActionStr));
+	if (EnumValue == INDEX_NONE)
+	{
+		// Try scoped
+		EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ESocialAction::%s"), *SubActionStr)));
+	}
+	
+	ESocialAction Action = (EnumValue != INDEX_NONE) ? (ESocialAction)EnumValue : ESocialAction::Emote; // Default
+	SubAction = Action;
 
 	switch (Action)
 	{
@@ -49,23 +57,39 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 	case ESocialAction::Emote:
 		{
 			FString GestureType = Params.FindRef(TEXT("GestureType"));
+			if (GestureType.IsEmpty()) GestureType = Params.FindRef(TEXT("gesture"));
 			NPC->ExecuteEmote(GestureType);
 		}
 		break;
+	
 	case ESocialAction::Follow:
 		{
-			FString TargetID = Params.FindRef(TEXT("TargetID"));
-			float Distance = FCString::Atof(*Params.FindRef(TEXT("Distance")));
-			// Follow uses ExecuteMove with target location
-			FVector TargetLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
-			NPC->ExecuteMove(TargetLoc, 200.0f);
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			float Distance = 200.0f;
+			if (Params.Contains(TEXT("distance"))) Distance = FCString::Atof(*Params[TEXT("distance")]);
+			
+            if (TargetActor)
+            {
+                NPC->ExecuteKeepDistance(TargetActor, Distance);
+            }
+            else
+            {
+                // Fallback to MoveToLocation if only location is known
+			    FVector TargetLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
+			    NPC->ExecuteMoveToLocation(TargetLoc, ASmartNPC::EMoveType::Run);
+            }
 		}
 		break;
 	
+    case ESocialAction::Trade:
+    case ESocialAction::GiveItem:
+    case ESocialAction::Comfort:
+    case ESocialAction::HandObject:
 	default:
-		// Trade, GiveItem, Comfort, HandObject → ExecuteGenericAction
-		FString TargetID = Params.FindRef(TEXT("TargetID"));
-		NPC->ExecuteGenericAction(SubActionStr, TargetID);
+		// Fallback: Just emote or log
+		FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+		UE_LOG(LogTemp, Warning, TEXT("[BTTask_SocialAction] Unimplemented Social Action: %s (Target: %s) -> Executing generic Emote 'Talk'"), *SubActionStr, *TargetID);
+		NPC->ExecuteEmote(TEXT("Talk"));
 		break;
 	}
 
@@ -74,5 +98,9 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 
 FString UBTTask_SocialAction::GetStaticDescription() const
 {
-	return FString::Printf(TEXT("Execute Social Action: %s"), *UEnum::GetValueAsString(SubAction));
+	if (UEnum* EnumPtr = StaticEnum<ESocialAction>())
+	{
+		return FString::Printf(TEXT("Execute Social Action: %s"), *EnumPtr->GetValueAsString(SubAction));
+	}
+	return TEXT("Execute Social Action");
 }
