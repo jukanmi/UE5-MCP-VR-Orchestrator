@@ -19,6 +19,8 @@ namespace NPCActionKeys
     inline const FString Key_Params     = TEXT("parameters");
 
     // --- Location Keys (위치 정보 키) ---
+    // 좌표는 "target_loc": {"x":0, "y":0, "z":0} 형태로 한 세트로 전달됨
+    inline const FString Key_TargetLoc  = TEXT("target_loc");
     inline const FString Loc_X          = TEXT("x");
     inline const FString Loc_Y          = TEXT("y");
     inline const FString Loc_Z          = TEXT("z");
@@ -45,6 +47,27 @@ namespace NPCActionKeys
     inline const FString Mode_Lifestyle     = TEXT("Lifestyle");
     inline const FString Mode_Common        = TEXT("Common");
     
+    // --- Interaction Types (상호작용 타입) ---
+    inline const FString Interact_Sit       = TEXT("Sit");
+    inline const FString Interact_LieDown   = TEXT("LieDown");
+    inline const FString Interact_StandUp   = TEXT("StandUp");
+    
+    inline const FString Interact_PickUp    = TEXT("PickUp");
+    inline const FString Interact_Drop      = TEXT("Drop");
+    inline const FString Interact_Eat       = TEXT("Eat");
+    inline const FString Interact_Wear      = TEXT("Wear");
+    inline const FString Interact_Unequip   = TEXT("Unequip");
+    
+    inline const FString Interact_Clean     = TEXT("Clean");
+    inline const FString Interact_Repair    = TEXT("Repair");
+    inline const FString Interact_Read      = TEXT("Read");
+    
+    inline const FString Interact_Pray      = TEXT("Pray");
+    inline const FString Interact_Dance     = TEXT("Dance");
+    inline const FString Interact_Sing      = TEXT("Sing");
+    inline const FString Interact_HandSignal = TEXT("HandSignal");
+    inline const FString Interact_Emote     = TEXT("Emote");
+
     // --- Common Values (일반 값) ---
     inline const FString Value_Neutral      = TEXT("Neutral");
     inline const FString Value_None         = TEXT("None");

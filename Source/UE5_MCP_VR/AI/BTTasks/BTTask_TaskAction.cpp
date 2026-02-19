@@ -1,4 +1,5 @@
 #include "BTTask_TaskAction.h"
+#include "BTTask_CommonAction.h"  // CommonFallback 접근용
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "../SmartNPC.h"
@@ -22,38 +23,35 @@ EBTNodeResult::Type UBTTask_TaskAction::ExecuteTask(UBehaviorTreeComponent& Owne
 	ASmartNPC* NPC = Cast<ASmartNPC>(AIController->GetPawn());
 	if (!NPC) return EBTNodeResult::Failed;
 
-	FString SubActionStr = BB->GetValueAsString(ASmartNPCAIController::Key_SubAction);
-	FString ParamsJson = BB->GetValueAsString(ASmartNPCAIController::Key_ActionParameters);
-
-	TSharedPtr<FJsonObject> JsonObj;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ParamsJson);
-	FJsonSerializer::Deserialize(Reader, JsonObj);
-
+	// 공용 헬퍼로 파라미터 파싱 (중복 코드 제거)
+	FString SubActionStr;
 	TMap<FString, FString> Params;
-	if (JsonObj.IsValid())
-	{
-		for (auto& Pair : JsonObj->Values)
-		{
-			Params.Add(Pair.Key, Pair.Value->AsString());
-		}
-	}
+	UBTTask_CommonAction::ParseBlackboardParams(BB, Params, SubActionStr);
 
-	// Resolve Enum from String
+	// Task Enum에서 찾기
 	const UEnum* EnumPtr = StaticEnum<ETaskAction>();
 	int64 EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ETaskAction::%s"), *SubActionStr)));
-	ETaskAction Action = (ETaskAction)EnumValue;
 
-	switch (Action)
+	// ─────────────────────────────────────────────────────────────────
+	// [Fallback] Task Enum에 없는 액션 → CommonAction으로 위임
+	// 왜: 물건 줍기(Task) 후 "이동"이나 "말하기" 같은 Common 액션 필요
+	// ─────────────────────────────────────────────────────────────────
+	if (EnumValue == INDEX_NONE)
 	{
-
-	default:
-		// PickUp, Drop, Craft, Repair → ExecuteGenericAction
-		FString TargetID = Params.FindRef(TEXT("ItemID"));
-		if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("TargetObject"));
-		if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("RecipeID"));
-		NPC->ExecuteGenericAction(SubActionStr, TargetID);
-		break;
+		UE_LOG(LogTemp, Log,
+			TEXT("[TaskAction] '%s' not in ETaskAction, delegating to CommonFallback"),
+			*SubActionStr);
+		return UBTTask_CommonAction::ExecuteCommonFallback(OwnerComp, TEXT("TaskAction"));
 	}
+
+	ETaskAction Action = static_cast<ETaskAction>(EnumValue);
+	SubAction = Action;
+
+	// Task 전용 로직: 현재는 모든 액션이 GenericAction으로 처리
+	FString TargetID = Params.FindRef(TEXT("ItemID"));
+	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("TargetObject"));
+	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("RecipeID"));
+	NPC->ExecuteGenericAction(SubActionStr, TargetID);
 
 	return EBTNodeResult::Succeeded;
 }

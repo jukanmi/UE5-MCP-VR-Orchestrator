@@ -162,12 +162,6 @@ struct FBehavioralTraits
     float Bravery = 50.0f;  // 위험 감수 성향
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Behavioral", meta = (ClampMin = "0", ClampMax = "100"))
-    float Willpower = 50.0f;  // Fear 저항
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Behavioral", meta = (ClampMin = "0", ClampMax = "100"))
-    float Concentration = 50.0f;  // 인터럽트 저항
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Behavioral", meta = (ClampMin = "0", ClampMax = "100"))
     float Sanity = 100.0f;  // 정신력 (낮으면 판단 노이즈 증가)
 
     FBehavioralTraits() {}

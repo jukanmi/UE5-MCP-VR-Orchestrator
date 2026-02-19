@@ -1,4 +1,5 @@
 #include "BTTask_LifestyleAction.h"
+#include "BTTask_CommonAction.h"  // CommonFallback 접근용
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "../SmartNPC.h"
@@ -22,42 +23,48 @@ EBTNodeResult::Type UBTTask_LifestyleAction::ExecuteTask(UBehaviorTreeComponent&
 	ASmartNPC* NPC = Cast<ASmartNPC>(AIController->GetPawn());
 	if (!NPC) return EBTNodeResult::Failed;
 
-	FString SubActionStr = BB->GetValueAsString(ASmartNPCAIController::Key_SubAction);
-	FString ParamsJson = BB->GetValueAsString(ASmartNPCAIController::Key_ActionParameters);
-
-	TSharedPtr<FJsonObject> JsonObj;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ParamsJson);
-	FJsonSerializer::Deserialize(Reader, JsonObj);
-
+	// 공용 헬퍼로 파라미터 파싱 (중복 코드 제거)
+	FString SubActionStr;
 	TMap<FString, FString> Params;
-	if (JsonObj.IsValid())
-	{
-		for (auto& Pair : JsonObj->Values)
-		{
-			Params.Add(Pair.Key, Pair.Value->AsString());
-		}
-	}
+	UBTTask_CommonAction::ParseBlackboardParams(BB, Params, SubActionStr);
 
-	// Resolve Enum from String
+	// Lifestyle Enum에서 찾기
 	const UEnum* EnumPtr = StaticEnum<ELifestyleAction>();
 	int64 EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ELifestyleAction::%s"), *SubActionStr)));
-	ELifestyleAction Action = (ELifestyleAction)EnumValue;
 
+	// ─────────────────────────────────────────────────────────────────
+	// [Fallback] Lifestyle Enum에 없는 액션 → CommonAction으로 위임
+	// 왜: 독서 중에도 "Dialogue"(혼잣말), "TurnTo"(소리 방향) 같은 Common 필요
+	// ─────────────────────────────────────────────────────────────────
+	if (EnumValue == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[LifestyleAction] '%s' not in ELifestyleAction, delegating to CommonFallback"),
+			*SubActionStr);
+		return UBTTask_CommonAction::ExecuteCommonFallback(OwnerComp, TEXT("LifestyleAction"));
+	}
+
+	ELifestyleAction Action = static_cast<ELifestyleAction>(EnumValue);
+	SubAction = Action;
+
+	// Lifestyle 전용 로직
 	switch (Action)
 	{
 	case ELifestyleAction::Dance:
 	case ELifestyleAction::Sing:
-		// Use Emote system for expressive actions
+		// 감정 표현이 필요한 행동 → Emote 시스템 사용
 		NPC->ExecuteEmote(SubActionStr);
 		break;
 	
 	default:
-		// Sit, Sleep, Clean, Read, Pray → ExecuteGenericAction
-		FString TargetID = Params.FindRef(TEXT("ChairID"));
-		if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BedID"));
-		if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BookID"));
-		if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("Area"));
-		NPC->ExecuteGenericAction(SubActionStr, TargetID);
+		{
+			// Sit, Sleep, Clean, Read, Pray → ExecuteGenericAction
+			FString TargetID = Params.FindRef(TEXT("ChairID"));
+			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BedID"));
+			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BookID"));
+			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("Area"));
+			NPC->ExecuteGenericAction(SubActionStr, TargetID);
+		}
 		break;
 	}
 

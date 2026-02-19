@@ -9,6 +9,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "../Utils/DiceSystem.h"
 #include "NPCActionKeys.h"
+#include "../Component/NPCInventoryComponent.h" // Include Inventory
+#include "NPCInteractionDataAsset.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -16,6 +18,9 @@ ASmartNPC::ASmartNPC()
     AgentID = TEXT("UnknownAgent");
     AIControllerClass = ASmartNPCAIController::StaticClass();
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+    // Create Inventory Component
+    InventoryComponent = CreateDefaultSubobject<UNPCInventoryComponent>(TEXT("InventoryComponent"));
 }
 
 void ASmartNPC::BeginPlay()
@@ -334,6 +339,26 @@ void ASmartNPC::Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, F
     Action.ActionType = ActionName;
     Action.TargetID = TargetID;
 
+    // [Refactor] Move 액션이고 TargetID가 벡터 문자열이면 target_loc 오브젝트로 변환
+    if (ActionName.Contains(TEXT("Move"), ESearchCase::IgnoreCase))
+    {
+        FVector TargetLoc;
+        if (TargetLoc.InitFromString(TargetID))
+        {
+            // 좌표를 한 세트로 묶어서 JSON 오브젝트로 전달
+            FString LocJson = FString::Printf(
+                TEXT("{\"x\":%s,\"y\":%s,\"z\":%s}"),
+                *FString::SanitizeFloat(TargetLoc.X),
+                *FString::SanitizeFloat(TargetLoc.Y),
+                *FString::SanitizeFloat(TargetLoc.Z)
+            );
+            Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, LocJson);
+            
+            Action.TargetID = TEXT(""); 
+            UE_LOG(LogTemp, Log, TEXT("[Debug] Parsed TargetID as Vector: %s"), *TargetLoc.ToString());
+        }
+    }
+
     if (!Content.IsEmpty())
     {
         Action.Parameters.Add(NPCActionKeys::Key_Content, Content);
@@ -361,20 +386,19 @@ void ASmartNPC::Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, F
 
 void ASmartNPC::Debug_Test_Social_Dialogue()
 {
-    Debug_ExecuteAction(ENPCBehaviorMode::Common, TEXT("Dialogue"), TEXT("Player"), TEXT("Hello! This is a debug test."), TEXT(""));
+    Debug_ExecuteAction(ENPCBehaviorMode::Common, NPCActionKeys::Action_Dialogue, TEXT("Player"), TEXT("Hello! This is a debug test."), TEXT(""));
 }
 
 void ASmartNPC::Debug_Test_Common_Move()
 {
-    // Test Move to current location + forward 200 units
+    // [Refactor] Simplified: Pass vector string directly to TargetID. Debug_ExecuteAction handles parsing.
     FVector Target = GetActorLocation() + GetActorForwardVector() * 200.0f;
-    FString Params = FString::Printf(TEXT("{\"x\": \"%f\", \"y\": \"%f\", \"z\": \"%f\"}"), Target.X, Target.Y, Target.Z);
-    Debug_ExecuteAction(ENPCBehaviorMode::Common, TEXT("Move"), TEXT(""), TEXT(""), Params);
+    Debug_ExecuteAction(ENPCBehaviorMode::Common, NPCActionKeys::Action_Move, Target.ToString(), TEXT(""), TEXT(""));
 }
 
 void ASmartNPC::Debug_Test_Combat_Attack()
 {
-    Debug_ExecuteAction(ENPCBehaviorMode::Combat, TEXT("Attack"), TEXT("Player"), TEXT(""), TEXT(""));
+    Debug_ExecuteAction(ENPCBehaviorMode::Combat, NPCActionKeys::Action_Attack, TEXT("Player"), TEXT(""), TEXT(""));
 }
 
 void ASmartNPC::Debug_Test_Orchestra_Pipeline()
@@ -418,13 +442,10 @@ void ASmartNPC::Debug_Test_Orchestra_Pipeline()
             // but since HandleMessage is private/protected and bound to delegate, we might need a public trigger 
             // OR just call BindSocket logic. 
             // However, for testing, let's assume we can't call private HandleMessage easily without reflection 
-            // or making it public. 
-            // Let's modify NPCManager to have a public 'Debug_InjectMessage' or similar, 
             // OR just cast/call if it was public (it's private in header).
             
             // Re-checking NPCManager.h... HandleMessage is private UFUNCTION.
-            // But we can use FindFunction to call it via ProcessEvent!
-            
+            // But we can use    // Inject the message directly into HandleMessage (via introspection)
             UFunction* Func = Manager->FindFunction(TEXT("HandleMessage"));
             if (Func)
             {
@@ -440,6 +461,15 @@ void ASmartNPC::Debug_Test_Orchestra_Pipeline()
     }
 }
 
+void ASmartNPC::Debug_Test_Interaction(FString InteractionKey, FString ExtraParams)
+{
+    // [Refactor] Direct Test for New Interaction System
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Debug_Test_Interaction: Key=%s, Extra=%s"), *InteractionKey, *ExtraParams);
+    
+    // No Target Actor in Debug, provide TargetID "DebugTarget"
+    ExecuteInteraction(InteractionKey, nullptr, TEXT("DebugTarget"), ExtraParams);
+}
+
 
 // --- Default C++ Implementations ---
 /**
@@ -448,8 +478,20 @@ void ASmartNPC::Debug_Test_Orchestra_Pipeline()
  * @param MoveType: Type of movement (Walk, Run, Sprint)
  * @param AcceptanceRadius: Radius to accept the move
  */
-void ASmartNPC::ExecuteMoveToLocation(FVector TargetLocation, int MoveType, float AcceptanceRadius)
+void ASmartNPC::ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
 {
+    // Apply Speed based on MoveType
+    if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+    {
+        switch (SpeedType)
+        {
+            case EMoveType::Walk:   Movement->MaxWalkSpeed = CurrentStats.Movement.WalkSpeed; break;
+            case EMoveType::Run:    Movement->MaxWalkSpeed = CurrentStats.Movement.RunSpeed; break;
+            case EMoveType::Sprint: Movement->MaxWalkSpeed = CurrentStats.Movement.SprintSpeed; break;
+            case EMoveType::Crouch: Movement->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed; break;
+        }
+    }
+
     // Move
     if (AAIController* AI = Cast<AAIController>(GetController()))
     {
@@ -535,7 +577,7 @@ void ASmartNPC::ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed)
  */
 void ASmartNPC::ExecutePerformAttack(AActor* TargetActor, const FString& AttackType)
 {
-    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Attacks %s with %s"), *AgentID, TargetActor ? *TargetActor->GetName() : NPCActionKeys::Value_None, *AttackType);
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Attacks %s with %s"), *AgentID, TargetActor ? *TargetActor->GetName() : *NPCActionKeys::Value_None, *AttackType);
 
     // Stop movement to attack
     if (AController* C = GetController())
@@ -570,23 +612,6 @@ void ASmartNPC::ExecuteRoll()
     UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Rolls"), *AgentID);
 }
 
-/**
- * Perform hand signal
- * @param SignalName: Name of the hand signal to perform
- */
-void ASmartNPC::ExecuteHandSignal(const FString& SignalName)
-{
-    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Hand Signal: %s"), *AgentID, *SignalName);
-}
-
-/**
- * Perform emote
- * @param EmoteName: Name of the emote to perform
- */
-void ASmartNPC::ExecuteEmote(const FString& EmoteName)
-{
-     UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s Emote: %s"), *AgentID, *EmoteName);
-}
 
 // --- Action Queue System ---
 
@@ -658,16 +683,26 @@ void ASmartNPC::ProcessNextAction()
         FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
         BB->SetValueAsString(ASmartNPCAIController::Key_ActionParameters, OutputString);
 
-        // Handle Target Location
-        if (Action.Parameters.Contains(NPCActionKeys::Loc_X) && 
-            Action.Parameters.Contains(NPCActionKeys::Loc_Y) && 
-            Action.Parameters.Contains(NPCActionKeys::Loc_Z))
+        // target_loc JSON 오브젝트를 파싱하여 Blackboard FVector로 변환
+        // 왜: Python에서 {"target_loc": {"x":0, "y":0, "z":0}} 형태로 전달됨
+        if (Action.Parameters.Contains(NPCActionKeys::Key_TargetLoc))
         {
-             FVector Loc;
-             Loc.X = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_X]);
-             Loc.Y = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_Y]);
-             Loc.Z = FCString::Atof(*Action.Parameters[NPCActionKeys::Loc_Z]);
-             BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+            FString LocJsonStr = Action.Parameters[NPCActionKeys::Key_TargetLoc];
+            TSharedPtr<FJsonObject> LocJson;
+            TSharedRef<TJsonReader<>> LocReader = TJsonReaderFactory<>::Create(LocJsonStr);
+            
+            if (FJsonSerializer::Deserialize(LocReader, LocJson) && LocJson.IsValid())
+            {
+                FVector Loc;
+                Loc.X = LocJson->GetNumberField(NPCActionKeys::Loc_X);
+                Loc.Y = LocJson->GetNumberField(NPCActionKeys::Loc_Y);
+                Loc.Z = LocJson->GetNumberField(NPCActionKeys::Loc_Z);
+                BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Failed to parse target_loc JSON: %s"), *LocJsonStr);
+            }
         }
 
         UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Starting Action %s (Queue Remaining: %d)"), *AgentID, *Action.ActionType, ActionQueue.IsEmpty() ? 0 : 1);
@@ -688,5 +723,271 @@ void ASmartNPC::OnActionCompleted()
     
     // Process next item in queue
     ProcessNextAction();
+}
+
+// --- Interaction System Implementation ---
+
+void ASmartNPC::ExecuteGenericAction(const FString& ActionType, const FString& TargetID, const FString& Content, const FString& ExtraParams)
+{
+    // Redirect generic actions to new interaction system if possible
+    ExecuteInteraction(ActionType, nullptr, TargetID, ExtraParams);
+}
+
+void ASmartNPC::ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams)
+{
+    // Guard against empty or invalid interaction types to prevent log spam
+    if (InteractionType.IsEmpty()) return;
+
+    // Ignore 'Idle' or 'None' types for now
+    if (InteractionType.Equals(TEXT("Idle"), ESearchCase::IgnoreCase) || 
+        InteractionType.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+    {
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] ExecuteInteraction: %s (Target: %s, ID: %s)"), *InteractionType, TargetActor ? *TargetActor->GetName() : TEXT("None"), *TargetID);
+
+    // 1. Body State & Movement
+    if (InteractionType.Equals(NPCActionKeys::Interact_Sit, ESearchCase::IgnoreCase))
+    {
+        ExecuteSit(TargetActor);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_LieDown, ESearchCase::IgnoreCase))
+    {
+        ExecuteLieDown(TargetActor);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_StandUp, ESearchCase::IgnoreCase))
+    {
+        ExecuteStandUp();
+    }
+    
+    // 2. Inventory (Requires Inventory Component)
+    else if (InteractionType.Equals(NPCActionKeys::Interact_PickUp, ESearchCase::IgnoreCase))
+    {
+        ExecutePickUp(TargetActor);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Drop, ESearchCase::IgnoreCase))
+    {
+        ExecuteDropItem(TargetID);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Eat, ESearchCase::IgnoreCase))
+    {
+        ExecuteEat(TargetID);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Wear, ESearchCase::IgnoreCase))
+    {
+        ExecuteWear(TargetID);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Unequip, ESearchCase::IgnoreCase))
+    {
+        ExecuteUnequip(TargetID);
+    }
+
+    // 3. Task
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Clean, ESearchCase::IgnoreCase))
+    {
+        ExecuteClean(TargetActor);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Repair, ESearchCase::IgnoreCase))
+    {
+        ExecuteRepair(TargetActor);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Read, ESearchCase::IgnoreCase))
+    {
+        ExecuteRead(TargetActor);
+    }
+
+    // 4. Performance
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Pray, ESearchCase::IgnoreCase))
+    {
+        ExecutePray();
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Dance, ESearchCase::IgnoreCase))
+    {
+        // Style can be passed in ExtraParams or appended to Key
+        ExecuteDance(ExtraParams); 
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Sing, ESearchCase::IgnoreCase))
+    {
+        ExecuteSing(ExtraParams);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_HandSignal, ESearchCase::IgnoreCase))
+    {
+        ExecuteHandSignal(ExtraParams);
+    }
+    else if (InteractionType.Equals(NPCActionKeys::Interact_Emote, ESearchCase::IgnoreCase))
+    {
+        ExecuteEmote(ExtraParams);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Unknown Interaction Type: %s"), *InteractionType);
+    }
+}
+
+// --- Protected Helpers ---
+
+void ASmartNPC::PlayInteractionMontage(const FString& Key)
+{
+    if (!InteractionData)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] InteractionData Asset is NOT set in Blueprint!"));
+        return;
+    }
+
+    UAnimMontage* Montage = InteractionData->FindMontage(Key);
+    if (Montage)
+    {
+        float Duration = PlayAnimMontage(Montage);
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Playing Montage for Key: %s (Duration: %.2f)"), *Key, Duration);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] No Montage found for Key: %s"), *Key);
+    }
+}
+
+void ASmartNPC::ExecuteSit(AActor* TargetSeat)
+{
+    // Constraint 2: Just play animation for now. No complex snapping.
+    PlayInteractionMontage(NPCActionKeys::Interact_Sit);
+}
+
+void ASmartNPC::ExecuteLieDown(AActor* TargetBed)
+{
+    // Constraint 2: Just play animation.
+    PlayInteractionMontage(NPCActionKeys::Interact_LieDown);
+}
+
+void ASmartNPC::ExecuteStandUp()
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_StandUp);
+}
+
+void ASmartNPC::ExecutePickUp(AActor* TargetItem)
+{
+    // ToDo: Need a robust way to get UItemDataAsset from TargetActor.
+    // For now, destroy actor to simulate pickup if simple.
+    PlayInteractionMontage(NPCActionKeys::Interact_PickUp);
+    
+    if (TargetItem)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Picked up %s (Visual only - Logic requires Item Interface)"), *TargetItem->GetName());
+        TargetItem->Destroy();
+    }
+}
+
+void ASmartNPC::ExecuteDropItem(const FString& ItemID)
+{
+    if (InventoryComponent)
+    {
+        if (InventoryComponent->RemoveItem(ItemID, 1))
+        {
+             PlayInteractionMontage(NPCActionKeys::Interact_Drop);
+             // ToDo: Spawn actor in world?
+             UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Dropped Item: %s"), *ItemID);
+        }
+        else
+        {
+             UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Failed to drop item (Not found): %s"), *ItemID);
+        }
+    }
+}
+
+void ASmartNPC::ExecuteEat(const FString& ItemID)
+{
+    if (InventoryComponent)
+    {
+        // Check if exists logic
+        // For 'Eat', we usually consume it.
+        if (InventoryComponent->RemoveItem(ItemID, 1))
+        {
+             PlayInteractionMontage(NPCActionKeys::Interact_Eat);
+             // Restore Health/Hunger logic here
+             UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Ate Item: %s"), *ItemID);
+        }
+        else
+        {
+             UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] No item to eat: %s"), *ItemID);
+        }
+    }
+}
+
+void ASmartNPC::ExecuteWear(const FString& ItemID)
+{
+     if (InventoryComponent && InventoryComponent->HasItem(ItemID))
+     {
+         PlayInteractionMontage(NPCActionKeys::Interact_Wear);
+         UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Equipped: %s"), *ItemID);
+         // Attach mesh logic...
+     }
+}
+
+void ASmartNPC::ExecuteUnequip(const FString& ItemID)
+{
+     PlayInteractionMontage(NPCActionKeys::Interact_Unequip);
+     UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Unequipped: %s"), *ItemID);
+}
+
+void ASmartNPC::ExecuteClean(AActor* TargetZone)
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_Clean);
+}
+
+void ASmartNPC::ExecuteRepair(AActor* TargetObject)
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_Repair);
+}
+
+void ASmartNPC::ExecuteRead(AActor* TargetBook)
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_Read);
+}
+
+void ASmartNPC::ExecutePray()
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_Pray);
+}
+
+void ASmartNPC::ExecuteDance(const FString& Style)
+{
+    // Style could be "Salsa", "Waltz" etc.
+    // Key might be "Dance" or "Dance_Salsa"
+    FString Key = NPCActionKeys::Interact_Dance;
+    if (!Style.IsEmpty())
+    {
+        Key = Key + TEXT("_") + Style;
+    }
+    PlayInteractionMontage(Key);
+}
+
+void ASmartNPC::ExecuteSing(const FString& SongName)
+{
+    PlayInteractionMontage(NPCActionKeys::Interact_Sing);
+    // Trigger Sound Cue...
+}
+
+void ASmartNPC::ExecuteHandSignal(const FString& SignalName)
+{
+    // If SignalName is provided, use it as key, or append?
+    // Usually HandSignal is the category.
+    // Let's assume SignalName IS the key if valid.
+    if (!SignalName.IsEmpty())
+    {
+         PlayInteractionMontage(SignalName);
+    }
+    else
+    {
+         // Default generic wave?
+         PlayInteractionMontage(TEXT("HandSignal_Wave"));
+    }
+}
+
+void ASmartNPC::ExecuteEmote(const FString& EmoteName)
+{
+    if (!EmoteName.IsEmpty())
+    {
+        PlayInteractionMontage(EmoteName);
+    }
 }
 

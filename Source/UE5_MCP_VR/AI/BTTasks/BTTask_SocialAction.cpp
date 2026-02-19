@@ -1,4 +1,5 @@
 #include "BTTask_SocialAction.h"
+#include "BTTask_CommonAction.h"  // CommonFallback 접근용
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "../SmartNPC.h"
@@ -23,37 +24,38 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 	ASmartNPC* NPC = Cast<ASmartNPC>(AIController->GetPawn());
 	if (!NPC) return EBTNodeResult::Failed;
 
-	FString SubActionStr = BB->GetValueAsString(ASmartNPCAIController::Key_SubAction);
-	FString ParamsJson = BB->GetValueAsString(ASmartNPCAIController::Key_ActionParameters);
-
-	TSharedPtr<FJsonObject> JsonObj;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ParamsJson);
-	FJsonSerializer::Deserialize(Reader, JsonObj);
-
+	// 공용 헬퍼로 파라미터 파싱 (중복 코드 제거)
+	FString SubActionStr;
 	TMap<FString, FString> Params;
-	if (JsonObj.IsValid())
-	{
-		for (auto& Pair : JsonObj->Values)
-		{
-			Params.Add(Pair.Key, Pair.Value->AsString());
-		}
-	}
+	UBTTask_CommonAction::ParseBlackboardParams(BB, Params, SubActionStr);
 
-	// Resolve Enum from String
+	// Social Enum에서 찾기
 	const UEnum* EnumPtr = StaticEnum<ESocialAction>();
 	int64 EnumValue = EnumPtr->GetValueByName(FName(*SubActionStr));
 	if (EnumValue == INDEX_NONE)
 	{
-		// Try scoped
 		EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ESocialAction::%s"), *SubActionStr)));
 	}
-	
-	ESocialAction Action = (EnumValue != INDEX_NONE) ? (ESocialAction)EnumValue : ESocialAction::Emote; // Default
+
+	// ─────────────────────────────────────────────────────────────────
+	// [Fallback] Social Enum에 없는 액션 → CommonAction으로 위임
+	// 왜: 사교 중에도 "Move", "Wait" 같은 기본 행동이 빈번함.
+	// 예시: 대화 후 "걸어가면서 손 흔들기" → Move(Common) + Emote(Social)
+	// ─────────────────────────────────────────────────────────────────
+	if (EnumValue == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[SocialAction] '%s' not in ESocialAction, delegating to CommonFallback"),
+			*SubActionStr);
+		return UBTTask_CommonAction::ExecuteCommonFallback(OwnerComp, TEXT("SocialAction"));
+	}
+
+	ESocialAction Action = static_cast<ESocialAction>(EnumValue);
 	SubAction = Action;
 
+	// Social 전용 로직
 	switch (Action)
 	{
-
 	case ESocialAction::Emote:
 		{
 			FString GestureType = Params.FindRef(TEXT("GestureType"));
@@ -68,28 +70,32 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 			float Distance = 200.0f;
 			if (Params.Contains(TEXT("distance"))) Distance = FCString::Atof(*Params[TEXT("distance")]);
 			
-            if (TargetActor)
-            {
-                NPC->ExecuteKeepDistance(TargetActor, Distance);
-            }
-            else
-            {
-                // Fallback to MoveToLocation if only location is known
-			    FVector TargetLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
-			    NPC->ExecuteMoveToLocation(TargetLoc, ASmartNPC::EMoveType::Run);
-            }
+			if (TargetActor)
+			{
+				NPC->ExecuteKeepDistance(TargetActor, Distance);
+			}
+			else
+			{
+				// Actor가 없으면 좌표로 이동 (폴백)
+				FVector TargetLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
+				NPC->ExecuteMoveToLocation(TargetLoc, EMoveType::Run);
+			}
 		}
 		break;
 	
-    case ESocialAction::Trade:
-    case ESocialAction::GiveItem:
-    case ESocialAction::Comfort:
-    case ESocialAction::HandObject:
+	case ESocialAction::Trade:
+	case ESocialAction::GiveItem:
+	case ESocialAction::Comfort:
+	case ESocialAction::HandObject:
 	default:
-		// Fallback: Just emote or log
-		FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
-		UE_LOG(LogTemp, Warning, TEXT("[BTTask_SocialAction] Unimplemented Social Action: %s (Target: %s) -> Executing generic Emote 'Talk'"), *SubActionStr, *TargetID);
-		NPC->ExecuteEmote(TEXT("Talk"));
+		{
+			// 아직 미구현 Social 액션들은 GenericAction + 로그로 처리
+			FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[SocialAction] Unimplemented: %s (Target: %s) -> Executing generic Emote 'Talk'"),
+				*SubActionStr, *TargetID);
+			NPC->ExecuteEmote(TEXT("Talk"));
+		}
 		break;
 	}
 

@@ -83,6 +83,9 @@ async def websocket_ue5_endpoint(websocket: WebSocket):
                     natural_context=None,
                     raw_response=None,
                     target_npc=None,
+                    # Dialogue 에이전트가 채울 필드 (초기값 None → 기본값 폴백)
+                    behavior_mode=None,
+                    facial_state=None,
                     action_batch=None
                 )
                 print(f"[Main] initial_state vr_context: {initial_state.get('vr_context')}")

@@ -32,7 +32,7 @@
 """
 import json
 from ..state import AgentState
-from ...schemas.actions import ActionBatch, GameAction, WORLD_CONSTANTS
+from ...schemas.actions import ActionBatch, NPCAction, WORLD_CONSTANTS
 
 
 def validate_and_clamp_action(action) -> tuple:
@@ -42,11 +42,11 @@ def validate_and_clamp_action(action) -> tuple:
     """
     corrections = []
     
-    # Skip validation for SpeakAction (it doesn't have parameters)
-    if action.action_type == "Speak":
+    # Dialogue 액션은 파라미터 검증 불필요 (text/emotion만 사용하고, 범위 제한 없음)
+    if action.action_type == "Dialogue":
         return action, corrections
     
-    # Only validate GameAction types with parameters
+    # 파라미터 없는 액션은 검증 대상 아님
     if not hasattr(action, 'parameters') or not action.parameters:
         return action, corrections
     

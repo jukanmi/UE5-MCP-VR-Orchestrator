@@ -54,7 +54,21 @@ bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
                     TSharedPtr<FJsonObject> SubParams = Pair.Value->AsObject();
                     for (const auto& SubPair : SubParams->Values)
                     {
-                        NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                        // 중첩 오브젝트(target_loc 등)는 JSON 문자열로 직렬화하여 저장
+                        // 왜: FGameAction::Parameters는 TMap<FString, FString>이므로
+                        // 중첩 오브젝트를 문자열로 변환해야 함. ProcessNextAction에서 다시 파싱.
+                        if (SubPair.Value->Type == EJson::Object)
+                        {
+                            TSharedRef<FJsonObject> NestedObj = SubPair.Value->AsObject().ToSharedRef();
+                            FString NestedStr;
+                            TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedStr);
+                            FJsonSerializer::Serialize(NestedObj, NestedWriter);
+                            NewAction.Parameters.Add(SubPair.Key, NestedStr);
+                        }
+                        else
+                        {
+                            NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                        }
                     }
                     continue;
                 }
@@ -137,7 +151,19 @@ bool UMCPJsonUtils::ParseActionBatchArray(FString Json, TArray<FActionBatch>& Ou
                         TSharedPtr<FJsonObject> SubParams = Pair.Value->AsObject();
                         for (const auto& SubPair : SubParams->Values)
                         {
-                            NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                            // 중첩 오브젝트(target_loc 등)는 JSON 문자열로 직렬화
+                            if (SubPair.Value->Type == EJson::Object)
+                            {
+                                TSharedRef<FJsonObject> NestedObj = SubPair.Value->AsObject().ToSharedRef();
+                                FString NestedStr;
+                                TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedStr);
+                                FJsonSerializer::Serialize(NestedObj, NestedWriter);
+                                NewAction.Parameters.Add(SubPair.Key, NestedStr);
+                            }
+                            else
+                            {
+                                NewAction.Parameters.Add(SubPair.Key, SubPair.Value->AsString());
+                            }
                         }
                         continue;
                     }

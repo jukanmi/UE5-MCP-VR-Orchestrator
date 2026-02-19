@@ -245,41 +245,19 @@ def dialogue_node(state: AgentState):
         print("[Dialogue] All LLMs failed, using fallback response")
         raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
 
-    # --- Parse Mode and FacialState from response ---
+    # [Mode: X] [Facial: Y] 태그는 raw_response에 포함된 채로 전달.
+    # 왜: interface_output.py가 모든 구조화(structuring)를 책임지므로
+    # dialogue.py는 자연어 생성만 담당하고 파싱/변환은 하지 않는다.
     import re
-    
-    mode = "Social"  # Default
-    facial_state = "Neutral"  # Default
-    
-    # Extract [Mode: X] and [Facial: Y] from first line
-    mode_match = re.search(r'\[Mode:\s*(\w+)\]', raw_response, re.IGNORECASE)
-    facial_match = re.search(r'\[Facial:\s*(\w+)\]', raw_response, re.IGNORECASE)
-    
-    if mode_match:
-        mode = mode_match.group(1)
-        print(f"[Dialogue] Parsed Mode: {mode}")
-    else:
-        print(f"[Dialogue] WARNING: No Mode found in response, using default: {mode}")
-    
-    if facial_match:
-        facial_state = facial_match.group(1)
-        print(f"[Dialogue] Parsed FacialState: {facial_state}")
-    else:
-        print(f"[Dialogue] WARNING: No FacialState found in response, using default: {facial_state}")
-    
-    # Remove the [Mode: X] [Facial: Y] line from raw_response for cleaner output
-    raw_response_clean = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
 
-    # Save to conversation memory
-    # Extract just the speech part for memory
-    speech_parts = re.findall(r'"([^"]+)"', raw_response_clean)
-    speech_for_memory = speech_parts[0] if speech_parts else raw_response_clean[:100]
+    # 대화 기록 저장 (태그 제거 후 speech만 추출)
+    clean_for_memory = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
+    speech_parts = re.findall(r'"([^"]+)"', clean_for_memory)
+    speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
     add_conversation(agent_id, user_input, speech_for_memory)
 
     return {
-        "raw_response": raw_response_clean,
-        "behavior_mode": mode,
-        "facial_state": facial_state,
+        "raw_response": raw_response,  # 태그 포함 원본 전달
         "target_npc": persona_name,
         "current_speaker": "Dialogue",
         "next": "Interface_Output"
