@@ -31,7 +31,7 @@ bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
             NewAction.ActionType = ActionObj->GetStringField(TEXT("action_type"));
             
             // 2. Collect ALL fields into Parameters for flexibility
-            // This ensures top-level fields like 'text' in SpeakAction are captured
+            // This ensures top-level fields like 'text' in Dialogue action are captured
             for (const auto& Pair : ActionObj->Values)
             {
                 FString Key = Pair.Key;

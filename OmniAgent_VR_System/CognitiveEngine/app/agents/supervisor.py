@@ -19,7 +19,7 @@
 ║ ERROR HANDLING:                                                              ║
 ║   - Empty natural_context → warn but continue                               ║
 ║   - Empty raw_response → inject fallback "(confused)"                       ║
-║   - Empty ActionBatch → create minimal SpeakAction("...", Confused)         ║
+║   - Empty ActionBatch → create minimal Dialogue action("...", Confused)     ║
 ║   - Rules rejection → loop back to Dialogue for explanation                 ║
 ║                                                                              ║
 ║ BACKWARD COMPATIBILITY:                                                      ║
@@ -28,7 +28,7 @@
 """
 from typing import Literal
 from .state import AgentState
-from ..schemas.actions import ActionBatch, SpeakAction
+from ..schemas.actions import ActionBatch, NPCAction
 
 
 def supervisor_node(state: AgentState):
@@ -136,10 +136,12 @@ def _create_fallback_batch(npc_id: str) -> ActionBatch:
     """Create a minimal fallback ActionBatch."""
     return ActionBatch(
         agent_id=npc_id,
-        actions=[SpeakAction(
+        actions=[NPCAction(
+            action_category="Common",
+            action_type="Dialogue",
             executor_npc_id=npc_id,
-            text="...",
-            emotion="Confused"
+            emotion="Confused",
+            parameters={"text": "..."},
         )],
         reasoning="Supervisor Fallback: Empty batch received"
     )

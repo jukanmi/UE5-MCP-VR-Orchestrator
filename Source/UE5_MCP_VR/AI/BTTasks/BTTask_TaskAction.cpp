@@ -28,6 +28,9 @@ EBTNodeResult::Type UBTTask_TaskAction::ExecuteTask(UBehaviorTreeComponent& Owne
 	TMap<FString, FString> Params;
 	UBTTask_CommonAction::ParseBlackboardParams(BB, Params, SubActionStr);
 
+	// 빈 SubAction 가드: 대기 중인 액션이 없으면 조용히 성공 반환
+	if (SubActionStr.IsEmpty()) return EBTNodeResult::Succeeded;
+
 	// Task Enum에서 찾기
 	const UEnum* EnumPtr = StaticEnum<ETaskAction>();
 	int64 EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ETaskAction::%s"), *SubActionStr)));
@@ -52,6 +55,10 @@ EBTNodeResult::Type UBTTask_TaskAction::ExecuteTask(UBehaviorTreeComponent& Owne
 	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("TargetObject"));
 	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("RecipeID"));
 	NPC->ExecuteGenericAction(SubActionStr, TargetID);
+
+	// 액션 완료 → 큐 진행
+	BB->ClearValue(ASmartNPCAIController::Key_SubAction);
+	NPC->OnActionCompleted();
 
 	return EBTNodeResult::Succeeded;
 }

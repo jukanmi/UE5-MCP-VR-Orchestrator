@@ -13,7 +13,6 @@ namespace NPCActionKeys
     // --- JSON Keys (JSON 파싱용 키) ---
     inline const FString Key_ActionType = TEXT("action_type");
     inline const FString Key_TargetID   = TEXT("target_id");   
-    inline const FString Key_Content    = TEXT("Content"); // Legacy mixed usage
     inline const FString Key_Text       = TEXT("text");
     inline const FString Key_Emotion    = TEXT("emotion");
     inline const FString Key_Params     = TEXT("parameters");

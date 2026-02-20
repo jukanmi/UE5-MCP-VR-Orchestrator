@@ -132,7 +132,7 @@ public:
 
     // 2. Keep Distance
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed = 300.f);
+    virtual void ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float Distance = 300.f);
 
     // 3. Wait (Custom idle/wait behavior)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
@@ -154,9 +154,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     virtual void ExecuteDefend(bool bStartDefend);
 
-    // 8. Roll/Dodge
+    // 8. Dodge
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteRoll();
+    virtual void ExecuteDodge();
 
     // 9. Hand Signal
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")

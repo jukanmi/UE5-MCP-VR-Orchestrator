@@ -38,10 +38,10 @@ void UBTTask_CommonAction::ParseBlackboardParams(
 	{
 		for (auto& Pair : JsonObj->Values)
 		{
-			OutParams.Add(Pair.Key, Pair.Value->AsString());
+				OutParams.Add(Pair.Key, Pair.Value->AsString());
+			}
 		}
 	}
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,13 +65,19 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 	TMap<FString, FString> Params;
 	ParseBlackboardParams(BB, Params, SubActionStr);
 
-	// 2. SubAction 문자열 → ECommonAction Enum 변환
-	const UEnum* EnumPtr = StaticEnum<ECommonAction>();
-	int64 EnumValue = EnumPtr->GetValueByName(FName(*SubActionStr));
-	if (EnumValue == INDEX_NONE)
+	// 빈 SubAction 가드: BT가 매 프레임 Tick하지만 대기 중인 액션이 없는 경우
+	// 빈 문자열로 Enum 매칭을 시도하면 항상 실패 → 경고 로그 무한 반복
+	// "할 일이 없다"는 에러가 아니므로 조용히 성공 반환
+	if (SubActionStr.IsEmpty())
 	{
-		EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ECommonAction::%s"), *SubActionStr)));
+		return EBTNodeResult::Succeeded;
 	}
+
+	// 2. SubAction 문자열 → ECommonAction Enum 변환 (전체 이름으로 통일)
+	// 왜 한 번만 시도하는가: UE5 UENUM은 "EnumName::Value" 형식으로만 매칭됨.
+	// 짧은 이름("Move")으로는 항상 INDEX_NONE → 불필요한 시도 제거.
+	const UEnum* EnumPtr = StaticEnum<ECommonAction>();
+	int64 EnumValue = EnumPtr->GetValueByName(FName(*FString::Printf(TEXT("ECommonAction::%s"), *SubActionStr)));
 
 	// 매칭 실패 시 로그 출력 후 실패 반환
 	if (EnumValue == INDEX_NONE)
@@ -123,8 +129,6 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 	case ECommonAction::Dialogue:
 	{
 		FString Content = Params.FindRef(NPCActionKeys::Key_Text);
-		if (Content.IsEmpty()) Content = Params.FindRef(NPCActionKeys::Key_Content);
-		if (Content.IsEmpty()) Content = Params.FindRef(TEXT("Info")); // Legacy
 
 		FString Emotion = Params.FindRef(NPCActionKeys::Key_Emotion);
 		if (Emotion.IsEmpty()) Emotion = NPCActionKeys::Value_Neutral;
@@ -189,6 +193,12 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 		NPC->ClearPhysicalState();
 		break;
 	}
+
+	// 액션 실행 완료 → NPC에게 통지하여 ActionQueue의 다음 액션 진행
+	// 왜: ProcessNextAction에서 bIsBusy=true로 설정 → BTTask 완료 시
+	// OnActionCompleted을 호출하지 않으면 큐가 영원히 멈춤
+	BB->ClearValue(ASmartNPCAIController::Key_SubAction);
+	NPC->OnActionCompleted();
 
 	return EBTNodeResult::Succeeded;
 }

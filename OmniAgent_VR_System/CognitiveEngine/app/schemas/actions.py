@@ -9,8 +9,8 @@ Purpose: Defines the 'ActionBatch' data contract for Engine Commands.
                  BTTask의 switch문이 올바르게 분기됨.
 - 허용 값 외의 문자열이 들어오면 Pydantic이 서버 단에서 즉시 ValidationError를 발생시킴.
 """
-from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, model_validator, field_serializer
+from typing import List, Optional, Literal, Union
 import json
 import os
 
@@ -150,6 +150,27 @@ CATEGORY_ACTION_MAP: dict[str, set[str]] = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 3D 좌표 전용 자료형 (C++ FVector와 1:1 대응)
+# 왜 dict가 아닌 전용 모델인가:
+#   1. 타입 안전성: LLM이 x/y/z를 빠뜨리면 Pydantic이 즉시 에러 발생
+#   2. 직렬화 일관성: JSON 출력이 항상 {"x": float, "y": float, "z": float}
+#   3. C++ 연동: MCPJsonUtils에서 FVector로 바로 변환 가능
+# ─────────────────────────────────────────────────────────────────────────────
+class GameVector3(BaseModel):
+    """C++ FVector와 1:1 대응되는 3D 좌표 모델."""
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    def to_dict(self) -> dict:
+        """parameters dict 안에 중첩될 때 사용."""
+        return {"x": self.x, "y": self.y, "z": self.z}
+
+    def __str__(self) -> str:
+        return f"({self.x}, {self.y}, {self.z})"
+
+
 class NPCAction(BaseModel):
     """
     NPC가 실행할 단일 액션.
@@ -165,7 +186,7 @@ class NPCAction(BaseModel):
 
     [필드별 사용 규칙]
     - "Dialogue" : parameters에 text(필수), tone(선택) 사용
-    - "Move"     : parameters에 target_loc: {x, y, z} (좌표)사용
+    - "Move"     : target_loc 필드에 GameVector3 사용 (parameters.target_loc → 자동 승격)
     - "Attack"   : target_id(필수), parameters에 weapon_slot(선택) 사용
     - 그 외      : 각 C++ Enum 주석의 Parameters 참조
     """
@@ -184,22 +205,34 @@ class NPCAction(BaseModel):
     # 대상 Actor ID (공격 대상, 따라갈 대상 등)
     target_id: Optional[str] = None
 
+    # 이동 목표 좌표 (Move, Follow 등에서 사용. C++ FVector로 직접 변환됨)
+    # parameters.target_loc에 dict로 들어오면 자동 승격됨
+    target_loc: Optional[GameVector3] = None
+
     # 액션별 추가 파라미터
-    # 예: {"text": "Hello"}, {"target_loc": {"x": 0, "y": 0, "z": 0}}, {"weapon_slot": "0"}
+    # 예: {"text": "Hello"}, {"weapon_slot": "0"}
+    # 주의: target_loc은 여기에 넣지 말고 위 필드를 사용할 것
     parameters: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_category_action_match(self):
+    def validate_and_normalize(self):
         """
-        category와 action_type의 불일치를 서버단에서 즉시 차단.
-        왜: LLM이 category="Combat"인데 action_type="Dance"를 출력하면
-        C++ BT에서 매칭 실패 → NPC가 멈추는 버그 발생.
+        1. parameters.target_loc → self.target_loc으로 자동 승격
+        2. category ↔ action_type 불일치 차단
         """
+        # --- target_loc 자동 승격 ---
+        # LLM이 parameters 안에 target_loc을 넣을 수 있으므로, 꺼내서 전용 필드로 이동
+        if "target_loc" in self.parameters and self.target_loc is None:
+            loc_data = self.parameters.pop("target_loc")
+            if isinstance(loc_data, dict):
+                self.target_loc = GameVector3(**loc_data)
+            elif isinstance(loc_data, GameVector3):
+                self.target_loc = loc_data
+
+        # --- category ↔ action_type 검증 ---
         allowed = CATEGORY_ACTION_MAP.get(self.action_category, set())
 
         # CommonAction은 C++ ExecuteCommonFallback 패턴으로 모든 모드에서 실행 가능
-        # 왜: 전투 중 이동(Move), 조사 중 혼잣말(Dialogue) 등이 항상 필요하므로
-        # C++ 측에서 해당 모드 Enum에 없는 action_type은 CommonAction으로 자동 위임됨.
         UNIVERSAL_ACTIONS = {
             "Idle", "Move", "Follow", "Wait", "Dialogue",
             "TurnTo", "Stop", "Scan", "UseItem", "Equip", "Unequip",
@@ -211,6 +244,14 @@ class NPCAction(BaseModel):
                 f"Allowed types: {sorted(allowed)}"
             )
         return self
+
+    @field_serializer('target_loc')
+    @classmethod
+    def serialize_target_loc(cls, v: Optional[GameVector3], _info):
+        """JSON 직렬화 시 GameVector3 → dict로 변환. C++ 파싱과 호환."""
+        if v is None:
+            return None
+        return v.to_dict()
 
 
 class RejectResult(BaseModel):

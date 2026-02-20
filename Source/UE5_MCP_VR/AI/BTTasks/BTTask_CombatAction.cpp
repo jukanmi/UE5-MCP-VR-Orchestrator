@@ -70,6 +70,10 @@ EBTNodeResult::Type UBTTask_CombatAction::ExecuteTask(UBehaviorTreeComponent& Ow
 		break;
 	}
 
+	// 액션 완료 → 큐 진행
+	BB->ClearValue(ASmartNPCAIController::Key_SubAction);
+	NPC->OnActionCompleted();
+
 	return EBTNodeResult::Succeeded;
 }
 

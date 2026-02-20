@@ -28,7 +28,7 @@ import json
 import re
 from .state import AgentState
 from ..schemas.actions import (
-    ActionBatch, NPCAction,
+    ActionBatch, NPCAction, GameVector3,
     CATEGORY_ACTION_MAP, AllActionType,
 )
 from ..utils.llm_factory import call_gemini_cli
@@ -101,7 +101,7 @@ Available Action Types (MUST use these exact strings):
 
 MAPPING RULES:
 1. Speech in "quotes" → action_type: "Dialogue", parameters: {{"text": "...", "emotion": "..."}}
-2. *runs/walks/goes to* → action_type: "Move", parameters: {{"style": "Run"/"Walk", "target_loc": {{"x": 0, "y": 0, "z": 0}}}}
+2. *runs/walks/goes to* → action_type: "Move", target_loc: {{"x": 0, "y": 0, "z": 0}}, parameters: {{"style": "Run"/"Walk"}}
 3. *attacks/strikes/hits* → action_type: "Attack", target_id: "..."
 4. *blocks/defends/shields* → action_type: "Block"
 5. *dodges/rolls/evades* → action_type: "Dodge"
@@ -116,8 +116,8 @@ RULES:
 - Use the behavior_mode hint to prefer actions from the matching category
 - Default target_id is "Player" if not specified
 - Output ONLY a JSON array of action objects
-- Coordinates MUST be bundled in target_loc: {{"x": float, "y": float, "z": float}}. NEVER send x/y/z as flat keys.
-- Each object: {{"action_type": "...", "executor_npc_id": "{npc_id}", "target_id": "...", "emotion": "...", "parameters": {{...}}}}
+- Coordinates MUST be a top-level field: "target_loc": {{"x": float, "y": float, "z": float}}. NEVER put coordinates inside parameters.
+- Each object: {{"action_type": "...", "executor_npc_id": "{npc_id}", "target_id": "...", "target_loc": {{...}}, "emotion": "...", "parameters": {{...}}}}
 
 Output format: [{{"action_type": "...", ...}}, ...]"""
 
@@ -248,8 +248,25 @@ def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
         # action_category 자동 추론
         category = _infer_category(action_type, behavior_mode)
 
+        # target_loc 추출 → GameVector3 전용 필드로 분리
+        raw_loc = action_dict.get("target_loc")
+        target_loc = None
+        if raw_loc and isinstance(raw_loc, dict):
+            try:
+                target_loc = GameVector3(**raw_loc)
+            except Exception:
+                print(f"[Interface Output] Invalid target_loc: {raw_loc}, skipping")
+
         # Move 스타일 보정
         params = action_dict.get("parameters", {})
+        # parameters 안에 target_loc이 있으면 꺼내기 (validator로도 처리되지만 명시적 처리)
+        if "target_loc" in params:
+            loc_from_params = params.pop("target_loc")
+            if target_loc is None and isinstance(loc_from_params, dict):
+                try:
+                    target_loc = GameVector3(**loc_from_params)
+                except Exception:
+                    pass
         if action_type == "Move" and params.get("style") not in VALID_MOVE_STYLES:
             params["style"] = "Walk"
 
@@ -268,6 +285,7 @@ def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
             executor_npc_id=executor_id,
             emotion=action_dict.get("emotion", "Neutral"),
             target_id=action_dict.get("target_id"),
+            target_loc=target_loc,
             parameters=params,
         ))
 
