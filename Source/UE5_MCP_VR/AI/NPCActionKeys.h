@@ -40,6 +40,7 @@ namespace NPCActionKeys
     inline const FString Action_Sit         = TEXT("Sit");
     
     // --- Behavior Modes (행동 모드) ---
+    inline const FString Mode_Social        = TEXT("Social");
     inline const FString Mode_Combat        = TEXT("Combat");
     inline const FString Mode_Task          = TEXT("Task");
     inline const FString Mode_Investigation = TEXT("Investigation");
@@ -47,14 +48,16 @@ namespace NPCActionKeys
     inline const FString Mode_Common        = TEXT("Common");
     
     // --- Interaction Types (상호작용 타입) ---
-    inline const FString Interact_Sit       = TEXT("Sit");
+    inline const FString Interact_SitDown   = TEXT("SitDown");
+    inline const FString Interact_SitUp     = TEXT("SitUp");
     inline const FString Interact_LieDown   = TEXT("LieDown");
-    inline const FString Interact_StandUp   = TEXT("StandUp");
+    inline const FString Interact_LieUp     = TEXT("LieUp");
     
     inline const FString Interact_PickUp    = TEXT("PickUp");
     inline const FString Interact_Drop      = TEXT("Drop");
     inline const FString Interact_Eat       = TEXT("Eat");
     inline const FString Interact_Wear      = TEXT("Wear");
+    inline const FString Interact_Equip     = TEXT("Equip");
     inline const FString Interact_Unequip   = TEXT("Unequip");
     
     inline const FString Interact_Clean     = TEXT("Clean");

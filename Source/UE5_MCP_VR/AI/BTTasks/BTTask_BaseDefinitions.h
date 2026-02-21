@@ -42,12 +42,7 @@ enum class EFacialState : uint8
  * 2. Interface Output Agent: Mode 내 세부 액션 결정 (예: Attack_Melee)
  * 3. UE5 Behavior Tree: Mode로 서브트리 선택 → 세부 액션 실행
  * 
- * 각 Mode별 세부 액션은 별도 파일에 정의:
- * - Combat: BTTask_CombatActions.h
- * - Social: BTTask_SocialActions.h
- * - Task: BTTask_TaskActions.h
- * - Investigation: BTTask_InvestigationActions.h
- * - Lifestyle: BTTask_LifestyleActions.h
+ * 각 Mode별 세부 액션은 BTTask_Actions.h에 정의되어 있습니다.
  */
 UENUM(BlueprintType)
 enum class ENPCBehaviorMode : uint8
@@ -59,6 +54,20 @@ enum class ENPCBehaviorMode : uint8
 	Investigation  UMETA(DisplayName = "Investigation"),   // 탐색/조사 모드
 	Lifestyle      UMETA(DisplayName = "Lifestyle"),       // 생활/대기 모드
 	Common         UMETA(DisplayName = "Common")           // 공용/기본 액션 모드
+};
+
+/**
+ * ============================================================================
+ * EMoveType - NPC 이동 종류
+ * ============================================================================
+ */
+UENUM(BlueprintType)
+enum class EMoveType : uint8
+{
+	Walk,
+	Run,
+	Sprint,
+	Crouch
 };
 
 /**
@@ -79,7 +88,7 @@ enum class ENPCBehaviorMode : uint8
  *    - TargetID: "Player"
  *    - Parameters: {Tone: "Friendly"}
  * 
- * 3. UE5 SmartNPC::ProcessAction():
+ * 3. UE5 SmartNPC::ExecuteActionBatch():
  *    - Blackboard->SetValueAsEnum(Key_BehaviorMode, Mode)
  *    - Blackboard->SetValueAsEnum(Key_FacialState, FacialState)
  *    - Blackboard->SetValueAsString(Key_SubAction, ActionName)

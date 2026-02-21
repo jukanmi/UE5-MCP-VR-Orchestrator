@@ -4,50 +4,58 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
-#include "BTTasks/BTTask_BaseDefinitions.h" // For FModeActionRequest and Enums
+#include "BTTasks/BTTask_BaseDefinitions.h" // For Enums
 #include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
-// Movement Types for speed control
-UENUM(BlueprintType)
-enum class EMoveType : uint8
-{
-    Walk,
-    Run,
-    Sprint,
-    Crouch
-};
-
 class UNPCInteractionDataAsset;
+class UNPCStateComponent;
+class UNPCActionComponent;
+class UNPCInventoryComponent;
 
+/**
+ * SmartNPC: Lightweight Facade & Identity Container.
+ * 
+ * [설계 원칙]
+ * - SmartNPC는 NPC의 "정체성(Identity)"과 "중재자(Mediator)" 역할만 수행합니다.
+ * - 실제 로직은 아래 3개의 컴포넌트에 위임됩니다:
+ *   1. UNPCStateComponent   → 스탯, 표정, 데미지, 반사 판정
+ *   2. UNPCActionComponent  → 행동 큐, Execute* 함수들, 상호작용
+ *   3. UNPCInventoryComponent → 인벤토리, 장비
+ * - 외부(BTTask, AIController, Blueprint)에서는 SmartNPC를 통해 접근하되,
+ *   내부적으로 컴포넌트에 위임하는 Facade 패턴입니다.
+ */
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter
 {
     GENERATED_BODY()
 
-    // Forward Declaration
-    friend class UNPCInventoryComponent;
-
 public:
     ASmartNPC();
 
-    // Inventory Component (The Brain's Pockets)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Inventory")
-    class UNPCInventoryComponent* InventoryComponent;
+    // === Components ===
 
-    virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCStateComponent* StateComponent;
 
-public:
-    // Unique ID for routing (e.g. "Guard_1")
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCActionComponent* ActionComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCInventoryComponent* InventoryComponent;
+
+    // === Identity ===
+
+    /** NPC 고유 ID (예: "Guard_1", "Merchant_A") */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     FString AgentID;
 
-    // Behavior Tree to run for this NPC
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
+    /** 이 NPC가 사용할 Behavior Tree */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     UBehaviorTree* BehaviorTreeAsset;
 
-    // --- Vision Config (Applied to AI Controller) ---
+    // === Vision & Hearing Config (AIController에 적용됨) ===
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
     float SightRadius = 3000.0f;
 
@@ -55,194 +63,107 @@ public:
     float LoseSightRadius = 3500.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
-    float SightAngle = 60.0f; // Half-angle (e.g. 60 = 120 degree FOV)
+    float SightAngle = 60.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")
-    float HearingRange = 3000.0f; // 30m hearing range
+    float HearingRange = 3000.0f;
 
-    // Defines how to handle an action (Switch logic)
-    // Hybrid: C++ parses params -> Calls BP Event
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    virtual void ProcessAction(const FGameAction& Action);
+    // === Lifecycle ===
 
-    // --- Action Batch Execution ---
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    // === Facade API (컴포넌트로 위임) ===
+
+    /** 액션 배치 실행 → ActionComponent에 위임 */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     virtual void ExecuteActionBatch(const struct FActionBatch& Batch);
 
-    // [Legacy/Generic] For compatibility with older BTTasks
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    virtual void ExecuteGenericAction(const FString& ActionType, const FString& TargetID = TEXT(""), const FString& Content = TEXT(""), const FString& ExtraParams = TEXT(""));
-
-    /**
-     * Clears physical state (velocity, animation overlay, specific variables) 
-     * when a policy is aborted or expires.
-     */
+    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지) */
     virtual void ClearPhysicalState();
 
-    // --- Reflex & Interrupt System ---
+    // === Damage Hook (UE5 Actor Override) ===
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Stats")
-    FCharacterAttributes CurrentStats;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
+        class AController* EventInstigator, AActor* DamageCauser) override;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI")
-    FString CurrentActionID;
+    // === Convenience Accessors (자주 호출되는 것들의 Shortcut) ===
 
-    // --- Facial State ---
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Facial")
-    EFacialState CurrentFacialState = EFacialState::Neutral;
+    /** Stats에 직접 접근하기 위한 편의 함수 */
+    FCharacterAttributes& GetStats() const;
 
-    // --- Action Queue System ---
-    TQueue<FGameAction> ActionQueue;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "MCP|AI|Queue")
-    bool bIsBusy = false;
 
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
-    void ProcessNextAction();
-
+    /** 대기열 완료 콜백 (BTTask에서 호출) → ActionComponent에 위임 */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
     void OnActionCompleted();
 
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
+    // === Facade: Execute* Wrappers (BTTask 호환) ===
+    // 기존 BTTask 코드가 NPC->Execute*()를 직접 호출하므로,
+    // ActionComponent로 위임하는 얇은 래퍼를 제공합니다.
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    void ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    void ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float Distance = 300.f);
+
+    // Note: FString 오버로드 (BTTask_CommonAction에서 사용)
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    void ExecuteDialogue(const FString& DialogueText, const FString& EmotionID);
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    void ExecuteWait(float Duration);
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
+    void ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed = 5.f);
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void StopAllActions();
 
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    bool TryReflexAction(int Difficulty);
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void AbortCurrentAction();
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void RequestEmergencyCognition(FString EventType, FString Description);
-
-    // Hook for damage (Override in BP or C++)
-    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
-    void ApplyMovementSpeed();
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
-    void RefreshStats();
-
-    // --- BTTask Action ---
-
-    // 1. Movement
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
+    void ExecutePerformAttack(AActor* TargetActor, const FString& AttackType);
 
-    // 2. Keep Distance
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float Distance = 300.f);
+    void ExecuteDefend(bool bStartDefend);
 
-    // 3. Wait (Custom idle/wait behavior)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteWait(float Duration);
+    void ExecuteDodge();
 
-    // 4. Dialogue (Rich dialogue with emotion/metadata)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteDialogue(const FString& DialogueText, const FString& EmotionID);
+    void ExecuteEquip(const FString& ItemID);
 
-    // 5. Rotate Body
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed = 5.f);
+    void ExecuteUnequip(const FString& ItemID);
 
-    // 6. Attack (Specific attack type)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecutePerformAttack(AActor* TargetActor, const FString& AttackType);
+    void ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams);
 
-    // 7. Defend
+    // 2-param overload (BTTask_SocialAction 호환): 기본 Walk 속도로 위임
+    void ExecuteKeepDistance(AActor* TargetActor, float Distance) { ExecuteKeepDistance(TargetActor, EMoveType::Walk, Distance); }
+
+    // 3-float overload (BTTask_CommonAction 호환): 직접 Speed 지정
+    void ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed);
+
+    // Emote/HandSignal (BTTask에서 직접 호출)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteDefend(bool bStartDefend);
+    void ExecuteEmote(const FString& EmoteName);
 
-    // 8. Dodge
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteDodge();
+    void ExecuteHandSignal(const FString& SignalName);
 
-    // 9. Hand Signal
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteHandSignal(const FString& SignalName);
-
-    // 10. Emote
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
-    virtual void ExecuteEmote(const FString& EmoteName);
-
-    // 11. Interaction (New) - Central Entry Point
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Interaction")
-    virtual void ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams);
-
-    // --- Interaction Configuration ---
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MCP|AI|Interaction")
-    class UNPCInteractionDataAsset* InteractionData;
-
-protected:
-    // [Category 1: Body State & Movement] - 자세/위치 제어
-    virtual void ExecuteSit(AActor* TargetSeat);      // 앉기 IsTarget Required
-    virtual void ExecuteLieDown(AActor* TargetBed);   // 눕기 IsTarget Required
-    virtual void ExecuteStandUp();                    // 일어서기 (Sit/Lie 해제)
-
-    // [Category 2: Item & Inventory] - 소지품 제어
-    virtual void ExecutePickUp(AActor* TargetItem);   // 줍기
-    virtual void ExecuteDropItem(const FString& ItemID); // 버리기
-    virtual void ExecuteEat(const FString& ItemID);   // 먹기
-    virtual void ExecuteWear(const FString& ItemID);  // 착용하기
-    virtual void ExecuteUnequip(const FString& ItemID); // 해제하기
-
-    // [Category 3: Task & Work] - 작업 수행 (Loop Animation + Timer)
-    virtual void ExecuteClean(AActor* TargetZone);    // 청소
-    virtual void ExecuteRepair(AActor* TargetObject); // 수리
-    virtual void ExecuteRead(AActor* TargetBook);     // 읽기
-
-    // [Category 4: Performance & Ritual] - 표현 행동 (One-shot / Loop Animation)
-    virtual void ExecutePray();                       // 기도하기
-    virtual void ExecuteDance(const FString& Style);  // 춤추기
-    virtual void ExecuteSing(const FString& SongName);// 노래부르기
-    
-    // Internal Helper
-    void PlayInteractionMontage(const FString& Key);
-
-protected:
-    // --- Helper implementation for Action Batch ---
-    virtual void UpdateBehaviorState(const struct FActionBatch& Batch);
-    virtual void DispatchActions(const TArray<FGameAction>& Actions);
-    
-    // Helper to determine behavior mode from action string
-    FString GetBehaviorModeFromAction(const FString& ActionType) const;
-    
-    // --- Original Protected Section ---
-
-
-public:
-    // --- Debug / Testing ---
-    
-    /** 
-     * Manually trigger an action for testing.
-     * Fill in the parameters and click the button in Details panel.
-     */
-    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
-    void Debug_ExecuteAction(ENPCBehaviorMode Mode, FString ActionName, FString TargetID, FString Content, FString ExtraParamsJson);
-
-    // Preset: Test Social Dialogue
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Social_Dialogue();
 
-    // Preset: Test Common Move
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Common_Move();
 
-    // Preset: Test Combat Attack
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Combat_Attack();
 
-    // Integration Test: Simulate Full Pipeline
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Orchestra_Pipeline();
 
-    /**
-     * [Refactor] New Interaction System Test
-     * Select Interaction Type and Click Button in Details Panel
-     */ 
     UFUNCTION(CallInEditor, Category = "MCP|Debug|Interaction")
     void Debug_Test_Interaction(FString InteractionKey = "Dance", FString ExtraParams = "Salsa");
-
-protected:
 };

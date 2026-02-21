@@ -20,3 +20,8 @@ bool UDiceSystem::CheckReflex(float StatValue, int Difficulty, FDiceResult& OutR
 
 	return OutResult.bSuccess;
 }
+
+int32 UDiceSystem::RollD100()
+{
+	return FMath::RandRange(1, 100);
+}

@@ -38,6 +38,17 @@ bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
                 
                 // Skip metadata fields already handled or handled separately
                 if (Key == TEXT("action_type")) continue;
+                
+                if (Key == TEXT("behavior_mode"))
+                {
+                    NewAction.BehaviorMode = Pair.Value->AsString();
+                    continue;
+                }
+                if (Key == TEXT("facial_state"))
+                {
+                    NewAction.FacialState = Pair.Value->AsString();
+                    continue;
+                }
 
                 // Handle Target IDs
                 if (Key == TEXT("target_id") || Key == TEXT("target_listener"))
@@ -111,8 +122,6 @@ bool UMCPJsonUtils::ParseActionBatchArray(FString Json, TArray<FActionBatch>& Ou
         
         // Extract Agent ID
         NewBatch.AgentID = BatchObj->GetStringField(TEXT("agent_id"));
-        NewBatch.BehaviorMode = BatchObj->GetStringField(TEXT("behavior_mode"));
-        NewBatch.FacialState = BatchObj->GetStringField(TEXT("facial_state"));
 
         // Extract Actions
         const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
@@ -133,6 +142,17 @@ bool UMCPJsonUtils::ParseActionBatchArray(FString Json, TArray<FActionBatch>& Ou
                     FString Key = Pair.Key;
                     
                     if (Key == TEXT("action_type")) continue;
+
+                    if (Key == TEXT("behavior_mode"))
+                    {
+                        NewAction.BehaviorMode = Pair.Value->AsString();
+                        continue;
+                    }
+                    if (Key == TEXT("facial_state"))
+                    {
+                        NewAction.FacialState = Pair.Value->AsString();
+                        continue;
+                    }
 
                     // Handle Target IDs
                     if (Key == TEXT("target_id") || Key == TEXT("target_listener") || Key == TEXT("executor_npc_id"))

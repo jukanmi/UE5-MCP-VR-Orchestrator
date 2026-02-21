@@ -15,9 +15,14 @@ struct FGameAction
     UPROPERTY(BlueprintReadWrite, Category = "MCP")
     FString TargetID;
 
-    // We store all params as strings for flexibility (converted on demand)
     UPROPERTY(BlueprintReadWrite, Category = "MCP")
     TMap<FString, FString> Parameters;
+
+    UPROPERTY(BlueprintReadWrite, Category = "MCP")
+    FString BehaviorMode;
+
+    UPROPERTY(BlueprintReadWrite, Category = "MCP")
+    FString FacialState;
 };
 
 USTRUCT(BlueprintType)
@@ -27,12 +32,6 @@ struct FActionBatch
 
     UPROPERTY(BlueprintReadWrite, Category = "MCP")
     FString AgentID;
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    FString BehaviorMode;
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    FString FacialState;
 
     UPROPERTY(BlueprintReadWrite, Category = "MCP")
     TArray<FGameAction> Actions;

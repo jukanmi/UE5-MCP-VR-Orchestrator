@@ -38,4 +38,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Dice")
 	static bool CheckReflex(float StatValue, int Difficulty, FDiceResult& OutResult);
 
+	/** Rolls a 100-sided die (D100). */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Dice")
+	static int32 RollD100();
+
 };

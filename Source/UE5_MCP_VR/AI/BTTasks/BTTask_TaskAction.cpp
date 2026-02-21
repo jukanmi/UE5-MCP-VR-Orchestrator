@@ -7,6 +7,7 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "../NPCActionKeys.h"
 
 UBTTask_TaskAction::UBTTask_TaskAction()
 {
@@ -50,11 +51,39 @@ EBTNodeResult::Type UBTTask_TaskAction::ExecuteTask(UBehaviorTreeComponent& Owne
 	ETaskAction Action = static_cast<ETaskAction>(EnumValue);
 	SubAction = Action;
 
-	// Task 전용 로직: 현재는 모든 액션이 GenericAction으로 처리
+	// Task 전용 로직
 	FString TargetID = Params.FindRef(TEXT("ItemID"));
 	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("TargetObject"));
 	if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("RecipeID"));
-	NPC->ExecuteGenericAction(SubActionStr, TargetID);
+
+	switch (Action)
+	{
+	case ETaskAction::PickUp:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_PickUp, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	case ETaskAction::Drop:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_Drop, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	case ETaskAction::Craft:
+	case ETaskAction::Repair:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_Repair, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	default:
+		// Unknown Task Action
+		break;
+	}
 
 	// 액션 완료 → 큐 진행
 	BB->ClearValue(ASmartNPCAIController::Key_SubAction);

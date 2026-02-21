@@ -61,11 +61,35 @@ EBTNodeResult::Type UBTTask_CombatAction::ExecuteTask(UBehaviorTreeComponent& Ow
 		}
 		break;
 	
+	case ECombatAction::Block:
+		{
+			NPC->ExecuteDefend(true);
+		}
+		break;
+
+	case ECombatAction::Dodge:
+		{
+			NPC->ExecuteDodge();
+		}
+		break;
+
+	case ECombatAction::Flee:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			// TODO: NPC->ExecuteFlee(TargetActor);
+		}
+		break;
+
+	case ECombatAction::SignalAllies:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			// TODO: NPC->ExecuteSignalAllies(TargetActor);
+		}
+		break;
+
 	default:
 		{
-			// Block, Dodge, Flee, SignalAllies → ExecuteGenericAction
-			FString TargetID = Params.FindRef(TEXT("TargetID"));
-			NPC->ExecuteGenericAction(SubActionStr, TargetID);
+			// Unknown Combat Action
 		}
 		break;
 	}

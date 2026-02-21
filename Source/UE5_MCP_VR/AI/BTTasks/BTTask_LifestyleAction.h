@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_BaseDefinitions.h"
-#include "BTTask_LifestyleActions.h"
+#include "BTTask_Actions.h"
 #include "BTTask_LifestyleAction.generated.h"
 
 UCLASS()

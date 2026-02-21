@@ -84,9 +84,33 @@ EBTNodeResult::Type UBTTask_SocialAction::ExecuteTask(UBehaviorTreeComponent& Ow
 		break;
 	
 	case ESocialAction::Trade:
+		{
+			FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+			// TODO: NPC->ExecuteTrade(TargetID);
+		}
+		break;
+
 	case ESocialAction::GiveItem:
+		{
+			FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+			// TODO: NPC->ExecuteGiveItem(TargetID);
+		}
+		break;
+
 	case ESocialAction::Comfort:
+		{
+			FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+			// TODO: NPC->ExecuteComfort(TargetID);
+		}
+		break;
+
 	case ESocialAction::HandObject:
+		{
+			FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+			// TODO: NPC->ExecuteHandObject(TargetID);
+		}
+		break;
+
 	default:
 		{
 			// 아직 미구현 Social 액션들은 GenericAction + 로그로 처리

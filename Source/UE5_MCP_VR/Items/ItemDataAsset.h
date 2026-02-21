@@ -20,6 +20,22 @@ enum class EItemType : uint8
     Quest       UMETA(DisplayName = "Quest")
 };
 
+// 장비 착용 부위 (Equipment Slots)
+UENUM(BlueprintType)
+enum class EEquipmentSlot : uint8
+{
+    None        UMETA(DisplayName = "None"),
+    MainHand    UMETA(DisplayName = "Main Hand"), // 주무기
+    OffHand     UMETA(DisplayName = "Off Hand"),  // 보조무기
+    Head        UMETA(DisplayName = "Head"),      // 머리
+    Torso       UMETA(DisplayName = "Torso"),     // 몸통
+    Legs        UMETA(DisplayName = "Legs"),      // 다리
+    Feet        UMETA(DisplayName = "Feet"),      // 발
+    Gloves      UMETA(DisplayName = "Gloves"),    // 장갑
+    Accessory   UMETA(DisplayName = "Accessory"), // 장신구
+    Back        UMETA(DisplayName = "Back")       // 등
+};
+
 /**
  * 게임 내 모든 아이템의 변하지 않는 정적 데이터 정의.
  * - Blueprint에서 DataAsset을 생성하여 개별 아이템(DA_Sword, DA_Potion 등)을 만듭니다.
@@ -59,6 +75,10 @@ public:
     // 한 슬롯에 최대 몇 개까지 겹쳐지는지 (장비는 보통 1)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
     int32 MaxStack = 64;
+
+    // 장착 가능한 슬롯 (Equipment 타입인 경우 유효)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
+    EEquipmentSlot EquipSlot = EEquipmentSlot::None;
 
     // (선택) 기본 가치/가격
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")

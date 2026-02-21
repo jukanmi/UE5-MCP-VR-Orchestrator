@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_BaseDefinitions.h"
-#include "BTTask_CombatActions.h"
+#include "BTTask_Actions.h"
 #include "BTTask_CombatAction.generated.h"
 
 /**

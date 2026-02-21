@@ -53,18 +53,24 @@ EBTNodeResult::Type UBTTask_InvestigationAction::ExecuteTask(UBehaviorTreeCompon
 	case EInvestigationAction::Investigate:
 	case EInvestigationAction::Scout:
 		{
+			// TODO: NPC->ExecuteInvestigate(Location);
 			// 조사 지점으로 천천히 이동
 			FVector Location = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
 			NPC->ExecuteMoveToLocation(Location, EMoveType::Walk, 150.0f);
 		}
 		break;
 	
-	default:
+	case EInvestigationAction::Track:
 		{
-			// Track → ExecuteGenericAction
 			FString TargetID = Params.FindRef(TEXT("TargetID"));
 			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("TargetTrace"));
-			NPC->ExecuteGenericAction(SubActionStr, TargetID);
+			// TODO: NPC->ExecuteTrack(TargetID);
+		}
+		break;
+
+	default:
+		{
+			// Unknown Investigation Action
 		}
 		break;
 	}

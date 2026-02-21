@@ -119,7 +119,7 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 		float Distance = 200.0f;
 		if (Params.Contains(TEXT("distance"))) Distance = FCString::Atof(*Params[TEXT("distance")]);
 
-		float Speed = NPC->CurrentStats.Movement.RunSpeed;
+		float Speed = NPC->GetStats().Movement.RunSpeed;
 		if (Params.Contains(TEXT("speed"))) Speed = FCString::Atof(*Params[TEXT("speed")]);
 
 		NPC->ExecuteKeepDistance(TargetActor, Distance, Speed);
@@ -160,9 +160,7 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 	{
 		FString ItemID = Params.FindRef(TEXT("ItemID"));
 		if (ItemID.IsEmpty()) ItemID = Params.FindRef(TEXT("id"));
-		UE_LOG(LogTemp, Warning,
-			TEXT("UseItem Action not fully implemented. Agent: %s, Item: %s"),
-			*NPC->AgentID, *ItemID);
+		NPC->ExecuteInteraction(NPCActionKeys::Interact_Eat, nullptr, ItemID, TEXT(""));
 	}
 	break;
 
@@ -174,17 +172,30 @@ EBTNodeResult::Type UBTTask_CommonAction::ExecuteCommonFallback(
 
 	case ECommonAction::Scan:
 	{
-		// 주변 두리번거리기: 현재는 GenericAction으로 처리
-		NPC->ExecuteGenericAction(TEXT("Scan"), TEXT(""));
+		// TODO: NPC->ExecuteScan();
+		// 주변 두리번거리기: 제자리 회전(랜덤) + 대기로 구현
+        // 1. Random Point around NPC
+        FVector RandomPoint = NPC->GetActorLocation() + FMath::VRand() * 100.0f;
+        RandomPoint.Z = NPC->GetActorLocation().Z; // Keep height
+		
+        NPC->ExecuteFaceRotate(RandomPoint, 3.0f); // Turn
+        NPC->ExecuteWait(2.0f); // Wait
 	}
 	break;
 
 	case ECommonAction::Equip:
+    {
+        FString ItemID = Params.FindRef(TEXT("ItemID"));
+        if (ItemID.IsEmpty()) ItemID = Params.FindRef(TEXT("id"));
+        NPC->ExecuteInteraction(NPCActionKeys::Interact_Equip, nullptr, ItemID, TEXT(""));
+    }
+    break;
+
 	case ECommonAction::Unequip:
 	{
 		FString ItemID = Params.FindRef(TEXT("ItemID"));
 		if (ItemID.IsEmpty()) ItemID = Params.FindRef(TEXT("id"));
-		NPC->ExecuteGenericAction(SubActionStr, ItemID);
+		NPC->ExecuteInteraction(NPCActionKeys::Interact_Unequip, nullptr, ItemID, TEXT(""));
 	}
 	break;
 

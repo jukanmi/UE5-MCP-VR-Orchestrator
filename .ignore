@@ -1,6 +1,10 @@
+/.agent
 /.git
+/.obsidian
 /.vscode
 /Content
+/DerivedDataCache
+/docs
 /Intermediate
 /OmniAgent_VR_System
 /Saved

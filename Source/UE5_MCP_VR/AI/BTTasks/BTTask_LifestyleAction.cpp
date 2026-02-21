@@ -7,6 +7,7 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "../NPCActionKeys.h"
 
 UBTTask_LifestyleAction::UBTTask_LifestyleAction()
 {
@@ -56,14 +57,50 @@ EBTNodeResult::Type UBTTask_LifestyleAction::ExecuteTask(UBehaviorTreeComponent&
 		NPC->ExecuteEmote(SubActionStr);
 		break;
 	
+	case ELifestyleAction::Sit:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			FString TargetID = Params.FindRef(TEXT("ChairID"));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_SitDown, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	case ELifestyleAction::Sleep:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			FString TargetID = Params.FindRef(TEXT("BedID"));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_LieDown, TargetActor, TargetID, TEXT(""));
+			//ToDo:: 눈 감기
+		}
+		break;
+
+	case ELifestyleAction::Clean:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			FString TargetID = Params.FindRef(TEXT("Area"));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_Clean, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	case ELifestyleAction::Read:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			FString TargetID = Params.FindRef(TEXT("BookID"));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_Read, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
+	case ELifestyleAction::Pray:
+		{
+			AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+			FString TargetID = Params.FindRef(TEXT("Area"));
+			NPC->ExecuteInteraction(NPCActionKeys::Interact_Pray, TargetActor, TargetID, TEXT(""));
+		}
+		break;
+
 	default:
 		{
-			// Sit, Sleep, Clean, Read, Pray → ExecuteGenericAction
-			FString TargetID = Params.FindRef(TEXT("ChairID"));
-			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BedID"));
-			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("BookID"));
-			if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("Area"));
-			NPC->ExecuteGenericAction(SubActionStr, TargetID);
+			// Unknown Lifestyle Action
 		}
 		break;
 	}
