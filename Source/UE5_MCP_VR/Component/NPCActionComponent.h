@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "../Utils/MCPJsonUtils.h" // FGameAction, FActionBatch
-#include "../AI/BTTasks/BTTask_BaseDefinitions.h" // Enums
+#include "../AI/NPCActionTypes.h" // Enums
 #include "NPCActionComponent.generated.h"
 
 class ASmartNPCAIController;
@@ -11,7 +11,6 @@ class UNPCInteractionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
 
-// Movement Types for speed control (BTTask_BaseDefinitions.h로 이동됨)
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
 {
@@ -92,15 +91,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteEmote(const FString& EmoteName);
 
-    // --- Interaction System (Central Entry Point) ---
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Interaction")
-    void ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams);
-
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteEquip(const FString& ItemID);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteUnequip(const FString& ItemID);
+
+    // --- Interaction System (Central Entry Point) ---
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Interaction")
+    void ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams);
+
+
 
 protected:
     virtual void BeginPlay() override;

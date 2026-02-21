@@ -4,7 +4,7 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
-#include "BTTasks/BTTask_BaseDefinitions.h" // For Enums
+#include "NPCActionTypes.h" // For AI Enums and Structs
 #include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
@@ -22,7 +22,6 @@ class UNPCInventoryComponent;
  *   1. UNPCStateComponent   → 스탯, 표정, 데미지, 반사 판정
  *   2. UNPCActionComponent  → 행동 큐, Execute* 함수들, 상호작용
  *   3. UNPCInventoryComponent → 인벤토리, 장비
- * - 외부(BTTask, AIController, Blueprint)에서는 SmartNPC를 통해 접근하되,
  *   내부적으로 컴포넌트에 위임하는 Facade 패턴입니다.
  */
 UCLASS(BlueprintType, Blueprintable)
@@ -94,13 +93,10 @@ public:
 
 
 
-    /** 대기열 완료 콜백 (BTTask에서 호출) → ActionComponent에 위임 */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
     void OnActionCompleted();
 
-    // === Facade: Execute* Wrappers (BTTask 호환) ===
-    // 기존 BTTask 코드가 NPC->Execute*()를 직접 호출하므로,
-    // ActionComponent로 위임하는 얇은 래퍼를 제공합니다.
+    // === Facade: Execute* Wrappers ===
 
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
@@ -108,7 +104,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float Distance = 300.f);
 
-    // Note: FString 오버로드 (BTTask_CommonAction에서 사용)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void ExecuteDialogue(const FString& DialogueText, const FString& EmotionID);
 
@@ -139,13 +134,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams);
 
-    // 2-param overload (BTTask_SocialAction 호환): 기본 Walk 속도로 위임
     void ExecuteKeepDistance(AActor* TargetActor, float Distance) { ExecuteKeepDistance(TargetActor, EMoveType::Walk, Distance); }
 
-    // 3-float overload (BTTask_CommonAction 호환): 직접 Speed 지정
     void ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed);
 
-    // Emote/HandSignal (BTTask에서 직접 호출)
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Action")
     void ExecuteEmote(const FString& EmoteName);
 

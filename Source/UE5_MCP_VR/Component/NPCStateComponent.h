@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "../AI/CharacterAttributes.h"
-#include "../AI/BTTasks/BTTask_BaseDefinitions.h" // EFacialState
+#include "../AI/NPCActionTypes.h" // EFacialState
 #include "NPCStateComponent.generated.h"
 
 class ASmartNPCAIController;

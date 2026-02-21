@@ -195,17 +195,7 @@ void ASmartNPC::ExecuteHandSignal(const FString& SignalName)
 
 void ASmartNPC::ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed)
 {
-    // BTTask_CommonAction 호환: 직접 Speed를 지정하는 경우
-    // ActionComponent의 EMoveType 기반 함수 대신 직접 이동 속도 설정 후 KeepDistance 실행
-    if (ActionComponent)
-    {
-        // Speed로 직접 이동속도를 적용하고, EMoveType::Run 기본으로 위임
-        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-        {
-            MoveComp->MaxWalkSpeed = Speed;
-        }
-        ActionComponent->ExecuteKeepDistance(TargetActor, EMoveType::Run, Distance);
-    }
+    
 }
 
 // ==========================================
