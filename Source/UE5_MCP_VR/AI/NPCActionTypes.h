@@ -46,83 +46,32 @@ enum class EMoveType : uint8
 	Crouch
 };
 
+UENUM(BlueprintType)
+enum class EAttackType : uint8
+{
+	Melee,
+	Range,
+	Magic
+};
+
+UENUM(BlueprintType)
+enum class EEntityType : uint8
+{
+	None,
+	Player,
+	NPC,
+	Item,
+	InteractableObject
+};
+
 /**
  * ============================================================================
  * [Detailed Action Enums]
  * ============================================================================
  */
 
-/** ECommonAction: 범용 기본 액션 */
-UENUM(BlueprintType)
-enum class ECommonAction : uint8
-{
-	Idle           UMETA(DisplayName = "Idle"),
-	Move           UMETA(DisplayName = "Move"),
-	Follow         UMETA(DisplayName = "Follow"),
-	Wait           UMETA(DisplayName = "Wait"),
-	Dialogue       UMETA(DisplayName = "Dialogue"),
-	TurnTo         UMETA(DisplayName = "TurnTo"),
-	Stop           UMETA(DisplayName = "Stop"),
-	Scan           UMETA(DisplayName = "Scan"),
-	UseItem        UMETA(DisplayName = "UseItem"),
-	Equip          UMETA(DisplayName = "Equip"),
-	Unequip        UMETA(DisplayName = "Unequip")
-};
-
-/** ECombatAction: 전투 특화 액션 */
-UENUM(BlueprintType)
-enum class ECombatAction : uint8
-{
-	Attack           UMETA(DisplayName = "Attack"),
-	Block            UMETA(DisplayName = "Block"),
-	Dodge            UMETA(DisplayName = "Dodge"),
-	Flee             UMETA(DisplayName = "Flee"),
-	SignalAllies     UMETA(DisplayName = "SignalAllies")
-};
-
-/** ESocialAction: 사교 및 소통 액션 */
-UENUM(BlueprintType)
-enum class ESocialAction : uint8
-{
-	Trade        UMETA(DisplayName = "Trade"),
-	Emote        UMETA(DisplayName = "Emote"),
-	GiveItem     UMETA(DisplayName = "GiveItem"),
-	Comfort      UMETA(DisplayName = "Comfort"),
-	HandObject   UMETA(DisplayName = "HandObject")
-};
-
-/** ETaskAction: 작업 및 환경 상호작용 액션 */
-UENUM(BlueprintType)
-enum class ETaskAction : uint8
-{
-	PickUp       UMETA(DisplayName = "PickUp"),
-	Drop         UMETA(DisplayName = "Drop"),
-	Craft        UMETA(DisplayName = "Craft"),
-	Repair       UMETA(DisplayName = "Repair")
-};
-
-/** EInvestigationAction: 조사 및 흔적 추적 액션 */
-UENUM(BlueprintType)
-enum class EInvestigationAction : uint8
-{
-	Investigate   UMETA(DisplayName = "Investigate"),
-	Track         UMETA(DisplayName = "Track"),
-	Scout         UMETA(DisplayName = "Scout")
-};
-
-/** ELifestyleAction: 생활 밀착형 연출 액션 */
-UENUM(BlueprintType)
-enum class ELifestyleAction : uint8
-{
-	Sit           UMETA(DisplayName = "Sit"),
-	Sleep         UMETA(DisplayName = "Sleep"),
-	Clean         UMETA(DisplayName = "Clean"),
-	Read          UMETA(DisplayName = "Read"),
-	Pray          UMETA(DisplayName = "Pray"),
-	Dance         UMETA(DisplayName = "Dance"),
-	Sing          UMETA(DisplayName = "Sing")
-};
-
+// Legacy sub-action enums have been removed. Use EAction directly.
+/** EAction: 모든 액션을 통합한 열거형 */
 UENUM(BlueprintType)
 enum class EAction : uint8
 {
@@ -184,14 +133,15 @@ USTRUCT(BlueprintType)
 struct FGameAction
 {
 	GENERATED_BODY()
-	UPROPERTY(BlueprintReadWrite, Category = "MCP|Action")
-	EAction ActionType;
 
-	UPROPERTY(BlueprintReadWrite, Category = "MCP|Action")
-	EFacialState FacialState;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
+	EAction ActionType = EAction::Idle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
+	EFacialState FacialState = EFacialState::Neutral;
 
 	//예: "TargetID", "Location"
-	UPROPERTY(BlueprintReadWrite, Category = "MCP|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
 	TMap<FString, FString> Parameters;
 };
 
@@ -201,10 +151,13 @@ struct FActionBatch
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadWrite, Category = "MCP|Action")
-	ENPCBehaviorMode Mode;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
+	FString AgentID;
 
-	UPROPERTY(BlueprintReadWrite, Category = "MCP|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
+	ENPCBehaviorMode Mode = ENPCBehaviorMode::Common;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
 	TArray<FGameAction> Actions;
 };
 

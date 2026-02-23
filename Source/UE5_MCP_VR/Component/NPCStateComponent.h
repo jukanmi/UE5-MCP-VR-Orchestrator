@@ -35,6 +35,13 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     FString CurrentActionID;
 
+    // --- Posture State ---
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
+    bool bIsSit = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
+    bool bIsLie = false;
+
     // --- Public API ---
 
     /**

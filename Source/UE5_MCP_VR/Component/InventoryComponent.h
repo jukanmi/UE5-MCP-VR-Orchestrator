@@ -103,6 +103,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory|Check")
     bool HasItem(const FString& ItemID, int32 Amount = 1);
 
+    /**
+     * 아이템 수리
+     */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
+    bool RepairItem(const FString& ItemID, float Amount);
     // --- Equipment API ---
 
     /**

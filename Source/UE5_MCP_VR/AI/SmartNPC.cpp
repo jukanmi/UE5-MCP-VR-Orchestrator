@@ -113,7 +113,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 
 void ASmartNPC::ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
 {
-    if (ActionComponent) ActionComponent->ExecuteMoveToLocation(TargetLocation, SpeedType, AcceptanceRadius);
+    if (ActionComponent) ActionComponent->BaseMoveToLocation(TargetLocation, SpeedType, AcceptanceRadius);
 }
 
 void ASmartNPC::ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType, float Distance)
@@ -121,18 +121,10 @@ void ASmartNPC::ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType, fl
     if (ActionComponent) ActionComponent->ExecuteKeepDistance(TargetActor, SpeedType, Distance);
 }
 
-void ASmartNPC::ExecuteDialogue(const FString& DialogueText, const FString& EmotionID)
+void ASmartNPC::ExecuteDialogue(const FString& DialogueText, const EFacialState Emotion)
 {
     if (ActionComponent)
     {
-        // FString → EFacialState 변환
-        EFacialState Emotion = EFacialState::Neutral;
-        const UEnum* FacialEnum = StaticEnum<EFacialState>();
-        if (FacialEnum)
-        {
-            int64 Val = FacialEnum->GetValueByNameString(EmotionID);
-            if (Val != INDEX_NONE) Emotion = (EFacialState)Val;
-        }
         ActionComponent->ExecuteDialogue(DialogueText, Emotion);
     }
 }
@@ -147,14 +139,14 @@ void ASmartNPC::ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed)
     if (ActionComponent) ActionComponent->ExecuteFaceRotate(TargetLocation, TurnSpeed);
 }
 
-void ASmartNPC::StopAllActions()
+void ASmartNPC::ExecuteStop()
 {
     if (ActionComponent) ActionComponent->StopAllActions();
 }
 
-void ASmartNPC::ExecutePerformAttack(AActor* TargetActor, const FString& AttackType)
+void ASmartNPC::ExecutePerformAttack(AActor* TargetActor, const EAttackType AttackType)
 {
-    if (ActionComponent) ActionComponent->ExecutePerformAttack(AttackType);
+    if (ActionComponent) ActionComponent->ExecutePerformAttack(TargetActor, AttackType);
 }
 
 void ASmartNPC::ExecuteDefend(bool bStartDefend)
@@ -178,9 +170,9 @@ void ASmartNPC::ExecuteUnequip(const FString& ItemID)
 }
 
 //Case SitDown SitUp, LieDown, LieUp, Pickup, Drop, Eat, Wear, Equip, Unequip, Clean, Repair, Read, Pray, Dance, Sing, HandSignal, Emote
-void ASmartNPC::ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams)
+void ASmartNPC::ExecuteInteraction(const EAction InteractionType, AActor* TargetActor, const FString& TargetID)
 {
-    if (ActionComponent) ActionComponent->ExecuteInteraction(InteractionType, TargetActor, TargetID, ExtraParams);
+    if (ActionComponent) ActionComponent->ExecuteInteraction(InteractionType, TargetActor, TargetID);
 }
 
 void ASmartNPC::ExecuteEmote(const FString& EmoteName)
@@ -193,139 +185,170 @@ void ASmartNPC::ExecuteHandSignal(const FString& SignalName)
     if (ActionComponent) ActionComponent->ExecuteHandSignal(SignalName);
 }
 
-void ASmartNPC::ExecuteKeepDistance(AActor* TargetActor, float Distance, float Speed)
-{
-    
-}
+// ============================================================================
+// [EAction 래퍼 함수 (Action Wrappers)]
+// ============================================================================
+
+// --- [1] Common Behaviors ---
+void ASmartNPC::ExecuteIdle() { if(ActionComponent) ActionComponent->ExecuteIdle(); }
+void ASmartNPC::ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType) { if(ActionComponent) ActionComponent->ExecuteMove(Location, TargetActor, SpeedType); }
+void ASmartNPC::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType) { if(ActionComponent) ActionComponent->ExecuteFollow(TargetActor, SpeedType); }
+void ASmartNPC::ExecuteTurnTo(FVector Location, AActor* TargetActor) { if(ActionComponent) ActionComponent->ExecuteTurnTo(Location, TargetActor); }
+
+void ASmartNPC::ExecuteScan(FVector Location, AActor* TargetActor) { if(ActionComponent) ActionComponent->ExecuteScan(Location, TargetActor); }
+void ASmartNPC::ExecuteUseItem(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteUseItem(ItemID); }
+void ASmartNPC::ExecuteEquipAction(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteEquipAction(ItemID); }
+void ASmartNPC::ExecuteUnequipAction(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteUnequipAction(ItemID); }
+
+// --- [2] Combat Behaviors ---
+void ASmartNPC::ExecuteAttackAction(AActor* TargetActor) { if(ActionComponent) ActionComponent->ExecuteAttackAction(TargetActor); }
+void ASmartNPC::ExecuteBlock(AActor* TargetActor) { if(ActionComponent) ActionComponent->ExecuteBlock(TargetActor); }
+void ASmartNPC::ExecuteDodgeAction(FVector Direction) { if(ActionComponent) ActionComponent->ExecuteDodgeAction(Direction); }
+void ASmartNPC::ExecuteFlee(FVector Location) { if(ActionComponent) ActionComponent->ExecuteFlee(Location); }
+void ASmartNPC::ExecuteSignalAllies(const FString& HandSign) { if(ActionComponent) ActionComponent->ExecuteSignalAllies(HandSign); }
+
+// --- [3] Social Behaviors ---
+void ASmartNPC::ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, const FString& GetItemID) { if(ActionComponent) ActionComponent->ExecuteTrade(TargetActor, GiveItemID, GetItemID); }
+void ASmartNPC::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteGiveItem(TargetActor, ItemID); }
+void ASmartNPC::ExecuteComfort(AActor* TargetActor) { if(ActionComponent) ActionComponent->ExecuteComfort(TargetActor); }
+void ASmartNPC::ExecuteHandObject(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteHandObject(ItemID); }
+
+// --- [4] Task Behaviors ---
+void ASmartNPC::ExecutePickUp(FVector Location) { if(ActionComponent) ActionComponent->ExecutePickUp(Location); }
+void ASmartNPC::ExecuteDrop(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteDrop(ItemID); }
+void ASmartNPC::ExecuteCraft(const TArray<FString>& ItemIDs) { if(ActionComponent) ActionComponent->ExecuteCraft(ItemIDs); }
+void ASmartNPC::ExecuteRepair(const FString& ItemID) { if(ActionComponent) ActionComponent->ExecuteRepair(ItemID); }
+
+// --- [5] Investigation Behaviors ---
+void ASmartNPC::ExecuteInvestigate(FVector Location) { if(ActionComponent) ActionComponent->ExecuteInvestigate(Location); }
+void ASmartNPC::ExecuteScout(FVector StartLocation, FVector EndLocation) { if(ActionComponent) ActionComponent->ExecuteScout(StartLocation, EndLocation); }
+
+// --- [6] Lifestyle Behaviors ---
+void ASmartNPC::ExecuteSit(AActor* TargetEntity) { if(ActionComponent) ActionComponent->ExecuteSit(TargetEntity); }
+void ASmartNPC::ExecuteSleep(AActor* TargetEntity) { if(ActionComponent) ActionComponent->ExecuteSleep(TargetEntity); }
+void ASmartNPC::ExecuteClean(FVector Location, float Radius) { if(ActionComponent) ActionComponent->ExecuteClean(Location, Radius); }
+void ASmartNPC::ExecuteRead(AActor* TargetEntity) { if(ActionComponent) ActionComponent->ExecuteRead(TargetEntity); }
+void ASmartNPC::ExecutePray(FVector Location) { if(ActionComponent) ActionComponent->ExecutePray(Location); }
+void ASmartNPC::ExecuteDance(const FString& DanceName) { if(ActionComponent) ActionComponent->ExecuteDance(DanceName); }
+void ASmartNPC::ExecuteSing(const FString& SingName) { if(ActionComponent) ActionComponent->ExecuteSing(SingName); }
 
 // ==========================================
 // Debug Functions (에디터에서 버튼 클릭으로 테스트)
 // ==========================================
 
-void ASmartNPC::Debug_Test_Social_Dialogue()
+namespace
 {
-    // [의도(Why)] 대화/사교(Social) 모드로 전환되었을 때, 매핑된 ActionQueue 시스템이
-    // 정상적으로 동작하며 에디터 환경에서 패치(Batch)가 올바르게 실행되는지 확인합니다.
-    FGameAction Action;
-    Action.ActionType = NPCActionKeys::Action_Dialogue;
-    Action.TargetID = TEXT("Player");
-    Action.Parameters.Add(NPCActionKeys::Key_Text, TEXT("Hello! This is a debug test."));
-    Action.Parameters.Add(NPCActionKeys::Key_Emotion, NPCActionKeys::Value_Neutral);
-    Action.BehaviorMode = NPCActionKeys::Mode_Social;
-
-    FActionBatch Batch;
-    Batch.AgentID = AgentID;
-    Batch.Actions.Add(Action);
-    
-    ExecuteActionBatch(Batch);
-}
-
-void ASmartNPC::Debug_Test_Common_Move()
-{
-    // [의도(Why)] 가장 기본적인 행동인 '이동(Move)'이 Common 모드 안에서
-    // 타겟(Player)을 향해 올바르게 내비게이션(NavMesh)을 타고 이동하는지 검증합니다.
-    FGameAction Action;
-    Action.ActionType = NPCActionKeys::Action_Move;
-    Action.TargetID = TEXT("Player");
-    Action.BehaviorMode = NPCActionKeys::Mode_Common;
-
-    FActionBatch Batch;
-    Batch.AgentID = AgentID;
-    Batch.Actions.Add(Action);
-    
-    ExecuteActionBatch(Batch);
-}
-
-void ASmartNPC::Debug_Test_Combat_Attack()
-{
-    // [의도(Why)] 전투(Combat) 모드 시, Attack 액션을 큐에 담았을 때 
-    // NPC가 타겟을 인식하고 공격 애니메이션(몽타주)을 실행하는지 검증합니다.
-    FGameAction Action;
-    Action.ActionType = NPCActionKeys::Action_Attack;
-    Action.TargetID = TEXT("Player");
-    Action.BehaviorMode = NPCActionKeys::Mode_Combat;
-
-    FActionBatch Batch;
-    Batch.AgentID = AgentID;
-    Batch.Actions.Add(Action);
-    
-    ExecuteActionBatch(Batch);
-}
-
-void ASmartNPC::Debug_Test_Orchestra_Pipeline()
-{
-    // [의도(Why)] 백엔드(서버)에서 여러 NPC의 스크립트가 포함된 JSON이 전달되었을 때,
-    // NPCManager가 파싱하여 각 액터에게 정상적으로 분배(Dispatch)하는지 통합 시뮬레이션합니다.
-    TArray<TSharedPtr<FJsonValue>> AgentList;
-
-    // 1. 본인(SmartNPC) 에이전트를 위한 대화 + 대기 콤보 액션 스크립트 작성
-    TSharedPtr<FJsonObject> MyAgent = MakeShareable(new FJsonObject);
-    MyAgent->SetStringField("agent_id", AgentID);
-
-    TArray<TSharedPtr<FJsonValue>> MyActions;
-
-    TSharedPtr<FJsonObject> Act1 = MakeShareable(new FJsonObject);
-    Act1->SetStringField("action_type", NPCActionKeys::Action_Dialogue);
-    Act1->SetStringField("text", "Pipeline Test: Hello!");
-    Act1->SetStringField("emotion", "Happy");
-    Act1->SetStringField("behavior_mode", NPCActionKeys::Mode_Social);
-    Act1->SetStringField("facial_state", "Happy");
-    MyActions.Add(MakeShareable(new FJsonValueObject(Act1)));
-
-    TSharedPtr<FJsonObject> Act2 = MakeShareable(new FJsonObject);
-    Act2->SetStringField("action_type", NPCActionKeys::Action_Wait);
-    Act2->SetStringField("duration", "1.5");
-    Act2->SetStringField("behavior_mode", NPCActionKeys::Mode_Social);
-    MyActions.Add(MakeShareable(new FJsonValueObject(Act2)));
-
-    MyAgent->SetArrayField("actions", MyActions);
-    AgentList.Add(MakeShareable(new FJsonValueObject(MyAgent)));
-
-    // 2. 화면에 존재하지 않는(Ghost) NPC 정보가 포함되었을 때 에러 없이 무시되는지 방어 케이스 작성
-    TSharedPtr<FJsonObject> GhostAgent = MakeShareable(new FJsonObject);
-    GhostAgent->SetStringField("agent_id", "Ghost_NPC");
-    TArray<TSharedPtr<FJsonValue>> GhostActions;
-    TSharedPtr<FJsonObject> GhostAct = MakeShareable(new FJsonObject);
-    GhostAct->SetStringField("action_type", NPCActionKeys::Action_Move);
-    GhostAct->SetStringField("behavior_mode", NPCActionKeys::Mode_Combat);
-    GhostActions.Add(MakeShareable(new FJsonValueObject(GhostAct)));
-    GhostAgent->SetArrayField("actions", GhostActions);
-    AgentList.Add(MakeShareable(new FJsonValueObject(GhostAgent)));
-
-    // 직렬화 (Serialization)
-    FString MockJson;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&MockJson);
-    FJsonSerializer::Serialize(AgentList, Writer);
-
-    UE_LOG(LogTemp, Log, TEXT("[Debug] Testing Orchestra Pipeline with JSON: %s"), *MockJson);
-
-    // Reflection을 통해 NPCManager의 HandleMessage를 직접 트리거
-    if (UGameInstance* GI = GetGameInstance())
+    // [의도(Why)] 하드코딩된 JSON 문자열을 생성하여 NPCManager를 통해 통합 테스트를 수행하는 헬퍼 함수
+    void DispatchDebugJson(ASmartNPC* NPCInstance, const FString& Mode, const FString& ActionsJson)
     {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        if (!NPCInstance) return;
+
+        FString MockJson = FString::Printf(TEXT(R"({
+    "Mode": "%s",
+    "ActionBatches": {
+        "%s": {
+            "AgentID": "%s",
+            "Mode": "%s",
+            "Actions": [
+                %s
+            ]
+        }
+    }
+})"), *Mode, *NPCInstance->AgentID, *NPCInstance->AgentID, *Mode, *ActionsJson);
+
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] DispatchDebugJson: Sending to NPCManager\n%s"), *MockJson);
+
+        if (UGameInstance* GameInst = NPCInstance->GetGameInstance())
         {
-            UFunction* Func = Manager->FindFunction(TEXT("HandleMessage"));
-            if (Func)
+            if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
             {
-                struct FParams { FString Msg; };
-                FParams Params;
-                Params.Msg = MockJson;
-                Manager->ProcessEvent(Func, &Params);
+                NPCManager->HandleMessage(MockJson);
             }
         }
     }
 }
 
-void ASmartNPC::Debug_Test_Interaction(FString InteractionKey, FString ExtraParams)
+void ASmartNPC::Debug_Test_Social_Dialogue()
 {
-    // [의도(Why)] NPCActionComponent 내부적으로 구현된 ExecuteInteraction이 수많은 키(SitDown, LieDown 등)를 
-    // 정상적으로 분기하고 알맞은 애니메이션 몽타주를 매핑하는지 강제 실행해보기 위함입니다.
+    // [의도(Why)] 사교 모드(Social)로 전환 후 대화(Dialogue) 행동이 올바르게 큐잉되어 실행되는지 확인합니다.
+    FString ActionsJson = TEXT(R"({
+                    "action_type": "Dialogue",
+                    "target_id": "Player",
+                    "text": "Hello! This is a debug test.",
+                    "emotion": "Neutral"
+                })");
+    DispatchDebugJson(this, TEXT("Social"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Common_Move()
+{
+    // [의도(Why)] 기본 모드(Common) 상태에서 액터(Player)를 향한 이동(Move) 내비게이션 처리를 검증합니다.
+    FString ActionsJson = TEXT(R"({
+                    "action_type": "Move",
+                    "target_id": "Player"
+                })");
+    DispatchDebugJson(this, TEXT("Common"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Combat_Attack()
+{
+    // [의도(Why)] 전투 모드(Combat) 상태에서 대상체(Player)를 향한 공격 몽타주 재생이 트리거되는지 확인합니다.
+    FString ActionsJson = TEXT(R"({
+                    "action_type": "Attack",
+                    "target_id": "Player"
+                })");
+    DispatchDebugJson(this, TEXT("Combat"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Orchestra_Pipeline()
+{
+    // [의도(Why)] 서버에서 수신되는 다중 에이전트 명령 포맷(FModeActionRequest)이 
+    // NPCManager를 통해 각 NPC에게 올바르게 분배 및 파싱되는지 시뮬레이션합니다.
+
+    // 1. 하드코딩된 완벽한 JSON 문자열 생성 (파이썬 서버에서 내려오는 것과 100% 동일한 형태)
+    FString MockJson = FString::Printf(TEXT(R"({
+    "Mode": "Social",
+    "ActionBatches": {
+        "%s": {
+            "AgentID": "%s",
+            "Mode": "Social",
+            "Actions": [
+                {
+                    "ActionType": "Dialogue",
+                    "text": "Pipeline Test: Hello!",
+                    "FacialState": "Happy"
+                },
+                {
+                    "ActionType": "Wait",
+                    "duration": "1.5"
+                }
+            ]
+        }
+    }
+})"), *AgentID, *AgentID);
+
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Testing Orchestra Pipeline with JSON: %s"), *MockJson);
+
+    if (UGameInstance* GameInst = GetGameInstance())
+    {
+        if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
+        {
+            NPCManager->HandleMessage(MockJson);
+        }
+    }
+}
+
+void ASmartNPC::Debug_Test_Interaction(EAction Action, FString ExtraParams)
+{
+    // [의도(Why)] 액션 컴포넌트 내부에서 상호작용 행동(앉기, 줍기 등)이 
+    // 매핑된 애니메이션 몽타주와 함께 올바르게 재생되는지 강제 트리거합니다.
     
-    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Debug_Test_Interaction: Key=%s, Extra=%s"), *InteractionKey, *ExtraParams);
+    const FString ActionName = UEnum::GetValueAsString(Action);
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Debug_Test_Interaction: Action=%s, Extra=%s"), *ActionName, *ExtraParams);
     
     if (ActionComponent)
     {
-        // 물리적 Actor(Seat/Bed 등) 없이 "DebugTarget"이라는 더미 타겟으로 로직 흐름과 몽타주만 테스트합니다.
-        ActionComponent->ExecuteInteraction(InteractionKey, nullptr, TEXT("DebugTarget"), ExtraParams);
+        // 물리적 공간 지시자(Seat 등)가 없는 상황에서도 흐름 및 몽타주 연동 기능만 단독 테스트하기 위해 더미 타겟 설정
+        ActionComponent->ExecuteInteraction(Action, nullptr, TEXT("DebugTarget"));
     }
 }

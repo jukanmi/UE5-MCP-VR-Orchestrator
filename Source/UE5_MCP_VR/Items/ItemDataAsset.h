@@ -14,32 +14,35 @@
 UENUM(BlueprintType)
 enum class EItemType : uint8
 {
-    General     UMETA(DisplayName = "General"),
-    Consumable  UMETA(DisplayName = "Consumable"),
-    Equipment   UMETA(DisplayName = "Equipment"),
-    Quest       UMETA(DisplayName = "Quest")
+    General     UMETA(DisplayName = "General"),    // 조합/납품용 잡동사니 (돌, 나무 등)
+    Consumable  UMETA(DisplayName = "Consumable"), // 1회성 소모를 통해 효과를 주는 아이템 (포션, 음식)
+    Equipment   UMETA(DisplayName = "Equipment"),  // 캐릭터 스탯 및 외형에 반영되는 장착품 (무기, 방어구)
+    Quest       UMETA(DisplayName = "Quest")       // 버릴 수 없으며 시스템 제어를 받는 스토리 필수 아이템
 };
 
-// 장비 착용 부위 (Equipment Slots)
+/**
+ * [의도] 장착 가능(Equipment) 아이템이 캐릭터의 어느 소켓/부위에 들어갈지를 명확히 규정하여,
+ * 중복 착용을 방지하고 올바른 부위의 스탯 연산을 보장하기 위한 슬롯 정의입니다.
+ */
 UENUM(BlueprintType)
 enum class EEquipmentSlot : uint8
 {
     None        UMETA(DisplayName = "None"),
-    MainHand    UMETA(DisplayName = "Main Hand"), // 주무기
-    OffHand     UMETA(DisplayName = "Off Hand"),  // 보조무기
-    Head        UMETA(DisplayName = "Head"),      // 머리
-    Torso       UMETA(DisplayName = "Torso"),     // 몸통
-    Legs        UMETA(DisplayName = "Legs"),      // 다리
-    Feet        UMETA(DisplayName = "Feet"),      // 발
+    MainHand    UMETA(DisplayName = "Main Hand"), // 우측 주 사용 무기/도구
+    OffHand     UMETA(DisplayName = "Off Hand"),  // 좌측 보조 무기/방패
+    Head        UMETA(DisplayName = "Head"),      // 투구 및 모자
+    Torso       UMETA(DisplayName = "Torso"),     // 흉갑 및 셔츠
+    Legs        UMETA(DisplayName = "Legs"),      // 바지 및 하의
+    Feet        UMETA(DisplayName = "Feet"),      // 신발
     Gloves      UMETA(DisplayName = "Gloves"),    // 장갑
-    Accessory   UMETA(DisplayName = "Accessory"), // 장신구
-    Back        UMETA(DisplayName = "Back")       // 등
+    Accessory   UMETA(DisplayName = "Accessory"), // 반지, 목걸이 등 마법 장신구
+    Back        UMETA(DisplayName = "Back")       // 망토, 배낭 등 등짝 장착물
 };
 
 /**
- * 게임 내 모든 아이템의 변하지 않는 정적 데이터 정의.
- * - Blueprint에서 DataAsset을 생성하여 개별 아이템(DA_Sword, DA_Potion 등)을 만듭니다.
- * - 런타임 인벤토리 시스템은 이 에셋을 참조하여 아이템 정보를 가져옵니다.
+ * 아이템 데이터 에셋
+ * - 게임 내 모든 아이템의 공통 속성을 정의
+ * - Flyweight 패턴 적용으로 메모리 효율성 극대화
  */
 UCLASS(BlueprintType)
 class UE5_MCP_VR_API UItemDataAsset : public UDataAsset
@@ -49,12 +52,11 @@ class UE5_MCP_VR_API UItemDataAsset : public UDataAsset
 public:
     // --- Identity ---
 
-    // 고유 식별자 (예: "HealthPotion_S", "Sword_Iron_01")
-    // 시스템 내부 로직(Search, Remove 등)에서 Key로 사용됩니다.
+    // 아이템 고유 식별자
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity")
     FString ItemID;
 
-    // UI 표시 이름 (예: "Small Health Potion")
+    // UI 표시 이름
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity")
     FText DisplayName;
 
@@ -76,21 +78,45 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
     int32 MaxStack = 64;
 
-    // 장착 가능한 슬롯 (Equipment 타입인 경우 유효)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
+    // 장착 슬롯 (Equipment 타입일 경우에만 유효)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats", meta = (EditCondition = "ItemType == EItemType::Equipment"))
     EEquipmentSlot EquipSlot = EEquipmentSlot::None;
 
-    // (선택) 기본 가치/가격
+    // 기본 가치 (상점 판매, 분해 보상 등에 사용)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
     int32 BaseValue = 10;
 
+    // --- Durability ---
+
+    // 내구도 사용 여부
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability")
+    bool bHasDurability = false;
+
+    // 최대 내구도
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
+    float MaxDurability = 100.0f;
+
+    // 현재 내구도
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
+    float CurrentDurability = 100.0f;
+
+    // 내구도 회복 함수
+    UFUNCTION(BlueprintCallable, Category = "Item|Durability")
+    void RepairItem(float Amount)
+    {
+        CurrentDurability += Amount;
+        if (CurrentDurability > MaxDurability)
+        {
+            CurrentDurability = MaxDurability;
+        }
+    };
     // --- Visuals ---
 
     // UI 아이콘 (인벤토리 창 표시용)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Visual")
     TSoftObjectPtr<UTexture2D> Icon;
 
-    // 월드에 버려지거나 스폰될 때 사용할 액터 클래스 (BP_ItemPickup 등)
+    // 월드에 표시될 3D 모델 (필드에 떨어뜨리거나 상호작용할 때 사용)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Visual")
     TSoftClassPtr<AActor> WorldMeshClass;
 };

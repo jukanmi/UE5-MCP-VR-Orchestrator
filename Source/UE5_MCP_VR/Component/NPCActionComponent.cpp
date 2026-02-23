@@ -81,101 +81,60 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 
 void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
 {
+    if (ASmartNPCAIController* AI = GetOwnerAIController())
+    {
+        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
+        {
+            BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Batch.Mode);
+        }
+    }
+
     // 1. Actions 분배 (Dialogue = 즉시, 나머지 = Queue)
-    // 개별 액션의 BehaviorMode와 FacialState는 Dispatch/Queue 처리 시 업데이트됩니다.
+    // 개별 액션의 FacialState는 Dispatch/Queue 처리 시 업데이트됩니다.
     DispatchActions(Batch.Actions);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Batch Executed. Actions: %d"),
         *GetOwnerAgentID(), Batch.Actions.Num());
 }
 
+/**
+ * @brief 감정 상태를 업데이트합니다.
+ * @param Action 업데이트할 액션
+ */
 void UNPCActionComponent::UpdateActionState(const FGameAction& Action)
 {
-    ASmartNPCAIController* AI = GetOwnerAIController();
-    if (!AI) return;
-
-    UBlackboardComponent* BB = AI->GetBlackboardComponent();
-    if (!BB) return;
-
-    // 1. BehaviorMode 업데이트 (문자열 → Enum)
-    if (!Action.BehaviorMode.IsEmpty())
+    // FacialState 업데이트 (이제 Enum 타입)
+    if (StateComponent)
     {
-        const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
-        if (ModeEnum)
-        {
-            int64 Value = ModeEnum->GetValueByNameString(Action.BehaviorMode);
-            if (Value == INDEX_NONE) Value = ModeEnum->GetValueByName(FName(*Action.BehaviorMode));
-            
-            if (Value == INDEX_NONE)
-            {
-                FString FullName = FString::Printf(TEXT("ENPCBehaviorMode::%s"), *Action.BehaviorMode);
-                Value = ModeEnum->GetValueByName(FName(*FullName));
-            }
-
-            if (Value != INDEX_NONE)
-            {
-                BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Value);
-            }
-        }
-    }
-
-    // 2. FacialState 업데이트 (문자열 → Enum)
-    if (!Action.FacialState.IsEmpty())
-    {
-        const UEnum* FacialEnum = StaticEnum<EFacialState>();
-        if (FacialEnum)
-        {
-            int64 Value = FacialEnum->GetValueByNameString(Action.FacialState);
-            if (Value == INDEX_NONE) Value = FacialEnum->GetValueByName(FName(*Action.FacialState));
-            
-            if (Value == INDEX_NONE)
-            {
-                FString FullName = FString::Printf(TEXT("EFacialState::%s"), *Action.FacialState);
-                Value = FacialEnum->GetValueByName(FName(*FullName));
-            }
-
-            if (Value != INDEX_NONE)
-            {
-                if (StateComponent)
-                {
-                    StateComponent->SetFacialExpression((EFacialState)Value);
-                }
-            }
-        }
+        StateComponent->SetFacialExpression(Action.FacialState);
     }
 }
-
+/**
+ * @brief 액션을 분배합니다.
+ * @param Actions 분배할 액션
+ */
 void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
 {
     for (const FGameAction& Action : Actions)
     {
         // 1. Critical Stop
-        if (Action.ActionType.Equals(NPCActionKeys::Action_Stop, ESearchCase::IgnoreCase))
+        if (Action.ActionType == EAction::Stop)
         {
             StopAllActions();
             continue;
         }
 
         // 2. Parallel Action: Dialogue (즉시 실행, 큐잉하지 않음)
-        if (Action.ActionType.Equals(NPCActionKeys::Action_Dialogue, ESearchCase::IgnoreCase))
+        if (Action.ActionType == EAction::Dialogue && !bIsDialogueActive)
         {
+            bIsDialogueActive = true;
             // 대화는 즉시 감정/상태 변화를 동반할 수 있음
             UpdateActionState(Action);
 
             FString TextContent = Action.Parameters.FindRef(NPCActionKeys::Key_Text);
-            FString Emotion = Action.Parameters.FindRef(NPCActionKeys::Key_Emotion);
-            if (Emotion.IsEmpty()) Emotion = NPCActionKeys::Value_Neutral;
+            EFacialState Emotion = Action.FacialState;
 
-            // Emotion 문자열 → EFacialState 변환
-            EFacialState EmotionEnum = EFacialState::Neutral;
-            const UEnum* FacialEnum = StaticEnum<EFacialState>();
-            if (FacialEnum)
-            {
-                int64 Val = FacialEnum->GetValueByNameString(Emotion);
-                if (Val != INDEX_NONE) EmotionEnum = (EFacialState)Val;
-            }
-
-            ExecuteDialogue(TextContent, EmotionEnum);
+            BaseDialogue(TextContent, Emotion);
         }
         else
         {
@@ -220,9 +179,15 @@ void UNPCActionComponent::ProcessNextAction()
     if (ActionQueue.Dequeue(Action))
     {
         bIsBusy = true;
-        if (StateComponent) StateComponent->CurrentActionID = Action.ActionType;
         
-        // 물리적 액션 시작 전 상태(Mode, Facial) 업데이트
+        FString ActionStr = UEnum::GetValueAsString(Action.ActionType);
+        FString SubActionName;
+        ActionStr.Split(TEXT("::"), nullptr, &SubActionName);
+        if (SubActionName.IsEmpty()) SubActionName = ActionStr;
+        
+        if (StateComponent) StateComponent->CurrentActionID = SubActionName;
+        
+        // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(Action);
 
         ASmartNPCAIController* AI = GetOwnerAIController();
@@ -236,17 +201,13 @@ void UNPCActionComponent::ProcessNextAction()
         if (!BB) return;
 
         // Blackboard에 액션 정보 설정 (BT Task가 읽어서 실행)
-        BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, Action.ActionType);
+        BB->SetValueAsString(ASmartNPCAIController::Key_SubAction, SubActionName);
 
         // Parameters → JSON 문자열로 변환하여 Blackboard에 저장
         TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
         for (const auto& Pair : Action.Parameters)
         {
             JsonObj->SetStringField(Pair.Key, Pair.Value);
-        }
-        if (!Action.TargetID.IsEmpty())
-        {
-            JsonObj->SetStringField(NPCActionKeys::Key_TargetID, Action.TargetID);
         }
 
         FString OutputString;
@@ -275,7 +236,7 @@ void UNPCActionComponent::ProcessNextAction()
             }
         }
 
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *Action.ActionType);
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *SubActionName);
     }
 }
 
@@ -307,308 +268,483 @@ void UNPCActionComponent::AbortCurrentAction()
     }
 }
 
-// === Execute Functions ===
+// ============================================================================
+// [기본 함수 (Base Functions)] 래퍼함수 구현시 사용하는 유틸 함수
+// ============================================================================
 
-void UNPCActionComponent::ExecuteMoveToLocation(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
+void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
 {
-    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-    {
-        if (UCharacterMovementComponent* Movement = OwnerChar->GetCharacterMovement())
-            Movement->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
+    // [의도] 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경시킨 후, 지정된 목적지로 AI 이동을 호출하여 자연스러운 이동을 유도합니다.
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
 
-        if (AAIController* AI = Cast<AAIController>(OwnerChar->GetController()))
-        {
-            AI->MoveToLocation(TargetLocation, AcceptanceRadius);
-        }
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    {
+        MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
+    }
+
+    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
+    {
+        AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
     }
 }
 
-void UNPCActionComponent::ExecuteKeepDistance(AActor* TargetActor, EMoveType SpeedType, float Distance)
+void UNPCActionComponent::BaseEmotion(const EFacialState Emotion)
 {
-    if (!TargetActor) return;
-    ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
-    if (!OwnerChar) return;
-
-    if (UCharacterMovementComponent* Movement = OwnerChar->GetCharacterMovement())
-        Movement->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
-
-    FVector Direction = OwnerChar->GetActorLocation() - TargetActor->GetActorLocation();
-    Direction.Normalize();
-    FVector TargetPos = TargetActor->GetActorLocation() + Direction * Distance;
-
-    if (AAIController* AI = Cast<AAIController>(OwnerChar->GetController()))
-    {
-        AI->MoveToLocation(TargetPos, 50.f);
-    }
-}
-
-void UNPCActionComponent::ExecuteWait(float Duration)
-{
-    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-    {
-        if (AController* C = OwnerChar->GetController())
-        {
-            C->StopMovement();
-        }
-    }
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Waiting for %.1f seconds"), *GetOwnerAgentID(), Duration);
-}
-
-void UNPCActionComponent::ExecuteDialogue(const FString& DialogueText, const EFacialState& EmotionID)
-{
-    // 표정 업데이트
+    // [의도] 얼굴 표정(Emotion) 상태를 동기화하여, 감정적 뉘앙스를 플레이어에게 직관적으로 전달하기 위함입니다.
     if (StateComponent)
     {
-        StateComponent->SetFacialExpression(EmotionID);
+        StateComponent->SetFacialExpression(Emotion);
     }
-
-    UE_LOG(LogTemp, Log, TEXT("[Dialogue] %s (%d): \"%s\""), *GetOwnerAgentID(), (int32)EmotionID, *DialogueText);
-    // Todo: Dialogue Widget, TTS 등
 }
 
-void UNPCActionComponent::ExecuteFaceRotate(FVector TargetLocation, float TurnSpeed)
+void UNPCActionComponent::BaseDialogue(const FString& DialogueText, const EFacialState Emotion)
 {
-    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+    // [의도] 텍스트 대화 출력과 함께 얼굴 표정(Emotion) 상태를 동기화하여, 대화 내용에 맞는 감정적 뉘앙스를 플레이어에게 직관적으로 전달하기 위함입니다.
+    BaseEmotion(Emotion);
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 대화 실행: %s (표정: %d) - 내용: %s"), 
+        *GetOwnerAgentID(), (int32)Emotion, *DialogueText);
+}
+
+void UNPCActionComponent::BaseFaceRotate(FVector TargetLocation, float TurnSpeed)
+{
+    // [의도] 대상을 향해 몸과 시선을 돌려 상호작용 의지나 목적을 시각적으로 강하게 표현하기 위함입니다.
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
+
+    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
     {
-        if (AAIController* AI = Cast<AAIController>(OwnerChar->GetController()))
-        {
-            AI->SetFocalPoint(TargetLocation);
-        }
+        AIController->SetFocalPoint(TargetLocation);
     }
 }
 
-void UNPCActionComponent::ExecutePerformAttack(const FString& AttackType)
+void UNPCActionComponent::BaseSitDown(AActor* TargetSeat)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s Attacks: %s"), *GetOwnerAgentID(), *AttackType);
-
-    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-    {
-        if (AController* C = OwnerChar->GetController())
-        {
-            C->StopMovement();
-        }
-    }
-    // Todo: Implement Attack (Damage, Animation)
+    // [의도] 맵 상의 특정 객체(의자, 벤치 등)에 맞춰 앉는 애니메이션 처리를 수행하기 위함입니다.
+    if (StateComponent) StateComponent->bIsSit = true;
+    BasePlayMontage(NPCActionKeys::Interact_SitDown);
 }
 
-void UNPCActionComponent::ExecuteDefend(bool bStartDefend)
+void UNPCActionComponent::BaseSitUp()
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s Defend: %s"), *GetOwnerAgentID(), bStartDefend ? TEXT("START") : TEXT("END"));
+    // [의도] 앉아 있는 상태를 해제하고 다시 일반적인 활동이 가능한 유휴 상태로 복귀시키기 위함입니다.
+    if (StateComponent) StateComponent->bIsSit = false;
+    BasePlayMontage(NPCActionKeys::Interact_SitUp);
 }
 
-void UNPCActionComponent::ExecuteDodge()
+void UNPCActionComponent::BaseLieDown(AActor* TargetBed)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s Dodges"), *GetOwnerAgentID());
+    // [의도] 침대 등의 공간에서 눕는 동작을 연출하여, 낮잠이나 수면 등의 휴식 상태를 직관적으로 표현하기 위함입니다.
+    if (StateComponent) StateComponent->bIsLie = true;
+    BasePlayMontage(NPCActionKeys::Interact_LieDown);
 }
 
-void UNPCActionComponent::ExecuteHandSignal(const FString& SignalName)
+void UNPCActionComponent::BaseLieUp()
 {
-    if (!SignalName.IsEmpty())
-    {
-        PlayInteractionMontage(SignalName);
-    }
-    else
-    {
-        PlayInteractionMontage(TEXT("HandSignal_Wave"));
-    }
+    // [의도] 누워있는 취침 상태에서 기상하여 활동을 재개하기 전의 준비 동작을 처리하기 위함입니다.
+    if (StateComponent) StateComponent->bIsLie = false;
+    BasePlayMontage(NPCActionKeys::Interact_LieUp);
 }
 
-void UNPCActionComponent::ExecuteEmote(const FString& EmoteName)
+void UNPCActionComponent::BaseStopCurrentAction()
 {
-    if (!EmoteName.IsEmpty())
-    {
-        PlayInteractionMontage(EmoteName);
-    }
+    // [의도] 예상치 못한 위협이나 상위 우선도의 행동이 들어왔을 때, 현재 수행 중이던 모든 물리적/시각적 행동을 멈추고 리셋하기 위함입니다.
+    AbortCurrentAction();
 }
 
-// === Interaction System ===
-
-void UNPCActionComponent::ExecuteInteraction(const FString& InteractionType, AActor* TargetActor, const FString& TargetID, const FString& ExtraParams)
+TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float Range, EEntityType EntityType)
 {
-    if (InteractionType.IsEmpty()) return;
-    if (InteractionType.Equals(TEXT("Idle"), ESearchCase::IgnoreCase) ||
-        InteractionType.Equals(TEXT("None"), ESearchCase::IgnoreCase))
-    {
-        return;
-    }
+    // [의도] 지정된 반경(Range) 내에서 특정 속성(적, 아이템 등)의 액터를 탐지하여, 후속 상호작용을 위한 대상을 선별하기 위함입니다.
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return TMap<FString, int32>();
 
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] Interaction: %s (Target: %s, ID: %s)"),
-        *InteractionType, TargetActor ? *TargetActor->GetName() : TEXT("None"), *TargetID);
-
-    // 1. Body State & Movement
-    if      (InteractionType.Equals(NPCActionKeys::Interact_SitDown, ESearchCase::IgnoreCase))   ExecuteSitDown(TargetActor);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_SitUp, ESearchCase::IgnoreCase))     ExecuteSitUp();
-    else if (InteractionType.Equals(NPCActionKeys::Interact_LieDown, ESearchCase::IgnoreCase))   ExecuteLieDown(TargetActor);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_LieUp, ESearchCase::IgnoreCase))     ExecuteLieUp();
-    // 2. Inventory
-    else if (InteractionType.Equals(NPCActionKeys::Interact_PickUp, ESearchCase::IgnoreCase))    ExecutePickUp(TargetActor);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Drop, ESearchCase::IgnoreCase))      ExecuteDropItem(TargetID);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Eat, ESearchCase::IgnoreCase))       ExecuteEat(TargetID);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Wear, ESearchCase::IgnoreCase))      ExecuteWear(TargetID);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Equip, ESearchCase::IgnoreCase))     ExecuteEquip(TargetID);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Unequip, ESearchCase::IgnoreCase))   ExecuteUnequip(TargetID);
-    // 3. Task
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Clean, ESearchCase::IgnoreCase))     ExecuteClean(TargetActor);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Repair, ESearchCase::IgnoreCase))    ExecuteRepair(TargetActor);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Read, ESearchCase::IgnoreCase))      ExecuteRead(TargetActor);
-    // 4. Performance
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Pray, ESearchCase::IgnoreCase))      ExecutePray();
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Dance, ESearchCase::IgnoreCase))     ExecuteDance(ExtraParams);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Sing, ESearchCase::IgnoreCase))      ExecuteSing(ExtraParams);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_HandSignal, ESearchCase::IgnoreCase))ExecuteHandSignal(ExtraParams);
-    else if (InteractionType.Equals(NPCActionKeys::Interact_Emote, ESearchCase::IgnoreCase))     ExecuteEmote(ExtraParams);
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Unknown Interaction: %s"), *InteractionType);
-    }
+    TMap<FString, int32> DetectedEntities;
+    // TODO: 실제 Overlap 혹은 Collision 체킹을 기반으로 탐지 및 결과 반환 로직 구현
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: 반경 %.1f 내의 엔티티(타입 %d) 탐색 시도"), *GetOwnerAgentID(), Range, (int32)EntityType);
+    return DetectedEntities;
 }
 
-// === Interaction Sub-Functions ===
-
-void UNPCActionComponent::PlayInteractionMontage(const FString& Key)
+void UNPCActionComponent::BaseSendEventToActor(AActor* TargetActor, const FString& EventName)
 {
+    // [의도] 플레이어나 타 액터에게 특정 메시지를 던져, 협동이나 대립 같은 복합적인 에코시스템을 유기적으로 연동시키기 위함입니다.
+    if (!TargetActor) return;
+
+    // TODO: 인터페이스 통신이나 이벤트 브로드캐스트 구현
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s가 %s에게 이벤트 '%s' 전달"), *GetOwnerAgentID(), *TargetActor->GetName(), *EventName);
+}
+
+void UNPCActionComponent::BasePlayMontage(const FString& MontageName)
+{
+    // [의도] NPCActionKeys 등에서 넘겨받은 몽타주 키를 기반으로 설정된 Asset을 재생하여 상태의 변화를 가시화하기 위함입니다.
     if (!InteractionData)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] InteractionData Asset NOT set!"));
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] InteractionData Asset 설정 누락!"));
         return;
     }
 
-    UAnimMontage* Montage = InteractionData->FindMontage(Key);
-    if (Montage)
+    if (UAnimMontage* Montage = InteractionData->FindMontage(MontageName))
     {
-        if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+        if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         {
-            float Duration = OwnerChar->PlayAnimMontage(Montage);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] Playing Montage: %s (%.2fs)"), *Key, Duration);
+            float Duration = OwnerCharacter->PlayAnimMontage(Montage);
+            UE_LOG(LogTemp, Log, TEXT("[NPCAction] 몽타주 재생: %s (에상시간: %.2f초)"), *MontageName, Duration);
         }
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] No Montage for Key: %s"), *Key);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지정한 몽타주를 찾을 수 없음: %s"), *MontageName);
     }
 }
 
-void UNPCActionComponent::ExecuteSitDown(AActor* TargetSeat)
+void UNPCActionComponent::BasePlaySound(const FString& SoundName)
 {
-    PlayInteractionMontage(NPCActionKeys::Interact_SitDown);
+    // [의도] 시각적 몽타주뿐만 아니라 효과음이나 보이스 등 청각적인 피드백을 통해 몰입감을 더해주기 위함입니다.
+    // TODO: SoundBase 검색 후 UGameplayStatics::PlaySoundAtLocation 등 실행 로직 작성
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 사운드 재생: %s"), *SoundName);
 }
 
-void UNPCActionComponent::ExecuteSitUp()
+// ----------------------------------------------------------------------------
+// [EAction 래퍼 함수 (Action Wrappers)]
+// ----------------------------------------------------------------------------
+
+// ==========================================
+// [1] Common Behaviors
+// ==========================================
+
+// [의도] 아무 동작도 하지 않는 대기 상태입니다. 현재 수행 중인 물리적/시각적 동작을 안전하게 초기화합니다.
+void UNPCActionComponent::ExecuteIdle() 
 {
-    PlayInteractionMontage(NPCActionKeys::Interact_SitUp);
-}
-void UNPCActionComponent::ExecuteLieDown(AActor* TargetBed)
-{
-    PlayInteractionMontage(NPCActionKeys::Interact_LieDown);
+    BaseStopCurrentAction();
 }
 
-void UNPCActionComponent::ExecuteLieUp()
+// [의도] 목표 위치 혹은 대상 액터를 향해 이동합니다. 동적인 타겟 액터가 존재할 경우 우선적으로 추적합니다.
+void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType) 
 {
-    PlayInteractionMontage(NPCActionKeys::Interact_LieUp);
-}
-
-void UNPCActionComponent::ExecutePickUp(AActor* TargetItem)
-{
-    PlayInteractionMontage(NPCActionKeys::Interact_PickUp);
-
-    if (TargetItem)
+    if (TargetActor)
     {
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] Picked up %s (Visual only)"), *TargetItem->GetName());
-        TargetItem->Destroy();
+        BaseMove(TargetActor->GetActorLocation(), SpeedType);
+    }
+    else
+    {
+        BaseMove(TargetLocation, SpeedType);
     }
 }
 
-void UNPCActionComponent::ExecuteDropItem(const FString& ItemID)
+// [의도] 지정된 타겟 액터를 일정 간격을 두고 따라다닙니다. 호위나 감시 등의 상황에 유용합니다.
+void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType) 
 {
-    if (InventoryComponent)
+    if (TargetActor)
     {
-        if (InventoryComponent->RemoveItem(ItemID, 1))
+        ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+        if (OwnerCharacter)
         {
-            PlayInteractionMontage(NPCActionKeys::Interact_Drop);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] Dropped: %s"), *ItemID);
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Drop failed (Not found): %s"), *ItemID);
-        }
-    }
-}
+            FVector Direction = OwnerCharacter->GetActorLocation() - TargetActor->GetActorLocation();
+            Direction.Normalize();
+            FVector FollowPos = TargetActor->GetActorLocation() + Direction * 300.f; // 300 유닛 거리 유지
 
-void UNPCActionComponent::ExecuteEat(const FString& ItemID)
-{
-    if (InventoryComponent)
-    {
-        if (InventoryComponent->RemoveItem(ItemID, 1))
-        {
-            PlayInteractionMontage(NPCActionKeys::Interact_Eat);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] Ate: %s"), *ItemID);
-            // Todo: Health/Hunger Restore
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] No item to eat: %s"), *ItemID);
+            BaseMove(FollowPos, SpeedType);
         }
     }
 }
 
-void UNPCActionComponent::ExecuteWear(const FString& ItemID)
+// [의도] 대상과 텍스트 형태의 대화를 시작하며, 대화 내용의 뉘앙스에 맞는 표정을 출력합니다.
+void UNPCActionComponent::ExecuteDialogue(const FString& DialogueText, const EFacialState Emotion)
 {
-    if (InventoryComponent && InventoryComponent->HasItem(ItemID))
+    BaseDialogue(DialogueText, Emotion);
+}
+
+// [의도] 특정 위치나 타겟(우선)을 바라보도록 몸을 부드럽게 회전시켜, 상호작용 의지나 집중을 시각적으로 나타냅니다.
+void UNPCActionComponent::ExecuteTurnTo(FVector TargetLocation, AActor* TargetActor) 
+{
+    FVector FocusLocation = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
+    BaseFaceRotate(FocusLocation);
+}
+
+// [의도] 주변을 무작위로 둘러보며 경계하거나 탐색하는 행동입니다. 타겟이 있다면 타겟 주변을 확인합니다.
+void UNPCActionComponent::ExecuteScan(FVector TargetLocation, AActor* TargetActor) 
+{
+    FVector FocusLocation = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
+    FVector RandomOffset = FVector(FMath::VRand().X, FMath::VRand().Y, 0.0f) * 100.0f;
+    BaseFaceRotate(FocusLocation + RandomOffset, 3.0f);
+}
+
+// [의도] 인벤토리에서 지정된 소모성 아이템(예: 음식, 물약)을 꺼내 소비합니다.
+void UNPCActionComponent::ExecuteUseItem(const FString& ItemID) 
+{
+    if (InventoryComponent && InventoryComponent->RemoveItem(ItemID, 1))
     {
-        PlayInteractionMontage(NPCActionKeys::Interact_Wear);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] Wearing: %s"), *ItemID);
+        BasePlayMontage(TEXT("Eat")); // 차후 ItemID에 따른 몽타주 연동 기능으로 고도화 가능
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 사용(소모): %s"), *ItemID);
     }
 }
 
-void UNPCActionComponent::ExecuteEquip(const FString& ItemID)
+// [의도] 인벤토리에 보유 중인 지정된 장비 아이템을 몸에 착용하거나 손에 장비합니다.
+void UNPCActionComponent::ExecuteEquipAction(const FString& ItemID) 
 {
     if (InventoryComponent)
     {
         InventoryComponent->EquipItem(ItemID);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] Equipped: %s"), *ItemID);
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 장착: %s"), *ItemID);
     }
 }
 
-void UNPCActionComponent::ExecuteUnequip(const FString& ItemID)
+// [의도] 현재 착용/장착 중인 아이템을 해제하여 다시 가방(인벤토리)에 넣습니다.
+void UNPCActionComponent::ExecuteUnequipAction(const FString& ItemID) 
 {
     if (InventoryComponent)
     {
         InventoryComponent->UnequipItemByID(ItemID);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] Unequipped: %s"), *ItemID);
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 해제: %s"), *ItemID);
     }
 }
 
-void UNPCActionComponent::ExecuteClean(AActor* TargetZone)
-{
-    PlayInteractionMontage(NPCActionKeys::Interact_Clean);
-}
+// ==========================================
+// [2] Combat Behaviors
+// ==========================================
 
-void UNPCActionComponent::ExecuteRepair(AActor* TargetObject)
+// [의도] 대상을 향해 전투 행위를 수행합니다. 타겟을 바라보며 접근한 뒤, 공격 몽타주와 판정을 발생시킵니다.
+void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType) 
 {
-    PlayInteractionMontage(NPCActionKeys::Interact_Repair);
-}
-
-void UNPCActionComponent::ExecuteRead(AActor* TargetBook)
-{
-    PlayInteractionMontage(NPCActionKeys::Interact_Read);
-}
-
-void UNPCActionComponent::ExecutePray()
-{
-    PlayInteractionMontage(NPCActionKeys::Interact_Pray);
-}
-
-void UNPCActionComponent::ExecuteDance(const FString& Style)
-{
-    FString Key = NPCActionKeys::Interact_Dance;
-    if (!Style.IsEmpty())
+    if (TargetActor)
     {
-        Key = Key + TEXT("_") + Style;
+        ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+        BaseMove(TargetActor->GetActorLocation(), EMoveType::Run);
+        BasePlayMontage(TEXT("Attack")); // 기본 공격 몽타주 재생 (추후 무기 타입별 확장 가능)
     }
-    PlayInteractionMontage(Key);
 }
 
-void UNPCActionComponent::ExecuteSing(const FString& SongName)
+// [의도] 타겟의 물리적 공격에 대비하여 방어 자세를 취하고 대미지 감소를 도모합니다.
+void UNPCActionComponent::ExecuteBlock(AActor* TargetActor) 
 {
-    PlayInteractionMontage(NPCActionKeys::Interact_Sing);
+    if (TargetActor)
+    {
+        ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+    }
+    BasePlayMontage(TEXT("Block")); // 방어 몽타주 재생
 }
+
+// [의도] 들어오는 피격판정을 회피하기 위해 지정된 방향(안전지대)으로 기민하게 움직입니다.
+void UNPCActionComponent::ExecuteDodgeAction(FVector Direction) 
+{
+    // [설명] 단순 제자리 회피 애니메이션을 재생하는 방식.
+    // 더 정교한 회피는 Direction 방향에 맞춰 RootMotion이나 Impulse를 줄 수도 있습니다.
+    BaseTurnTo(FVector::ZeroVector, Direction);
+    BasePlayMontage(TEXT("Dodge")); 
+}
+
+// [의도] 심각한 위협으로부터 벗어나기 위해 다급히 달아납니다. (Run 스피드 강제 적용)
+void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation) 
+{
+    BaseMove(EscapeLocation, EMoveType::Run);
+}
+
+// [의도] 아군에게 시각적 수신호를 보내어 전투 상황, 대기, 돌격 등을 지시합니다.
+void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) 
+{
+    if (!HandSign.IsEmpty())
+    {
+        BasePlayMontage(HandSign);
+    }
+    else
+    {
+        BasePlayMontage(TEXT("HandSignal_Wave"));
+    }
+}
+
+// ==========================================
+// [3] Social Behaviors
+// ==========================================
+
+// [의도] 다른 캐릭터와 물물교환을 시도합니다. 내 아이템 소모 및 상대와의 상호작용을 처리합니다.
+void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount) 
+{
+    // TODO: 인벤토리 아이템 GetItemCount로 개수 확인 후 GiveItem 실행
+    ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+}
+
+// [의도] 대가 없이 다른 캐릭터에게 내 소유의 아이템을 건네줍니다.
+void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount) 
+{
+    if (InventoryComponent && InventoryComponent->HasItem(ItemID, Amount))
+    {
+        InventoryComponent->RemoveItem(ItemID, Amount);
+        ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+        BasePlayMontage(TEXT("Give"));
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 전달 완료: %s"), *ItemID);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음: %s"), *ItemID);
+    }
+}
+
+// [의도] 불안해하거나 상처받은 대상을 다독여 정신적 상태를 회복시킵니다.
+void UNPCActionComponent::ExecuteComfort(AActor* TargetActor) 
+{
+    ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+    BasePlayMontage(TEXT("Comfort"));
+}
+
+// [의도] 가방에서 물건을 잠시 손에 들고 대상에게 무언가를 보여주거나 설명합니다.
+void UNPCActionComponent::ExecuteHandObject(const FString& ItemID) 
+{
+    // 인벤토리에 아이템이 있는지 일차로 확인
+    if (InventoryComponent && InventoryComponent->HasItem(ItemID))
+    {
+        InventoryComponent->EquipItem(ItemID); // 임시로 장착 형태로 시각화
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 제시: %s"), *ItemID);
+    }
+}
+
+// ==========================================
+// [4] Task Behaviors
+// ==========================================
+
+// [의도] 지정된 위치 근방에 떨어진 물건 액터를 탐색 후 인벤토리에 수집합니다.
+void UNPCActionComponent::ExecutePickUp(FVector Location) 
+{
+    BaseMove(Location, EMoveType::Walk);
+    BasePlayMontage(TEXT("PickUp"));
+    // TODO: 주변 아이템 Overlap 체크 후 InventoryComponent->AddItem 처리 추가
+    TMap<FString, int32> DetectedEntities = BaseDetectEntityInRange(100.0f, EEntityType::Item);
+    for (const TPair<FString, int32>& Entity : DetectedEntities)
+    {
+        InventoryComponent->AddItem(Entity.Key, Entity.Value);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 줍기 성공: %s"), *ItemID);
+}
+
+// [의도] 인벤토리에서 지정된 아이템을 즉각 물리적 공간에 내려놓습니다.
+void UNPCActionComponent::ExecuteDrop(const FString& ItemID) 
+{
+    if (!InventoryComponent) return;
+
+    if (InventoryComponent->RemoveItem(ItemID, 1))
+    {
+        BasePlayMontage(TEXT("Drop"));
+        // TODO: 세상에 실제 액터를 스폰(Drop)하는 로직 추가
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 버리기 성공: %s"), *ItemID);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 아이템 버리기 실패 (미보유): %s"), *ItemID);
+    }
+}
+
+// [의도] 인벤토리의 재료들을 소모하여 새로운 결과물을 합성해냅니다.
+void UNPCActionComponent::ExecuteCraft(const TArray<FString>& ItemIDs) 
+{
+    // TODO: 제작 레시피 검증 및 아이템 소모/생성 로직 연동
+    BasePlayMontage(TEXT("Craft"));
+}
+
+// [의도] 파손된 장비 혹은 객체의 내구도를 복구합니다.
+void UNPCActionComponent::ExecuteRepair(const FString& ItemID) 
+{
+    // TODO: 부서진 아이템 혹은 오브젝트 상태 복구
+    BasePlayMontage(TEXT("Repair"));
+    // TODO: 내구도 회복 로직 추가
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 수리 완료: %s"), *ItemID);
+    if (InventoryComponent && InventoryComponent->HasItem(ItemID))
+    {
+        InventoryComponent->RepairItem(ItemID, Statement.CurrentStats.Perception);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 아이템 수리 실패 (미보유): %s"), *ItemID);
+    }
+}
+
+// ==========================================
+// [5] Investigation Behaviors
+// ==========================================
+
+// [의도] 소음이나 단서가 발생한 지점으로 조심스럽게 이동 후, 면밀한 수색 모션을 진행합니다.
+void UNPCActionComponent::ExecuteInvestigate(FVector Location) 
+{
+    BaseMove(Location, EMoveType::Walk);
+    ExecuteScan(Location, nullptr); // 주변 둘러보기 연계
+}
+
+// [의도] 두 지정된 지점 사이를 정찰하며 위협 요소를 파악합니다.
+void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocation) 
+{
+    // [설명] 단순하게 목적지로 보내는 형태입니다. 
+    // 나중엔 BehaviorTree의 Loop 구조와 결합해 왕복하게끔 설계해야 함
+    // 현위치에서 StartLocation, EndLocation중 가까운걸 찾기
+
+    BaseMove(EndLocation, EMoveType::Walk);
+}
+
+// ==========================================
+// [6] Lifestyle Behaviors
+// ==========================================
+
+// [의도] 의자나 쉼터(Entity)를 대상으로 이동한 후 착석 애니메이션을 수행합니다.
+void UNPCActionComponent::ExecuteSit(AActor* TargetEntity) 
+{
+    if (TargetEntity)
+    {
+        BaseMove(TargetEntity->GetActorLocation(), EMoveType::Walk);
+        ExecuteTurnTo(FVector::ZeroVector, TargetEntity);
+    }
+    BaseSitDown(TargetEntity);
+}
+
+// [의도] 침대나 바닥을 대상으로 이동한 후 눕는 모션을 수행해 휴식(Sleep) 상태로 진입합니다.
+void UNPCActionComponent::ExecuteSleep(AActor* TargetEntity) 
+{
+    if (TargetEntity)
+    {
+        BaseMove(TargetEntity->GetActorLocation(), EMoveType::Walk);
+        ExecuteTurnTo(FVector::ZeroVector, TargetEntity);
+    }
+    BaseLieDown(TargetEntity);
+}
+
+// [의도] 지정된 반경 내 환경을 청소하거나 빗자루질 같은 정리 애니메이션을 반복합니다.
+void UNPCActionComponent::ExecuteClean(FVector Location, float Radius) 
+{
+    BaseMove(Location, EMoveType::Walk);
+    BasePlayMontage(TEXT("Clean"));
+}
+
+// [의도] 문서를 들여다보거나 책을 읽는 모션을 통해 정보 습득 행동을 가시화합니다.
+void UNPCActionComponent::ExecuteRead(AActor* TargetEntity)
+{
+    BasePlayMontage(TEXT("Read"));
+}
+
+// [의도] 특정 장소를 향해 경건한 자세를 취하며 기도를 올립니다.
+void UNPCActionComponent::ExecutePray(FVector Location, AActor* TargetEntity)
+{
+    BaseMove(Location, EMoveType::Walk, 100.0f);
+    ExecuteTurnTo(Location, TargetEntity);
+    BasePlayMontage(TEXT("Pray"));
+}
+
+// [의도] 분위기 환기 및 사교적 교류를 위해 춤을 춥니다.
+void UNPCActionComponent::ExecuteDance(const FString& DanceName)
+{
+    if (!DanceName.IsEmpty())
+    {
+        BasePlayMontage(DanceName);
+    }
+    else
+    {
+        BasePlayMontage(TEXT("Dance_Basic"));
+    }
+}
+
+// [의도] 노래를 부르며 다른 캐릭터들의 이목을 끌거나 오락을 제공합니다. (오디오 연동 필요)
+void UNPCActionComponent::ExecuteSing(const FString& SingName)
+{
+    BasePlayMontage(TEXT("Sing_Basic"));
+    if (!SingName.IsEmpty())
+    {
+        BasePlaySound(SingName);
+    }
+}
+
+

@@ -157,7 +157,7 @@ bool UInventoryComponent::HasItem(const FString& ItemID, int32 Amount)
     return (TotalCount >= Amount);
 }
 
-// 무게 재계산 (비쌀 수 있으니 변경 시에만 호출)
+// 무게 재계산 크로스체크용
 void UInventoryComponent::CalculateWeight()
 {
     float NewWeight = 0.0f;
@@ -205,6 +205,29 @@ int32 UInventoryComponent::FindStackableSlot(UItemDataAsset* Item) const
         }
     }
     return INDEX_NONE;
+}
+
+bool UInventoryComponent::RepairItem(const FString& ItemID, float Amount)
+{
+    int32 SlotIndex = FindSlotIndexByItemID(ItemID);
+    if (SlotIndex == -1)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Repair Failed: Item %s not found in inventory."), *ItemID);
+        return false;
+    }
+
+    FInventorySlot& InvSlot = Slots[SlotIndex];
+    UItemDataAsset* ItemData = InvSlot.ItemData;
+    
+    if (ItemData->bHasDurability)
+    {
+        ItemData->Repair(Amount);
+    }
+
+    CalculateWeight();
+
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] Repaired %s."), *ItemData->ItemName);
+    return true;
 }
 
 // --- Equipment Implementation ---

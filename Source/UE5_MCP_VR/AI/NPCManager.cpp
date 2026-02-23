@@ -53,30 +53,22 @@ void UNPCManager::SendEvent(const FString& JsonData)
 
 void UNPCManager::HandleMessage(const FString& JsonMessage)
 {
-    // 1. Try Parse as Batch Array (Standard)
-    TArray<FActionBatch> Batches;
-    if (UMCPJsonUtils::ParseActionBatchArray(JsonMessage, Batches))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received %d ActionBatches"), Batches.Num());
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] HandleMessage Received: %s"), *JsonMessage);
 
-        for (const FActionBatch& Batch : Batches)
+    // [Standard] FModeActionRequest 규격만 지원 (멀티 에이전트 오케스트레이션)
+    FModeActionRequest Request;
+    if (UMCPJsonUtils::ParseModeActionRequest(JsonMessage, Request))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Parsed ModeActionRequest. Mode: %d, Batches: %d"), (int32)Request.Mode, Request.ActionBatches.Num());
+        for (auto& Pair : Request.ActionBatches)
         {
-            ProcessActionBatch(Batch);
+            ProcessActionBatch(Pair.Value);
         }
-        return;
     }
-
-    // 2. Fallback: Parse as Single Object (Legacy Support)
-    FActionBatch SingleBatch;
-    if (UMCPJsonUtils::ParseActionBatch(JsonMessage, SingleBatch))
+    else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Received Legacy Single Batch for: %s"), *SingleBatch.AgentID);
-        ProcessActionBatch(SingleBatch);
-        return;
+        UE_LOG(LogTemp, Error, TEXT("[NPCManager] Failed to parse message! Invalid JSON structure or Non-Standard format."));
     }
-
-    // 3. Error Case
-    UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse message."));
 }
 
 void UNPCManager::ProcessActionBatch(const FActionBatch& Batch)

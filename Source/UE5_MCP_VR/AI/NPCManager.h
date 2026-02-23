@@ -35,10 +35,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEvent(const FString& JsonData);
 
-private:
-    // Handles message from WebSocket
-    UFUNCTION()
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void HandleMessage(const FString& JsonMessage);
+
+private:
 
     UPROPERTY()
     TMap<FString, ASmartNPC*> NPCMap;
