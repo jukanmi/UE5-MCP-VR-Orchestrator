@@ -22,7 +22,7 @@ EBTNodeResult::Type UBTTask_ExecuteSmartAction::ExecuteTask(UBehaviorTreeCompone
 	if (!BB) return EBTNodeResult::Failed;
 
 	// 블랙보드에서 JSON 파라미터 파싱
-	FString ParamsJsonStr = BB->GetValueAsString(ASmartNPCAIController::Key_ActionParameters);
+	FString ParamsJsonStr = BB->GetValueAsString(ASmartNPCAIController::Key_Parameters);
 	TMap<FString, FString> Params;
 
 	if (!ParamsJsonStr.IsEmpty())
@@ -41,19 +41,8 @@ EBTNodeResult::Type UBTTask_ExecuteSmartAction::ExecuteTask(UBehaviorTreeCompone
 		}
 	}
 
-    // 블랙보드에서 EAction 문자열 추출
-	FString ActionStr = BB->GetValueAsString(ASmartNPCAIController::Key_SubAction);
-	
-    // EAction으로 변환
-    EAction ActionType = EAction::Idle;
-    if (UEnum* ActionEnum = StaticEnum<EAction>())
-    {
-        if (!ActionStr.IsEmpty())
-        {
-            int64 EnumVal = ActionEnum->GetValueByNameString(ActionStr);
-            if (EnumVal != INDEX_NONE) ActionType = static_cast<EAction>(EnumVal);
-        }
-    }
+    // 블랙보드에서 EAction 값을 직접 추출합니다.
+	EAction ActionType = (EAction)BB->GetValueAsEnum(ASmartNPCAIController::Key_SubAction);
 
 	// [Optional] FacialState 변환 처리
     // FModeActionRequest 명세 상 최상위에 FacialState가 오지만, 현재 C++에서는 Parameters Map에 담기어 오는 상황을 가정하거나
@@ -61,19 +50,10 @@ EBTNodeResult::Type UBTTask_ExecuteSmartAction::ExecuteTask(UBehaviorTreeCompone
 	
 	AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
 	
-    // TODO: Parameter 내부의 세부 항목(TargetID, Speed 등)들은 NPCActionComponent 쪽에서 꺼내 쓰거나 
-    // ExecuteInteraction 내부에서 직접 접근하도록 파서를 위임할 필요가 있음.
-	// 우선 현재 구조에서는 TargetID를 보냅니다.
-	FString TargetID = Params.FindRef(TEXT("TargetID"));
-    if (TargetID.IsEmpty())
-    {
-        TargetID = Params.FindRef(TEXT("ItemID")); // 아이템 ID일 경우 Fallback
-    }
-
-	// 핵심 래퍼 호출
+	// 전체 파라미터 맵(Params)을 통째로 넘겨 하위 컴포넌트가 알아서 파싱하도록 책임을 위임합니다.
     if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
     {
-        ActionComp->ExecuteInteraction(ActionType, TargetActor, TargetID);
+        ActionComp->ExecuteInteraction(ActionType, TargetActor, Params);
     }
 
 	NPC->OnActionCompleted();

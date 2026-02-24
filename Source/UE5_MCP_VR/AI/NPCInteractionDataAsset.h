@@ -7,7 +7,6 @@
 
 /**
  * 상호작용 키(String)와 재생할 몽타주(AnimMontage)를 매핑하는 데이터 에셋.
- * 코드 수정 없이 에디터에서 애니메이션을 쉽게 교체/추가하기 위해 사용됩니다.
  */
 UCLASS(BlueprintType)
 class UE5_MCP_VR_API UNPCInteractionDataAsset : public UDataAsset

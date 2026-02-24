@@ -10,10 +10,11 @@
 const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
 
 const FName ASmartNPCAIController::Key_TargetActor(TEXT("TargetActor"));
-const FName ASmartNPCAIController::Key_DialogueText(TEXT("DialogueText"));
+
 const FName ASmartNPCAIController::Key_BehaviorMode(TEXT("BehaviorMode"));
+const FName ASmartNPCAIController::Key_HasAction(TEXT("HasAction"));
 const FName ASmartNPCAIController::Key_SubAction(TEXT("SubAction"));
-const FName ASmartNPCAIController::Key_ActionParameters(TEXT("ActionParameters"));
+const FName ASmartNPCAIController::Key_Parameters(TEXT("Parameters"));
 const FName ASmartNPCAIController::Key_FacialState(TEXT("FacialState"));
 
 ASmartNPCAIController::ASmartNPCAIController()

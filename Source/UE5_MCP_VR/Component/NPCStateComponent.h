@@ -33,7 +33,7 @@ public:
 
     // --- Current Action Tracking ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
-    FString CurrentActionID;
+    EAction CurrentActionType = EAction::Idle;
 
     // --- Posture State ---
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
@@ -41,6 +41,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
     bool bIsLie = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
+    bool bIsSleeping = false;
 
     // --- Public API ---
 

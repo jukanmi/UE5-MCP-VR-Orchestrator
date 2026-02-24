@@ -102,7 +102,7 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
     if (!CurrentStats.Resources.IsAlive())
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCState] NPC is DEAD!"));
-        // Todo: Death Event Broadcast (Delegate 등)
+        // TODO: Death Event Broadcast (Delegate 등)
     }
 
     return EffectiveDamage;
@@ -116,7 +116,7 @@ void UNPCStateComponent::RequestEmergencyCognition(const FString& EventType, con
     // 왜 여기에 있는가: 상태(HP 저하, 상태이상 등)에 기반한 트리거이므로
     UE_LOG(LogTemp, Warning, TEXT("[NPCState] EMERGENCY COGNITION: %s - %s"), *EventType, *Description);
 
-    // Todo: WebSocket을 통해 Python Cognitive Engine에 긴급 요청 전송
+    // TODO: WebSocket을 통해 Python Cognitive Engine에 긴급 요청 전송
     // MCPBridge->SendEmergencyRequest(EventType, Description, CurrentStats);
 }
 
