@@ -19,16 +19,16 @@ FString UNPCInventoryComponent::GetInventoryJson() const
     TArray<TSharedPtr<FJsonValue>> JsonArray;
 
     // 1. Inventory Slots
-    for (const FInventorySlot& Slot : Slots)
+    for (const FInventorySlot& Slot : InventorySlots)
     {
         if (!Slot.IsEmpty())
         {
             TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
-            JsonObj->SetStringField(TEXT("id"), Slot.ItemData->ItemID);
-            JsonObj->SetStringField(TEXT("name"), Slot.ItemData->DisplayName.ToString());
-            JsonObj->SetStringField(TEXT("desc"), Slot.ItemData->Description);
+            JsonObj->SetStringField(TEXT("id"), Slot.ItemData.ItemID);
+            JsonObj->SetStringField(TEXT("name"), Slot.ItemData.DisplayName.ToString());
+            JsonObj->SetStringField(TEXT("desc"), Slot.ItemData.Description);
             JsonObj->SetNumberField(TEXT("count"), Slot.Count);
-            JsonObj->SetNumberField(TEXT("weight"), Slot.ItemData->Weight);
+            JsonObj->SetNumberField(TEXT("weight"), Slot.ItemData.Weight);
             JsonObj->SetStringField(TEXT("type"), TEXT("item")); // 구분자
             
             TSharedRef<FJsonValueObject> JsonValue = MakeShareable(new FJsonValueObject(JsonObj));

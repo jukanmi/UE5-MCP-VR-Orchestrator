@@ -1,10 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InventoryComponent.h" // Base Class
+#include "../Core/InventoryComponent.h" // Base Class
 #include "NPCInventoryComponent.generated.h"
 
-class UItemDataAsset;
 
 /**
  * NPC 전용 인벤토리 컴포넌트.

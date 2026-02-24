@@ -76,7 +76,7 @@ void AVRPlayerCharacter::BeginPlay()
         {
             if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
             {
-                Manager->BindSocket(WebSocketClient);
+                Manager->BindWebSocket(WebSocketClient);
                 UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
             }
         }
@@ -360,7 +360,7 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
-		// ToDo: Handle player death (respawn, game over, etc.)
+		// TODO: Handle player death (respawn, game over, etc.)
 	}
 
 	return ActualDamage;

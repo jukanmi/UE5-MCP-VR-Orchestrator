@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Engine/DataTable.h"
 #include "ItemDataAsset.generated.h"
 
 /**
@@ -21,7 +21,7 @@ enum class EItemType : uint8
 };
 
 /**
- * [의도] 장착 가능(Equipment) 아이템이 캐릭터의 어느 소켓/부위에 들어갈지를 명확히 규정하여,
+ * 장착 가능(Equipment) 아이템이 캐릭터의 어느 소켓/부위에 들어갈지를 명확히 규정하여,
  * 중복 착용을 방지하고 올바른 부위의 스탯 연산을 보장하기 위한 슬롯 정의입니다.
  */
 UENUM(BlueprintType)
@@ -40,68 +40,66 @@ enum class EEquipmentSlot : uint8
 };
 
 /**
- * 아이템 데이터 에셋
- * - 게임 내 모든 아이템의 공통 속성을 정의
- * - Flyweight 패턴 적용으로 메모리 효율성 극대화
+ * 아이템 데이터 구조체 (데이터 테이블 행 기반)
+ * - 게임 내 모든 아이템의 기본 속성을 정의하는 원본 템플릿입니다.
+ * - DataTable에서 로드된 후, 인벤토리 슬롯 등에 복사되어 고유한 상태(내구도 등)를 갖습니다.
  */
-UCLASS(BlueprintType)
-class UE5_MCP_VR_API UItemDataAsset : public UDataAsset
+USTRUCT(BlueprintType)
+struct UE5_MCP_VR_API FItemData : public FTableRowBase
 {
     GENERATED_BODY()
 
-public:
     // --- Identity ---
 
-    // 아이템 고유 식별자
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity")
+    // 아이템 고유 식별자 (DataTable의 RowName과 동일하게 맞추는 것을 권장)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Identity")
     FString ItemID;
 
     // UI 표시 이름
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Identity")
     FText DisplayName;
 
     // 아이템 설명 (LLM이 아이템의 용도를 이해하는 데 사용됨)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity", meta = (MultiLine = true))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Identity", meta = (MultiLine = true))
     FString Description;
 
     // 아이템 카테고리
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Identity")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Identity")
     EItemType ItemType = EItemType::General;
 
     // --- Stats ---
 
     // 무게 (kg 단위). 인벤토리 무게 제한 계산에 사용.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stats")
     float Weight = 0.5f;
 
     // 한 슬롯에 최대 몇 개까지 겹쳐지는지 (장비는 보통 1)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stats")
     int32 MaxStack = 64;
 
     // 장착 슬롯 (Equipment 타입일 경우에만 유효)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats", meta = (EditCondition = "ItemType == EItemType::Equipment"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stats", meta = (EditCondition = "ItemType == EItemType::Equipment"))
     EEquipmentSlot EquipSlot = EEquipmentSlot::None;
 
     // 기본 가치 (상점 판매, 분해 보상 등에 사용)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Stats")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stats")
     int32 BaseValue = 10;
 
     // --- Durability ---
 
     // 내구도 사용 여부
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Durability")
     bool bHasDurability = false;
 
     // 최대 내구도
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
     float MaxDurability = 100.0f;
 
-    // 현재 내구도
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
+    // 현재 내구도 (인스턴스화 시 개별 값을 가짐)
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
     float CurrentDurability = 100.0f;
 
-    // 내구도 회복 함수
-    UFUNCTION(BlueprintCallable, Category = "Item|Durability")
+    // 내구도 회복 (구조체 멤버 함수는 복사된 인스턴스의 값을 변경함)
     void RepairItem(float Amount)
     {
         CurrentDurability += Amount;
@@ -109,14 +107,21 @@ public:
         {
             CurrentDurability = MaxDurability;
         }
-    };
+    }
+
     // --- Visuals ---
 
     // UI 아이콘 (인벤토리 창 표시용)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Visual")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TSoftObjectPtr<UTexture2D> Icon;
 
     // 월드에 표시될 3D 모델 (필드에 떨어뜨리거나 상호작용할 때 사용)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Visual")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TSoftClassPtr<AActor> WorldMeshClass;
+    
+    // 유효성 검사용 (비어있는 구조체인지 확인)
+    bool IsValidItem() const
+    {
+        return !ItemID.IsEmpty();
+    }
 };
