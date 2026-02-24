@@ -25,6 +25,7 @@ Plugins/*/Intermediate/
 # Visul Studio Code
 .vscode/
 *.code-workspace
+*.agent/
 
 # ==============================================================================
 # PYTHON MCP SERVER & LANGGRAPH
@@ -47,6 +48,10 @@ __pycache__/
 *.sqlite
 *.db
 checkpoints.db
+*.safetensors
+**/personas/*
+**/knowledge/*
+
 
 # Jupyter Notebooks (if used for testing)
 .ipynb_checkpoints/
@@ -75,3 +80,10 @@ Desktop.ini
 *.docx
 *.txt
 tests/
+docs/
+
+# ==============================================================================
+# Obsidian
+# ==============================================================================
+.obsidian/
+**/*.canvas

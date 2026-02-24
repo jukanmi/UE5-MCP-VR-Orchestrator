@@ -10,6 +10,7 @@
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "VRPlayerCharacter.generated.h"
 
 UCLASS()
@@ -20,6 +21,10 @@ class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter
 public:
 	// Sets default values for this character's properties
 	AVRPlayerCharacter();
+
+    /** AI Perception Stimuli Source */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    UAIPerceptionStimuliSourceComponent* StimuliSource;
 
 protected:
 	// Called when the game starts or when spawned

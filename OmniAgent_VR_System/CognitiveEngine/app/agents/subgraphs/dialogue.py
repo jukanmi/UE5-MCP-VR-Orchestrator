@@ -1,38 +1,109 @@
 """
-File: dialogue.py
-Purpose: Character Agent (Persona & Dialogue).
-1. Loads Persona YAML dynamically based on AgentID.
-2. Generates in-character responses using System Prompt.
-3. Outputs SpeakAction only.
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File: dialogue.py                                                           ║
+║ Role: CREATIVE RESPONSE GENERATOR (LLM #2 - Core Intelligence)             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
+║   Generate natural, in-character NPC responses based on persona, context,   ║
+║   and conversational history. Outputs free-form text with speech, actions,  ║
+║   and emotions - NOT structured data.                                       ║
+║                                                                              ║
+║ INPUT:  natural_context (str) - What player wants/said                      ║
+║ OUTPUT: raw_response (str) - Free-form NPC reaction                         ║
+║                                                                              ║
+║ OUTPUT FORMAT (CRITICAL):                                                   ║
+║   "Speech in quotes" (emotion in parentheses) *physical action in asterisks*║
+║                                                                              ║
+║ PERSONA SYSTEM:                                                              ║
+║   - Loads YAML persona files (name, role, traits, memory)                   ║
+║   - Uses RAG for contextual knowledge retrieval                             ║
+║   - Maintains conversation history via memory_manager                       ║
+║                                                                              ║
+║ LLM SELECTION:                                                               ║
+║   - High importance NPCs → Gemma 3 API (premium quality)                    ║
+║   - Normal NPCs → Gemini CLI (cost-effective)                               ║
+║                                                                              ║
+║ EXAMPLE:                                                                     ║
+║   IN:  "Player is pointing at door and asking to open it"                   ║
+║   OUT: "Of course! (cheerfully) *walks to door and opens it*"               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import yaml
 import os
-from ...utils.llm_factory import get_llm
+import json
+from ...utils.llm_factory import get_dialogue_llm, call_gemini_cli
+from ...utils.rag_utils import retrieve_context
+from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
 from ..state import AgentState
-from ...schemas.actions import ActionBatch, SpeakAction
+
 
 PERSONAS_BASE_PATH = "app/agents/personas"
 
-# SYSTEM PROMPT (No curly braces that could be misinterpreted)
-DIALOGUE_SYSTEM_PROMPT = """Role: Dialogue Agent
 
-You are responsible for generating communicative intent only.
+# System Prompt for free-form response generation
+DIALOGUE_SYSTEM_PROMPT = """You are {name}, a {role}.
+Personality traits: {traits}
 
-Responsibilities:
-- Decide what the character wants to say.
-- Attach emotional context to speech.
-- Specify the intended listener if applicable.
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
 
-Constraints:
-- Only produce SpeakAction proposals.
-- Do not reference game rules, limits, or engine behavior.
-- Do not output ActionBatch directly.
+Relevant context: {rag_context}
+Conversation history: {chat_history}
 
-Output Format:
-One or more SpeakAction proposals in structured JSON.
-Ensure "action_type" is strictly "Speak".
-Do not include narration or explanations."""
+RESPONSE FORMAT (CRITICAL - follow exactly):
+1. FIRST LINE: [Mode: <mode>] [Facial: <expression>]
+   - Mode MUST be one of: Combat, Social, Task, Investigation, Lifestyle
+   - Facial MUST be one of: Neutral, Happy, Sad, Angry, Fear, Surprised, Disgusted, Tired, Pain
+
+2. SECOND LINE ONWARDS: Your natural response
+   - Use "double quotes" for everything you SAY out loud
+   - Use *asterisks* for PHYSICAL ACTIONS you perform (movement, combat, interaction)
+   - Use (parentheses) for your EMOTION or tone
+
+RESPONSE EXAMPLES:
+[Mode: Social] [Facial: Happy]
+"Of course, I'll open it!" (cheerfully) *walks to the door and opens it*
+
+[Mode: Combat] [Facial: Angry]
+"Stay back!" (furiously) *draws sword and attacks the enemy*
+
+[Mode: Social] [Facial: Sad]
+"I understand." (sadly) *nods slowly*
+
+[Mode: Investigation] [Facial: Surprised]
+"What's that sound?" (alarmed) *turns toward the noise*
+
+[Mode: Lifestyle] [Facial: Tired]
+"I need rest..." (exhausted) *sits down on the bench*
+
+MODE SELECTION GUIDE:
+- Combat: Fighting, defending, fleeing from danger
+- Social: Talking, trading, following, emotional interaction
+- Task: Picking up items, using objects, crafting, eating
+- Investigation: Searching, tracking, observing, scouting
+- Lifestyle: Sitting, sleeping, reading, idle activities
+
+FACIAL EXPRESSION GUIDE:
+- Neutral: Default, calm state
+- Happy: Joy, satisfaction, friendliness
+- Sad: Sorrow, disappointment, grief
+- Angry: Rage, frustration, hostility
+- Fear: Terror, anxiety, panic
+- Surprised: Shock, amazement, confusion
+- Disgusted: Revulsion, contempt, distaste
+- Tired: Exhaustion, fatigue, weariness
+- Pain: Physical suffering, injury
+
+RULES:
+- ALWAYS start with [Mode: X] [Facial: Y] on the first line
+- Always include speech in "quotes"
+- Always include at least one emotion in (parentheses)
+- Include *physical actions* when the context implies movement or interaction
+- Stay in character based on your personality traits
+- Max 2-3 sentences of speech
+- Be natural and expressive"""
+
 
 def load_persona(agent_id: str):
     """
@@ -40,10 +111,7 @@ def load_persona(agent_id: str):
     Searches in core/ first, then generic/.
     Falls back to default if not found.
     """
-    # Normalize agent_id to lowercase for filename matching
     agent_lower = agent_id.lower()
-    
-    # Search paths in order
     search_paths = [
         os.path.join(PERSONAS_BASE_PATH, "core", f"{agent_lower}.yaml"),
         os.path.join(PERSONAS_BASE_PATH, "generic", f"{agent_lower}.yaml"),
@@ -51,107 +119,146 @@ def load_persona(agent_id: str):
     
     for path in search_paths:
         if os.path.exists(path):
-            print(f"[Dialogue] Loading persona from: {path}")
             with open(path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
-    
-    # Fallback to default persona
+
+    # Fallback to default
     default_path = os.path.join(PERSONAS_BASE_PATH, "core", "elara.yaml")
     print(f"[Dialogue] Persona '{agent_id}' not found, using default: {default_path}")
     if os.path.exists(default_path):
         with open(default_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
-    
+            
     return None
+
 
 def dialogue_node(state: AgentState):
     """
-    Dialogue Agent (Character).
-    Generates SpeakAction based on Persona and Memory using LLM.
+    Dialogue Agent (LLM #2).
+    
+    Generates free-form NPC response using persona and context.
+    Does NOT create ActionBatch — that's Interface Output's job.
+    
+    Input: AgentState with natural_context (str) and target_npc (str)
+    Output: AgentState with raw_response (str)
     """
-    # Get agent_id from vr_context (who the player is talking to)
-    vr_context = state.get("vr_context")
-    agent_id = "Elara"  # Default
+    natural_context = state.get("natural_context", "")
+    target_npc = state.get("target_npc", "Elara")
     
-    if vr_context:
-        if hasattr(vr_context, 'looking_at_entity_id') and vr_context.looking_at_entity_id:
-            agent_id = vr_context.looking_at_entity_id
-        elif isinstance(vr_context, dict) and vr_context.get("looking_at_entity_id"):
-            agent_id = vr_context.get("looking_at_entity_id")
+    # --- Legacy compatibility: fall back to old analysis/intent flow ---
+    if not natural_context:
+        analysis = state.get("analysis", {})
+        intent_data = analysis.get("intent")
+        if intent_data:
+            user_input = getattr(intent_data, 'raw_query', None)
+            if isinstance(intent_data, dict):
+                user_input = intent_data.get("raw_query", "")
+                target_npc = intent_data.get("target_npc", target_npc)
+            elif hasattr(intent_data, 'target_npc') and intent_data.target_npc:
+                target_npc = intent_data.target_npc
+            natural_context = f"Player said: \"{user_input}\""
     
-    print(f"[Dialogue] Agent ID: {agent_id}")
+    # Determine agent ID
+    agent_id = target_npc
     
-    # Load persona dynamically
-    persona = load_persona(agent_id)
-    if not persona:
-        return {"next": "Error", "messages": ["System: Persona not found"]}
-        
-    memory = persona.get("memory_summary", {})
-    key_events = memory.get("key_events", [])
-    sentiment = memory.get("sentiment", "Neutral")
-    
-    # Check if we are in Fallback mode
-    current_speaker = state.get("current_speaker")
-    messages = state.get("messages", [])
-    fallback_reason = ""
-    if current_speaker == "Supervisor_Fallback" and messages:
-        fallback_reason = f" (Context: {messages[-1]})"
-    
-    intent_data = state.get("analysis", {}).get("intent")
-    user_input = intent_data.raw_query if intent_data else "..."
-    
-    # LLM Construction
-    llm = get_llm(temperature=0.7)
+    # Fallback to vr_context looking_at
+    if agent_id == "Elara":
+        vr_context = state.get("vr_context")
+        if vr_context:
+            looking_at = None
+            if hasattr(vr_context, 'looking_at_entity_id'):
+                looking_at = vr_context.looking_at_entity_id
+            elif isinstance(vr_context, dict):
+                looking_at = vr_context.get("looking_at_entity_id")
+            if looking_at:
+                agent_id = looking_at
 
-    # Build persona context as a single string (avoid template variable issues)
-    persona_name = persona.get('name', 'Unknown')
-    persona_role = persona.get('role', 'Unknown')
+    # Load persona
+    persona = load_persona(agent_id) or {"name": agent_id, "importance": "normal"}
+    persona_name = persona.get('name', agent_id)
+    persona_role = persona.get('role', 'Inhabitant')
     persona_traits = ', '.join(persona.get('traits', []))
-    memory_summary = '; '.join(key_events) if key_events else 'None'
     
-    system_content = f"""{DIALOGUE_SYSTEM_PROMPT}
+    memory = persona.get("memory_summary", {})
+    memory_summary = '; '.join(memory.get('key_events', [])) if memory.get('key_events') else 'None'
+    sentiment = memory.get("sentiment", "Neutral")
 
---- Persona Context ---
-Name: {persona_name}
-Role: {persona_role}
-Traits: {persona_traits}
-Memory Summary: {memory_summary}
-Sentiment toward Player: {sentiment}
-"""
-    
-    human_content = f"Player said: '{user_input}'"
-    if fallback_reason:
-        human_content += f"\n[System Note]: The player's previous action was rejected. Reason: {fallback_reason}. Explain this in character."
+    # Extract user input for RAG/memory
+    user_input = natural_context
 
-    structured_llm = llm.with_structured_output(SpeakAction)
+    # Retrieve context via RAG and memory
+    rag_context = retrieve_context(agent_id, user_input, k=3)
+    chat_history = get_conversation_context(agent_id, k=5)
+
+    # Build system prompt with persona info
+    system_content = DIALOGUE_SYSTEM_PROMPT.format(
+        name=persona_name,
+        role=persona_role,
+        traits=persona_traits,
+        memory=memory_summary,
+        sentiment=sentiment,
+        rag_context=rag_context if rag_context else "None",
+        chat_history=chat_history if chat_history else "No previous conversation"
+    )
+
+    print(f"[Dialogue] Agent: {persona_name} | Context: '{natural_context[:60]}...'")
+
+    raw_response = None
+
+    # --- Choose LLM based on NPC importance ---
+    importance = persona.get('importance', 'normal')
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "{system_message}"),
-        ("human", "{human_message}")
-    ])
-    
-    try:
-        chain = prompt | structured_llm
-        speak_action = chain.invoke({
-            "system_message": system_content,
-            "human_message": human_content
-        })
+    if importance in ['high', 'core']:
+        # High importance NPC → Use Gemma 3 API for quality
+        print(f"[Dialogue] Using Gemma 3 API (importance: {importance})")
         
-        # Wrap in Batch
-        batch = ActionBatch(
-            agent_id=persona_name,
-            actions=[speak_action]
-        )
-    except Exception as e:
-        print(f"LLM Logic Error in Dialogue: {e}")
-        # Fallback Mock
-        batch = ActionBatch(
-            agent_id=persona_name,
-            actions=[SpeakAction(text="...", emotion="Neutral")]
-        )
+        try:
+            llm = get_dialogue_llm(importance=importance, temperature=0.7)
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "{system_msg}"),
+                ("human", "Context: {context}")
+            ])
+            
+            response = (prompt | llm).invoke({
+                "system_msg": system_content,
+                "context": natural_context
+            })
+            raw_response = response.content if hasattr(response, 'content') else str(response)
+            raw_response = raw_response.strip()
+            print(f"[Dialogue] Gemma 3 response: '{raw_response[:80]}...'")
+        except Exception as e:
+            print(f"[Dialogue] Gemma 3 Error: {e}")
+    
+    if not raw_response:
+        # Normal NPC or API failed → Use Gemini CLI
+        print(f"[Dialogue] Using Gemini CLI (importance: {importance})")
+        
+        cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
+        raw_response = call_gemini_cli(cli_prompt, extract_json=False)
+        
+        if raw_response:
+            raw_response = raw_response.strip()
+            print(f"[Dialogue] CLI response: '{raw_response[:80]}...'")
+    
+    # Fallback if everything fails
+    if not raw_response:
+        print("[Dialogue] All LLMs failed, using fallback response")
+        raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
+
+    # [Mode: X] [Facial: Y] 태그는 raw_response에 포함된 채로 전달.
+    # 왜: interface_output.py가 모든 구조화(structuring)를 책임지므로
+    # dialogue.py는 자연어 생성만 담당하고 파싱/변환은 하지 않는다.
+    import re
+
+    # 대화 기록 저장 (태그 제거 후 speech만 추출)
+    clean_for_memory = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
+    speech_parts = re.findall(r'"([^"]+)"', clean_for_memory)
+    speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
+    add_conversation(agent_id, user_input, speech_for_memory)
 
     return {
-        "action_batch": batch,
+        "raw_response": raw_response,  # 태그 포함 원본 전달
+        "target_npc": persona_name,
         "current_speaker": "Dialogue",
-        "next": "End" 
+        "next": "Interface_Output"
     }

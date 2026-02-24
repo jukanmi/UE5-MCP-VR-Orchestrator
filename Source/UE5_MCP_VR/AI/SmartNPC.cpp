@@ -1,10 +1,21 @@
+/**
+ * SmartNPC.cpp - Lightweight Facade Implementation
+ * 
+ * [역할] 초기화, 등록/해제, TakeDamage 후킹, Debug 함수만 담당.
+ * 모든 행동/상태 로직은 NPCActionComponent와 NPCStateComponent에 위임.
+ */
+
 #include "SmartNPC.h"
 #include "NPCManager.h"
 #include "SmartNPCAIController.h"
-#include "BehaviorTree/BlackboardComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "../Utils/MCPMathUtils.h"
+#include "NPCActionKeys.h"
+#include "../Component/NPCStateComponent.h"
+#include "../Component/NPCActionComponent.h"
+#include "../Component/NPCInventoryComponent.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -12,13 +23,18 @@ ASmartNPC::ASmartNPC()
     AgentID = TEXT("UnknownAgent");
     AIControllerClass = ASmartNPCAIController::StaticClass();
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+    // 컴포넌트 생성: 각각 독립적으로 동작하며 BeginPlay에서 상호 참조 설정
+    StateComponent     = CreateDefaultSubobject<UNPCStateComponent>(TEXT("StateComponent"));
+    ActionComponent    = CreateDefaultSubobject<UNPCActionComponent>(TEXT("ActionComponent"));
+    InventoryComponent = CreateDefaultSubobject<UNPCInventoryComponent>(TEXT("InventoryComponent"));
 }
 
 void ASmartNPC::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Register self
+    // NPCManager에 자신을 등록 (Python 서버에서 AgentID로 라우팅)
     if (UGameInstance* GI = GetGameInstance())
     {
         if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
@@ -27,13 +43,11 @@ void ASmartNPC::BeginPlay()
         }
     }
 
-    // Initialize derived stats and apply movement speeds
-    RefreshStats();
+    // Note: StateComponent->BeginPlay()에서 RefreshStats()를 자동 호출합니다.
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    // Unregister
     if (UGameInstance* GI = GetGameInstance())
     {
         if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
@@ -45,97 +59,18 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void ASmartNPC::ProcessAction(const FGameAction& Action)
+// === Facade: 외부 호출을 컴포넌트로 전달 ===
+
+void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
 {
-    const FString& Type = Action.ActionType;
-    const TMap<FString, FString>& P = Action.Parameters;
-
-    ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController());
-    if (!AI || !AI->GetBlackboardComponent())
+    if (ActionComponent)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] No valid AI Controller or Blackboard provided for %s"), *GetName());
-        // Fallback or just return
-        return;
-    }
-
-    UBlackboardComponent* BB = AI->GetBlackboardComponent();
-
-    // Reset previous command keys if necessary, or just overwrite.
-    
-    // Resolve Action Type String to Enum
-    ESmartNPCActionState ActionState = ESmartNPCActionState::Generic;
-    if (Type == TEXT("Move")) ActionState = ESmartNPCActionState::Move;
-    else if (Type == TEXT("Speak")) ActionState = ESmartNPCActionState::Speak;
-    else if (Type == TEXT("Attack")) ActionState = ESmartNPCActionState::Attack;
-    else if (Type == TEXT("Interact")) ActionState = ESmartNPCActionState::Interact;
-
-    // Set ActionType as Enum
-    BB->SetValueAsEnum(ASmartNPCAIController::Key_ActionType, (uint8)ActionState);
-    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB ActionType set to: %d"), *AgentID, (int32)ActionState);
-
-    if (ActionState == ESmartNPCActionState::Move)
-    {
-        // Coordinates from ActionBatch are already in Unreal units (from player_location)
-        float X = 0.0f;
-        float Y = 0.0f;
-        float Z = 0.0f;
-
-        if (const FString* Val = P.Find(TEXT("x"))) X = FCString::Atof(**Val);
-        if (const FString* Val = P.Find(TEXT("y"))) Y = FCString::Atof(**Val);
-        if (const FString* Val = P.Find(TEXT("z"))) Z = FCString::Atof(**Val);
-
-        // Use coordinates directly - they're already in Unreal units
-        FVector TargetLoc(X, Y, Z);
-        
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s Moving to: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, X, Y, Z);
-        
-        // Update Blackboard Key
-        BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, TargetLoc);
-        
-        // Verify Blackboard was set
-        FVector TestLoc = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: BB TargetLocation verified: X=%.1f, Y=%.1f, Z=%.1f"), *AgentID, TestLoc.X, TestLoc.Y, TestLoc.Z);
-    }
-    else if (ActionState == ESmartNPCActionState::Speak)
-    {
-        FString Text = TEXT("...");
-        if (const FString* Val = P.Find(TEXT("text"))) Text = *Val;
-
-        // Set SpeakText in Blackboard for BT to handle
-        BB->SetValueAsString(ASmartNPCAIController::Key_SpeakText, Text);
-        ExecuteSpeak(Text);
-        UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Speak text set to: \"%s\""), *AgentID, *Text);
-    }
-    else if (ActionState == ESmartNPCActionState::Attack)
-    {
-        // ToDo::공격 구현 - TargetID를 사용하여 실제 Actor를 찾고 Blackboard Key_TargetActor에 할당하는 로직 필요
-        // 예: AActor* Target = FindActorByID(TargetParam);
-        // BB->SetValueAsObject(ASmartNPCAIController::Key_TargetActor, Target);
-        
-        FString TargetParam = Action.TargetID;
-        ExecuteAttack(TargetParam);
-    }
-    else if (ActionState == ESmartNPCActionState::Interact)
-    {
-        // ToDo::상호작용 구현 - 공격과 마찬가지로 대상 Actor 식별 및 Blackboard 설정 필요
-        
-        FString TargetParam = Action.TargetID;
-        ExecuteInteract(TargetParam);
-    }
-    else
-    {
-        // ToDo::기타 일반 액션 처리
-        FString TargetParam = Action.TargetID;
-        ExecuteGenericAction(Type, TargetParam);
+        ActionComponent->ExecuteActionBatch(Batch);
     }
 }
 
 void ASmartNPC::ClearPhysicalState()
 {
-    // Default implementation: Can be overriden by Blueprint or Subclasses.
-    // ToDo::상태 초기화 로직 구현 (애니메이션 몽타주 중지, 이동 정지 등)
-
-    // Stop Logic
     StopAnimMontage();
     if (AController* C = GetController())
     {
@@ -143,129 +78,151 @@ void ASmartNPC::ClearPhysicalState()
     }
 }
 
-//
-bool ASmartNPC::TryReflexAction(float Difficulty)
+void ASmartNPC::OnActionCompleted()
 {
-    // Use Dexterity for reflex checks (Dex 10 = 10% base chance, scaled by difficulty)
-    float SuccessChance = static_cast<float>(CurrentStats.BaseStats.Dexterity) - Difficulty;
-    float Roll = FMath::RandRange(0.0f, 100.0f);
-    
-    bool bSuccess = SuccessChance > Roll;
-    
-    if (bSuccess)
+    if (ActionComponent)
     {
-        UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: Reflex SUCCEEDED (Roll: %.1f < %.1f)"), *AgentID, Roll, SuccessChance);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s: Reflex FAILED (Roll: %.1f >= %.1f)"), *AgentID, Roll, SuccessChance);
-        ExecuteEmote("Panic"); 
-    }
-
-    return bSuccess;
-}
-
-void ASmartNPC::AbortCurrentAction()
-{
-    UE_LOG(LogTemp, Log, TEXT("SmartNPC %s: ABORTING Action %s"), *AgentID, *CurrentActionID);
-    CurrentActionID = TEXT("");
-    ClearPhysicalState();
-}
-
-void ASmartNPC::RequestEmergencyCognition(FString EventType, FString Description)
-{
-    AbortCurrentAction();
-
-    if (UGameInstance* GI = GetGameInstance())
-    {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            double Time = FPlatformTime::Seconds();
-            
-            FString JsonPayload = FString::Printf(
-                TEXT("{"
-                "\"player_id\": \"%s\","
-                "\"voice_transcript\": \"[EVENT: %s - %s]\","
-                "\"timestamp\": %f,"
-                "\"last_event\": \"%s\","
-                "\"stats\": {"
-                    "\"hp\": %f,"
-                    "\"max_hp\": %f,"
-                    "\"dexterity\": %d,"
-                    "\"perception\": %d"
-                "}"
-                "}"),
-                *AgentID,
-                *EventType, *Description,
-                Time,
-                *EventType,
-                CurrentStats.Resources.Health, 
-                CurrentStats.Resources.MaxHealth, 
-                CurrentStats.BaseStats.Dexterity, 
-                CurrentStats.BaseStats.Perception
-            );
-
-            Manager->SendEvent(JsonPayload);
-        }
+        ActionComponent->OnActionCompleted();
     }
 }
 
-float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
+FCharacterAttributes& ASmartNPC::GetStats() const
+{
+    // StateComponent가 반드시 존재한다고 가정 (생성자에서 보장)
+    return StateComponent->CurrentStats;
+}
+
+// === TakeDamage: UE5 Actor Override → StateComponent에 위임 ===
+
+float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, 
+    AController* EventInstigator, AActor* DamageCauser)
 {
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-    
-    // Apply damage to Resources.Health
-    CurrentStats.Resources.Health -= ActualDamage;
-    if (CurrentStats.Resources.Health < 0) CurrentStats.Resources.Health = 0;
 
-    UE_LOG(LogTemp, Warning, TEXT("SmartNPC %s Took Damage: %.1f. HP: %.1f/%.1f"), 
-        *AgentID, ActualDamage, CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);
-
-    // Attempt reflex action (difficulty 50)
-    bool bReflex = TryReflexAction(50.0f); 
-    
-    RequestEmergencyCognition(TEXT("Hit"), FString::Printf(TEXT("Took %.1f Damage"), ActualDamage));
+    if (StateComponent)
+    {
+        StateComponent->ApplyDamage(ActualDamage);
+        StateComponent->RequestEmergencyCognition(TEXT("Hit"), 
+            FString::Printf(TEXT("Took %.1f Damage"), ActualDamage));
+    }
 
     return ActualDamage;
 }
 
-void ASmartNPC::ApplyMovementSpeed()
-{
-    UCharacterMovementComponent* MovementComp = GetCharacterMovement();
-    if (!MovementComp)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s: No CharacterMovementComponent found!"), *AgentID);
-        return;
-    }
 
-    // Apply calculated speeds from CharacterAttributes
-    // MaxWalkSpeed is the primary speed used by AI navigation
-    MovementComp->MaxWalkSpeed = CurrentStats.Movement.WalkSpeed;
-    MovementComp->MaxWalkSpeedCrouched = CurrentStats.Movement.CrouchSpeed;
-    
-    // Note: RunSpeed and SprintSpeed need to be applied via gameplay logic
-    // (e.g., setting MaxWalkSpeed dynamically based on movement state)
-    
-    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Applied Movement Speeds - Walk: %.1f, Crouch: %.1f (Dex: %d)"),
-        *AgentID,
-        CurrentStats.Movement.WalkSpeed,
-        CurrentStats.Movement.CrouchSpeed,
-        CurrentStats.BaseStats.Dexterity);
+// ==========================================
+// Debug Functions (에디터에서 버튼 클릭으로 테스트)
+// ==========================================
+
+namespace
+{
+    // [의도(Why)] 하드코딩된 JSON 문자열을 생성하여 NPCManager를 통해 통합 테스트를 수행하는 헬퍼 함수
+    void DispatchDebugJson(ASmartNPC* NPCInstance, const FString& Mode, const FString& ActionsJson)
+    {
+        if (!NPCInstance) return;
+
+        FString MockJson = FString::Printf(TEXT(R"({
+    "Mode": "%s",
+    "ActionBatches": {
+        "%s": {
+            "AgentID": "%s",
+            "Mode": "%s",
+            "Actions": [
+                %s
+            ]
+        }
+    }
+})"), *Mode, *NPCInstance->AgentID, *NPCInstance->AgentID, *Mode, *ActionsJson);
+
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] DispatchDebugJson: Sending to NPCManager\n%s"), *MockJson);
+
+        if (UGameInstance* GameInst = NPCInstance->GetGameInstance())
+        {
+            if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
+            {
+                NPCManager->OnWebSocketMessageReceived(MockJson);
+            }
+        }
+    }
 }
 
-void ASmartNPC::RefreshStats()
+void ASmartNPC::Debug_Test_Social_Dialogue()
 {
-    // Recalculate all derived stats from base stats
-    CurrentStats.RecalculateCombatStats();
-    
-    // Apply movement speeds to CharacterMovementComponent
-    ApplyMovementSpeed();
-    
-    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] %s: Stats Refreshed - HP: %.1f/%.1f, Walk: %.1f, Run: %.1f, Sprint: %.1f"),
-        *AgentID,
-        CurrentStats.Resources.Health,
-        CurrentStats.Resources.MaxHealth,
-        CurrentStats.Movement.WalkSpeed,
-        CurrentStats.Movement.RunSpeed,
-        CurrentStats.Movement.SprintSpeed);
+    // [의도(Why)] 사교 모드(Social)로 전환 후 대화(Dialogue) 행동이 올바르게 큐잉되어 실행되는지 확인합니다.
+    FString ActionsJson = TEXT(R"({
+                    "ActionType": "Dialogue",
+                    "FacialState": "Neutral",
+                    "Parameters": {
+                        "TargetID": "Player",
+                        "text": "Hello! This is a debug test."
+                    }
+                })");
+    DispatchDebugJson(this, TEXT("Social"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Common_Move()
+{
+    // [의도(Why)] 기본 모드(Common) 상태에서 액터(Player)를 향한 이동(Move) 내비게이션 처리를 검증합니다.
+    FString ActionsJson = TEXT(R"({
+                    "ActionType": "Move",
+                    "Parameters": {
+                        "TargetID": "Player"
+                    }
+                })");
+    DispatchDebugJson(this, TEXT("Common"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Combat_Attack()
+{
+    // [의도(Why)] 전투 모드(Combat) 상태에서 대상체(Player)를 향한 공격 몽타주 재생이 트리거되는지 확인합니다.
+    FString ActionsJson = TEXT(R"({
+                    "ActionType": "Attack",
+                    "Parameters": {
+                        "TargetID": "Player"
+                    }
+                })");
+    DispatchDebugJson(this, TEXT("Combat"), ActionsJson);
+}
+
+void ASmartNPC::Debug_Test_Orchestra_Pipeline()
+{
+    // [의도(Why)] 서버에서 수신되는 다중 에이전트 명령 포맷(FModeActionRequest)이 
+    // NPCManager를 통해 각 NPC에게 올바르게 분배 및 파싱되는지 시뮬레이션합니다.
+
+    // 1. 하드코딩된 완벽한 JSON 문자열 생성 (파이썬 서버에서 내려오는 것과 100% 동일한 형태)
+    FString MockJson = FString::Printf(TEXT(R"({
+    "Mode": "Social",
+    "ActionBatches": {
+        "%s": {
+            "AgentID": "%s",
+            "Mode": "Social",
+            "Actions": [
+                {
+                    "ActionType": "Dialogue",
+                    "FacialState": "Happy",
+                    "Parameters": {
+                        "text": "Pipeline Test: Hello!"
+                    }
+                },
+                {
+                    "ActionType": "Wait",
+                    "FacialState": "Happy",
+                    "Parameters": {
+                        "duration": "1.5"
+                    }
+                }
+            ]
+        }
+    }
+})"), *AgentID, *AgentID);
+
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Testing Orchestra Pipeline with JSON: %s"), *MockJson);
+
+    if (UGameInstance* GameInst = GetGameInstance())
+    {
+        if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
+        {
+            NPCManager->OnWebSocketMessageReceived(MockJson);
+        }
+    }
 }

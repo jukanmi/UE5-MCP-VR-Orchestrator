@@ -2,75 +2,113 @@
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
 
-bool UMCPJsonUtils::ParseActionBatch(FString Json, FActionBatch& OutBatch)
+
+
+
+bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
 {
-    // 1. Create Reader
     TSharedPtr<FJsonObject> RootObject;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
 
-    // 2. Deserialize
     if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
     {
         return false;
     }
 
-    // 3. Extract Agent ID
-    OutBatch.AgentID = RootObject->GetStringField(TEXT("agent_id"));
+    // Check for "ActionBatches" field (Sign of FModeActionRequest)
+    if (!RootObject->HasField(TEXT("ActionBatches"))) return false;
 
-    // 4. Extract Actions
-    const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-    if (RootObject->TryGetArrayField(TEXT("actions"), ActionsArray))
+    // 1. Mode
+    FString ModeStr = RootObject->GetStringField(TEXT("Mode"));
+    const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
+    if (ModeEnum)
     {
-        for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
+        int64 EnumVal = ModeEnum->GetValueByNameString(ModeStr);
+        if (EnumVal != INDEX_NONE) OutRequest.Mode = (ENPCBehaviorMode)EnumVal;
+    }
+
+    // 2. ActionBatches (Map)
+    TSharedPtr<FJsonObject> BatchesObj = RootObject->GetObjectField(TEXT("ActionBatches"));
+    if (BatchesObj.IsValid())
+    {
+        for (const auto& Pair : BatchesObj->Values)
         {
-            TSharedPtr<FJsonObject> ActionObj = Val->AsObject();
-            if (!ActionObj.IsValid()) continue;
+            FString AgentID = Pair.Key;
+            TSharedPtr<FJsonObject> BatchObj = Pair.Value->AsObject();
+            if (!BatchObj.IsValid()) continue;
 
-            FGameAction NewAction;
-            // Parse common fields
-            NewAction.ActionType = ActionObj->GetStringField(TEXT("action_type"));
+            FActionBatch NewBatch;
+            NewBatch.AgentID = AgentID;
             
-            // Optional TargetID
-            if (ActionObj->HasField(TEXT("target_id")))
+            // Mode in Batch
+            FString BatchModeStr = BatchObj->GetStringField(TEXT("Mode"));
+            if (ModeEnum)
             {
-                NewAction.TargetID = ActionObj->GetStringField(TEXT("target_id"));
-            }
-            else if (ActionObj->HasField(TEXT("target_listener")))
-            {
-                NewAction.TargetID = ActionObj->GetStringField(TEXT("target_listener"));
+                int64 EnumVal = ModeEnum->GetValueByNameString(BatchModeStr);
+                if (EnumVal != INDEX_NONE) NewBatch.Mode = (ENPCBehaviorMode)EnumVal;
             }
 
-            // Parse Parameters Map (Mixed Types -> String)
-            const TSharedPtr<FJsonObject>* ParamsObj;
-            if (ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
+            // Actions in Batch
+            const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
+            if (BatchObj->TryGetArrayField(TEXT("Actions"), ActionsArray))
             {
-                for (const auto& Pair : (*ParamsObj)->Values)
+                for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
                 {
-                    FString Key = Pair.Key;
-                    TSharedPtr<FJsonValue> Value = Pair.Value;
-                    FString StringValue;
+                    TSharedPtr<FJsonObject> ActionObj = Val->AsObject();
+                    if (!ActionObj.IsValid()) continue;
 
-                    switch (Value->Type)
+                    FGameAction NewAction;
+                    
+                    // ActionType (Accept ActionType or action_type)
+                    FString ActionTypeStr;
+                    if (ActionObj->TryGetStringField(TEXT("ActionType"), ActionTypeStr) || 
+                        ActionObj->TryGetStringField(TEXT("action_type"), ActionTypeStr))
                     {
-                    case EJson::String:
-                        StringValue = Value->AsString();
-                        break;
-                    case EJson::Number:
-                        // Convert number to string
-                        StringValue = FString::SanitizeFloat(Value->AsNumber());
-                        break;
-                    case EJson::Boolean:
-                        StringValue = Value->AsBool() ? TEXT("true") : TEXT("false");
-                        break;
-                    default:
-                        StringValue = TEXT("UnknownType");
-                        break;
+                        const UEnum* ActionEnum = StaticEnum<EAction>();
+                        if (ActionEnum)
+                        {
+                            int64 EnumVal = ActionEnum->GetValueByNameString(ActionTypeStr);
+                            if (EnumVal != INDEX_NONE) NewAction.ActionType = (EAction)EnumVal;
+                        }
                     }
-                    NewAction.Parameters.Add(Key, StringValue);
+
+                    // FacialState (Accept FacialState or facial_state) - Optional
+                    FString FacialStr;
+                    if (ActionObj->TryGetStringField(TEXT("FacialState"), FacialStr) || 
+                        ActionObj->TryGetStringField(TEXT("facial_state"), FacialStr))
+                    {
+                        const UEnum* FacialEnum = StaticEnum<EFacialState>();
+                        if (FacialEnum)
+                        {
+                            int64 EnumVal = FacialEnum->GetValueByNameString(FacialStr);
+                            if (EnumVal != INDEX_NONE) NewAction.FacialState = (EFacialState)EnumVal;
+                        }
+                    }
+
+                    // Parameters - Optional
+                    const TSharedPtr<FJsonObject>* ParamsObj;
+                    if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj) || 
+                        ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
+                    {
+                        for (const auto& ParamPair : (*ParamsObj)->Values)
+                        {
+                            if (ParamPair.Value->Type == EJson::Object)
+                            {
+                                FString NestedStr;
+                                TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedStr);
+                                FJsonSerializer::Serialize(ParamPair.Value->AsObject().ToSharedRef(), NestedWriter);
+                                NewAction.Parameters.Add(ParamPair.Key, NestedStr);
+                            }
+                            else
+                            {
+                                NewAction.Parameters.Add(ParamPair.Key, ParamPair.Value->AsString());
+                            }
+                        }
+                    }
+                    NewBatch.Actions.Add(NewAction);
                 }
             }
-
-            OutBatch.Actions.Add(NewAction);
+            OutRequest.ActionBatches.Add(AgentID, NewBatch);
         }
     }
 

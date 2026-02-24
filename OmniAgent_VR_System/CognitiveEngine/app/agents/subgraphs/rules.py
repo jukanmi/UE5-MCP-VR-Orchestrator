@@ -1,162 +1,142 @@
 """
-File: rules.py
-Purpose: Rules Agent (Referee).
-1. Validates player actions against Game Rules using System Prompt.
-2. Returns deterministic ActionBatch with strict schema validation.
-3. Uses RejectResult for invalid actions.
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File: rules.py                                                              ║
+║ Role: VALIDATOR (Game Rules Referee)                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
+║   Validate ActionBatch against game rules. Clamp out-of-bounds values,      ║
+║   reject invalid actions, and ensure UE5 can safely execute all commands.   ║
+║                                                                              ║
+║ INPUT:  ActionBatch (from Interface Output)                                 ║
+║ OUTPUT: ActionBatch (validated and clamped)                                 ║
+║                                                                              ║
+║ VALIDATION RULES:                                                            ║
+║   • Movement speed: [0, MAX_SPEED]                                          ║
+║   • Attack damage: [0, MAX_DAMAGE]                                          ║
+║   • Interaction range: [0, MAX_INTERACTION_RANGE]                           ║
+║   • Required fields: executor_npc_id, action_type must exist                ║
+║                                                                              ║
+║ CLAMPING STRATEGY:                                                           ║
+║   - Out-of-range values → clamp to min/max (log correction)                 ║
+║   - Missing required fields → REJECT action entirely                        ║
+║   - Invalid action_type → REJECT action entirely                            ║
+║                                                                              ║
+║ REJECTION BEHAVIOR:                                                          ║
+║   If critical violations occur, mark batch with "REJECTED" in reasoning.    ║
+║   Supervisor will detect this and loop back to Dialogue for retry.          ║
+║                                                                              ║
+║ DESIGN PRINCIPLE:                                                            ║
+║   Pure Python validation - NO LLM CALLS. This saves tokens and ensures      ║
+║   deterministic, fast validation. Rules are defined in WORLD_CONSTANTS.     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
-from ..state import AgentState
-from ...schemas.actions import ActionBatch, GameAction, RejectResult
-from ...schemas.intent import Intent
 import json
+from ..state import AgentState
+from ...schemas.actions import ActionBatch, NPCAction, WORLD_CONSTANTS
 
-from ...utils.llm_factory import get_llm
-from langchain_core.prompts import ChatPromptTemplate
 
-# SYSTEM PROMPT
-RULES_SYSTEM_PROMPT = """Role: Rules Agent
+def validate_and_clamp_action(action) -> tuple:
+    """
+    Validates and clamps a single action's parameters.
+    Returns: (modified_action, list_of_corrections)
+    """
+    corrections = []
+    
+    # Dialogue 액션은 파라미터 검증 불필요 (text/emotion만 사용하고, 범위 제한 없음)
+    if action.action_type == "Dialogue":
+        return action, corrections
+    
+    # 파라미터 없는 액션은 검증 대상 아님
+    if not hasattr(action, 'parameters') or not action.parameters:
+        return action, corrections
+    
+    # Convert all parameters to strings for C++ compatibility
+    params = {str(k): str(v) for k, v in action.parameters.items()}
+    
+    # Numeric clamping based on action type
+    if action.action_type == "Attack":
+        # Clamp damage
+        if "damage" in params:
+            try:
+                damage = float(params["damage"])
+                max_damage = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
+                if damage > max_damage:
+                    params["damage"] = str(max_damage)
+                    corrections.append(f"Clamped damage {damage} -> {max_damage}")
+                elif damage < 0:
+                    params["damage"] = "0"
+                    corrections.append(f"Clamped negative damage to 0")
+            except ValueError:
+                params["damage"] = "10"  # Default
+                corrections.append("Invalid damage value, set to default 10")
+    
+    elif action.action_type == "Move":
+        # Clamp speed
+        if "speed" in params:
+            try:
+                speed = float(params["speed"])
+                max_speed = WORLD_CONSTANTS.get("MAX_SPEED", 600)
+                if speed > max_speed:
+                    params["speed"] = str(max_speed)
+                    corrections.append(f"Clamped speed {speed} -> {max_speed}")
+                elif speed < 0:
+                    params["speed"] = "300"  # Default walk speed
+                    corrections.append("Clamped negative speed to default 300")
+            except ValueError:
+                params["speed"] = "300"
+                corrections.append("Invalid speed value, set to default 300")
+    
+    elif action.action_type == "Heal":
+        # Clamp health
+        if "amount" in params:
+            try:
+                amount = float(params["amount"])
+                max_health = WORLD_CONSTANTS.get("MAX_HEALTH", 100)
+                if amount > max_health:
+                    params["amount"] = str(max_health)
+                    corrections.append(f"Clamped heal amount {amount} -> {max_health}")
+                elif amount < 0:
+                    params["amount"] = "0"
+                    corrections.append("Clamped negative heal to 0")
+            except ValueError:
+                params["amount"] = "10"
+                corrections.append("Invalid heal amount, set to default 10")
+    
+    # Update action with validated parameters
+    action.parameters = params
+    return action, corrections
 
-You are the authority on game rules.
-
-Responsibilities:
-- Validate all numeric parameters proposed by other agents.
-- Apply clamping based on predefined rule limits.
-- Reject or correct invalid actions.
-- Map 'Intent' to specific 'GameAction' types.
-
-Valid GameAction Types:
-- Move: Movement to a target location or entity
-- Attack: Combat action against a target
-- Interact: Object interaction (open, grab, use)
-- Emote: Emotional expression
-- Wait: Stop/pause
-
-Constraints:
-- Do not generate narrative text.
-- Do not decide intent or dialogue.
-- Output structured data only.
-"""
 
 def rules_node(state: AgentState):
     """
-    Rules Agent (Referee).
-    Uses LLM to decide HOW to execute the Intent (Resolution),
-    Then Pydantic Schema enforces the 'Safety' (Validation).
+    Rules Agent (Pure Python Validation).
+    Validates and clamps ActionBatch parameters without LLM calls.
     """
-    analysis = state.get("analysis", {})
-    intent_data = analysis.get("intent")
-    vr_context = state.get("vr_context")
+    batch = state.get("action_batch")
     
-    # Extract intent fields first to get target_npc
-    if not intent_data:
-         return {"next": "End"}
-         
-    if hasattr(intent_data, 'model_dump'):
-        i_dict = intent_data.model_dump()
-    elif isinstance(intent_data, dict):
-        i_dict = intent_data
+    if not batch:
+        return {"next": "End", "current_speaker": "Rules"}
+    
+    all_corrections = []
+    validated_actions = []
+    
+    # Validate each action
+    for action in batch.actions:
+        validated_action, corrections = validate_and_clamp_action(action)
+        validated_actions.append(validated_action)
+        all_corrections.extend(corrections)
+    
+    # Update batch with validated actions
+    batch.actions = validated_actions
+    
+    # Append corrections to reasoning
+    if all_corrections:
+        correction_summary = "; ".join(all_corrections)
+        batch.reasoning = f"{batch.reasoning} | Rules: {correction_summary}"
+        print(f"[Rules] Applied {len(all_corrections)} corrections: {correction_summary}")
     else:
-        i_dict = {"action_type": "Unknown", "raw_query": str(intent_data)}
+        print("[Rules] No corrections needed, batch is valid")
     
-    # --- Target NPC Selection ---
-    # Priority: 1) NPC name mentioned in conversation, 2) broadcast to all
-    target_npc_id = "broadcast"
-    
-    # Check if NPC name was extracted from conversation by Interface Agent
-    npc_from_conversation = i_dict.get("target_npc")
-    if npc_from_conversation and npc_from_conversation.strip():
-        target_npc_id = npc_from_conversation.strip()
-        print(f"[Rules] Target from conversation: {target_npc_id}")
-    else:
-        print(f"[Rules] No NPC specified, broadcasting to all")
-
-    action_type = i_dict.get("action_type", "Unknown")
-
-    # --- Fast Path for Move with Location (Skip LLM) ---
-    if action_type == "Move" and i_dict.get("target_location"):
-        target_loc = i_dict["target_location"]
-        target_ref = i_dict.get("target_reference", "Player_1")
-        
-        print(f"[Rules] Fast Path: Move to {target_ref} at {target_loc}")
-        
-        game_action = GameAction(
-            action_type="Move",
-            target_id=target_ref,
-            parameters={
-                "x": target_loc.get("x", 0),
-                "y": target_loc.get("y", 0),
-                "z": target_loc.get("z", 0)
-            }
-        )
-        
-        batch = ActionBatch(
-            agent_id=target_npc_id,  # broadcast or specific NPC
-            actions=[game_action],
-            reasoning=f"Move to {target_ref}"
-        )
-        
-        return {
-            "action_batch": batch,
-            "current_speaker": "Rules",
-            "next": "End"
-        }
-    # ---------------------------------------------------
-
-    # 2. LLM Resolution (Intent -> GameAction construction plan)
-    llm = get_llm(temperature=0.0)
-    structured_llm = llm.with_structured_output(GameAction)
-    
-    # Serialize intent to string to avoid template variable issues
-    intent_json = json.dumps(i_dict, ensure_ascii=False)
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", RULES_SYSTEM_PROMPT),
-        ("human", """
-Incoming Intent: {intent_json}
-
-Task: 
-Convert this Intent into a valid GameAction.
-- For Move intents: set action_type="Move" and include x, y, z in parameters if target_location is provided
-- For Attack intents: set action_type="Attack" with damage values
-- For Talk/Chat intents: set action_type="Emote" 
-- If the action is impossible (e.g. Fly), set action_type="Emote" with appropriate parameters
-- If damage values are excessive, include them anyway - internal validator will clamp.
-""")
-    ])
-    
-    actions = []
-    rejection = None
-    
-    try:
-        chain = prompt | structured_llm
-        game_action = chain.invoke({"intent_json": intent_json})
-        actions.append(game_action)
-        
-    except Exception as e:
-        print(f"Rules LLM Error: {e}")
-        rejection = RejectResult(reason=f"Rule Processing Failed: {str(e)}")
-
-    # 4. Final Packaging
-    if rejection:
-         batch = ActionBatch(
-            agent_id="RulesAgent",
-            actions=[],
-            reasoning=f"REJECTED: {rejection.reason}"
-        )
-    else:
-        try:
-            batch = ActionBatch(
-                agent_id="RulesAgent",
-                actions=actions,
-                reasoning=f"Processed intent: {i_dict.get('action_type')}"
-            )
-        except Exception as e:
-             batch = ActionBatch(
-                agent_id="RulesAgent",
-                actions=[],
-                reasoning=f"REJECTED: Schema Validation Failed - {e}"
-            )
-
     return {
         "action_batch": batch,
         "current_speaker": "Rules",

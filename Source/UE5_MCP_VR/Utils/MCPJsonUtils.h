@@ -1,36 +1,8 @@
 #pragma once
 
-#include "CoreMinimal.h"
+#include "../AI/NPCActionTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "MCPJsonUtils.generated.h"
-
-USTRUCT(BlueprintType)
-struct FGameAction
-{
-    GENERATED_BODY()
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    FString ActionType;
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    FString TargetID;
-
-    // We store all params as strings for flexibility (converted on demand)
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    TMap<FString, FString> Parameters;
-};
-
-USTRUCT(BlueprintType)
-struct FActionBatch
-{
-    GENERATED_BODY()
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    FString AgentID;
-
-    UPROPERTY(BlueprintReadWrite, Category = "MCP")
-    TArray<FGameAction> Actions;
-};
 
 /**
  * Utility class for parsing JSON from Cognitive Engine
@@ -42,5 +14,5 @@ class UE5_MCP_VR_API UMCPJsonUtils : public UBlueprintFunctionLibrary
 
 public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static bool ParseActionBatch(FString Json, FActionBatch& OutBatch);
+    static bool ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest);
 };

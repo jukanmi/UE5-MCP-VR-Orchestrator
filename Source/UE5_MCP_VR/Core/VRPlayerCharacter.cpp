@@ -13,6 +13,8 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
@@ -20,6 +22,14 @@ AVRPlayerCharacter::AVRPlayerCharacter()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+    // AI Perception Stimuli Source
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    if (StimuliSource)
+    {
+        // Register this actor as a source for Sight sense
+        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
+        StimuliSource->RegisterWithPerceptionSystem();
+    }
 }
 
 // Called when the game starts or when spawned
@@ -66,7 +76,7 @@ void AVRPlayerCharacter::BeginPlay()
         {
             if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
             {
-                Manager->BindSocket(WebSocketClient);
+                Manager->BindWebSocket(WebSocketClient);
                 UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
             }
         }
@@ -245,42 +255,7 @@ void AVRPlayerCharacter::OnWebSocketMessage(const FString& Message)
 	TSharedPtr<FJsonObject> JsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
 
-	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
-	{
-		// Check for "actions" array
-		const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-		if (JsonObject->TryGetArrayField(TEXT("actions"), ActionsArray))
-		{
-			for (const auto& ActionValue : *ActionsArray)
-			{
-				TSharedPtr<FJsonObject> ActionObj = ActionValue->AsObject();
-				if (ActionObj.IsValid())
-				{
-					FString ActionType = ActionObj->GetStringField(TEXT("action_type"));
-					if (ActionType == TEXT("Speak"))
-					{
-						FString Text = ActionObj->GetStringField(TEXT("text"));
-						// Ideally get sender ID too, but defaulting to "NPC" or deriving from context
-						FString AgentID = JsonObject->GetStringField(TEXT("agent_id")); // Batch level agent ID
-						
-						if (ChatWidgetInstance)
-						{
-							ChatWidgetInstance->AddMessageToHistory(AgentID, Text);
-						}
-					}
-				}
-			}
-		}
-		
-		// Also handle direct error messages or generic logging
-		if (JsonObject->HasField(TEXT("error")))
-		{
-			if (ChatWidgetInstance)
-			{
-				ChatWidgetInstance->AddMessageToHistory(TEXT("System"), JsonObject->GetStringField(TEXT("error")));
-			}
-		}
-	}
+	
 }
 
 void AVRPlayerCharacter::PerformAttack()
@@ -385,7 +360,7 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
-		// ToDo: Handle player death (respawn, game over, etc.)
+		// TODO: Handle player death (respawn, game over, etc.)
 	}
 
 	return ActualDamage;

@@ -4,8 +4,15 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "../Utils/MCPJsonUtils.h" // For FGameAction struct
+#include "NPCActionTypes.h" // For AI Enums and Structs
 #include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
+
+class UNPCInteractionDataAsset;
+class UNPCStateComponent;
+class UNPCActionComponent;
+class UNPCInventoryComponent;
+
 
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter
@@ -15,96 +22,89 @@ class UE5_MCP_VR_API ASmartNPC : public ACharacter
 public:
     ASmartNPC();
 
-protected:
+    UFUNCTION(BlueprintCallable, Category = "MCP|Components")
+    UNPCStateComponent* GetStateComponent() const { return StateComponent; }
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|Components")
+    UNPCActionComponent* GetActionComponent() const { return ActionComponent; }
+
+    UFUNCTION(BlueprintCallable, Category = "MCP|Components")
+    UNPCInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+    // === Components ===
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCStateComponent* StateComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCActionComponent* ActionComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
+    UNPCInventoryComponent* InventoryComponent;
+
+    // === Identity ===
+
+    /** NPC 고유 ID (예: "Guard_1", "Merchant_A") */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
+    FString AgentID;
+
+    /** 이 NPC가 사용할 Behavior Tree */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
+    UBehaviorTree* BehaviorTreeAsset;
+
+    // === Vision & Hearing Config (AIController에 적용됨) ===
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float SightRadius = 3000.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float LoseSightRadius = 3500.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Vision")
+    float SightAngle = 60.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")
+    float HearingRange = 3000.0f;
+
+    // === Lifecycle ===
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-public:
-    // Unique ID for routing (e.g. "Guard_1")
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
-    FString AgentID;
+    // === Facade API (컴포넌트로 위임) ===
 
-    // Behavior Tree to run for this NPC
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
-    UBehaviorTree* BehaviorTreeAsset;
-
-    // Defines how to handle an action (Switch logic)
-    // Hybrid: C++ parses params -> Calls BP Event
+    /** 액션 배치 실행 → ActionComponent에 위임 */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    virtual void ProcessAction(const FGameAction& Action);
+    virtual void ExecuteActionBatch(const struct FActionBatch& Batch);
 
-    /**
-     * Clears physical state (velocity, animation overlay, specific variables) 
-     * when a policy is aborted or expires.
-     */
+    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지) */
     virtual void ClearPhysicalState();
 
-    // --- Reflex & Interrupt System ---
+    // === Damage Hook (UE5 Actor Override) ===
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Stats")
-    FCharacterAttributes CurrentStats;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
+        class AController* EventInstigator, AActor* DamageCauser) override;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI")
-    FString CurrentActionID;
+    // === Convenience Accessors (자주 호출되는 것들의 Shortcut) ===
 
-    // Checks Agility vs Difficulty. Returns true if successful.
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    bool TryReflexAction(float Difficulty);
-
-    // Stops current LLM action (move, speak) immediately.
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void AbortCurrentAction();
-
-    /**
-     * Emergency Interrupt:
-     * 1. Abort current action.
-     * 2. Send "Emergency" signal to Cognitive Engine with context.
-     */
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void RequestEmergencyCognition(FString EventType, FString Description);
-
-    // Hook for damage (Override in BP or C++)
-    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
-
-    /**
-     * Apply movement speeds from CurrentStats to CharacterMovementComponent.
-     * Call this after modifying CurrentStats.BaseStats.Dexterity or after RecalculateCombatStats().
-     */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
-    void ApplyMovementSpeed();
-
-    /**
-     * Recalculate all derived stats and apply them.
-     * Call this when base stats change.
-     */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Stats")
-    void RefreshStats();
+    /** Stats에 직접 접근하기 위한 편의 함수 */
+    FCharacterAttributes& GetStats() const;
 
 
-protected:
-    // --- Blueprint Implementable Events (Engine Logic) ---
 
-    // Move to location with speed
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteMove(FVector TargetLocation, float Speed);
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
+    void OnActionCompleted();
 
-    // Speak text
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteSpeak(const FString& Text);
 
-    // Emote
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteEmote(const FString& EmoteName);
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Social_Dialogue();
 
-    // Attack
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteAttack(const FString& TargetID);
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Common_Move();
 
-    // Interact
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteInteract(const FString& TargetID);
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Combat_Attack();
 
-    // Generic fallback or other actions (Attack, Interact)
-    UFUNCTION(BlueprintImplementableEvent, Category = "MCP|AI")
-    void ExecuteGenericAction(const FString& ActionType, const FString& TargetID);
+    UFUNCTION(CallInEditor, Category = "MCP|Debug")
+    void Debug_Test_Orchestra_Pipeline();
 };

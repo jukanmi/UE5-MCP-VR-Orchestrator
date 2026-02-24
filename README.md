@@ -24,7 +24,7 @@ The system orchestrates four specialized agents to create a dynamic, living worl
 ### Remote Cortex Pattern
 
 - **Cognitive Engine (Python)**: Handles all high-level logic, state management, and LLM inferences.
-- **Unreal Project (C++)**: Acts as a "Body", sending sensor data (Voice, Gaze, Gestures) and executing actions (Move, Speak, Spawn).
+- **Unreal Project (C++)**: Acts as a "Body", sending sensor data (Voice, Gaze, Gestures) and executing actions.
 - **Communication**: Asynchronous WebSocket connection for real-time performance.
 
 ### Directory Structure

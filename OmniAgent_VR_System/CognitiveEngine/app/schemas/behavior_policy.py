@@ -17,8 +17,6 @@ class BehavioralTraits(BaseModel):
     aggression: float = Field(default=50, ge=0, le=100, description="Aggressive")
     fear: float = Field(default=50, ge=0, le=100, description="Fear")
     bravery: float = Field(default=50, ge=0, le=100, description="Brave")
-    willpower: float = Field(default=50, ge=0, le=100, description="Willpower") # resist Fear
-    focus: float = Field(default=50, ge=0, le=100, description="Focus") # resist Interrupt
     
     sanity: float = Field(default=0, ge=0, le=100, description="Sanity") #add Noise
     
@@ -28,8 +26,6 @@ class BehavioralTraits(BaseModel):
                 "aggression": 70,
                 "fear": 30,
                 "bravery": 80,
-                "willpower": 60,
-                "focus": 50,
                 "sanity": 70
             }
         }

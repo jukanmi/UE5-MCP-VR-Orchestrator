@@ -2,101 +2,127 @@
 #include "SmartNPC.h"
 #include "../Utils/MCPJsonUtils.h"
 #include "Engine/GameInstance.h"
+#include "NPCActionKeys.h"
 
 void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
-    NPCMap.Empty();
-    UE_LOG(LogTemp, Log, TEXT("NPCManager Subsystem Initialized"));
+    ActiveNPCs.Empty();
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Subsystem Initialized"));
 }
 
 void UNPCManager::Deinitialize()
 {
-    NPCMap.Empty();
-    BoundSocket = nullptr;
+    ActiveNPCs.Empty();
+    ConnectedSocket = nullptr;
     Super::Deinitialize();
 }
 
-void UNPCManager::RegisterNPC(FString AgentID, ASmartNPC* NPC)
+void UNPCManager::RegisterNPC(const FString& InAgentID, ASmartNPC* InNPC)
 {
-    if (NPC)
+    // 무효한 NPC 포인터나 빈 ID가 Map에 들어가는 것을 사전에 방지합니다.
+    if (!InNPC || InAgentID.IsEmpty()) 
     {
-        NPCMap.Add(AgentID, NPC);
-        UE_LOG(LogTemp, Log, TEXT("Registered NPC: %s"), *AgentID);
+        return;
+    }
+
+    ActiveNPCs.Add(InAgentID, InNPC);
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Registered NPC: %s"), *InAgentID);
+}
+
+void UNPCManager::UnregisterNPC(const FString& InAgentID)
+{
+    ActiveNPCs.Remove(InAgentID);
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Unregistered NPC: %s"), *InAgentID);
+}
+
+void UNPCManager::BindWebSocket(UWebSocketClient* InSocket)
+{
+    ConnectedSocket = InSocket;
+    if (ConnectedSocket)
+    {
+        // 콜백 함수 이름을 직관적인 OnWebSocketMessageReceived로 변경해 코드 흐름 파악을 돕습니다.
+        ConnectedSocket->OnMessageReceived.AddDynamic(this, &UNPCManager::OnWebSocketMessageReceived);
+        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Successfully Bound to WebSocket Pipeline"));
     }
 }
 
-void UNPCManager::UnregisterNPC(FString AgentID)
+void UNPCManager::SendEventToMCP(const FString& JsonData)
 {
-    NPCMap.Remove(AgentID);
-    UE_LOG(LogTemp, Log, TEXT("Unregistered NPC: %s"), *AgentID);
-}
-
-void UNPCManager::BindSocket(UWebSocketClient* Socket)
-{
-    BoundSocket = Socket;
-    if (BoundSocket)
+    if (ConnectedSocket)
     {
-        BoundSocket->OnMessageReceived.AddDynamic(this, &UNPCManager::HandleMessage);
-        UE_LOG(LogTemp, Log, TEXT("NPCManager Bound to WebSocket"));
+        ConnectedSocket->SendData(JsonData);
     }
 }
 
-void UNPCManager::SendEvent(const FString& JsonData)
+void UNPCManager::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
-    if (BoundSocket)
+    // 오케스트레이터로부터 수신되는 Json 메시지가 매우 길 수 있으므로, 로그 도배를 막고자 Size만 기록합니다.
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received JSON Payload (Size: %d bytes)"), JsonMessage.Len());
+
+    FModeActionRequest ParsedRequest;
+    
+    // 복잡성을 줄이고자, 에이전트 다수 통신에는 단 하나의 표준 포맷(FModeActionRequest) 파싱만을 수행합니다. (Depth 단축)
+    const bool bIsParsedSuccessfully = UMCPJsonUtils::ParseModeActionRequest(JsonMessage, ParsedRequest);
+    
+    if (!bIsParsedSuccessfully)
     {
-        BoundSocket->SendData(JsonData);
+        UE_LOG(LogTemp, Error, TEXT("[NPCManager] Failed to Parse Valid ModeActionRequest! Ensure Standard JSON Format."));
+        return; 
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Request Validated! Master Mode: %d, BatchCount: %d"), static_cast<int32>(ParsedRequest.Mode), ParsedRequest.ActionBatches.Num());
+
+    for (const auto& BatchPair : ParsedRequest.ActionBatches)
+    {
+        const FActionBatch& CurrentBatch = BatchPair.Value;
+        DispatchActionBatch(CurrentBatch);
     }
 }
 
-void UNPCManager::HandleMessage(const FString& JsonMessage)
+void UNPCManager::DispatchActionBatch(const FActionBatch& ActionBatch)
 {
-    // Parse Batch
-    FActionBatch Batch;
-    if (UMCPJsonUtils::ParseActionBatch(JsonMessage, Batch))
+    // 다중 브로드캐스트 조건과, 특정 NPC 발송 조건을 명확히 함수로 분리해 유지보수성을 높입니다.
+    const bool bIsBroadcastMessage = ActionBatch.AgentID.Equals(NPCActionKeys::Agent_Broadcast, ESearchCase::IgnoreCase);
+
+    if (bIsBroadcastMessage)
     {
-        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received ActionBatch for: %s"), *Batch.AgentID);
-        
-        // Check for broadcast mode
-        if (Batch.AgentID.Equals(TEXT("broadcast"), ESearchCase::IgnoreCase))
-        {
-            // Send to ALL registered NPCs
-            UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting to %d NPCs"), NPCMap.Num());
-            
-            for (auto& Pair : NPCMap)
-            {
-                if (Pair.Value)
-                {
-                    for (const FGameAction& Action : Batch.Actions)
-                    {
-                        Pair.Value->ProcessAction(Action);
-                    }
-                }
-            }
-        }
-        else
-        {
-            // Find the NPC by Batch.AgentID (e.g., "Elara")
-            if (ASmartNPC** NPC = NPCMap.Find(Batch.AgentID))
-            {
-                if (*NPC)
-                {
-                    // Process all actions for this NPC
-                    for (const FGameAction& Action : Batch.Actions)
-                    {
-                        (*NPC)->ProcessAction(Action);
-                    }
-                }
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[NPCManager] NPC '%s' not found in registry!"), *Batch.AgentID);
-            }
-        }
+        BroadcastToAllNPCs(ActionBatch);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Failed to parse ActionBatch from message"));
+        DeliverToSpecificNPC(ActionBatch.AgentID, ActionBatch);
+    }
+}
+/**
+ * 모든 NPC에게 ActionBatch를 전달합니다.
+ */
+void UNPCManager::BroadcastToAllNPCs(const FActionBatch& ActionBatch)
+{
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting Batch to ALL Registered Entities (%d Total)"), ActiveNPCs.Num());
+    
+    for (const auto& NPCPair : ActiveNPCs)
+    {
+        ASmartNPC* TargetNPC = NPCPair.Value;
+        if (IsValid(TargetNPC))
+        {
+            TargetNPC->ExecuteActionBatch(ActionBatch);
+        }
+    }
+}
+/**
+ * 특정 NPC에게 ActionBatch를 전달합니다.
+ */
+void UNPCManager::DeliverToSpecificNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch)
+{
+    ASmartNPC** FoundNPCPtr = ActiveNPCs.Find(TargetAgentID);
+    
+    if (FoundNPCPtr && IsValid(*FoundNPCPtr))
+    {
+        (*FoundNPCPtr)->ExecuteActionBatch(ActionBatch);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Skipping Dispatch! Target NPC '%s' is not registered or was destroyed."), *TargetAgentID);
     }
 }

@@ -7,7 +7,7 @@ This allows external agents or debuggers to control the UE5 Engine directly.
 from mcp.server.fastmcp import FastMCP
 from typing import List
 import json
-from .schemas.actions import ActionBatch, GameAction
+from .schemas.actions import ActionBatch, NPCAction
 from .schemas.game_state import Vector3D
 
 # Initialize FastMCP Server
@@ -24,8 +24,10 @@ def agent_speak(text: str, emotion: str = "Neutral") -> str:
     Directly commands the agent to speak via Engine.
     Useful for debugging or direct overrides.
     """
-    action = GameAction(
-        action_type="Speak",
+    action = NPCAction(
+        action_category="Common",
+        action_type="Dialogue",
+        executor_npc_id="MCP_Tool_Override",
         parameters={"text": text, "emotion": emotion}
     )
     batch = ActionBatch(
@@ -48,9 +50,11 @@ def agent_move(x: float, y: float, z: float) -> str:
         return json.dumps({"error": f"Invalid Coordinates: {str(e)}"})
 
     # 2. Construct Action
-    action = GameAction(
+    action = NPCAction(
+        action_category="Common",
         action_type="Move",
-        parameters={"speed": 500, "target_location": target_loc.model_dump()}
+        executor_npc_id="MCP_Tool_Maps",
+        parameters={"speed": "500", "target_loc": {"x": target_loc.x, "y": target_loc.y, "z": target_loc.z}}
     )
     
     batch = ActionBatch(
