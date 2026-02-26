@@ -1,17 +1,20 @@
+// File: NPCManager.h
+// Purpose: Global Router for NPC Actions. 
+//          - Listens to WebSocket and dispatches actions to registered SmartNPCs.
+//          - Time-Slicing 기반으로 NPC 상태를 순차적으로 Python에 전송합니다.
+//          - WebSocket 연결/해제 이벤트를 수신해 Blackboard의 IsConnected 키를 동기화합니다.
+
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "../Network/WebSocketClient.h"
 #include "NPCActionTypes.h"
+#include "GameStateData.h"
 #include "NPCManager.generated.h"
 
 class ASmartNPC;
 
-/**
- * Global Router for NPC Actions.
- * Listens to WebSocket and dispatches actions to registered SmartNPCs.
- */
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API UNPCManager : public UGameInstanceSubsystem
 {
@@ -38,9 +41,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEventToMCP(const FString& JsonData);
 
+    // FGameStateData 구조체를 JSON으로 직렬화하여 Python 백엔드로 전송합니다.
+    // NPC가 자신의 상태를 직접 채워 호출합니다.
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void SendStateToMCP(const FGameStateData& StateData);
+
     // 웹소켓으로부터 수신된 원시 JSON 메시지를 파싱하여 FModeActionRequest로 변환하고 처리합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void OnWebSocketMessageReceived(const FString& JsonMessage);
+
+    // WebSocket 연결 상태 변화 시 호출되는 이벤트 핸들러.
+    // bIsConnected=false 수신 시 모든 등록된 NPC의 Blackboard IsConnected 키를 다운시킵니다.
+    UFUNCTION()
+    void OnWebSocketConnectionChanged(bool bIsConnected);
 
 private:
     UPROPERTY()
@@ -48,6 +61,16 @@ private:
 
     UPROPERTY()
     UWebSocketClient* ConnectedSocket;
+
+    // 현재 WebSocket 연결 상태 캐시 (Blackboard IsConnected 키 동기화용)
+    bool bIsSocketConnected = false;
+
+    // [Time-Slicing] 다중 NPC를 매 틱에 한꺼번에 전송하지 않기 위한 전송 예약 큐
+    TArray<FString> StateUpdateQueue;    // 전송 대기중인 AgentID 큐
+    FTimerHandle StateUpdateTimerHandle; // 큐를 일정 간격으로 소비하는 타이머
+
+    // 타이머 콜백: 큐 맨 앞에서 1~2명씩 뽑아 자신의 상태를 전송하도록 요청합니다.
+    void ProcessStateUpdateQueue();
 
     // 파싱된 ActionBatch를 수신 대상(전체 혹은 단일 NPC)에 맞게 올바른 계층으로 라우팅합니다.
     void DispatchActionBatch(const struct FActionBatch& ActionBatch);

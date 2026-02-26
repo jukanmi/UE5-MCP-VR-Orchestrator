@@ -68,10 +68,15 @@ void UChatWidget::SendChatMessage()
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
 	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
 
+	// TODO: [UE5] Python 서버가 새로운 MessageEnvelope 구조를 요구하므로, 
+	// FEnvelopeBuilder::BuildPrompt(JsonString)를 사용하여 완성된 문자열을 얻은 후 전송해야 합니다.
+	// 예시: FString EnvelopeJson = FEnvelopeBuilder::BuildPrompt(JsonString);
+	//       WebSocketClient->SendPrompt(EnvelopeJson); // SendPrompt 내부 구현도 범용으로 수정 필요
+
 	// Send via WebSocket
 	if (WebSocketClient)
 	{
-		WebSocketClient->SendData(JsonString);
+		WebSocketClient->SendPrompt(JsonString);
 		AddMessageToHistory("Player", MessageText); // Show own message
 	}
 	else
