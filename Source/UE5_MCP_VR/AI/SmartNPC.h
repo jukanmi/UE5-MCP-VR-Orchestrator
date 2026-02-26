@@ -3,8 +3,9 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
-#include "../Utils/MCPJsonUtils.h" // For FGameAction struct
-#include "NPCActionTypes.h" // For AI Enums and Structs
+#include "../Utils/MCPJsonUtils.h"
+#include "NPCActionTypes.h"
+#include "GameStateData.h"
 #include "CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
@@ -76,6 +77,20 @@ public:
     /** 액션 배치 실행 → ActionComponent에 위임 */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     virtual void ExecuteActionBatch(const struct FActionBatch& Batch);
+
+    /**
+     * [Time-Slicing 콜백] NPCManager의 주기 타이머가 호출합니다.
+     * NPC는 자신의 현재 FGameStateData를 채워서 SendStateToMCP를 통해 Python에 전송합니다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    virtual void CollectAndSendStateUpdate();
+
+    /**
+     * [Offline Fallback] NPCManager가 WebSocket 연결 상태 변화 시 호출합니다.
+     * BT의 Selector가 IsConnected 키를 감지해 Local Fallback 서브트리로 자동 분기합니다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void SetBlackboardBool(const FString& KeyName, bool bValue);
 
     /** 물리 상태 초기화 (애니메이션 중지, 이동 정지) */
     virtual void ClearPhysicalState();

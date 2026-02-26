@@ -271,6 +271,10 @@ void UNPCActionComponent::OnActionCompleted()
 
 void UNPCActionComponent::AbortCurrentAction()
 {
+    // TODO: [UE5] 액션 실행 실패(예: 길찾기 실패, 타겟 없음 등) 시 Python으로 action_failed 이벤트를 전송해야 합니다.
+    // FEnvelopeBuilder::BuildActionFailed(RefMsgId, PayloadJson)를 사용하여 에러 원인과 실패한 명령의 메타데이터를 백엔드에 알려주세요.
+    // 이를 위해서는 ExecuteAction/ActionQueue 처리 시 Python이 전달한 msg_id를 보관해야 할 수 있습니다.
+
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: ABORTING Action"), *GetOwnerAgentID());
     if (StateComponent) StateComponent->CurrentActionType = EAction::Idle;
 

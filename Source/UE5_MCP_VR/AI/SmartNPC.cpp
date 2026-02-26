@@ -69,6 +69,86 @@ void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
     }
 }
 
+/**
+ * [Time-Slicing 콜백] NPCManager의 0.5초 글로벌 타이머가 주기적으로 호출합니다.
+ * 현재 NPC의 상태를 FGameStateData에 채워 Python 백엔드로 전송합니다.
+ * EQS 연산 결과, 위협 수준 등 세부 정보는 실제 구현 시 여기서 채워야 합니다.
+ */
+void ASmartNPC::CollectAndSendStateUpdate()
+{
+    // NPC가 유효한 상태가 아니면 불필요한 직렬화를 건너뜁니다.
+    if (!IsValid(this) || AgentID.IsEmpty())
+    {
+        return;
+    }
+
+    // 현재 NPC의 상태를 FGameStateData에 채웁니다.
+    FGameStateData StateSnapshot;
+    StateSnapshot.OwnerAgentID = AgentID;
+    StateSnapshot.OwnerLocation = GetActorLocation();
+
+    // StateComponent로부터 현재 행동 모드를 가져옵니다.
+    if (StateComponent)
+    {
+        // TODO: [UE5] 실제 체력 비율 대신 EQS 쿼리 결과를 연산하여 앞서 정의된 StateSnapshot.EQSResults에 채워야 합니다.
+        // TODO: [UE5] 전술적 위협 수준(ThreatLevel)을 주변 적의 수나 거리에 기반하여 도출하는 로직을 여기에 구현하세요.
+
+        // 기본 위협 수준을 StateComponent의 체력 기반으로 추론합니다.
+        // 실제 구현 시 EQS 쿼리 결과를 EQSResults에 채워야 합니다.
+        const float HealthRatio = StateComponent->CurrentStats.CurrentHealth / FMath::Max(1.f, StateComponent->CurrentStats.MaxHealth);
+        if (HealthRatio < 0.3f)
+        {
+            StateSnapshot.ThreatLevel = TEXT("High");
+        }
+        else if (HealthRatio < 0.6f)
+        {
+            StateSnapshot.ThreatLevel = TEXT("Medium");
+        }
+        else
+        {
+            StateSnapshot.ThreatLevel = TEXT("Low");
+        }
+    }
+
+    // NPCManager를 통해 직렬화된 JSON을 Python 백엔드로 전송합니다.
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            Manager->SendStateToMCP(StateSnapshot);
+        }
+    }
+}
+
+/**
+ * [Offline Fallback 트리거] NPCManager가 WebSocket 연결 상태 변화를 감지했을 때 호출합니다.
+ * Behavior Tree의 Selector 노드가 'IsConnected' 블랙보드 키를 감지해 Local BT로 자동 분기합니다.
+ */
+void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
+{
+    // TODO: [UE5] Behavior Tree 에디터에서 해당 NPC의 BT를 열고, 
+    // 최상위 Selector 노드에 Blackboard 데코레이터(IsConnected == true)를 추가하세요.
+    // false일 경우 Local Fallback 서브트리로 자동 분기되도록 트리 구조를 변경해야 합니다.
+    ASmartNPCAIController* AICtrl = Cast<ASmartNPCAIController>(GetController());
+    if (!AICtrl)
+    {
+        return;
+    }
+
+    UBlackboardComponent* BlackboardComp = AICtrl->GetBlackboardComponent();
+    if (!BlackboardComp)
+    {
+        return;
+    }
+
+    BlackboardComp->SetValueAsBool(FName(*KeyName), bValue);
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Blackboard key '%s' set to %s on NPC '%s'"),
+        *KeyName,
+        bValue ? TEXT("true") : TEXT("false"),
+        *AgentID);
+}
+
+
 void ASmartNPC::ClearPhysicalState()
 {
     StopAnimMontage();

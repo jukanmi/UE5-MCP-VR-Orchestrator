@@ -1,144 +1,212 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ File: rules.py                                                              ║
-║ Role: VALIDATOR (Game Rules Referee)                                       ║
+║ File: rules.py                                                               ║
+║ Role: VALIDATOR (게임 규칙 심판)                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
-║   Validate ActionBatch against game rules. Clamp out-of-bounds values,      ║
-║   reject invalid actions, and ensure UE5 can safely execute all commands.   ║
+║ 핵심 역할 (변경 금지):                                                        ║
+║   ActionBatch를 게임 규칙에 따라 검증하고 보정한다. LLM 없이 순수 Python.      ║
 ║                                                                              ║
-║ INPUT:  ActionBatch (from Interface Output)                                 ║
-║ OUTPUT: ActionBatch (validated and clamped)                                 ║
+║ [신규] world_constants.json 활용 검증:                                       ║
+║   - target_id가 valid_npc_ids 목록에 없으면 해당 액션 제거                  ║
+║   - target_loc 좌표가 WORLD_BOUNDS 밖이면 해당 액션 제거                    ║
 ║                                                                              ║
-║ VALIDATION RULES:                                                            ║
-║   • Movement speed: [0, MAX_SPEED]                                          ║
-║   • Attack damage: [0, MAX_DAMAGE]                                          ║
-║   • Interaction range: [0, MAX_INTERACTION_RANGE]                           ║
-║   • Required fields: executor_npc_id, action_type must exist                ║
+║ 기존 검증:                                                                   ║
+║   - Attack.damage: [0, MAX_DAMAGE] 클램핑                                   ║
+║   - Move.speed: [0, MAX_SPEED] 클램핑                                       ║
 ║                                                                              ║
-║ CLAMPING STRATEGY:                                                           ║
-║   - Out-of-range values → clamp to min/max (log correction)                 ║
-║   - Missing required fields → REJECT action entirely                        ║
-║   - Invalid action_type → REJECT action entirely                            ║
-║                                                                              ║
-║ REJECTION BEHAVIOR:                                                          ║
-║   If critical violations occur, mark batch with "REJECTED" in reasoning.    ║
-║   Supervisor will detect this and loop back to Dialogue for retry.          ║
-║                                                                              ║
-║ DESIGN PRINCIPLE:                                                            ║
-║   Pure Python validation - NO LLM CALLS. This saves tokens and ensures      ║
-║   deterministic, fast validation. Rules are defined in WORLD_CONSTANTS.     ║
+║ 설계 원칙:                                                                   ║
+║   LLM 없음 → 토큰 비용 Zero, 빠른 결정론적 검증.                           ║
+║   범위 초과 값 → 클램핑 (삭제 아님). 없는 타겟 → 액션 제거.               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import json
+import os
 from ..state import AgentState
 from ...schemas.actions import ActionBatch, NPCAction, WORLD_CONSTANTS
 
 
-def validate_and_clamp_action(action) -> tuple:
+# world_constants.json에서 유효 ID 목록 및 월드 경계 로드
+VALID_NPC_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_npc_ids", []))
+VALID_LOCATION_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_location_ids", []))
+WORLD_BOUNDS: dict = WORLD_CONSTANTS.get("WORLD_BOUNDS", {})
+
+
+def _is_target_id_valid(target_id: str | None) -> bool:
     """
-    Validates and clamps a single action's parameters.
-    Returns: (modified_action, list_of_corrections)
+    target_id가 월드에 존재하는 유효한 NPC/Actor인지 검증한다.
+
+    왜 필요한가: LLM이 "Goblin_999" 같은 존재하지 않는 ID를 생성하면
+    UE5 C++에서 타겟을 찾지 못해 조용히 실패(silent fail)하게 됨.
+    서버 단에서 선제 차단하는 것이 더 안전하고 디버깅이 쉬움.
+
+    Returns: True이면 유효 (또는 None이라 검증 불필요)
+    """
+    if not target_id:
+        return True  # target_id 없는 액션은 타겟 없이 실행 가능
+
+    # valid_npc_ids가 빈 목록이면 검증 자체를 건너뜀 (설정 미완료 대비)
+    if not VALID_NPC_IDS:
+        return True
+
+    return target_id in VALID_NPC_IDS
+
+
+def _is_target_loc_in_bounds(target_loc) -> bool:
+    """
+    target_loc 좌표가 월드 경계(WORLD_BOUNDS) 안에 있는지 검증한다.
+
+    왜 필요한가: LLM이 좌표를 환각(hallucination)으로 생성하면
+    NPC가 맵 밖으로 텔레포트하는 버그가 발생할 수 있음.
+
+    Returns: True이면 경계 내 (또는 WORLD_BOUNDS 미설정)
+    """
+    if not target_loc or not WORLD_BOUNDS:
+        return True
+
+    x, y, z = target_loc.x, target_loc.y, target_loc.z
+
+    x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
+    y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
+    z_ok = WORLD_BOUNDS.get("z_min", float("-inf")) <= z <= WORLD_BOUNDS.get("z_max", float("inf"))
+
+    return x_ok and y_ok and z_ok
+
+
+def validate_and_clamp_action(action: NPCAction) -> tuple:
+    """
+    단일 액션의 파라미터를 검증하고 범위를 보정(clamp)한다.
+
+    Returns:
+        (action | None, corrections: list[str])
+        - action=None이면 이 액션은 완전히 제거해야 함
+        - corrections는 로깅용 보정 내용 목록
     """
     corrections = []
-    
-    # Dialogue 액션은 파라미터 검증 불필요 (text/emotion만 사용하고, 범위 제한 없음)
+
+    # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
+    if not _is_target_id_valid(action.target_id):
+        reason = f"유효하지 않은 target_id '{action.target_id}' → 액션 제거"
+        print(f"[Rules] ❌ {reason}")
+        return None, [reason]
+
+    # ── [신규] 좌표 범위 검증 ───────────────────────────────────
+    if not _is_target_loc_in_bounds(action.target_loc):
+        reason = (
+            f"target_loc {action.target_loc} 이 WORLD_BOUNDS 밖 → 액션 제거 "
+            f"(action: {action.action_type})"
+        )
+        print(f"[Rules] ❌ {reason}")
+        return None, [reason]
+
+    # Dialogue 액션은 수치 파라미터 없음 → 검증 불필요
     if action.action_type == "Dialogue":
         return action, corrections
-    
-    # 파라미터 없는 액션은 검증 대상 아님
-    if not hasattr(action, 'parameters') or not action.parameters:
+
+    if not action.parameters:
         return action, corrections
-    
-    # Convert all parameters to strings for C++ compatibility
+
+    # 파라미터를 문자열로 통일 (C++ 호환성)
     params = {str(k): str(v) for k, v in action.parameters.items()}
-    
-    # Numeric clamping based on action type
-    if action.action_type == "Attack":
-        # Clamp damage
-        if "damage" in params:
-            try:
-                damage = float(params["damage"])
-                max_damage = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
-                if damage > max_damage:
-                    params["damage"] = str(max_damage)
-                    corrections.append(f"Clamped damage {damage} -> {max_damage}")
-                elif damage < 0:
-                    params["damage"] = "0"
-                    corrections.append(f"Clamped negative damage to 0")
-            except ValueError:
-                params["damage"] = "10"  # Default
-                corrections.append("Invalid damage value, set to default 10")
-    
-    elif action.action_type == "Move":
-        # Clamp speed
-        if "speed" in params:
-            try:
-                speed = float(params["speed"])
-                max_speed = WORLD_CONSTANTS.get("MAX_SPEED", 600)
-                if speed > max_speed:
-                    params["speed"] = str(max_speed)
-                    corrections.append(f"Clamped speed {speed} -> {max_speed}")
-                elif speed < 0:
-                    params["speed"] = "300"  # Default walk speed
-                    corrections.append("Clamped negative speed to default 300")
-            except ValueError:
+
+    # ── Attack: damage 클램핑 ───────────────────────────────────
+    if action.action_type == "Attack" and "damage" in params:
+        try:
+            damage = float(params["damage"])
+            max_damage = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
+            if damage > max_damage:
+                params["damage"] = str(max_damage)
+                corrections.append(f"damage 클램핑: {damage} → {max_damage}")
+            elif damage < 0:
+                params["damage"] = "0"
+                corrections.append("damage 음수 → 0")
+        except ValueError:
+            params["damage"] = "10"
+            corrections.append("damage 비유효 → 기본값 10")
+
+    # ── Move: speed 클램핑 ──────────────────────────────────────
+    elif action.action_type == "Move" and "speed" in params:
+        try:
+            speed = float(params["speed"])
+            max_speed = WORLD_CONSTANTS.get("MAX_SPEED", 600)
+            if speed > max_speed:
+                params["speed"] = str(max_speed)
+                corrections.append(f"speed 클램핑: {speed} → {max_speed}")
+            elif speed < 0:
                 params["speed"] = "300"
-                corrections.append("Invalid speed value, set to default 300")
-    
-    elif action.action_type == "Heal":
-        # Clamp health
-        if "amount" in params:
-            try:
-                amount = float(params["amount"])
-                max_health = WORLD_CONSTANTS.get("MAX_HEALTH", 100)
-                if amount > max_health:
-                    params["amount"] = str(max_health)
-                    corrections.append(f"Clamped heal amount {amount} -> {max_health}")
-                elif amount < 0:
-                    params["amount"] = "0"
-                    corrections.append("Clamped negative heal to 0")
-            except ValueError:
-                params["amount"] = "10"
-                corrections.append("Invalid heal amount, set to default 10")
-    
-    # Update action with validated parameters
+                corrections.append("speed 음수 → 기본값 300")
+        except ValueError:
+            params["speed"] = "300"
+            corrections.append("speed 비유효 → 기본값 300")
+
+    # ── Heal: amount 클램핑 ─────────────────────────────────────
+    elif action.action_type == "Heal" and "amount" in params:
+        try:
+            amount = float(params["amount"])
+            max_health = WORLD_CONSTANTS.get("MAX_HEALTH", 100)
+            if amount > max_health:
+                params["amount"] = str(max_health)
+                corrections.append(f"heal amount 클램핑: {amount} → {max_health}")
+            elif amount < 0:
+                params["amount"] = "0"
+                corrections.append("heal amount 음수 → 0")
+        except ValueError:
+            params["amount"] = "10"
+            corrections.append("heal amount 비유효 → 기본값 10")
+
     action.parameters = params
     return action, corrections
 
 
-def rules_node(state: AgentState):
+def rules_node(state: AgentState) -> dict:
     """
-    Rules Agent (Pure Python Validation).
-    Validates and clamps ActionBatch parameters without LLM calls.
+    Rules Agent (LLM 없는 순수 Python 검증).
+
+    ActionBatch 내 모든 액션을 검증하고 보정한다.
+    타겟 ID 불일치나 좌표 범위 초과 시 해당 액션을 필터링 제거.
     """
     batch = state.get("action_batch")
-    
+
     if not batch:
+        print("[Rules] ActionBatch 없음, 조용히 종료")
         return {"next": "End", "current_speaker": "Rules"}
-    
-    all_corrections = []
-    validated_actions = []
-    
-    # Validate each action
+
+    all_corrections: list[str] = []
+    validated_actions: list[NPCAction] = []
+
     for action in batch.actions:
         validated_action, corrections = validate_and_clamp_action(action)
+
+        if validated_action is None:
+            # 타겟 미존재 또는 좌표 이탈 → 해당 액션 완전 제거
+            all_corrections.extend(corrections)
+            continue
+
         validated_actions.append(validated_action)
         all_corrections.extend(corrections)
-    
-    # Update batch with validated actions
+
+    # 모든 액션이 제거된 경우 → reasoning에 REJECTED 표시
+    # Supervisor가 이를 감지해 Dialogue 재시도를 트리거
+    if not validated_actions:
+        print("[Rules] ❌ 모든 액션이 검증 실패, REJECTED 처리")
+        batch.reasoning = f"REJECTED: 유효한 액션 없음. 이유: {'; '.join(all_corrections)}"
+        batch.actions = []
+        return {
+            "action_batch": batch,
+            "current_speaker": "Rules",
+            "next": "End",
+        }
+
     batch.actions = validated_actions
-    
-    # Append corrections to reasoning
+
     if all_corrections:
-        correction_summary = "; ".join(all_corrections)
-        batch.reasoning = f"{batch.reasoning} | Rules: {correction_summary}"
-        print(f"[Rules] Applied {len(all_corrections)} corrections: {correction_summary}")
+        summary = "; ".join(all_corrections)
+        batch.reasoning = f"{batch.reasoning or ''} | Rules: {summary}"
+        print(f"[Rules] ✅ {len(all_corrections)}개 보정 적용: {summary}")
     else:
-        print("[Rules] No corrections needed, batch is valid")
-    
+        print("[Rules] ✅ 검증 통과, 보정 없음")
+
     return {
         "action_batch": batch,
         "current_speaker": "Rules",
-        "next": "End"
+        "next": "End",
     }
