@@ -1,18 +1,18 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ File: envelope.py                                                           ║
-║ Role: JSON 통신 Envelope 스키마 정의 (UE5 ↔ Python 공통 규약)               ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║ WHY (설계 의도):                                                             ║
-║   UE5 → Python 간 모든 메시지는 '봉투(Envelope)' 형태로 감싸서 보낸다.     ║
-║   이 봉투에는 인증, 순서 보장, 보안을 위한 메타데이터가 담겨 있으며,       ║
-║   내부의 실제 데이터(payload)는 메시지 타입에 따라 구조가 달라진다.        ║
-║                                                                              ║
-║ MESSAGE TYPE 분류:                                                           ║
-║   • state_update : 주기적 NPC 상태 동기화 (LLM 호출 없이 캐싱만)           ║
-║   • prompt       : 플레이어 음성/제스처 명령 (LLM 파이프라인 실행)          ║
-║   • action_failed: Python이 내린 명령이 UE5에서 실패했음을 알리는 콜백     ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+
+ File: envelope.py                                                           
+ Role: JSON 통신 Envelope 스키마 정의 (UE5 ↔ Python 공통 규약)               
+
+ WHY (설계 의도):                                                             
+   UE5 → Python 간 모든 메시지는 '봉투(Envelope)' 형태로 감싸서 보낸다.     
+   이 봉투에는 인증, 순서 보장, 보안을 위한 메타데이터가 담겨 있으며,       
+   내부의 실제 데이터(payload)는 메시지 타입에 따라 구조가 달라진다.        
+                                                                              
+ MESSAGE TYPE 분류:                                                           
+   • state_update : 주기적 NPC 상태 동기화 (LLM 호출 없이 캐싱만)           
+   • prompt       : 플레이어 음성/제스처 명령 (LLM 파이프라인 실행)          
+   • action_failed: Python이 내린 명령이 UE5에서 실패했음을 알리는 콜백     
+
 """
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator

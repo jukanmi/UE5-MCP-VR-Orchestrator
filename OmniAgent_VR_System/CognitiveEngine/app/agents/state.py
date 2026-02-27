@@ -31,7 +31,6 @@
 """
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
 from langgraph.graph.message import add_messages
-from ..schemas.game_state import GameState
 from ..schemas.vr_context import GesPrompt
 from ..schemas.actions import ActionBatch
 

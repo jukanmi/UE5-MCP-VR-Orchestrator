@@ -16,6 +16,10 @@
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryManager.h"
+#include "EnvironmentQuery/EnvQueryTypes.h"
+#include "BehaviorTree/BlackboardComponent.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -44,10 +48,30 @@ void ASmartNPC::BeginPlay()
     }
 
     // Note: StateComponent->BeginPlay()에서 RefreshStats()를 자동 호출합니다.
+
+    // === EQS 비동기 캐싱 타이머 등록 ===
+    // [최적화] Thundering Herd 방지: 모든 NPC가 동시에 EQS를 돌려 프레임 스파이크가 튀지 않도록,
+    // 초기 시작 시간에 0.1~1.0초 난수 편차(Staggering)를 적용합니다.
+    if (TacticalCoverQuery)
+    {
+        const float RandomStartDelay = 1.0f + FMath::RandRange(0.1f, 1.0f);
+        GetWorldTimerManager().SetTimer(
+            EQSRefreshTimerHandle,
+            this,
+            &ASmartNPC::RefreshTacticalEQS,
+            1.0f,    // 이후 1초 간격 반복
+            true,    // 루프
+            RandomStartDelay // 첫 실행만 난수 지연
+        );
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPC:%s] EQS 비동기 캐싱 타이머 시작 (%.2f초 후 첫 실행)"), *AgentID, RandomStartDelay);
+    }
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    // EQS 타이머 해제 (레벨 전환/액터 삭제 시 콜백 누수 방지)
+    GetWorldTimerManager().ClearTimer(EQSRefreshTimerHandle);
+
     if (UGameInstance* GI = GetGameInstance())
     {
         if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
@@ -72,7 +96,7 @@ void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
 /**
  * [Time-Slicing 콜백] NPCManager의 0.5초 글로벌 타이머가 주기적으로 호출합니다.
  * 현재 NPC의 상태를 FGameStateData에 채워 Python 백엔드로 전송합니다.
- * EQS 연산 결과, 위협 수준 등 세부 정보는 실제 구현 시 여기서 채워야 합니다.
+ * EQS 결과는 별도 타이머(RefreshTacticalEQS)로 비동기 캐싱된 값을 그대로 읽습니다.
  */
 void ASmartNPC::CollectAndSendStateUpdate()
 {
@@ -87,15 +111,17 @@ void ASmartNPC::CollectAndSendStateUpdate()
     StateSnapshot.OwnerAgentID = AgentID;
     StateSnapshot.OwnerLocation = GetActorLocation();
 
+    // === EQS 캐시 결과 적용 ===
+    // RefreshTacticalEQS() 타이머가 백그라운드에서 갱신해둔 캐시를 그대로 복사합니다.
+    // 여기서는 어떤 매트 연산도 일어나지 않으므로 프레임 비용이 0에 가깍습니다.
+    StateSnapshot.EQSResults = CachedEQSResults;
+
     // StateComponent로부터 현재 행동 모드를 가져옵니다.
     if (StateComponent)
     {
-        // TODO: [UE5] 실제 체력 비율 대신 EQS 쿼리 결과를 연산하여 앞서 정의된 StateSnapshot.EQSResults에 채워야 합니다.
-        // TODO: [UE5] 전술적 위협 수준(ThreatLevel)을 주변 적의 수나 거리에 기반하여 도출하는 로직을 여기에 구현하세요.
-
         // 기본 위협 수준을 StateComponent의 체력 기반으로 추론합니다.
-        // 실제 구현 시 EQS 쿼리 결과를 EQSResults에 채워야 합니다.
-        const float HealthRatio = StateComponent->CurrentStats.CurrentHealth / FMath::Max(1.f, StateComponent->CurrentStats.MaxHealth);
+        const FCharacterAttributes CurrentStats = StateComponent->GetCurrentStats();
+        const float HealthRatio = CurrentStats.Resources.Health / FMath::Max(1.f, CurrentStats.Resources.MaxHealth);
         if (HealthRatio < 0.3f)
         {
             StateSnapshot.ThreatLevel = TEXT("High");
@@ -120,15 +146,85 @@ void ASmartNPC::CollectAndSendStateUpdate()
     }
 }
 
+// ============================================================
+// EQS 비동기 캐싱 시스템 (백그라운드 타이머로 동작)
+// ============================================================
+
+/**
+ * 1초 주기로 호출되는 EQS 비동기 실행 함수.
+ * CollectAndSendStateUpdate(0.5초)와 독립된 주기로 돌며, 결과는 CachedEQSResults에 저장됩니다.
+ */
+void ASmartNPC::RefreshTacticalEQS()
+{
+    // EQS 에셋이 에디터에서 할당되지 않았거나, 액터가 파괴 중이면 건너뜄니다.
+    if (!TacticalCoverQuery || !IsValid(this))
+    {
+        return;
+    }
+
+    UEnvQueryManager* EQSManager = UEnvQueryManager::GetCurrent(GetWorld());
+    if (!EQSManager)
+    {
+        return;
+    }
+
+    // 비동기 EQS 쿼리 실행 - 결과가 준비되면 OnCoverQueryFinished 콜백이 GameThread에서 호출됩니다.
+    FEnvQueryRequest QueryRequest(TacticalCoverQuery, this);
+    QueryRequest.Execute(EEnvQueryRunMode::AllMatching, 
+        FQueryFinishedSignature::CreateUObject(this, &ASmartNPC::OnCoverQueryFinished));
+}
+
+/**
+ * EQS 쿼리 완료 콜백.
+ * [안전장치] IsValid(this) 챀크로 액터 파괴 후 콜백 도달 시의 크래시를 예방합니다.
+ * 최대 3개 좌표만 캐싱하여 Data Diet를 적용합니다.
+ */
+void ASmartNPC::OnCoverQueryFinished(TSharedPtr<FEnvQueryResult> Result)
+{
+    // [보안] 쿼리 도중 NPC가 파괴(Destroy)되었을 경우 크래시 방지
+    if (!IsValid(this))
+    {
+        return;
+    }
+
+    if (!Result.IsValid() || !Result->IsSuccessful())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC:%s] EQS 쿼리 실패 또는 결과 없음"), *AgentID);
+        return;
+    }
+
+    // 기존 캐시 비우고 새 결과로 갱신
+    CachedEQSResults.Empty();
+
+    TArray<FVector> Locations;
+    Result->GetAllAsLocations(Locations);
+
+    // 최대 3개까지만 캐싱 (LLM 토큰 절약 및 패킷 최소화)
+    // TODO: 현재는 점수 상위 3개를 무차별로 저장하지만, 전술적 목적별로 분류해야 합니다.
+    //       - [0] 가장 안전한 장소 (이성적 판단 - Cover/방어 최적)
+    //       - [1] 가장 유리한 장소 (공격적 판단 - 사선 확보/플랭킹)
+    //       - [2] 가장 가까운 출구 (도주 판단 - 탈출 경로)
+    //       → 단일 쿼리 결과를 후처리해 분류하는 로직 필요.
+    const int32 MaxItems = FMath::Min(Locations.Num(), 3);
+    for (int32 i = 0; i < MaxItems; ++i)
+    {
+        FEQSResult NewResult;
+        NewResult.QueryTag = TEXT("Cover");
+        NewResult.BestLocation = Locations[i];
+        NewResult.Score = Result->GetItemScore(i);
+
+        CachedEQSResults.Add(NewResult);
+    }
+
+    UE_LOG(LogTemp, Verbose, TEXT("[SmartNPC:%s] EQS 캐시 갱신 완료: %d개 좌표 저장됨"), *AgentID, CachedEQSResults.Num());
+}
+
 /**
  * [Offline Fallback 트리거] NPCManager가 WebSocket 연결 상태 변화를 감지했을 때 호출합니다.
  * Behavior Tree의 Selector 노드가 'IsConnected' 블랙보드 키를 감지해 Local BT로 자동 분기합니다.
  */
 void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
 {
-    // TODO: [UE5] Behavior Tree 에디터에서 해당 NPC의 BT를 열고, 
-    // 최상위 Selector 노드에 Blackboard 데코레이터(IsConnected == true)를 추가하세요.
-    // false일 경우 Local Fallback 서브트리로 자동 분기되도록 트리 구조를 변경해야 합니다.
     ASmartNPCAIController* AICtrl = Cast<ASmartNPCAIController>(GetController());
     if (!AICtrl)
     {
@@ -166,10 +262,10 @@ void ASmartNPC::OnActionCompleted()
     }
 }
 
-FCharacterAttributes& ASmartNPC::GetStats() const
+FCharacterAttributes ASmartNPC::GetStats() const
 {
     // StateComponent가 반드시 존재한다고 가정 (생성자에서 보장)
-    return StateComponent->CurrentStats;
+    return StateComponent ? StateComponent->GetCurrentStats() : FCharacterAttributes();
 }
 
 // === TakeDamage: UE5 Actor Override → StateComponent에 위임 ===
@@ -178,8 +274,9 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
     AController* EventInstigator, AActor* DamageCauser)
 {
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-
-    if (StateComponent)
+    
+    // 2초 이내에 피격된 경우 처리를 무시하여 과도한 인지/데미지 계산 방지
+    if (StateComponent && GetWorld()->GetTimeSeconds() - StateComponent->LastHitTime > 2f)
     {
         StateComponent->ApplyDamage(ActualDamage);
         StateComponent->RequestEmergencyCognition(TEXT("Hit"), 

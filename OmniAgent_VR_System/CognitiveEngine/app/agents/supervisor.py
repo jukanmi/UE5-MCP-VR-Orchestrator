@@ -1,23 +1,23 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ File: supervisor.py                                                         ║
-║ Role: ORCHESTRATOR (파이프라인 오케스트레이터)                               ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║ 핵심 역할 (변경 금지):                                                       ║
-║   에이전트 간 라우팅 결정. 에러·폴백 처리로 파이프라인 완료를 보장한다.      ║
-║                                                                              ║
-║ 라우팅 흐름:                                                                 ║
-║   [Error/Empty] → 즉시 End (숏컷, LLM 호출 없음)                           ║
-║   Interface_Input → Dialogue                                                ║
-║   Dialogue → Interface_Output                                               ║
-║   Interface_Output → Rules                                                  ║
-║   Rules → End (정상) 또는 Dialogue (거부 재시도)                            ║
-║                                                                              ║
-║ 에러 숏컷 원칙 (청사진 요구사항):                                            ║
-║   - has_error=True → 어떤 노드에서든 즉시 End로 우회                        ║
-║   - target_npcs가 비어있어서 처리 대상 없음 → End로 우회                   ║
-║   → 불필요한 LLM 호출을 제거해 토큰·지연 비용 절감                          ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+
+ File: supervisor.py                                                         
+ Role: ORCHESTRATOR (파이프라인 오케스트레이터)                               
+
+ 핵심 역할 (변경 금지):                                                       
+   에이전트 간 라우팅 결정. 에러·폴백 처리로 파이프라인 완료를 보장한다.      
+                                                                              
+ 라우팅 흐름:                                                                 
+   [Error/Empty] → 즉시 End (숏컷, LLM 호출 없음)                           
+   Interface_Input → Dialogue                                                
+   Dialogue → Interface_Output                                               
+   Interface_Output → Rules                                                  
+   Rules → End (정상) 또는 Dialogue (거부 재시도)                            
+                                                                              
+ 에러 숏컷 원칙 (청사진 요구사항):                                            
+   - has_error=True → 어떤 노드에서든 즉시 End로 우회                        
+   - target_npcs가 비어있어서 처리 대상 없음 → End로 우회                   
+   → 불필요한 LLM 호출을 제거해 토큰·지연 비용 절감                          
+
 """
 from typing import Literal
 from .state import AgentState

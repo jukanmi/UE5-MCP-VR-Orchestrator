@@ -71,11 +71,11 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 {
     if (!StateComponent) return 200.f; // Fallback
 
-    if (Type == EMoveType::Walk)   return StateComponent->CurrentStats.Movement.WalkSpeed;
-    if (Type == EMoveType::Run)    return StateComponent->CurrentStats.Movement.RunSpeed;
-    if (Type == EMoveType::Sprint) return StateComponent->CurrentStats.Movement.SprintSpeed;
-    if (Type == EMoveType::Crouch) return StateComponent->CurrentStats.Movement.CrouchSpeed;
-    return StateComponent->CurrentStats.Movement.WalkSpeed;
+    if (Type == EMoveType::Walk)   return StateComponent->GetCurrentStats().Movement.WalkSpeed;
+    if (Type == EMoveType::Run)    return StateComponent->GetCurrentStats().Movement.RunSpeed;
+    if (Type == EMoveType::Sprint) return StateComponent->GetCurrentStats().Movement.SprintSpeed;
+    if (Type == EMoveType::Crouch) return StateComponent->GetCurrentStats().Movement.CrouchSpeed;
+    return StateComponent->GetCurrentStats().Movement.WalkSpeed;
 }
 
 // === Action Batch System ===
@@ -158,7 +158,7 @@ void UNPCActionComponent::StopAllActions()
     ActionQueue.Empty();
     bIsBusy = false;
 
-    if (StateComponent) StateComponent->CurrentActionType = EAction::Idle;
+    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
     if (ASmartNPCAIController* AI = GetOwnerAIController())
     {
@@ -185,7 +185,7 @@ void UNPCActionComponent::ProcessNextAction()
     {
         bIsBusy = true;
         
-        if (StateComponent) StateComponent->CurrentActionType = Action.ActionType;
+        if (StateComponent) StateComponent->SetCurrentActionType(Action.ActionType);
         
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(Action);
@@ -246,12 +246,12 @@ void UNPCActionComponent::OnActionCompleted()
 {
     bIsBusy = false;
     
-    EAction CompletedAction = StateComponent ? StateComponent->CurrentActionType : EAction::Idle;
+    EAction CompletedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
     FString CompletedActionStr = UEnum::GetValueAsString(CompletedAction);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."), *GetOwnerAgentID(), *CompletedActionStr);
 
-    if (StateComponent) StateComponent->CurrentActionType = EAction::Idle;
+    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
     // 다음 큐 항목 처리
     ProcessNextAction();
@@ -276,7 +276,7 @@ void UNPCActionComponent::AbortCurrentAction()
     // 이를 위해서는 ExecuteAction/ActionQueue 처리 시 Python이 전달한 msg_id를 보관해야 할 수 있습니다.
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: ABORTING Action"), *GetOwnerAgentID());
-    if (StateComponent) StateComponent->CurrentActionType = EAction::Idle;
+    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
     // 물리 상태 초기화 (애니메이션 중지, 이동 중지)
     if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
@@ -407,7 +407,7 @@ TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float SearchRa
     }
     else
     {
-        // TODO: 다른 EntityType (Enemy, NPC 등)에 대한 탐지 지원
+        // TODO: 다른 EntityType (Enemy, NPC 등)에 대한 탐지 지원(필요한 경우 추가)
     }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: 반경 %.1f 내의 엔티티(타입 %d) 탐색 완료. 종류 수: %d"), 
@@ -830,7 +830,7 @@ void UNPCActionComponent::ExecuteRepair(const FString& ItemID)
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 수리 완료: %s"), *ItemID);
     if (InventoryComponent && InventoryComponent->HasItem(ItemID))
     {
-        float RepairAmount = StateComponent ? StateComponent->CurrentStats.BaseStats.Perception : 10.0f;
+        float RepairAmount = StateComponent ? StateComponent->GetCurrentStats().BaseStats.Perception : 10.0f;
         InventoryComponent->RepairItem(ItemID, RepairAmount);
     }
     else

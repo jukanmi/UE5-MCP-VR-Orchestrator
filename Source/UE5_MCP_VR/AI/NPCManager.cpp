@@ -209,6 +209,10 @@ void UNPCManager::DispatchActionBatch(const FActionBatch& ActionBatch)
 
 void UNPCManager::BroadcastToAllNPCs(const FActionBatch& ActionBatch)
 {
+    // TODO: 현재는 모든 등록된 NPC에게 일괄 전달하지만,
+    //       발신 위치 기준 반경 1000 이내의 NPC에게만 전달하도록 변경해야 합니다.
+    //       → ActionBatch에 발신 위치(Origin)를 포함시키거나,
+    //         발화자(Speaker)의 위치를 기준으로 FVector::Dist() 필터링 로직 추가 필요.
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] Broadcasting Batch to ALL Registered Entities (%d Total)"), ActiveNPCs.Num());
 
     for (const auto& NPCPair : ActiveNPCs)

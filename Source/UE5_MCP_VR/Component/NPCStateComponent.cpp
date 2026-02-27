@@ -94,6 +94,12 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
     float EffectiveDamage = FMath::Max(0.0f, DamageAmount - CurrentStats.Combat.Defense);
     CurrentStats.Resources.Health -= EffectiveDamage;
 
+    // 마지막 피격 시간 기록
+    if (UWorld* World = GetWorld())
+    {
+        LastHitTime = World->GetTimeSeconds();
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[NPCState] Damage Applied: %.1f (Raw: %.1f, Defense: %.1f). HP: %.0f/%.0f"),
         EffectiveDamage, DamageAmount, CurrentStats.Combat.Defense,
         CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);

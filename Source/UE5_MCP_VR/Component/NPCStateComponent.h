@@ -23,6 +23,7 @@ class UE5_MCP_VR_API UNPCStateComponent : public UActorComponent
 public:
     UNPCStateComponent();
 
+protected:
     // --- Character Attributes (능력치 전체) ---
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Stats")
     FCharacterAttributes CurrentStats;
@@ -35,6 +36,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     EAction CurrentActionType = EAction::Idle;
 
+public:
     // --- Posture State ---
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
     bool bIsSit = false;
@@ -44,6 +46,53 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
     bool bIsSleeping = false;
+
+    // 언제 마지막으로 피격당했는지 기록 (TimeSeconds)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
+    float LastHitTime = 0.0f;
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    FCharacterAttributes GetCurrentStats() const
+    { 
+        return CurrentStats;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    float GetCurrentHealth() const
+    { 
+        return CurrentStats.Resources.Health;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    float GetCurrentMaxHealth() const
+    { 
+        return CurrentStats.Resources.MaxHealth;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    float GetCurrentHealthRatio() const
+    { 
+        return CurrentStats.Resources.Health / FMath::Max(1.f, CurrentStats.Resources.MaxHealth);
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    EFacialState GetCurrentFacialState() const
+    { 
+        return CurrentFacialState;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    void SetCurrentActionType(EAction NewActionType)
+    { 
+        CurrentActionType = NewActionType;
+    }
+
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
+    EAction GetCurrentActionType() const
+    { 
+        return CurrentActionType;
+    }
 
     // --- Public API ---
 
