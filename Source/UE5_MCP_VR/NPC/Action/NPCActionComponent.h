@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../Utils/MCPJsonUtils.h" // FGameAction, FActionBatch
-#include "../AI/NPCActionTypes.h" // Enums
+#include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
+#include "../Struct/NPCActionTypes.h" // Enums
 #include "NPCActionComponent.generated.h"
 
 class ASmartNPCAIController;

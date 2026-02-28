@@ -1,9 +1,9 @@
 #include "NPCActionComponent.h"
-#include "NPCStateComponent.h"
-#include "NPCInventoryComponent.h"
-#include "../AI/SmartNPCAIController.h"
-#include "../AI/NPCActionKeys.h"
-#include "../AI/NPCInteractionDataAsset.h"
+#include "../NPCStateComponent.h"
+#include "../NPCInventoryComponent.h"
+#include "SmartNPCAIController.h"
+#include "../Struct/NPCActionKeys.h"
+#include "../NPCInteractionDataAsset.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -11,7 +11,7 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/GameInstance.h"
-#include "../Items/ItemManager.h"
+#include "../../Inventory/ItemManager.h"
 
 UNPCActionComponent::UNPCActionComponent()
 {

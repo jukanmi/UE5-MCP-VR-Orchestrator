@@ -5,7 +5,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "NPCActionTypes.h"
+#include "../NPC/Struct/NPCActionTypes.h"
 #include "GameStateData.generated.h"
 
 /**

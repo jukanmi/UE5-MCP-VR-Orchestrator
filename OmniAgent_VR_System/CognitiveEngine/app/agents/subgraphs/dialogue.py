@@ -145,19 +145,6 @@ def dialogue_node(state: AgentState):
     natural_context = state.get("natural_context", "")
     target_npc = state.get("target_npc", "Elara")
     
-    # --- Legacy compatibility: fall back to old analysis/intent flow ---
-    if not natural_context:
-        analysis = state.get("analysis", {})
-        intent_data = analysis.get("intent")
-        if intent_data:
-            user_input = getattr(intent_data, 'raw_query', None)
-            if isinstance(intent_data, dict):
-                user_input = intent_data.get("raw_query", "")
-                target_npc = intent_data.get("target_npc", target_npc)
-            elif hasattr(intent_data, 'target_npc') and intent_data.target_npc:
-                target_npc = intent_data.target_npc
-            natural_context = f"Player said: \"{user_input}\""
-    
     # Determine agent ID
     agent_id = target_npc
     

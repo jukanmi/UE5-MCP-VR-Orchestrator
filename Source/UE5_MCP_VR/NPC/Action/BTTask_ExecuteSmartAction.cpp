@@ -1,9 +1,9 @@
 #include "BTTask_ExecuteSmartAction.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "SmartNPCAIController.h"
-#include "SmartNPC.h"
-#include "../Component/NPCActionComponent.h"
-#include "NPCActionKeys.h"
+#include "../SmartNPC.h"
+#include "NPCActionComponent.h"
+#include "../Struct/NPCActionKeys.h"
 
 UBTTask_ExecuteSmartAction::UBTTask_ExecuteSmartAction()
 {

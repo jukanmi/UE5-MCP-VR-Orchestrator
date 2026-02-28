@@ -22,7 +22,7 @@
 ║   • Pipeline:  natural_context, raw_response, target_npc                    ║
 ║   • Routing:   next, current_speaker                                        ║
 ║   • Output:    action_batch (UE5로 전송)                                   ║
-║   • Legacy:    analysis, game_state (하위 호환)                             ║
+║   • Safety:   has_error, error_msg (보안 차단), target_npcs (라우팅 가드) ║
 ║                                                                              ║
 ║ IMMUTABILITY:                                                                ║
 ║   Field names and types are stable. New agents may ADD fields but must      ║
@@ -81,12 +81,7 @@ class AgentState(TypedDict):
     # ── LangGraph 메시지 히스토리 ────────────────────────────────────
     messages: Annotated[List[Any], add_messages]
 
-    # ── 레거시 필드 (하위 호환용, 신규 코드에서는 사용 자제) ──────────
-    game_state: Optional[GameState]         # 이전 방식의 게임 상태 객체
-    analysis: Optional[Dict[str, Any]]      # 이전 파이프라인 분석 결과
-
-    # 시공간 메모리 히스토리 (이전 버전 호환)
-    event_history: List[Dict[str, Any]]
+    # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
     target_npcs: List[str]
     msg_id: str
     timestamp: float

@@ -1,5 +1,5 @@
 #include "NPCStateComponent.h"
-#include "../AI/SmartNPCAIController.h"
+#include "Action/SmartNPCAIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"

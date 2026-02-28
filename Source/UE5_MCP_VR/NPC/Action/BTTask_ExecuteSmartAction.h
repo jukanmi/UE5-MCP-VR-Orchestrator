@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
-#include "NPCActionTypes.h"
+#include "../Struct/NPCActionTypes.h"
 #include "BTTask_ExecuteSmartAction.generated.h"
 
 /**

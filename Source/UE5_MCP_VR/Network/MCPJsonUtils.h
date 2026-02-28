@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../AI/NPCActionTypes.h"
-#include "../AI/GameStateData.h"
+#include "../NPC/Struct/NPCActionTypes.h"
+#include "../Core/GameStateData.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "MCPJsonUtils.generated.h"
 

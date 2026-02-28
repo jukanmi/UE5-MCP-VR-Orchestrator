@@ -165,20 +165,17 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     initial_state: AgentState = AgentState(
         messages=[],
         vr_context=ges_prompt,
-        game_state=None,
         cached_world_state=_cached_world_state,
         failed_action_history=list(_failed_action_history),  # 복사본 전달
         next="",
         current_speaker="",
-        analysis={},
         natural_context=None,
         raw_response=None,
         target_npc=None,
         behavior_mode=None,
         facial_state=None,
         action_batch=None,
-        # 레거시 필드 기본값
-        event_history=[],
+        # 보안 및 라우팅 가드레일 초기값
         target_npcs=[],
         msg_id=envelope.msg_id,
         timestamp=envelope.timestamp,

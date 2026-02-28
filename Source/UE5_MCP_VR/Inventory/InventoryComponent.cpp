@@ -1,7 +1,7 @@
 #include "InventoryComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
-#include "../Items/ItemManager.h"
+#include "ItemManager.h"
 
 // 기본 생성자 (Empty Slot 배열 초기화)
 UInventoryComponent::UInventoryComponent()

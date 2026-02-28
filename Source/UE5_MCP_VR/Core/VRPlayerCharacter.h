@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "../AI/CharacterAttributes.h"
+#include "../NPC/Struct/CharacterAttributes.h"
 #include "../Network/WebSocketClient.h"
 #include "../UI/ChatWidget.h"
 #include "InputActionValue.h"

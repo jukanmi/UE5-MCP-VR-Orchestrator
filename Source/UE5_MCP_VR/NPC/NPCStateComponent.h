@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../AI/CharacterAttributes.h"
-#include "../AI/NPCActionTypes.h" // EFacialState
+#include "Struct/CharacterAttributes.h"
+#include "Struct/NPCActionTypes.h" // EFacialState
 #include "NPCStateComponent.generated.h"
 
 class ASmartNPCAIController;

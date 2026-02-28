@@ -1,23 +1,15 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ File: memory_manager.py                                                     ║
-║ Role: NPC 대화 메모리 관리 + 비동기 TTL 청소                                ║
+║ Role: NPC 대화 메모리 관리                                                   ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║ 핵심 역할:                                                                   ║
 ║   1. NPC별 대화 히스토리 저장 및 로컬 JSON 파일로 영속화                    ║
 ║   2. 토큰 예산 초과 시 LLM 요약으로 오래된 메모리 압축                      ║
-║   3. [신규] 5분 주기 비동기 TTL 청소 → 메인 파이프라인 비블로킹             ║
-║                                                                              ║
-║ 청사진 요구사항 (System_Architecture_Python_Backend.md §3):                 ║
-║   - event_history 데이터가 5분 초과 시 백그라운드 Worker로 압축·요약        ║
-║   - asyncio.create_task 사용으로 메인 파이프라인 프레임 지연 없음            ║
-║   - MAX_EVENTS=10 Sliding Window로 메모리·컨텍스트 한도 초과 방지           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import os
 import json
-import asyncio
-import time
 from datetime import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
@@ -32,9 +24,7 @@ SUMMARIZE_THRESHOLD = 0.8       # 80% 도달 시 요약 트리거
 ENTRIES_TO_SUMMARIZE = 5        # 1회 요약 대상 최오래된 항목 수
 CHARS_PER_TOKEN = 4             # 토큰 추정 단위 (conservative)
 
-# event_history TTL 설정 (청사진 §3)
-TTL_SECONDS = 300               # 5분 = 300초
-TTL_CLEANUP_INTERVAL = 60       # 60초마다 TTL 청소 Worker 동작
+
 
 # 메모리 파일 저장 경로
 MEMORY_BASE_PATH = "app/agents/knowledge"
@@ -194,9 +184,6 @@ class ConversationMemory:
 # ─────────────────────────────────────────────────────────────────────────────
 _memory_cache: Dict[str, ConversationMemory] = {}
 
-# event_history TTL 추적용: {msg_id: unix_timestamp}
-_event_timestamps: Dict[str, float] = {}
-
 
 def get_memory(agent_id: str) -> ConversationMemory:
     """NPC ID로 메모리 인스턴스를 가져온다. 없으면 새로 생성."""
@@ -223,96 +210,3 @@ def clear_memory_cache():
     """메모리 캐시 전체 초기화 (테스트용)."""
     global _memory_cache
     _memory_cache.clear()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# [비동기 TTL 청소] event_history 5분 초과 항목 자동 제거
-# 청사진 §3 요구사항: 메인 파이프라인을 블로킹하지 않는 비동기 방식
-# ─────────────────────────────────────────────────────────────────────────────
-
-def register_event(msg_id: str):
-    """
-    event_history에 새 이벤트가 추가될 때 타임스탬프를 등록한다.
-    TTL Worker가 이 시간을 기준으로 만료 여부를 판정한다.
-    """
-    _event_timestamps[msg_id] = time.time()
-
-
-def get_expired_event_ids(event_history: list) -> list:
-    """
-    event_history에서 TTL(5분)이 만료된 msg_id 목록을 반환한다.
-
-    왜 별도 함수인가: 메인 파이프라인(동기)과 TTL Worker(비동기)가
-    모두 사용하므로 로직을 한 곳에 집중.
-    """
-    now = time.time()
-    expired_ids = []
-
-    for event in event_history:
-        msg_id = event.get("msg_id", "")
-        registered_at = _event_timestamps.get(msg_id, 0)
-
-        # 등록된 시간이 없거나 TTL 초과 시 만료 처리
-        if registered_at == 0 or (now - registered_at) > TTL_SECONDS:
-            expired_ids.append(msg_id)
-
-    return expired_ids
-
-
-def prune_event_history(event_history: list, max_events: int = 10) -> list:
-    """
-    event_history에서 만료된 항목을 제거하고 Sliding Window 크기를 제한한다.
-
-    처리 순서:
-    1. TTL 만료 항목 제거
-    2. MAX_EVENT_HISTORY 초과 시 오래된 항목 제거 (OOM 방어)
-    """
-    expired_ids = set(get_expired_event_ids(event_history))
-    pruned = [e for e in event_history if e.get("msg_id") not in expired_ids]
-
-    if len(expired_ids) > 0:
-        print(f"[TTL Worker] {len(expired_ids)}개 만료 이벤트 제거")
-
-    # Sliding Window: MAX 초과분 오래된 것부터 제거
-    if len(pruned) > max_events:
-        removed = len(pruned) - max_events
-        pruned = pruned[-max_events:]
-        print(f"[TTL Worker] Sliding Window: {removed}개 초과 항목 제거")
-
-    return pruned
-
-
-async def ttl_cleanup_worker(get_current_state_fn, update_state_fn):
-    """
-    비동기 TTL 청소 백그라운드 Worker.
-
-    매 60초마다 event_history를 체크하여 만료 항목을 제거한다.
-    asyncio.create_task()로 실행되어 메인 루프를 블로킹하지 않는다.
-
-    파라미터:
-        get_current_state_fn: 현재 event_history를 반환하는 콜백
-        update_state_fn: 정리된 event_history를 저장하는 콜백
-    """
-    print("[TTL Worker] 비동기 TTL 청소 Worker 시작 (주기: 60초)")
-
-    while True:
-        try:
-            await asyncio.sleep(TTL_CLEANUP_INTERVAL)
-
-            current_history = get_current_state_fn()
-            if not current_history:
-                continue
-
-            cleaned_history = prune_event_history(current_history)
-
-            if len(cleaned_history) < len(current_history):
-                update_state_fn(cleaned_history)
-                print(f"[TTL Worker] 청소 완료: {len(current_history)} → {len(cleaned_history)}개")
-
-        except asyncio.CancelledError:
-            # FastAPI 종료 시 정상 취소
-            print("[TTL Worker] 종료됨")
-            break
-        except Exception as e:
-            # Worker 오류가 메인 서버를 죽이지 않도록 예외 캐치
-            print(f"[TTL Worker] 예외 발생 (무시하고 계속): {e}")

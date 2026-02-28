@@ -1,8 +1,8 @@
 #include "NPCManager.h"
 #include "SmartNPC.h"
-#include "../Utils/MCPJsonUtils.h"
+#include "../Network/MCPJsonUtils.h"
 #include "Engine/GameInstance.h"
-#include "NPCActionKeys.h"
+#include "Struct/NPCActionKeys.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 

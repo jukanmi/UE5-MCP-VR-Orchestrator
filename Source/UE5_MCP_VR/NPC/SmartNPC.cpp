@@ -7,11 +7,11 @@
 
 #include "SmartNPC.h"
 #include "NPCManager.h"
-#include "SmartNPCAIController.h"
-#include "NPCActionKeys.h"
-#include "../Component/NPCStateComponent.h"
-#include "../Component/NPCActionComponent.h"
-#include "../Component/NPCInventoryComponent.h"
+#include "Action/SmartNPCAIController.h"
+#include "Struct/NPCActionKeys.h"
+#include "NPCStateComponent.h"
+#include "Action/NPCActionComponent.h"
+#include "NPCInventoryComponent.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
@@ -105,7 +105,8 @@ void ASmartNPC::CollectAndSendStateUpdate()
     {
         return;
     }
-
+    
+    //TODO: 일반적이지 않은 상황만을 전송하도록 변경
     // 현재 NPC의 상태를 FGameStateData에 채웁니다.
     FGameStateData StateSnapshot;
     StateSnapshot.OwnerAgentID = AgentID;
@@ -276,7 +277,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     
     // 2초 이내에 피격된 경우 처리를 무시하여 과도한 인지/데미지 계산 방지
-    if (StateComponent && GetWorld()->GetTimeSeconds() - StateComponent->LastHitTime > 2f)
+    if (StateComponent && GetWorld()->GetTimeSeconds() - StateComponent->LastHitTime > 2.0f)
     {
         StateComponent->ApplyDamage(ActualDamage);
         StateComponent->RequestEmergencyCognition(TEXT("Hit"), 

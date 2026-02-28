@@ -9,8 +9,8 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "../Network/WebSocketClient.h"
-#include "NPCActionTypes.h"
-#include "GameStateData.h"
+#include "Struct/NPCActionTypes.h"
+#include "../Core/GameStateData.h"
 #include "NPCManager.generated.h"
 
 class ASmartNPC;

@@ -4,10 +4,10 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
-#include "../Utils/MCPJsonUtils.h"
-#include "NPCActionTypes.h"
-#include "GameStateData.h"
-#include "CharacterAttributes.h"
+#include "../Network/MCPJsonUtils.h"
+#include "Struct/NPCActionTypes.h"
+#include "../Core/GameStateData.h"
+#include "Struct/CharacterAttributes.h"
 #include "SmartNPC.generated.h"
 
 class UNPCInteractionDataAsset;
@@ -117,7 +117,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SetBlackboardBool(const FString& KeyName, bool bValue);
 
-    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지) */
+    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지)
+     *  NOTE: PolicyCacheComponent 삭제 후 현재 미호출.
+     *        향후 Emergency Cognition / Offline Fallback 로직에서 재활용 예정. */
     virtual void ClearPhysicalState();
 
     // === Damage Hook (UE5 Actor Override) ===
