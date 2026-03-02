@@ -3,7 +3,7 @@
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
 #include "../Struct/NPCActionKeys.h"
-#include "../NPCInteractionDataAsset.h"
+#include "../NPCActionDataAsset.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -13,8 +13,10 @@
 #include "Engine/GameInstance.h"
 #include "../../Inventory/ItemManager.h"
 #include "Perception/AISense_Hearing.h"
-#include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
+
 UNPCActionComponent::UNPCActionComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
@@ -481,13 +483,13 @@ void UNPCActionComponent::BasePlaySound(const FString& SoundName)
 
 void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 {
-    if (!InteractionData)
+    if (!ActionData)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] InteractionData Asset 설정 누락!"));
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] ActionData Asset 설정 누락!"));
         return;
     }
 
-    if (FActionMediaData* MediaData = InteractionData->ActionMedias.Find(AssetID))
+    if (FActionMediaData* MediaData = ActionData->ActionMedias.Find(AssetID))
     {
         if (MediaData->Montage)
         {
@@ -541,18 +543,12 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     FVector Location = ParseVectorParam(Params.FindRef(TEXT("Location")));
     FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
     FString TextBody = Params.FindRef(TEXT("DialogueText"));
-    
-    FString TacticalState = Params.FindRef(TEXT("TacticalState"));
-    if (TacticalState.IsEmpty())
-    {
-        TacticalState = TEXT("Default");
-    }
 
     // 단일화된 EAction enum 값에 따라 세부적인 행동 함수로 라우팅합니다.
     switch (ActionType)
     {
     case EAction::Idle:         ExecuteIdle(); break;
-    case EAction::Move:         ExecuteMove(Location, TargetActor, TacticalState); break;
+    case EAction::Move:         ExecuteMove(Location, TargetActor); break;
     case EAction::Follow:       ExecuteFollow(TargetActor); break;
     case EAction::Dialogue:     ExecuteDialogue(TextBody, EFacialState::Neutral); break;
     case EAction::TurnTo:       ExecuteTurnTo(Location, TargetActor); break;
@@ -598,67 +594,6 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
 // ----------------------------------------------------------------------------
 
-// ----------------------------------------------------------------------------
-// [Tactical EQS Helpers]
-// ----------------------------------------------------------------------------
-
-float UNPCActionComponent::CalculatePositionalNoise(const FCharacterAttributes& attributes) const
-{
-    const float clampedIntelligence = FMath::Clamp(static_cast<float>(attributes.BaseStats.Intelligence), 1.0f, 100.0f);
-    return (100.0f - clampedIntelligence) * 0.005f;
-}
-
-UEnvQuery* UNPCActionComponent::SelectOptimalQuery(const FString& tacticalState, const FCharacterAttributes& attributes) const
-{
-    if (tacticalState == TEXT("Cover"))
-    {
-        return CoverFinderQuery;
-    }
-    
-    if (tacticalState == TEXT("Flanking"))
-    {
-        return FlankingQuery;
-    }
-    
-    if (tacticalState == TEXT("Default") && attributes.Combat.Range > 500.0f)
-    {
-        return RangedOptimalPositionQuery;
-    }
-
-    return DefaultMoveQuery;
-}
-
-void UNPCActionComponent::InjectDynamicEQSParamsToBlackboard() const
-{
-    UBlackboardComponent* blackboardComponent = GetOwnerAIController() ? GetOwnerAIController()->GetBlackboardComponent() : nullptr;
-    if (!blackboardComponent || !StateComponent) return;
-
-    const FCharacterAttributes& attributes = StateComponent->GetCharacterAttributes();
-
-    const float positionalNoise = CalculatePositionalNoise(attributes);
-    const float coverPreferenceWeight = attributes.Behavior.Fear * 0.02f;
-    const float searchRadius = FMath::Clamp(1000.0f + (attributes.BaseStats.Perception * 20.0f), 500.0f, 3000.0f);
-
-    blackboardComponent->SetValueAsFloat(FName("EQS_NoiseWeight"), positionalNoise);
-    blackboardComponent->SetValueAsFloat(FName("EQS_CoverWeight"), coverPreferenceWeight);
-    blackboardComponent->SetValueAsFloat(FName("EQS_SearchRadius"), searchRadius);
-}
-
-void UNPCActionComponent::OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Result)
-{
-    if (Result.IsValid() && Result->IsSuccessful() && Result->Items.Num() > 0)
-    {
-        FVector BestLocation = Result->GetItemAsLocation(0);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Tactical Move EQS Found Best Location: %s"), *GetOwnerAgentID(), *BestLocation.ToString());
-        BaseMove(BestLocation, EMoveType::Run); // 전술적 이동이므로 Run으로 가속
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: Tactical Move EQS Failed! Fallback to Idle."), *GetOwnerAgentID());
-        ExecuteIdle();
-    }
-}
-
 // ==========================================
 // [1] Common Behaviors
 // ==========================================
@@ -669,35 +604,91 @@ void UNPCActionComponent::ExecuteIdle()
     BaseStopCurrentAction();
 }
 
-// 목표 위치 혹은 대상 액터를 향해 이동합니다. 동적인 타겟 액터가 존재할 경우 우선적으로 추적합니다.
-void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, const FString& TacticalState, EMoveType SpeedType) 
+// [Tactical EQS] NPC 스탯/상태를 블랙보드의 EQS 파라미터에 반영합니다.
+// ExecuteMove 호출 직전에 자동 실행되어, 타겟 반경/전술 가중치 등을 최신 스탯 기준으로 갱신합니다.
+void UNPCActionComponent::UpdateEQSParams()
 {
-    InjectDynamicEQSParamsToBlackboard();
+    if (!StateComponent) return;
+    ASmartNPCAIController* AICtrl = GetOwnerAIController();
+    if (!AICtrl) return;
+    UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
+    if (!BB) return;
 
-    UEnvQuery* OptimalQuery = nullptr;
-    if (StateComponent)
+    const FCharacterAttributes& Attr = StateComponent->GetCurrentStats();
+
+    // [1] Perception -> 탐색 반경 (최대 3000 Clamp)
+    float SearchRadius = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
+    BB->SetValueAsFloat(FName("EQS_SearchRadius"), SearchRadius);
+
+    // [2] Fear -> 엄폐 선호도, [3] Feared 상태이상 시 강제 최대화
+    float CoverWeight = Attr.Behavior.Fear * 0.02f;
+    if (Attr.HasStatusEffect(EStatusEffect::Feared)) CoverWeight = 5.0f;
+    BB->SetValueAsFloat(FName("EQS_CoverWeight"), CoverWeight);
+
+    // [4] Intelligence -> 노이즈 감소 (100에 가까울수록 0, 1에 가까울수록 Max 0.5)
+    float Intel = FMath::Clamp(static_cast<float>(Attr.BaseStats.Intelligence), 1.f, 100.f);
+    BB->SetValueAsFloat(FName("EQS_NoiseWeight"), (100.f - Intel) * 0.005f);
+
+    // [5] Combat.Range -> EQS 안전 거리 기준 (80%가 최적)
+    BB->SetValueAsFloat(FName("EQS_SafeDistance"), Attr.Combat.Range * 0.8f);
+
+    UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, Noise:%.2f, SafeDist:%.0f"),
+        SearchRadius, CoverWeight, (100.f - Intel) * 0.005f, Attr.Combat.Range * 0.8f);
+}
+
+// 목표 위치 혹은 대상 액터를 향해 이동합니다.
+// TacticalState 값에 따라 적절한 EQS 쿼리를 동적으로 선택해 실행합니다.
+// EQS 에셋이 할당되지 않은 경우 기존 BaseMove를 Fallback으로 사용합니다.
+void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType, ETacticalMoveState TacticalState)
+{
+    // 쿵에 스탯 기반 EQS 파라미터 갱신
+    UpdateEQSParams();
+
+    UEnvQuery* SelectedQuery = nullptr;
+
+    // TacticalState에 따른 EQS 쿼리 선택
+    switch (TacticalState)
     {
-        const FCharacterAttributes& Attributes = StateComponent->GetCharacterAttributes();
-        OptimalQuery = SelectOptimalQuery(TacticalState, Attributes);
+    case ETacticalMoveState::Cover:      SelectedQuery = CoverFinderQuery; break;
+    case ETacticalMoveState::Flanking:   SelectedQuery = FlankingQuery;    break;
+    case ETacticalMoveState::Retreat:    SelectedQuery = RetreatQuery;     break;
+    default:                             SelectedQuery = DefaultMoveQuery;  break;
     }
 
-    if (OptimalQuery)
+    // Default + 원거리 무기일 때 원거리 쿼리로 자동 전환
+    if (TacticalState == ETacticalMoveState::Default && StateComponent)
     {
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Tactical Move Executing EQS (%s)"), *GetOwnerAgentID(), *OptimalQuery->GetName());
-        FEnvQueryRequest QueryRequest(OptimalQuery, GetOwner());
-        QueryRequest.Execute(EEnvQueryRunMode::SingleResult, this, &UNPCActionComponent::OnTacticalMoveCompleted);
-    }
-    else
-    {
-        if (TargetActor)
+        if (StateComponent->GetCurrentStats().Combat.Range > 500.f && RangedOptimalPositionQuery)
         {
-            BaseMove(TargetActor->GetActorLocation(), SpeedType);
-        }
-        else
-        {
-            BaseMove(TargetLocation, SpeedType);
+            SelectedQuery = RangedOptimalPositionQuery;
         }
     }
+
+    if (SelectedQuery)
+    {
+        FEnvQueryRequest QueryRequest(SelectedQuery, GetOwner());
+        QueryRequest.Execute(EEnvQueryRunMode::SingleResult,
+            this, &UNPCActionComponent::OnTacticalMoveCompleted);
+        return; // EQS 콜백에서 처리
+    }
+
+    // EQS 에셋 할당 없음 -> 기존 Fallback 직접 이동
+    const FVector MoveTarget = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
+    BaseMove(MoveTarget, SpeedType);
+}
+
+// EQS 쿼리 콜백: 결과 좌표로 실제 이동 명령을 수행합니다.
+void UNPCActionComponent::OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Result)
+{
+    if (!Result || !Result->IsSuccessful())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] EQS 쿼리 실패 - Fallback 없음. 이동 취소."));
+        return;
+    }
+    FVector BestLocation = Result->GetItemAsLocation(0);
+    BaseMove(BestLocation, EMoveType::Run);
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] EQS 전술이동 -> X=%.1f Y=%.1f Z=%.1f"),
+        BestLocation.X, BestLocation.Y, BestLocation.Z);
 }
 
 // 지정된 타겟 액터를 일정 간격을 두고 따라다닙니다. 호위나 감시 등의 상황에 유용합니다.

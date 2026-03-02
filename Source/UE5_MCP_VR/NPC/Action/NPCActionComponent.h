@@ -4,14 +4,27 @@
 #include "Components/ActorComponent.h"
 #include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
 #include "../Struct/NPCActionTypes.h" // Enums
-#include "EnvironmentQuery/EnvQueryManager.h" // FEnvQueryResult
+#include "../NPCActionDataAsset.h"
+#include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "NPCActionComponent.generated.h"
 
+// --- 전술적 이동 상태 Enum ---
+// LLM이 전송하는 "TacticalState" JSON 값과 1:1 대응합니다.
+UENUM(BlueprintType)
+enum class ETacticalMoveState : uint8
+{
+    Default     UMETA(DisplayName = "Default"),   // 기본 이동 (EQS 미사용 또는 기본 쿼리)
+    Cover       UMETA(DisplayName = "Cover"),     // 엄폐·은신 위치 탐색
+    Flanking    UMETA(DisplayName = "Flanking"),  // 적 측면 포위
+    Retreat     UMETA(DisplayName = "Retreat"),   // 후방 안전지대 후퇴
+    HighGround  UMETA(DisplayName = "HighGround"),// 고지대 우선 선점
+    Ambush      UMETA(DisplayName = "Ambush"),    // 잠복 대기 지점
+};
+
 class ASmartNPCAIController;
-class UNPCInteractionDataAsset;
+class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
-class UEnvQuery;
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
@@ -31,20 +44,24 @@ public:
 
     // --- Action Data Assets ---
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|Interaction")
-    UNPCInteractionDataAsset* InteractionData;
+    UNPCActionDataAsset* ActionData;
 
-    // --- Tactical EQS Queries ---
-    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* DefaultMoveQuery;
+    // --- Tactical EQS Query Assets ---
+    // 언리얼 에디터에서 상황별 EQS 에셋을 할당하세요.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* DefaultMoveQuery;    // 기본 이동 쿼리
 
-    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* CoverFinderQuery;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* CoverFinderQuery;    // 은폐 위치 탐색 쿼리
 
-    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* FlankingQuery;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* FlankingQuery;       // 측면 포위 탐색 쿼리
 
-    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* RangedOptimalPositionQuery;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* RetreatQuery;        // 후방 안전지대 탐색 쿼리
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* RangedOptimalPositionQuery; // 원거리 최적 포지션 쿼리
 
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
@@ -144,6 +161,10 @@ protected:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BasePlayActionMedia(const FString& AssetID);
 
+    // [Tactical EQS] NPC 스탯/상태를 블랙보드 EQS 파라미터에 반영합니다.
+    // ExecuteMove 호출 직전에 자동으로 실행되어 반경, 가중치 등을 최신 스탯으로 갱신합니다.
+    void UpdateEQSParams();
+
 private:
     // Cached references
     ASmartNPCAIController* GetOwnerAIController() const;
@@ -167,7 +188,11 @@ public:
     void ExecuteIdle();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteMove(FVector Location, AActor* TargetActor, const FString& TacticalState = TEXT("Default"), EMoveType SpeedType = EMoveType::Walk);
+    void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk,
+                     ETacticalMoveState TacticalState = ETacticalMoveState::Default);
+
+    // EQS 실행 완료 시 호출되는 콜백
+    void OnTacticalMoveCompleted(TSharedPtr<struct FEnvQueryResult> Result);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteFollow(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);
@@ -274,13 +299,5 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteSing(const FString& SingName);
-
-protected:
-    // --- Tactical EQS Helpers ---
-    float CalculatePositionalNoise(const FCharacterAttributes& attributes) const;
-    UEnvQuery* SelectOptimalQuery(const FString& tacticalState, const FCharacterAttributes& attributes) const;
-    void InjectDynamicEQSParamsToBlackboard() const;
-
-    void OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Result);
 
 };

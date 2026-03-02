@@ -4,6 +4,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "../Utils/DiceSystem.h"
+#include "SmartNPC.h"
+#include "NPCManager.h"
+#include "Engine/GameInstance.h"
 
 UNPCStateComponent::UNPCStateComponent()
 {
@@ -118,12 +121,20 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
 
 void UNPCStateComponent::RequestEmergencyCognition(const FString& EventType, const FString& Description)
 {
-    // 긴급 상황 시 LLM에 재판단 요청
-    // 왜 여기에 있는가: 상태(HP 저하, 상태이상 등)에 기반한 트리거이므로
-    UE_LOG(LogTemp, Warning, TEXT("[NPCState] EMERGENCY COGNITION: %s - %s"), *EventType, *Description);
+    // 긴급 상황 시 즉시 LLM으로 직접 패킷을 쏘는 대신 Event Debouncing을 위해 Manager에 등록
+    UE_LOG(LogTemp, Warning, TEXT("[NPCState] EMERGENCY COGNITION Flagged: %s - %s"), *EventType, *Description);
 
-    // TODO: WebSocket을 통해 Python Cognitive Engine에 긴급 요청 전송
-    // MCPBridge->SendEmergencyRequest(EventType, Description, CurrentStats);
+    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+    {
+        if (UGameInstance* GI = OwnerNPC->GetGameInstance())
+        {
+            if (UNPCManager* NPCManager = GI->GetSubsystem<UNPCManager>())
+            {
+                // [Batching] 매니저의 긴급 큐에 접수. (매니저가 0.5초 등 주기에 맞춰 하나로 뭉쳐 발송)
+                NPCManager->RegisterEmergencyEvent(OwnerNPC->AgentID, EventType, Description);
+            }
+        }
+    }
 }
 
 // --- Internal Helper ---

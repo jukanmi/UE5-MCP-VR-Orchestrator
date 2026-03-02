@@ -11,7 +11,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "SmartNPC.generated.h"
 
-class UNPCInteractionDataAsset;
+class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCActionComponent;
 class UNPCInventoryComponent;
