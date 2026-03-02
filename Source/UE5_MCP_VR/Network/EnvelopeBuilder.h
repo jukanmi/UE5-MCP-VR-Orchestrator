@@ -24,6 +24,7 @@ enum class EEnvelopeType : uint8
     StateUpdate,    // "state_update" - 주기적 월드 상태 동기화
     Prompt,         // "prompt"       - 플레이어 명령/대화
     ActionFailed,   // "action_failed"- UE5에서 명령 실행 실패 통보
+    EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder
@@ -55,6 +56,13 @@ public:
      * @return            - 완성된 Envelope JSON 문자열
      */
     static FString BuildActionFailed(const FString& RefMsgId, const FString& PayloadJson);
+
+    /**
+     * emergency_report Envelope 생성. 다수 NPC의 긴급 이벤트를 묶어서 전송.
+     * @param PayloadJson - 여러 NPC의 이벤트를 담은 JSON 배열 문자열
+     * @return            - 완성된 Envelope JSON 문자열
+     */
+    static FString BuildEmergencyReport(const FString& PayloadJson);
 
 private:
     // ─────────────────────────────────────────────────────────────────────

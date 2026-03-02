@@ -1,6 +1,7 @@
 #include "NPCManager.h"
 #include "SmartNPC.h"
 #include "../Network/MCPJsonUtils.h"
+#include "../Network/EnvelopeBuilder.h"
 #include "Engine/GameInstance.h"
 #include "Struct/NPCActionKeys.h"
 #include "TimerManager.h"
@@ -121,12 +122,73 @@ void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
         return;
     }
 
-    // FGameStateData → JSON 직렬화 후 전송합니다.
-    FString SerializedJson = UMCPJsonUtils::SerializeGameState(StateData);
-    if (!SerializedJson.IsEmpty())
+    // 1. 단일 책임 분리: 순수 Payload Data(StateData) 파싱을 위임 (Envelope 조립 박탈)
+    FString PayloadJson = UMCPJsonUtils::SerializeGameState(StateData);
+    
+    // 2. 방어 코드: Payload 구성 실패 시 조기 종료 로깅
+    if (PayloadJson.IsEmpty())
     {
-        ConnectedSocket->SendStateUpdate(SerializedJson);
+        UE_LOG(LogTemp, Error, TEXT("[NPCManager] SendStateToMCP: Payload Json 직렬화에 실패했습니다."));
+        return;
     }
+
+    // 3. 빌더 위임: FEnvelopeBuilder를 통해 타입별(state_update) 풀 패키지 조립
+    FString FinalEnvelopeJson = FEnvelopeBuilder::BuildStateUpdate(PayloadJson);
+
+    // 4. WebSocket 전송 (추가 방어)
+    if (!FinalEnvelopeJson.IsEmpty())
+    {
+        ConnectedSocket->SendStateUpdate(FinalEnvelopeJson);
+    }
+}
+
+void UNPCManager::RegisterEmergencyEvent(const FString& InAgentID, const FString& EventType, const FString& Description)
+{
+    FEmergencyEventData NewEvent;
+    NewEvent.AgentID = InAgentID;
+    NewEvent.EventType = EventType;
+    NewEvent.Description = Description;
+    
+    EmergencyEventQueue.Add(NewEvent);
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] 긴급 이벤트 수렴 (%s): %s"), *InAgentID, *EventType);
+}
+
+void UNPCManager::FlushEmergencyQueue()
+{
+    // 보낼 이벤트가 없거나, 오프라인 모드면 스킵
+    if (EmergencyEventQueue.IsEmpty() || !bIsSocketConnected)
+    {
+        return;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[NPCManager] 긴급 이벤트 큐 Flush! %d명 분의 이벤트를 묶어서 발송합니다."), EmergencyEventQueue.Num());
+
+    TArray<TSharedPtr<FJsonValue>> JsonEventArray;
+    for (const FEmergencyEventData& EventData : EmergencyEventQueue)
+    {
+        TSharedPtr<FJsonObject> EventObj = MakeShared<FJsonObject>();
+        EventObj->SetStringField(TEXT("agent_id"), EventData.AgentID);
+        EventObj->SetStringField(TEXT("event_type"), EventData.EventType);
+        EventObj->SetStringField(TEXT("description"), EventData.Description);
+        
+        JsonEventArray.Add(MakeShared<FJsonValueObject>(EventObj));
+    }
+
+    // JSON Array 직렬화
+    FString PayloadJson;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadJson);
+    FJsonSerializer::Serialize(JsonEventArray, Writer);
+
+    // 봉투(Envelope) 씌움 (타입: emergency_report)
+    FString FinalEnvelopeJson = FEnvelopeBuilder::BuildEmergencyReport(PayloadJson);
+
+    if (!FinalEnvelopeJson.IsEmpty() && ConnectedSocket)
+    {
+        ConnectedSocket->SendStateUpdate(FinalEnvelopeJson);
+    }
+
+    // 처리 완료 후 큐 비우기
+    EmergencyEventQueue.Empty();
 }
 
 /**
@@ -135,6 +197,9 @@ void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
  */
 void UNPCManager::ProcessStateUpdateQueue()
 {
+    // 0. 우선 긴급 이벤트 버퍼(Debouncing Queue)에 쌓인 내용이 있다면 한 번에 모아서 발송합니다.
+    FlushEmergencyQueue();
+
     // 오프라인 상태이거나 큐가 비어있으면 아무것도 하지 않습니다.
     if (!bIsSocketConnected || StateUpdateQueue.IsEmpty())
     {

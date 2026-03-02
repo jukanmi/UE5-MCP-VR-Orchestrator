@@ -108,15 +108,23 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
         }
         else if (Stimulus.Type == HearingID)
         {
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] HEARING: Something at %s"), *Stimulus.StimulusLocation.ToString());
+            // 자신이 발생시킨 소음(ReportNoiseEvent의 Instigator=self)인 경우 자가 피드백 무시
+            if (Actor == GetPawn())
+            {
+                return;
+            }
+
+            FString SourceName = Actor ? Actor->GetName() : TEXT("Unknown");
+            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] HEARING: Detected Noise from %s at %s"), *SourceName, *Stimulus.StimulusLocation.ToString());
             
             // Heard something! 
-            // We don't set TargetActor because we don't "see" them yet,
-            // but we record the location to investigate or turn towards.
+            // 시각 정보가 아니므로 TargetActor를 즉각 설정하지는 않지만, 소음 발생 위치를 조사(Investigate)의 목적으로 유지합니다.
             Blackboard->SetValueAsVector(Key_TargetLocation, Stimulus.StimulusLocation);
 
-            // Optional: If we want the NPC to react to hearing, setting ActionType to Move/Generic
-            // Or just letting the BT handle it by checking if TargetLocation is set.
+            // [Blueprint 반영]: 
+            // 현재 NPC의 상태는 중앙 집중형 LLM이 일괄 제어하므로, 소리를 듣는 순간 즉시 행동을 덮어씌울 필요는 없습니다.
+            // 대신 현재 의심 위치(TargetLocation)가 다음 StateUpdate 스냅샷 등을 통해 서버로 전달되면, 
+            // "어디선가 소리가 났음"을 바탕으로 EQS 좌표 쿼리가 동작하여 LLM에 최종 반영됩니다.
         }
     }
     else

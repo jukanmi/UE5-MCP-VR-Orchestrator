@@ -44,7 +44,11 @@ public:
     // FGameStateData 구조체를 JSON으로 직렬화하여 Python 백엔드로 전송합니다.
     // NPC가 자신의 상태를 직접 채워 호출합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void SendStateToMCP(const FGameStateData& StateData);
+    void SendStateToMCP(const struct FGameStateData& StateData);
+
+    // 다수 NPC의 긴급 상황(피격 등)을 서버 전송 전 큐(버퍼)에 담아둡니다 (Debouncing 목적).
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void RegisterEmergencyEvent(const FString& InAgentID, const FString& EventType, const FString& Description);
 
     // 웹소켓으로부터 수신된 원시 JSON 메시지를 파싱하여 FModeActionRequest로 변환하고 처리합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
@@ -65,11 +69,26 @@ private:
     // 현재 WebSocket 연결 상태 캐시 (Blackboard IsConnected 키 동기화용)
     bool bIsSocketConnected = false;
 
+    // [Emergency Debouncing] 긴급 이벤트 저장 구조체
+    struct FEmergencyEventData
+    {
+        FString AgentID;
+        FString EventType;
+        FString Description;
+    };
+    
+    // 0.2~0.5초 등 짧은 주기로 수집된 긴급 이벤트를 묶어놓는 큐
+    TArray<FEmergencyEventData> EmergencyEventQueue;
+
+    // 모인 긴급 이벤트들을 하나의 패킷(배열)으로 조립하여 대규모 보고
+    void FlushEmergencyQueue();
+
     // [Time-Slicing] 다중 NPC를 매 틱에 한꺼번에 전송하지 않기 위한 전송 예약 큐
     TArray<FString> StateUpdateQueue;    // 전송 대기중인 AgentID 큐
     FTimerHandle StateUpdateTimerHandle; // 큐를 일정 간격으로 소비하는 타이머
 
-    // 타이머 콜백: 큐 맨 앞에서 1~2명씩 뽑아 자신의 상태를 전송하도록 요청합니다.
+    // 타이머 콜백: 큐 맨 앞에서 1~2명씩 뽑아 자신의 상태를 전송하도록 요청하고, 
+    // 모아둔 긴급 이벤트도 병합(Flush) 전송합니다.
     void ProcessStateUpdateQueue();
 
     // 파싱된 ActionBatch를 수신 대상(전체 혹은 단일 NPC)에 맞게 올바른 계층으로 라우팅합니다.

@@ -12,20 +12,6 @@
  */
 FString UMCPJsonUtils::SerializeGameState(const FGameStateData& StateData)
 {
-    // TODO: [UE5] Python 서버가 새로운 MessageEnvelope 구조를 요구하므로 (type, auth_token, msg_id 등 필요), 
-    // 여기서는 PayloadObject만 조립하는 JSON 문자열을 생성하여 반환하고, 
-    // 이를 호출하는 곳(NPCManager::SendStateToMCP)에서 FEnvelopeBuilder::BuildStateUpdate()로 감싸도록 구조를 리팩토링하세요.
-    // 기존의 RootObject 메타데이터 설정 코드는 삭제될 수 있습니다.
-
-    // 루트 JSON 봉투(Envelope) 객체 생성
-    TSharedPtr<FJsonObject> RootObject = MakeShared<FJsonObject>();
-
-    // --- Envelope 메타데이터 ---
-    // 메시지 순서 추적 및 실패 콜백 매칭을 위해 GUID 기반 고유 msg_id를 자동 생성합니다.
-    RootObject->SetStringField(TEXT("msg_id"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
-    RootObject->SetStringField(TEXT("type"), TEXT("state_update"));
-    RootObject->SetNumberField(TEXT("timestamp"), FDateTime::UtcNow().ToUnixTimestamp());
-
     // --- 상태 페이로드 (Payload) ---
     TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
     PayloadObject->SetStringField(TEXT("owner_agent_id"), StateData.OwnerAgentID);
@@ -69,18 +55,16 @@ FString UMCPJsonUtils::SerializeGameState(const FGameStateData& StateData)
         EQSObject->SetObjectField(TEXT("location"), EQSLocation);
 
         EQSArray.Add(MakeShared<FJsonValueObject>(EQSObject));
+        UE_LOG(LogTemp, Warning, TEXT("[MCPJsonUtils] EQS Result: %s - %f - (%f, %f, %f)"), *EQS.QueryTag, EQS.Score, EQS.BestLocation.X, EQS.BestLocation.Y, EQS.BestLocation.Z);
     }
     PayloadObject->SetArrayField(TEXT("eqs_results"), EQSArray);
 
-    // 페이로드를 루트 봉투에 결합합니다.
-    RootObject->SetObjectField(TEXT("payload"), PayloadObject);
-
-    // 최종 직렬화
+    // 최종 직렬화: Envelope 포장 없이 순수 Payload Object만 직렬화합니다.
     FString OutputJson;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputJson);
-    if (!FJsonSerializer::Serialize(RootObject.ToSharedRef(), Writer))
+    if (!FJsonSerializer::Serialize(PayloadObject.ToSharedRef(), Writer))
     {
-        UE_LOG(LogTemp, Error, TEXT("[MCPJsonUtils] Failed to serialize GameStateData to JSON."));
+        UE_LOG(LogTemp, Error, TEXT("[MCPJsonUtils] Failed to serialize GameStateData Payload to JSON."));
         return FString();
     }
     return OutputJson;

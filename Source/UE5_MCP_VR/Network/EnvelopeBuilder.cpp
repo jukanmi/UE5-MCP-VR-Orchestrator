@@ -53,6 +53,7 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
         case EEnvelopeType::StateUpdate:  return TEXT("state_update");
         case EEnvelopeType::Prompt:       return TEXT("prompt");
         case EEnvelopeType::ActionFailed: return TEXT("action_failed");
+        case EEnvelopeType::EmergencyReport: return TEXT("emergency_report");
         default:
             UE_LOG(LogTemp, Warning, TEXT("[EnvelopeBuilder] 알 수 없는 EEnvelopeType. 'prompt'으로 폴백."));
             return TEXT("prompt");
@@ -146,4 +147,10 @@ FString FEnvelopeBuilder::BuildActionFailed(const FString& RefMsgId, const FStri
                  "Python이 실패 이력을 추적하지 못할 수 있습니다."));
     }
     return BuildEnvelope(EEnvelopeType::ActionFailed, PayloadJson, RefMsgId);
+}
+
+FString FEnvelopeBuilder::BuildEmergencyReport(const FString& PayloadJson)
+{
+    // EmergencyReport는 별도의 RefMsgId가 필요하지 않음
+    return BuildEnvelope(EEnvelopeType::EmergencyReport, PayloadJson);
 }
