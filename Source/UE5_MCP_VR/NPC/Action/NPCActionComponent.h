@@ -4,12 +4,14 @@
 #include "Components/ActorComponent.h"
 #include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
 #include "../Struct/NPCActionTypes.h" // Enums
+#include "EnvironmentQuery/EnvQueryManager.h" // FEnvQueryResult
 #include "NPCActionComponent.generated.h"
 
 class ASmartNPCAIController;
 class UNPCInteractionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
+class UEnvQuery;
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
@@ -27,9 +29,22 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Action|Refs")
     UNPCInventoryComponent* InventoryComponent;
 
-    // --- Interaction Configuration ---
+    // --- Action Data Assets ---
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|Interaction")
     UNPCInteractionDataAsset* InteractionData;
+
+    // --- Tactical EQS Queries ---
+    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* DefaultMoveQuery;
+
+    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* CoverFinderQuery;
+
+    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* FlankingQuery;
+
+    UPROPERTY(EditDefaultsOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* RangedOptimalPositionQuery;
 
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
@@ -100,6 +115,21 @@ protected:
     void BaseLieUp();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseSignalAllies(const FString& SignAssetID);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseComfort(AActor* TargetActor);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseEmote(const FString& EmoteAssetID);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseDance(const FString& DanceAssetID);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseSing(const FString& SingAssetID);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseStopCurrentAction();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
@@ -109,10 +139,10 @@ protected:
     void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BasePlayMontage(const FString& MontageName);
+    void BasePlaySound(const FString& SoundName);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BasePlaySound(const FString& SoundName);
+    void BasePlayActionMedia(const FString& AssetID);
 
 private:
     // Cached references
@@ -137,7 +167,7 @@ public:
     void ExecuteIdle();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);
+    void ExecuteMove(FVector Location, AActor* TargetActor, const FString& TacticalState = TEXT("Default"), EMoveType SpeedType = EMoveType::Walk);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteFollow(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);
@@ -189,6 +219,9 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteComfort(AActor* TargetActor);
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteEmote(const FString& EmoteName);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteHandObject(const FString& ItemID);
@@ -241,5 +274,13 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteSing(const FString& SingName);
+
+protected:
+    // --- Tactical EQS Helpers ---
+    float CalculatePositionalNoise(const FCharacterAttributes& attributes) const;
+    UEnvQuery* SelectOptimalQuery(const FString& tacticalState, const FCharacterAttributes& attributes) const;
+    void InjectDynamicEQSParamsToBlackboard() const;
+
+    void OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Result);
 
 };
