@@ -8,6 +8,7 @@
 #include "Struct/NPCActionTypes.h"
 #include "../Core/GameStateData.h"
 #include "Struct/CharacterAttributes.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "SmartNPC.generated.h"
 
 class UNPCInteractionDataAsset;
@@ -67,6 +68,12 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")
     float HearingRange = 3000.0f;
+
+    // === Perception Source ===
+    
+    /** NPC 자신이 시각/청각 인식 대상으로 등록되기 위한 컴포넌트 */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Perception")
+    UAIPerceptionStimuliSourceComponent* StimuliSource;
 
     // === EQS 비동기 캐싱 시스템 ===
 

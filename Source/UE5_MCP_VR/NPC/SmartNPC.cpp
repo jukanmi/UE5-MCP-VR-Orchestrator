@@ -20,6 +20,8 @@
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQueryTypes.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -32,6 +34,16 @@ ASmartNPC::ASmartNPC()
     StateComponent     = CreateDefaultSubobject<UNPCStateComponent>(TEXT("StateComponent"));
     ActionComponent    = CreateDefaultSubobject<UNPCActionComponent>(TEXT("ActionComponent"));
     InventoryComponent = CreateDefaultSubobject<UNPCInventoryComponent>(TEXT("InventoryComponent"));
+
+    // AI Perception Stimuli Source (NPC가 시각/청각 소스 역할을 할 수 있도록 함)
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    if (StimuliSource)
+    {
+        // 시각과 청각 감지 대상으로 등록
+        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
+        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Hearing>());
+        StimuliSource->RegisterWithPerceptionSystem();
+    }
 }
 
 void ASmartNPC::BeginPlay()

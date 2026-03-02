@@ -32,4 +32,10 @@ namespace NPCActionKeys
     // --- Common Values (일반 값) ---
     inline const FString Value_None         = TEXT("None");
     inline const FString Agent_Broadcast    = TEXT("broadcast");
+
+    // --- Noise Volume Config (소음 발생 배율 상수) ---
+    inline const float Noise_Dialogue       = 1.0f;     // 일반 대화 소음
+    inline const float Noise_Attack         = 1.5f;     // 공격 등 큰 소음
+    inline const float Noise_UseItem        = 0.5f;     // 아이템 사용 등 작은 소음
+    inline const float Noise_Drop           = 0.8f;     // 물건을 떨어뜨리는 소음
 }
