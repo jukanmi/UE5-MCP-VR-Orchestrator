@@ -16,6 +16,17 @@ class GestureData(BaseModel):
     location: Optional[Vector3D] = None  # Hand location for "here/there" reference
     held_object_id: Optional[str] = None  # Context: What is the hand holding?
 
+class NPCRelation(BaseModel):
+    """
+    Represents the affinity/reputation relationship between two entities.
+    """
+    source_id: str
+    target_id: str
+    affinity_score: int = 0  # Standard scale -100 to 100
+    reputation_tag: str = "Neutral"  # Hostile, Neutral, Friendly
+    last_interaction: Optional[str] = None
+    is_dirty: bool = False  # Used internally by DB Manager to track changes
+
 class GesPrompt(BaseModel):
     """
     Combined structure for Voice + Gesture context.

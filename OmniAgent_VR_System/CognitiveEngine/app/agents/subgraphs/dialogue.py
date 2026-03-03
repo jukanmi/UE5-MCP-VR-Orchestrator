@@ -36,6 +36,7 @@ from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
 from ..state import AgentState
+from ...utils import db_manager
 
 
 PERSONAS_BASE_PATH = "app/agents/personas"
@@ -142,21 +143,10 @@ def dialogue_node(state: AgentState):
     Input: AgentState with natural_context (str) and target_npc (str)
     Output: AgentState with raw_response (str)
     """
+    import asyncio
+    
     natural_context = state.get("natural_context", "")
     target_npc = state.get("target_npc", "Elara")
-    
-    # --- Legacy compatibility: fall back to old analysis/intent flow ---
-    if not natural_context:
-        analysis = state.get("analysis", {})
-        intent_data = analysis.get("intent")
-        if intent_data:
-            user_input = getattr(intent_data, 'raw_query', None)
-            if isinstance(intent_data, dict):
-                user_input = intent_data.get("raw_query", "")
-                target_npc = intent_data.get("target_npc", target_npc)
-            elif hasattr(intent_data, 'target_npc') and intent_data.target_npc:
-                target_npc = intent_data.target_npc
-            natural_context = f"Player said: \"{user_input}\""
     
     # Determine agent ID
     agent_id = target_npc
@@ -181,7 +171,26 @@ def dialogue_node(state: AgentState):
     
     memory = persona.get("memory_summary", {})
     memory_summary = '; '.join(memory.get('key_events', [])) if memory.get('key_events') else 'None'
-    sentiment = memory.get("sentiment", "Neutral")
+    
+    # --- Affinity DB 연동: 실제 대상(보통 Player)과의 호감도(Sentiment) 조회 ---
+    player_id = state.get("vr_context", {}).get("player_id", "Player") if isinstance(state.get("vr_context"), dict) else getattr(state.get("vr_context"), "player_id", "Player")
+    
+    try:
+        # LangGraph 콜백 등 쓰레드 문제 해결을 위해 async loop 없이 임시로 동기 메소드 활용 (또는 에러 방지 위해 우회)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import nest_asyncio
+                nest_asyncio.apply()
+            relation = loop.run_until_complete(db_manager.get_affinity(agent_id, player_id))
+            sentiment = f"{relation.reputation_tag} (Score: {relation.affinity_score})"
+        except RuntimeError:
+            # Cannot use run_until_complete inside active loop without nest_asyncio trick failing in some contexts.
+            # Fallback for now, relying on initial lookup or skipping.
+            sentiment = memory.get("sentiment", "Neutral")
+    except Exception as e:
+        print(f"[Dialogue] Failed to fetch affinity: {e}")
+        sentiment = memory.get("sentiment", "Neutral")
 
     # Extract user input for RAG/memory
     user_input = natural_context
