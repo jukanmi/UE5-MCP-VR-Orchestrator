@@ -75,27 +75,9 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Perception")
     UAIPerceptionStimuliSourceComponent* StimuliSource;
 
-    // === EQS 비동기 캐싱 시스템 ===
-
-    /** 에디터에서 할당할 EQS 에셋 (예: EQS_FindCover) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|EQS")
-    class UEnvQuery* TacticalCoverQuery;
-
-    /** 비동기 EQS 결과를 저장하는 캐시 버퍼 (CollectAndSendStateUpdate가 읽기만 함) */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|EQS")
-    TArray<FEQSResult> CachedEQSResults;
-
-protected:
-    /** EQS 갱신 타이머 핸들 (난수 분산 적용) */
-    FTimerHandle EQSRefreshTimerHandle;
-
-    /** 비동기 EQS 쿼리를 실행하는 내부 함수 */
-    void RefreshTacticalEQS();
-
-    /** 비동기 EQS 쿼리 완료 시 호출되는 콜백. 
-     * [참고] TSharedPtr은 리플렉션 시스템(UFUNCTION)에서 지원하지 않으므로 매크로를 제거합니다. 
-     * FQueryFinishedSignature는 일반 델리게이트이므로 UFUNCTION 없이도 바인딩 가능합니다. */
-    void OnCoverQueryFinished(TSharedPtr<FEnvQueryResult> Result);
+    /** 
+     * TODO: 순수 시각/청각 인지(Perception) 결과를 실시간으로 담아두는 버퍼 변수를 이 위치에 추가할 예정입니다. 
+     */
 
 public:
 
@@ -153,7 +135,4 @@ public:
 
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
     void Debug_Test_Combat_Attack();
-
-    UFUNCTION(CallInEditor, Category = "MCP|Debug")
-    void Debug_Test_Orchestra_Pipeline();
 };

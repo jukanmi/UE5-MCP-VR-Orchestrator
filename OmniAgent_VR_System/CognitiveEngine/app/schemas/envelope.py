@@ -36,11 +36,13 @@ class EEnvelopeType(str, Enum):
 #      타입 안전성을 보장하고 에러 발생 위치를 즉시 파악 가능하게 한다.
 # ─────────────────────────────────────────────────────────────────────────────
 
-class NearbyEntity(BaseModel):
-    """EQS가 감지한 주변 엔티티 정보."""
-    id: str
-    type: str       # "Hostile", "Friendly", "Neutral"
+class PerceptionData(BaseModel):
+    """순수 시각/청각 인지 정보 (FPerceptionData 대응)."""
+    target_id: str
+    sense_type: str      # "Sight", "Hearing", "Other"
     distance: float
+    in_line_of_sight: bool
+    location: Dict[str, float]  # {"x", "y", "z"}
 
 
 class EQSQueryResult(BaseModel):
@@ -62,8 +64,7 @@ class StateUpdatePayload(BaseModel):
     threat_level: str = "None"                  # "None", "Low", "Medium", "High"
     in_cover: bool = False
     line_of_sight: bool = False
-    nearby_entities: List[NearbyEntity] = Field(default_factory=list)
-    eqs_results: List[EQSQueryResult] = Field(default_factory=list)
+    perceived_targets: List[PerceptionData] = Field(default_factory=list)
 
     @field_validator("player_location")
     @classmethod

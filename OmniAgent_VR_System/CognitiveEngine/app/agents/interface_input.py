@@ -115,6 +115,7 @@ Input Data:
 - Player gestures: {gestures}
 - Player location: {location}
 - Looking at: {looking_at}
+- Known Nearby Entities: {perceived_targets}
 - Last event: {last_event}
 - Player stats: {stats}
 
@@ -197,12 +198,30 @@ def interface_input_node(state: AgentState) -> dict:
     gesture_str = _format_gestures(vr_context.gestures)
     stats_str = _format_stats(vr_context.stats)
 
+    # 주변 타겟 정보 포맷팅 (agent state에서 state_update로 들어온 최신 perceived_targets 참조)
+    # prompt envelope에는 perceived_targets가 없으므로 state.get("game_state_data") 형태로 캐시된 최신 상태를 쓰거나
+    # 임시로 none 처리합니다 (interface_input이 GesPrompt만 처리중이므로)
+    perceived_str = "Unknown"
+    state_payload = state.get("game_state_data", {})
+    if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
+        targets = state_payload["perceived_targets"]
+        if targets:
+            pts = []
+            for pt in targets:
+                t_id = pt.get("target_id", "unknown")
+                t_dist = pt.get("distance", 0.0)
+                pts.append(f"{t_id} ({t_dist:.1f}m away)")
+            perceived_str = ", ".join(pts)
+        else:
+            perceived_str = "None visible/audible"
+
     # ── Gemini CLI 호출 (비용 최소화) ───────────────────────────
     prompt = CONTEXT_CONVERSION_PROMPT.format(
         transcript=transcript,
         gestures=gesture_str,
         location=location_str,
         looking_at=vr_context.looking_at_entity_id or "Nothing specific",
+        perceived_targets=perceived_str,
         last_event=vr_context.last_event or "None",
         stats=stats_str,
     )

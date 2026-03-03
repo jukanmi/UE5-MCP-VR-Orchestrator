@@ -23,6 +23,7 @@ import json
 import os
 from ..state import AgentState
 from ...schemas.actions import ActionBatch, NPCAction, WORLD_CONSTANTS
+from ...utils import db_manager
 
 
 # world_constants.json에서 유효 ID 목록 및 월드 경계 로드
@@ -205,8 +206,72 @@ def rules_node(state: AgentState) -> dict:
     else:
         print("[Rules] ✅ 검증 통과, 보정 없음")
 
+    # ── [신규] Affinity 평가 및 업데이트 ────────────────────────────
+    _evaluate_and_update_affinity(state, batch)
+
     return {
         "action_batch": batch,
         "current_speaker": "Rules",
         "next": "End",
     }
+
+def _evaluate_and_update_affinity(state: AgentState, batch: ActionBatch):
+    """
+    ActionBatch에 담긴 행동과 감정을 분석하여
+    대상(Player 등)에 대한 우호도(Affinity)를 조정한다.
+    규칙(Rule) 기반으로 점수를 증감시킨 뒤 DB Manager 캐시에 즉시 반영.
+    """
+    # 1. Player ID와 Source(NPC) ID 확인
+    # vr_context가 엉망이거나 null이면 건너뜀 (MVP용 방어코드)
+    vr_context = state.get("vr_context")
+    if not vr_context:
+        return
+    
+    player_id = vr_context.get("player_id", "Player") if isinstance(vr_context, dict) else getattr(vr_context, "player_id", "Player")
+    npc_id = batch.agent_id
+    
+    if not npc_id:
+        return
+
+    # 2. 이번 턴에 반영될 점수 (score_delta)
+    score_delta = 0
+    interaction_summary = []
+
+    # 전체 감정에 따른 기본 보정치
+    if batch.facial_state == "Happy":
+        score_delta += 1
+        interaction_summary.append("Smiled/Happy")
+    elif batch.facial_state == "Angry":
+        score_delta -= 2
+        interaction_summary.append("Angry expression")
+
+    # 구체적 액션 평가
+    for action in batch.actions:
+        # Player를 대상으로 한 액션인지 확인
+        target_id = action.target_id
+        if target_id and target_id.lower() == player_id.lower():
+            if action.action_type == "Attack":
+                score_delta -= 10
+                interaction_summary.append(f"Attacked player (-10)")
+            elif action.action_type == "Heal":
+                score_delta += 5
+                interaction_summary.append(f"Healed player (+5)")
+            elif action.action_type == "Dialogue":
+                if action.emotion == "Happy":
+                     score_delta += 2
+                     interaction_summary.append("Spoke happily (+2)")
+                elif action.emotion == "Angry":
+                     score_delta -= 2
+                     interaction_summary.append("Spoke angrily (-2)")
+
+    # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
+    if score_delta != 0:
+        summary_str = ", ".join(interaction_summary)
+        print(f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
+        # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
+        db_manager.update_affinity_sync(
+            source_id=npc_id,
+            target_id=player_id,
+            score_delta=score_delta,
+            interaction_summary=summary_str
+        )

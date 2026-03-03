@@ -26,38 +26,26 @@ FString UMCPJsonUtils::SerializeGameState(const FGameStateData& StateData)
     LocationObject->SetNumberField(TEXT("z"), FMath::RoundToFloat(StateData.OwnerLocation.Z * 100.f) / 100.f);
     PayloadObject->SetObjectField(TEXT("owner_location"), LocationObject);
 
-    // 근처 개체 배열 (필터링된 최소 컨텍스트만 포함)
-    TArray<TSharedPtr<FJsonValue>> EntitiesArray;
-    for (const FEntityState& Entity : StateData.NearbyEntities)
+    // 순수 시각/청각 인지 결과(Perception) JSON 파싱 로직
+    TArray<TSharedPtr<FJsonValue>> PerceptionArray;
+    for (const FPerceptionData& Target : StateData.PerceivedTargets)
     {
-        TSharedPtr<FJsonObject> EntityObject = MakeShared<FJsonObject>();
-        EntityObject->SetStringField(TEXT("id"), Entity.EntityID);
-        EntityObject->SetNumberField(TEXT("distance"), FMath::RoundToFloat(Entity.Distance));
-        EntityObject->SetBoolField(TEXT("is_hostile"), Entity.bIsHostile);
-        EntitiesArray.Add(MakeShared<FJsonValueObject>(EntityObject));
+        TSharedPtr<FJsonObject> TargetObj = MakeShared<FJsonObject>();
+        // 고유 ID 또는 정체 불명 시 "unknown"
+        TargetObj->SetStringField(TEXT("target_id"), Target.TargetID);
+        TargetObj->SetStringField(TEXT("sense_type"), Target.SenseType);
+        TargetObj->SetNumberField(TEXT("distance"), FMath::RoundToFloat(Target.Distance));
+        TargetObj->SetBoolField(TEXT("in_line_of_sight"), Target.bInLineOfSight);
+        
+        TSharedPtr<FJsonObject> LocObj = MakeShared<FJsonObject>();
+        LocObj->SetNumberField(TEXT("x"), FMath::RoundToFloat(Target.Location.X * 100.f) / 100.f);
+        LocObj->SetNumberField(TEXT("y"), FMath::RoundToFloat(Target.Location.Y * 100.f) / 100.f);
+        LocObj->SetNumberField(TEXT("z"), FMath::RoundToFloat(Target.Location.Z * 100.f) / 100.f);
+        TargetObj->SetObjectField(TEXT("location"), LocObj);
+        
+        PerceptionArray.Add(MakeShared<FJsonValueObject>(TargetObj));
     }
-    PayloadObject->SetArrayField(TEXT("nearby_entities"), EntitiesArray);
-
-    // EQS 결과 배열 (최대 3개 좌표만 포함)
-    TArray<TSharedPtr<FJsonValue>> EQSArray;
-    int32 EQSCount = FMath::Min(StateData.EQSResults.Num(), 3); // 데이터 다이어트: 최대 3개
-    for (int32 i = 0; i < EQSCount; i++)
-    {
-        const FEQSResult& EQS = StateData.EQSResults[i];
-        TSharedPtr<FJsonObject> EQSObject = MakeShared<FJsonObject>();
-        EQSObject->SetStringField(TEXT("tag"), EQS.QueryTag);
-        EQSObject->SetNumberField(TEXT("score"), EQS.Score);
-
-        TSharedPtr<FJsonObject> EQSLocation = MakeShared<FJsonObject>();
-        EQSLocation->SetNumberField(TEXT("x"), FMath::RoundToFloat(EQS.BestLocation.X * 100.f) / 100.f);
-        EQSLocation->SetNumberField(TEXT("y"), FMath::RoundToFloat(EQS.BestLocation.Y * 100.f) / 100.f);
-        EQSLocation->SetNumberField(TEXT("z"), FMath::RoundToFloat(EQS.BestLocation.Z * 100.f) / 100.f);
-        EQSObject->SetObjectField(TEXT("location"), EQSLocation);
-
-        EQSArray.Add(MakeShared<FJsonValueObject>(EQSObject));
-        UE_LOG(LogTemp, Warning, TEXT("[MCPJsonUtils] EQS Result: %s - %f - (%f, %f, %f)"), *EQS.QueryTag, EQS.Score, EQS.BestLocation.X, EQS.BestLocation.Y, EQS.BestLocation.Z);
-    }
-    PayloadObject->SetArrayField(TEXT("eqs_results"), EQSArray);
+    PayloadObject->SetArrayField(TEXT("perceived_targets"), PerceptionArray);
 
     // 최종 직렬화: Envelope 포장 없이 순수 Payload Object만 직렬화합니다.
     FString OutputJson;

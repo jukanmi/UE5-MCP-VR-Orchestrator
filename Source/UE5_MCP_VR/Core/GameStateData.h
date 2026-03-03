@@ -35,25 +35,33 @@ struct FEntityState
 };
 
 /**
- * FEQSResult: Environment Query System 공간 연산 결과값.
- * 무거운 3D 연산 결과물 중 '최상위 1~3개의 좌표'만 Python으로 전달합니다.
+ * 시각적 또는 청각적으로 감지된 단일 대상 데이터
  */
 USTRUCT(BlueprintType)
-struct FEQSResult
+struct FPerceptionData
 {
     GENERATED_BODY()
 
-    // 쿼리 목적 (예: "safe_position", "cover_location", "best_fire_position")
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
-    FString QueryTag;
+    // 인지된 대상의 고유 ID 혹은 정체 불명 식별자 
+    // (예: 너무 멀어 움직임만 보이거나, 소리만 들려 누군지 모를 경우 "unknown" 할당)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    FString TargetID;
 
-    // EQS 연산이 산출한 월드 공간 좌표 (cm 단위)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
-    FVector BestLocation = FVector::ZeroVector;
+    // 감지된 센서 유형 (예: "Sight", "Hearing")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    FString SenseType;
+    
+    // 대상의 월드 좌표 (cm 단위)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    FVector Location = FVector::ZeroVector;
 
-    // 해당 위치의 점수 (높을수록 좋은 위치)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
-    float Score = 0.f;
+    // 대상까지의 거리
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    float Distance = 0.f;
+
+    // 시각적 감지용: 시야 내에 완벽하게 들어와 있는지 여부
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    bool bInLineOfSight = false;
 };
 
 /**
@@ -77,13 +85,9 @@ struct FGameStateData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
     FVector OwnerLocation = FVector::ZeroVector;
 
-    // 인식 반경 내에 감지된 근처 개체 목록 (거리 기반 필터링됨)
+    // UE5 Perception 시스템에서 감지된 시각/청각 대상 목록
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
-    TArray<FEntityState> NearbyEntities;
-
-    // 최근 EQS 쿼리로부터 받은 최상위 공간 연산 결과 (최대 3개)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
-    TArray<FEQSResult> EQSResults;
+    TArray<FPerceptionData> PerceivedTargets;
 
     // 현재 위협 수준 (None / Low / Medium / High)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")

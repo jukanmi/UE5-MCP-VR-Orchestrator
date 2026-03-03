@@ -29,6 +29,7 @@ import traceback
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload
 from .schemas.vr_context import GesPrompt, GestureData
@@ -39,7 +40,18 @@ from .middleware import validate_auth_token, is_stale_packet, build_failed_event
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+from .utils import db_manager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup ---
+    await db_manager.init_db()
+    await db_manager.start_background_sync()
+    yield
+    # --- Shutdown ---
+    await db_manager.stop_background_sync()
+
+app = FastAPI(lifespan=lifespan)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 연결당 공유 상태 (서버 재시작 전까지 유지)
@@ -119,12 +131,19 @@ async def _process_message(raw_data: str) -> str:
             return json.dumps({"error": f"Unknown message type: {envelope.type}"})
 
     except ValidationError as ve:
-        logger.error(f"[Main] Envelope 스키마 검증 실패: {ve}")
+        import traceback
+        logger.error(f"[Main] Envelope 스키마 검증 실패: \n{traceback.format_exc()}")
         return json.dumps({"error": "Schema validation failed", "detail": str(ve)})
 
     except json.JSONDecodeError as je:
-        logger.error(f"[Main] JSON 파싱 실패: {je}")
+        import traceback
+        logger.error(f"[Main] JSON 파싱 실패: \n{traceback.format_exc()}")
         return json.dumps({"error": "Invalid JSON format"})
+
+    except Exception as e:
+        import traceback
+        logger.error(f"[Main] 예기치 않은 오류: \n{traceback.format_exc()}")
+        return json.dumps({"error": "Internal server error", "detail": str(e)})
 
     except Exception as e:
         logger.error(f"[Main] 처리 중 예외 발생: {e}")

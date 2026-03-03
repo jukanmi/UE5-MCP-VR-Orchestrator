@@ -16,9 +16,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "EnvironmentQuery/EnvQuery.h"
-#include "EnvironmentQuery/EnvQueryManager.h"
-#include "EnvironmentQuery/EnvQueryTypes.h"
+
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
@@ -61,28 +59,12 @@ void ASmartNPC::BeginPlay()
 
     // Note: StateComponent->BeginPlay()에서 RefreshStats()를 자동 호출합니다.
 
-    // === EQS 비동기 캐싱 타이머 등록 ===
-    // [최적화] Thundering Herd 방지: 모든 NPC가 동시에 EQS를 돌려 프레임 스파이크가 튀지 않도록,
-    // 초기 시작 시간에 0.1~1.0초 난수 편차(Staggering)를 적용합니다.
-    if (TacticalCoverQuery)
-    {
-        const float RandomStartDelay = 1.0f + FMath::RandRange(0.1f, 1.0f);
-        GetWorldTimerManager().SetTimer(
-            EQSRefreshTimerHandle,
-            this,
-            &ASmartNPC::RefreshTacticalEQS,
-            1.0f,    // 이후 1초 간격 반복
-            true,    // 루프
-            RandomStartDelay // 첫 실행만 난수 지연
-        );
-        UE_LOG(LogTemp, Log, TEXT("[SmartNPC:%s] EQS 비동기 캐싱 타이머 시작 (%.2f초 후 첫 실행)"), *AgentID, RandomStartDelay);
-    }
+    // TODO: 시각/청각 자극 감지용 이벤트 리스너(OnTargetPerceptionUpdated 등) 등록 예정
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    // EQS 타이머 해제 (레벨 전환/액터 삭제 시 콜백 누수 방지)
-    GetWorldTimerManager().ClearTimer(EQSRefreshTimerHandle);
+
 
     if (UGameInstance* GI = GetGameInstance())
     {
@@ -124,10 +106,67 @@ void ASmartNPC::CollectAndSendStateUpdate()
     StateSnapshot.OwnerAgentID = AgentID;
     StateSnapshot.OwnerLocation = GetActorLocation();
 
-    // === EQS 캐시 결과 적용 ===
-    // RefreshTacticalEQS() 타이머가 백그라운드에서 갱신해둔 캐시를 그대로 복사합니다.
-    // 여기서는 어떤 매트 연산도 일어나지 않으므로 프레임 비용이 0에 가깍습니다.
-    StateSnapshot.EQSResults = CachedEQSResults;
+    // === 시각/청각 인지(Perception) 시스템 적용 ===
+    if (ASmartNPCAIController* AIController = Cast<ASmartNPCAIController>(GetController()))
+    {
+        if (UAIPerceptionComponent* PerceptionComp = AIController->GetAIPerceptionComponent())
+        {
+            TArray<AActor*> SensedActors;
+            PerceptionComp->GetKnownPerceivedActors(nullptr, SensedActors);
+            
+            for (AActor* SensedActor : SensedActors)
+            {
+                if (!IsValid(SensedActor) || SensedActor == this) continue;
+
+                FActorPerceptionBlueprintInfo Info;
+                if (PerceptionComp->GetActorsPerception(SensedActor, Info))
+                {
+                    // 현재 활성화된(감지된) 자극 중 가장 최근 것을 찾습니다.
+                    for (const FAIStimulus& Stimulus : Info.LastSensedStimuli)
+                    {
+                        if (Stimulus.WasSuccessfullySensed())
+                        {
+                            FPerceptionData PercData;
+                            PercData.Location = SensedActor->GetActorLocation();
+                            PercData.Distance = FVector::Dist(GetActorLocation(), PercData.Location);
+
+                            // 대상의 식별 (Pawn/Character라면 이름 지정, 그 외나 너무 멀면 "unknown")
+                            if (APawn* TargetPawn = Cast<APawn>(SensedActor))
+                            {
+                                PercData.TargetID = TargetPawn->GetName(); 
+                            }
+                            else
+                            {
+                                PercData.TargetID = TEXT("unknown");
+                            }
+
+                            // 감각 종류 식별
+                            FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
+                            FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
+
+                            if (Stimulus.Type == SightID)
+                            {
+                                PercData.SenseType = TEXT("Sight");
+                                PercData.bInLineOfSight = true; // 시각으로 봤으므로 LOS true
+                            }
+                            else if (Stimulus.Type == HearingID)
+                            {
+                                PercData.SenseType = TEXT("Hearing");
+                                PercData.bInLineOfSight = false; // 청각 기반
+                            }
+                            else
+                            {
+                                PercData.SenseType = TEXT("Other");
+                            }
+
+                            StateSnapshot.PerceivedTargets.Add(PercData);
+                            break; // 같은 액터에 대한 여러 자극 중 하나만 기록
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // StateComponent로부터 현재 행동 모드를 가져옵니다.
     if (StateComponent)
@@ -157,79 +196,6 @@ void ASmartNPC::CollectAndSendStateUpdate()
             Manager->SendStateToMCP(StateSnapshot);
         }
     }
-}
-
-// ============================================================
-// EQS 비동기 캐싱 시스템 (백그라운드 타이머로 동작)
-// ============================================================
-
-/**
- * 1초 주기로 호출되는 EQS 비동기 실행 함수.
- * CollectAndSendStateUpdate(0.5초)와 독립된 주기로 돌며, 결과는 CachedEQSResults에 저장됩니다.
- */
-void ASmartNPC::RefreshTacticalEQS()
-{
-    // EQS 에셋이 에디터에서 할당되지 않았거나, 액터가 파괴 중이면 건너뜄니다.
-    if (!TacticalCoverQuery || !IsValid(this))
-    {
-        return;
-    }
-
-    UEnvQueryManager* EQSManager = UEnvQueryManager::GetCurrent(GetWorld());
-    if (!EQSManager)
-    {
-        return;
-    }
-
-    // 비동기 EQS 쿼리 실행 - 결과가 준비되면 OnCoverQueryFinished 콜백이 GameThread에서 호출됩니다.
-    FEnvQueryRequest QueryRequest(TacticalCoverQuery, this);
-    QueryRequest.Execute(EEnvQueryRunMode::AllMatching, 
-        FQueryFinishedSignature::CreateUObject(this, &ASmartNPC::OnCoverQueryFinished));
-}
-
-/**
- * EQS 쿼리 완료 콜백.
- * [안전장치] IsValid(this) 챀크로 액터 파괴 후 콜백 도달 시의 크래시를 예방합니다.
- * 최대 3개 좌표만 캐싱하여 Data Diet를 적용합니다.
- */
-void ASmartNPC::OnCoverQueryFinished(TSharedPtr<FEnvQueryResult> Result)
-{
-    // [보안] 쿼리 도중 NPC가 파괴(Destroy)되었을 경우 크래시 방지
-    if (!IsValid(this))
-    {
-        return;
-    }
-
-    if (!Result.IsValid() || !Result->IsSuccessful())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC:%s] EQS 쿼리 실패 또는 결과 없음"), *AgentID);
-        return;
-    }
-
-    // 기존 캐시 비우고 새 결과로 갱신
-    CachedEQSResults.Empty();
-
-    TArray<FVector> Locations;
-    Result->GetAllAsLocations(Locations);
-
-    // 최대 3개까지만 캐싱 (LLM 토큰 절약 및 패킷 최소화)
-    // TODO: 현재는 점수 상위 3개를 무차별로 저장하지만, 전술적 목적별로 분류해야 합니다.
-    //       - [0] 가장 안전한 장소 (이성적 판단 - Cover/방어 최적)
-    //       - [1] 가장 유리한 장소 (공격적 판단 - 사선 확보/플랭킹)
-    //       - [2] 가장 가까운 출구 (도주 판단 - 탈출 경로)
-    //       → 단일 쿼리 결과를 후처리해 분류하는 로직 필요.
-    const int32 MaxItems = FMath::Min(Locations.Num(), 3);
-    for (int32 i = 0; i < MaxItems; ++i)
-    {
-        FEQSResult NewResult;
-        NewResult.QueryTag = TEXT("Cover");
-        NewResult.BestLocation = Locations[i];
-        NewResult.Score = Result->GetItemScore(i);
-
-        CachedEQSResults.Add(NewResult);
-    }
-
-    UE_LOG(LogTemp, Verbose, TEXT("[SmartNPC:%s] EQS 캐시 갱신 완료: %d개 좌표 저장됨"), *AgentID, CachedEQSResults.Num());
 }
 
 /**
@@ -372,47 +338,4 @@ void ASmartNPC::Debug_Test_Combat_Attack()
                     }
                 })");
     DispatchDebugJson(this, TEXT("Combat"), ActionsJson);
-}
-
-void ASmartNPC::Debug_Test_Orchestra_Pipeline()
-{
-    // [의도(Why)] 서버에서 수신되는 다중 에이전트 명령 포맷(FModeActionRequest)이 
-    // NPCManager를 통해 각 NPC에게 올바르게 분배 및 파싱되는지 시뮬레이션합니다.
-
-    // 1. 하드코딩된 완벽한 JSON 문자열 생성 (파이썬 서버에서 내려오는 것과 100% 동일한 형태)
-    FString MockJson = FString::Printf(TEXT(R"({
-    "Mode": "Social",
-    "ActionBatches": {
-        "%s": {
-            "AgentID": "%s",
-            "Mode": "Social",
-            "Actions": [
-                {
-                    "ActionType": "Dialogue",
-                    "FacialState": "Happy",
-                    "Parameters": {
-                        "text": "Pipeline Test: Hello!"
-                    }
-                },
-                {
-                    "ActionType": "Wait",
-                    "FacialState": "Happy",
-                    "Parameters": {
-                        "duration": "1.5"
-                    }
-                }
-            ]
-        }
-    }
-})"), *AgentID, *AgentID);
-
-    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] Testing Orchestra Pipeline with JSON: %s"), *MockJson);
-
-    if (UGameInstance* GameInst = GetGameInstance())
-    {
-        if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
-        {
-            NPCManager->OnWebSocketMessageReceived(MockJson);
-        }
-    }
 }
