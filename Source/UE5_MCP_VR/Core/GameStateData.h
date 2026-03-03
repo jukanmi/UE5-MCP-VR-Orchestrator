@@ -47,9 +47,9 @@ struct FPerceptionData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     FString TargetID;
 
-    // 감지된 센서 유형 (예: "Sight", "Hearing")
+    // [의도] 문자열 비교의 오버헤드를 없애고 타입 안정성을 확보하기 위해 직접 선언된 Enum을 사용함.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
-    FString SenseType;
+    ESenseType SenseType = ESenseType::None;
     
     // 대상의 월드 좌표 (cm 단위)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
@@ -58,10 +58,6 @@ struct FPerceptionData
     // 대상까지의 거리
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     float Distance = 0.f;
-
-    // 시각적 감지용: 시야 내에 완벽하게 들어와 있는지 여부
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
-    bool bInLineOfSight = false;
 };
 
 /**

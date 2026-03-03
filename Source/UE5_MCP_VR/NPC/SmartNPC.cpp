@@ -114,6 +114,10 @@ void ASmartNPC::CollectAndSendStateUpdate()
             TArray<AActor*> SensedActors;
             PerceptionComp->GetKnownPerceivedActors(nullptr, SensedActors);
             
+            FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
+            FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
+            float CurrentTime = GetWorld()->GetTimeSeconds();
+
             for (AActor* SensedActor : SensedActors)
             {
                 if (!IsValid(SensedActor) || SensedActor == this) continue;
@@ -124,44 +128,115 @@ void ASmartNPC::CollectAndSendStateUpdate()
                     // 현재 활성화된(감지된) 자극 중 가장 최근 것을 찾습니다.
                     for (const FAIStimulus& Stimulus : Info.LastSensedStimuli)
                     {
-                        if (Stimulus.WasSuccessfullySensed())
+                        if (!Stimulus.WasSuccessfullySensed()) continue;
+
+                        FPerceptionData PercData;
+                        PercData.Location = SensedActor->GetActorLocation();
+                        PercData.Distance = FVector::Dist(GetActorLocation(), PercData.Location);
+
+                        bool bIsIdentified = false;
+                        APawn* IdentifiedPawn = nullptr; // 최종적으로 식별된 대상
+
+                        // 1. 조도 기반 동적 임계값 보정 (향후 확장을 위해 1.0f 처리)
+                        float CurrentLightFactor = 1.0f; 
+                        float DynamicIdentifyThreshold = BaseIdentificationRadius * CurrentLightFactor;
+
+                        // 2. 감각별 분기 처리
+                        if (Stimulus.Type == SightID)
                         {
-                            FPerceptionData PercData;
-                            PercData.Location = SensedActor->GetActorLocation();
-                            PercData.Distance = FVector::Dist(GetActorLocation(), PercData.Location);
+                            // 시각 처리
+                            TWeakObjectPtr<AActor> WeakActor(SensedActor);
+                            
+                            // 플리커링을 차단하기 위한 버퍼를 주기 위해선 '이전에 본 적 있는 대상'인지 판별해야 함.
+                            // 맵의 Key가 Actor이므로 O(1) 상수 시간 검색으로 즉시 기존 추적 상태임을 검색함.
+                            bool bWasAlreadyIdentified = KnownTargetsMap.Contains(WeakActor);
+                            
+                            // 목표물이 경계선에서 들어왔다 나갔다 하여 인식이 끊기는 것을 막기 위한 히스테리시스(여유치) 제공
+                            float ThresholdToUse = bWasAlreadyIdentified ? (DynamicIdentifyThreshold + 200.f) : DynamicIdentifyThreshold;
 
-                            // 대상의 식별 (Pawn/Character라면 이름 지정, 그 외나 너무 멀면 "unknown")
-                            if (APawn* TargetPawn = Cast<APawn>(SensedActor))
+                            if (PercData.Distance <= ThresholdToUse)
                             {
-                                PercData.TargetID = TargetPawn->GetName(); 
-                            }
-                            else
-                            {
-                                PercData.TargetID = TEXT("unknown");
-                            }
+                                bIsIdentified = true;
+                                IdentifiedPawn = Cast<APawn>(SensedActor);
 
-                            // 감각 종류 식별
-                            FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
-                            FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
-
-                            if (Stimulus.Type == SightID)
-                            {
-                                PercData.SenseType = TEXT("Sight");
-                                PercData.bInLineOfSight = true; // 시각으로 봤으므로 LOS true
+                                // 시각에 들어왔으므로 공간 지도(Map) 갱신
+                                if (IdentifiedPawn)
+                                {
+                                    FKnownTargetInfo KnownInfo;
+                                    KnownInfo.LastLocation = SensedActor->GetActorLocation();
+                                    KnownInfo.LastSeenTime = CurrentTime;
+                                    
+                                    //  Actor를 키로 사용하여 시각 정보가 일치할 때 가장 빠르게 최신 위치를 갱신함.
+                                    KnownTargetsMap.Add(WeakActor, KnownInfo);
+                                }
                             }
-                            else if (Stimulus.Type == HearingID)
-                            {
-                                PercData.SenseType = TEXT("Hearing");
-                                PercData.bInLineOfSight = false; // 청각 기반
-                            }
-                            else
-                            {
-                                PercData.SenseType = TEXT("Other");
-                            }
-
-                            StateSnapshot.PerceivedTargets.Add(PercData);
-                            break; // 같은 액터에 대한 여러 자극 중 하나만 기록
+                            PercData.SenseType = ESenseType::Sight;
                         }
+                        else if (Stimulus.Type == HearingID)
+                        {
+                            // [청각 처리] O(N) 공간 대조
+                            TWeakObjectPtr<AActor> BestMatchActor = nullptr;
+                            float ClosestDistSq = FMath::Square(HearingAssociationRadius);
+
+                            for (auto It = KnownTargetsMap.CreateIterator(); It; ++It)
+                            {
+                                TWeakObjectPtr<AActor> SavedActor = It.Key();
+                                FKnownTargetInfo& KnownInfo = It.Value();
+
+                                //  UE5의 파괴된 액터 참조로 인한 크래시(Memory Leak/Dangling) 방지를 위해 실시간으로 객체 유효성을 검사해 청소함.
+                                if (!SavedActor.IsValid())
+                                {
+                                    It.RemoveCurrent();
+                                    continue;
+                                }
+
+                                //  오래된 기억(과거 위치)에 기반해 판단하면 환각 현상이 일어나므로 시간(TTL)이 초과된 데이터는 신뢰성 판단을 위해 제거함.
+                                if (CurrentTime - KnownInfo.LastSeenTime > TargetMemoryTTL)
+                                {
+                                    It.RemoveCurrent();
+                                    continue;
+                                }
+
+                                //  발생한 청각 소스의 장소와 가장 최근 목격된 액터 위치의 거리차이를 연산하여, 동일 인체의 소음 발생인지 유추함.
+                                float DistSq = FVector::DistSquared(Stimulus.StimulusLocation, KnownInfo.LastLocation);
+                                if (DistSq < ClosestDistSq)
+                                {
+                                    ClosestDistSq = DistSq;
+                                    BestMatchActor = SavedActor;
+                                }
+                            }
+
+                            if (BestMatchActor.IsValid())
+                            {
+                                bIsIdentified = true;
+                                IdentifiedPawn = Cast<APawn>(BestMatchActor.Get());
+                            }
+                            else if (Stimulus.Tag == FName("Voice")) 
+                            {
+                                // 연동 실패라도 말소리라면 식별 부여
+                                IdentifiedPawn = Cast<APawn>(SensedActor);
+                                if (IdentifiedPawn) bIsIdentified = true;
+                            }
+                            
+                            PercData.SenseType = ESenseType::Hearing;
+                        }
+                        else
+                        {
+                            PercData.SenseType = ESenseType::Other;
+                        }
+
+                        // 3. 최종 식별 이름 할당
+                        if (bIsIdentified && IdentifiedPawn)
+                        {
+                            PercData.TargetID = IdentifiedPawn->GetName(); 
+                        }
+                        else
+                        {
+                            PercData.TargetID = TEXT("unknown");
+                        }
+
+                        StateSnapshot.PerceivedTargets.Add(PercData);
+                        break; // 같은 액터에 대한 여러 자극 중 하나만 기록
                     }
                 }
             }

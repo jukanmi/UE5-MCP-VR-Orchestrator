@@ -33,9 +33,14 @@ FString UMCPJsonUtils::SerializeGameState(const FGameStateData& StateData)
         TSharedPtr<FJsonObject> TargetObj = MakeShared<FJsonObject>();
         // 고유 ID 또는 정체 불명 시 "unknown"
         TargetObj->SetStringField(TEXT("target_id"), Target.TargetID);
-        TargetObj->SetStringField(TEXT("sense_type"), Target.SenseType);
+        
+        // [의도] Enum 구조체의 타입 안정성을 챙기되 JSON 전송 규격에 맞게 파싱하여 전달합니다.
+        FString SenseStr = TEXT("Other");
+        if (Target.SenseType == ESenseType::Sight) SenseStr = TEXT("Sight");
+        else if (Target.SenseType == ESenseType::Hearing) SenseStr = TEXT("Hearing");
+
+        TargetObj->SetStringField(TEXT("sense_type"), SenseStr);
         TargetObj->SetNumberField(TEXT("distance"), FMath::RoundToFloat(Target.Distance));
-        TargetObj->SetBoolField(TEXT("in_line_of_sight"), Target.bInLineOfSight);
         
         TSharedPtr<FJsonObject> LocObj = MakeShared<FJsonObject>();
         LocObj->SetNumberField(TEXT("x"), FMath::RoundToFloat(Target.Location.X * 100.f) / 100.f);

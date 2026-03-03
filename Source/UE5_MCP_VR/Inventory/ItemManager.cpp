@@ -143,7 +143,7 @@ bool UItemManager::GetItemDataByID(const FString& InTemplateID, FItemData& OutIt
 {
     if (InTemplateID.IsEmpty()) return false;
     
-    // [의도] 하나의 거대 데이터 테이블(DataTable)에서 RowName을 기반으로 아이템 정보를 빠르게 검색합니다.
+    //  하나의 거대 데이터 테이블(DataTable)에서 RowName을 기반으로 아이템 정보를 빠르게 검색합니다.
     // 수천 개의 에셋 파일을 만드는 대신 엑셀이나 CSV 하나로 기획 데이터를 일괄 관리할 수 있습니다.
     if (!GlobalItemDataTable)
     {

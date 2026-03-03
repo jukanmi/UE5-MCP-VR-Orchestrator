@@ -17,6 +17,18 @@ class UNPCActionComponent;
 class UNPCInventoryComponent;
 
 
+USTRUCT(BlueprintType)
+struct FKnownTargetInfo 
+{
+    GENERATED_BODY()
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "MCP|Perception|Memory")
+    FVector LastLocation = FVector::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "MCP|Perception|Memory")
+    float LastSeenTime = 0.f; 
+};
+
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter
 {
@@ -74,6 +86,21 @@ public:
     /** NPC 자신이 시각/청각 인식 대상으로 등록되기 위한 컴포넌트 */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Perception")
     UAIPerceptionStimuliSourceComponent* StimuliSource;
+
+    // 플리커링 및 위치 기반 청각 유추를 위한 이전 타겟 기록 (GC Safe)
+    TMap<TWeakObjectPtr<AActor>, FKnownTargetInfo> KnownTargetsMap;
+
+    // 대상을 정확히 식별할 수 있는 기본 최대 거리 (이 거리 밖이면 "unknown" 처리)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception|Identity")
+    float BaseIdentificationRadius = 1500.f;
+
+    // 사운드 발생 시, 기존에 기억해둔 타겟 위치와 얼마나 가까워야 동일 인물로 볼 것인가
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception|Identity")
+    float HearingAssociationRadius = 300.f; // 3미터 이내
+
+    // 기억 유효 시간 (시야에서 사라진 지 몇 초까지 소리를 연동할 것인가)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception|Identity")
+    float TargetMemoryTTL = 5.0f; // 5초
 
     /** 
      * TODO: 순수 시각/청각 인지(Perception) 결과를 실시간으로 담아두는 버퍼 변수를 이 위치에 추가할 예정입니다. 

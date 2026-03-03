@@ -60,13 +60,13 @@ class StateUpdatePayload(BaseModel):
     WHY: UE5의 주기적 상태 스냅샷. 이 정보는 LLM 추론의 '현재 컨텍스트'가 된다.
     소수점 2자리로 제한하는 이유: LLM 토큰 다이어트 (불필요한 정밀도 제거).
     """
-    player_location: Dict[str, float]           # {"x": float, "y": float, "z": float}
+    owner_location: Dict[str, float]            # {"x": float, "y": float, "z": float}
     threat_level: str = "None"                  # "None", "Low", "Medium", "High"
     in_cover: bool = False
     line_of_sight: bool = False
     perceived_targets: List[PerceptionData] = Field(default_factory=list)
 
-    @field_validator("player_location")
+    @field_validator("owner_location")
     @classmethod
     def round_coordinates(cls, v: Dict[str, float]) -> Dict[str, float]:
         """LLM 토큰 낭비를 방지하기 위해 좌표 소수점을 2자리로 반올림."""

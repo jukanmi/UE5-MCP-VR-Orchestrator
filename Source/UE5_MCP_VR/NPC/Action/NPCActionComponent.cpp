@@ -205,7 +205,7 @@ void UNPCActionComponent::ProcessNextAction()
         if (!BB) return;
 
         // Blackboard에 액션 정보 설정 (BT Task가 읽어서 실행)
-        // [의도] 비효율적인 문자열 파싱 대신 Enum 값을 직접 전달하여 타입 안정성과 성능을 확보합니다.
+        //  비효율적인 문자열 파싱 대신 Enum 값을 직접 전달하여 타입 안정성과 성능을 확보합니다.
         BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
         BB->SetValueAsEnum(ASmartNPCAIController::Key_SubAction, (uint8)Action.ActionType);
 
@@ -533,7 +533,7 @@ FVector UNPCActionComponent::ParseVectorParam(const FString& ParamStr) const
 
 void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetActor, const TMap<FString, FString>& Params)
 {
-    // [의도] Parameter의 파싱 책임을 BTTask에서 컴포넌트로 이관하여 다양한 형태(Location, Text 등)의 인자를 안정적으로 받아냅니다.
+    //  Parameter의 파싱 책임을 BTTask에서 컴포넌트로 이관하여 다양한 형태(Location, Text 등)의 인자를 안정적으로 받아냅니다.
     FString TargetID = Params.FindRef(TEXT("TargetID"));
     if (TargetID.IsEmpty())
     {

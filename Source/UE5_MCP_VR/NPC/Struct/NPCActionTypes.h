@@ -54,6 +54,16 @@ enum class EAttackType : uint8
 	Magic
 };
 
+/** ESenseType: AI 퍼셉션 감각 종류 통합 관리 */
+UENUM(BlueprintType)
+enum class ESenseType : uint8
+{
+	None       UMETA(DisplayName = "None"),
+	Sight      UMETA(DisplayName = "Sight"),
+	Hearing    UMETA(DisplayName = "Hearing"),
+	Other      UMETA(DisplayName = "Other")
+};
+
 UENUM(BlueprintType)
 enum class EEntityType : uint8
 {
