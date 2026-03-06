@@ -10,10 +10,7 @@ class ASmartNPCAIController;
 
 /**
  * NPC 상태 관리 컴포넌트 (NPC State Component).
- * - 캐릭터 능력치(Stats), 표정(Facial), 상태(Status) 등을 관리.
- * - SmartNPC에서 분리하여 재사용성과 가독성을 높임.
- * - 왜 컴포넌트인가: Stats는 NPC의 "존재"에 관한 데이터이며,
- *   ActionComponent와 독립적으로 동작해야 하므로 별도 관리.
+ * [의도(Why)] NPC의 존재(속성, 상태, 감정) 자체를 하나의 컴포넌트로 응집시켜 액션(Action) 컴포넌트와의 결합도를 낮추고 재사용성을 극대화합니다.
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCStateComponent : public UActorComponent
@@ -96,45 +93,27 @@ public:
 
     // --- Public API ---
 
-    /**
-     * 표정 변경 (내부 상태 + Blackboard 동기화).
-     * - 중복 호출 시 무시하여 불필요한 업데이트 방지.
-     */
+    // [의도(Why)] 빈번한 동일 표정 갱신 호출로부터 Blackboard 및 애니메이션 시스템의 불필요한 트리거 오버헤드를 방지합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Facial")
     void SetFacialExpression(EFacialState NewExpression);
 
-    /**
-     * 스탯 재계산 (Base Stats → Derived Stats).
-     * - RecalculateCombatStats 호출 후 이동속도 적용.
-     */
+    // [의도(Why)] 장비 변경, 레벨업, 버프 등에 의한 스탯 변동 시 하위 파생치(전투, 이동속도)를 한 번에 동기화하여 불일치를 해소합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     void RefreshStats();
 
-    /**
-     * 이동속도를 CharacterMovementComponent에 적용.
-     * - CurrentStats.Movement 값을 기반으로 설정.
-     */
+    // [의도(Why)] 데이터 상의 이동 속도(Stats)와 실제 엔진 물리(CharacterMovementComponent) 간의 속도를 일치시킵니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     void ApplyMovementSpeed();
 
-    /**
-     * 반사 행동 판정 (Difficulty vs Perception 기반 주사위 굴림).
-     * @return true: 반사 성공, false: 실패
-     */
+    // [의도(Why)] NPC가 예상치 못한 위협을 감지할 때, 스스로의 '지각력(Perception)' 스탯에 기반해 즉각 대응할 수 기회를 부여합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Reflex")
     bool TryReflexAction(int32 Difficulty);
 
-    /**
-     * 데미지 처리 (Health 차감 + 사망 판정).
-     * - Owner의 TakeDamage에서 위임받아 처리.
-     */
+    // [의도(Why)] 피격 처리 및 방어력 연산 후 최종 데미지만 체력에 반영하여 사망(Death) 조건을 중앙 통제합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     float ApplyDamage(float DamageAmount);
 
-    /**
-     * 긴급 인지 요청 (Emergency Cognition).
-     * - 위험 상황 시 LLM에 긴급 판단을 요청하는 트리거.
-     */
+    // [의도(Why)] 체력 저하나 피격 등 치명적 이벤트 발생 시, 다음 루프를 기다리지 않고 서버(LLM)에 즉각적인 상황 인지 요청을 보내기 위함입니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void RequestEmergencyCognition(const FString& EventType, const FString& Description);
 

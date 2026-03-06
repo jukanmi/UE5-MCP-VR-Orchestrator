@@ -219,116 +219,15 @@ ENUM_CLASS_FLAGS(EStatusEffect);
 
 
 /**
- * Complete Character Attributes
- * Aggregates all stat categories.
+ * Base Character Attributes
+ * [의도(Why)] NPC와 플레이어가 공통적으로 가지는 핵심 스탯과 계산 로직을 하나로 묶어 코드 중복을 제거하고 유지보수성을 높입니다.
  */
 USTRUCT(BlueprintType)
-struct FCharacterAttributes
+struct FCharacterAttributesBase
 {
     GENERATED_BODY()
 
-    // Base TRPG Stats (능력치)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
-    FBaseStats BaseStats;
-
-    // Dynamic Resources (자원)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
-    FGameResources Resources;
-
-    // Derived Combat Stats (전투)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
-    FCombatStats Combat;
-
-    // AI Behavioral Traits (행동)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
-    FBehavioralTraits Behavior;
-
-    // Movement (이동)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
-    FMovementStats Movement;
-
-    // Active Status Effects (상태이상)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (Bitmask, BitmaskEnum = "EStatusEffect"))
-    uint8 StatusEffects = 0;
-
-    // Level & Experience
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
-    int32 Level = 1;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
-    int32 Experience = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
-    int32 ExperienceToNextLevel = 100;
-
-    FCharacterAttributes() {}
-
-    // Helper: Apply Status Effect
-    void AddStatusEffect(EStatusEffect Effect)
-    {
-        StatusEffects |= static_cast<uint8>(Effect);
-    }
-
-    void RemoveStatusEffect(EStatusEffect Effect)
-    {
-        StatusEffects &= ~static_cast<uint8>(Effect);
-    }
-
-    bool HasStatusEffect(EStatusEffect Effect) const
-    {
-        return (StatusEffects & static_cast<uint8>(Effect)) != 0;
-    }
-
-    // Helper: Recalculate Combat Stats from Base Stats
-    void RecalculateCombatStats()
-    {
-        Combat.AttackPower = BaseStats.Strength * 1.5f;
-        Combat.MagicPower = BaseStats.Intelligence * 1.5f;
-        Combat.Defense = BaseStats.Constitution * 1.0f;
-        Combat.MagicResist = BaseStats.Wisdom * 1.0f;
-        Combat.CriticalChance = BaseStats.Agility * 0.5f + BaseStats.Luck * 0.3f;
-        Combat.DodgeChance = BaseStats.Dexterity * 0.5f;
-        Combat.Accuracy = 70.0f + BaseStats.Dexterity * 0.3f;
-
-        Resources.MaxHealth = 50.0f + BaseStats.Constitution * 5.0f;
-        Resources.MaxMana = 20.0f + BaseStats.Intelligence * 3.0f + BaseStats.Wisdom * 2.0f;
-        Resources.MaxStamina = 50.0f + BaseStats.Constitution * 2.0f + BaseStats.Dexterity * 2.0f;
-
-        // Movement Speed Calculation with Asymptotic Scaling
-        // Properties:
-        //   - Dex ≤ 10 (BaseDex) → Speed = BaseSpeed (기본값 유지)
-        //   - Dex → ∞           → Speed → MaxSpeed (600)
-        constexpr float MaxSpeed = 600.0f;
-        constexpr float BaseDex = 10.0f;
-        constexpr float K = 50.0f;  // 곡선 가파름 조절
-        
-        // Base speeds at Dex = 10
-        constexpr float BaseWalk = 200.0f;
-        constexpr float BaseRun = 400.0f;
-        constexpr float BaseSprint = 500.0f;
-        
-        // Calculate asymptotic factor: 0 at Dex≤10, approaches 1 as Dex→∞
-        const float DexDiff = FMath::Max(0.0f, static_cast<float>(BaseStats.Dexterity) - BaseDex);
-        const float AsymptoticFactor = DexDiff / (DexDiff + K);
-        
-        Movement.WalkSpeed = BaseWalk + (MaxSpeed - BaseWalk) * AsymptoticFactor;
-        Movement.RunSpeed = BaseRun + (MaxSpeed - BaseRun) * AsymptoticFactor;
-        Movement.SprintSpeed = BaseSprint + (MaxSpeed - BaseSprint) * AsymptoticFactor;
-    }
-};
-
-
-/**
- * Player-specific Character Attributes
- * Same as FCharacterAttributes but WITHOUT FBehavioralTraits (AI-only).
- * Use this for player characters.
- */
-USTRUCT(BlueprintType)
-struct FPlayerAttributes
-{
-    GENERATED_BODY()
-
-    // Base TRPG Stats (능력치)
+    // Base RPG Stats (능력치)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FBaseStats BaseStats;
 
@@ -358,7 +257,7 @@ struct FPlayerAttributes
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Progression")
     int32 ExperienceToNextLevel = 100;
 
-    FPlayerAttributes() {}
+    FCharacterAttributesBase() {}
 
     // Helper: Apply Status Effect
     void AddStatusEffect(EStatusEffect Effect)
@@ -376,7 +275,7 @@ struct FPlayerAttributes
         return (StatusEffects & static_cast<uint8>(Effect)) != 0;
     }
 
-    // Helper: Recalculate Combat Stats from Base Stats (same as FCharacterAttributes)
+    // [의도(Why)] 기초 스탯(Dex, Con 등)으로부터 이동속도, 체력량 등의 파생 수치를 TRPG 공식에 따라 일괄 계산합니다.
     void RecalculateCombatStats()
     {
         Combat.AttackPower = BaseStats.Strength * 1.5f;
@@ -391,7 +290,7 @@ struct FPlayerAttributes
         Resources.MaxMana = 20.0f + BaseStats.Intelligence * 3.0f + BaseStats.Wisdom * 2.0f;
         Resources.MaxStamina = 50.0f + BaseStats.Constitution * 2.0f + BaseStats.Dexterity * 2.0f;
 
-        // Movement Speed Calculation with Asymptotic Scaling
+        // 이동 속도 점진적 스케일링 (Dex에 따라 200~600 사이로 수렴)
         constexpr float MaxSpeed = 600.0f;
         constexpr float BaseDex = 10.0f;
         constexpr float K = 50.0f;
@@ -408,3 +307,36 @@ struct FPlayerAttributes
         Movement.SprintSpeed = BaseSprint + (MaxSpeed - BaseSprint) * AsymptoticFactor;
     }
 };
+
+/**
+ * NPC-specific Character Attributes
+ * [의도(Why)] 기본 스탯에 AI 전용 BehavioralTraits(공포, 공격성 등)를 추가하여 관리합니다.
+ */
+USTRUCT(BlueprintType)
+struct FNPCAttributes : public FCharacterAttributesBase
+{
+    GENERATED_BODY()
+
+    // AI Behavioral Traits (행동 - NPC 전용)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FBehavioralTraits Behavior;
+
+    FNPCAttributes() {}
+};
+
+/**
+ * Player-specific Character Attributes
+ * [의도(Why)] AI 관련 데이터 없이 플레이어에게 필요한 기본 스탯만을 가집니다.
+ */
+USTRUCT(BlueprintType)
+struct FPlayerAttributes : public FCharacterAttributesBase
+{
+    GENERATED_BODY()
+
+    FPlayerAttributes() {}
+};
+
+// [래거시를 위해 유지] 기존 FCharacterAttributes 이름을 FNPCAttributes로 대체하거나 별칭을 고려할 수 있습니다.
+// 여기서는 핵심 구조를 FNPCAttributes로 명명하고 기존 코드가 NPC용임을 명확히 합니다.
+typedef FNPCAttributes FCharacterAttributes;
+

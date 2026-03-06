@@ -15,22 +15,17 @@ namespace NPCActionKeys
     inline const FString Key_Text       = TEXT("text");
 
     // --- Location Keys (위치 정보 키) ---
-    // 좌표는 "target_loc": {"x":0, "y":0, "z":0} 형태로 한 세트로 전달됨
     inline const FString Key_TargetLoc  = TEXT("target_loc");
-    inline const FString Loc_X          = TEXT("x");
-    inline const FString Loc_Y          = TEXT("y");
-    inline const FString Loc_Z          = TEXT("z");
 
 
-    
     // NPCActionComponent에서 애니메이션 몽타주를 재생하기 위해 데이터 에셋과 매핑되는 고유 키워드들입니다.
     // 기존 String 기반 통신에서 발생하던 결합도를 낮추고 오직 몽타주 매핑 용도로 역할을 제한하였습니다.
     inline const FString Interact_SitDown   = TEXT("SitDown");
     inline const FString Interact_SitUp     = TEXT("SitUp");
     inline const FString Interact_LieDown   = TEXT("LieDown");
     inline const FString Interact_LieUp     = TEXT("LieUp");
+    
     // --- Common Values (일반 값) ---
-    inline const FString Value_None         = TEXT("None");
     inline const FString Agent_Broadcast    = TEXT("broadcast");
 
     // --- Noise Volume Config (소음 발생 배율 상수) ---

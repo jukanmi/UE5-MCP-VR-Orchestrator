@@ -64,15 +64,6 @@ enum class ESenseType : uint8
 	Other      UMETA(DisplayName = "Other")
 };
 
-UENUM(BlueprintType)
-enum class EEntityType : uint8
-{
-	None,
-	Player,
-	NPC,
-	Item,
-	InteractableObject
-};
 
 /**
  * ============================================================================

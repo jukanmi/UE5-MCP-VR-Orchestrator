@@ -16,6 +16,58 @@
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
+#include "../SmartNPC.h"
+
+namespace
+{
+    FName GetGameplayTagForAction(EAction ActionType)
+    {
+        switch(ActionType)
+        {
+            case EAction::Move:
+            case EAction::Follow:
+            case EAction::Scan:
+            case EAction::Investigate:
+                return FName("State.Action.Move.Run");
+            case EAction::TurnTo:
+                return FName("State.Action.TurnTo");
+            case EAction::UseItem:
+            case EAction::Equip:
+            case EAction::Unequip:
+            case EAction::PickUp:
+            case EAction::Drop:
+            case EAction::Repair:
+                return FName("State.Action.Interact");
+            
+            case EAction::Attack:
+            case EAction::Magic:
+            case EAction::RangeAttack:
+                return FName("State.Action.Combat.Attack");
+            case EAction::Block:
+            case EAction::Dodge:
+                return FName("State.Action.Combat.Dodge");
+            case EAction::Flee:
+                return FName("State.Action.Combat.Flee");
+            case EAction::SignalAllies:
+                return FName("State.Action.Social.Signal");
+
+            case EAction::Dialogue:
+                return FName("State.Action.Social.Dialogue");
+            case EAction::Comfort:
+            case EAction::Emote:
+            case EAction::HandObject:
+            case EAction::Trade:
+                return FName("State.Action.Social.Emote");
+            
+            case EAction::Dance:
+            case EAction::Sing:
+                return FName("State.Action.Social.Dance");
+            
+            default:
+                return NAME_None;
+        }
+    }
+}
 
 UNPCActionComponent::UNPCActionComponent()
 {
@@ -97,8 +149,7 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
         }
     }
 
-    // 1. Actions 분배 (Dialogue = 즉시, 나머지 = Queue)
-    // 개별 액션의 FacialState는 Dispatch/Queue 처리 시 업데이트됩니다.
+    // [의도(Why)] 대화 액션은 이동 등의 물리적인 행동과 병동 실행(단기 병렬 큐)되어야 하므로 따로 처리하고, 나머지는 물리 액션 큐에 순차 적재합니다.
     DispatchActions(Batch.Actions);
 }
 
@@ -122,29 +173,24 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
 {
     for (const FGameAction& Action : Actions)
     {
-        // 1. Critical Stop
+        // [의도(Why)] 모든 동작 중지(Emergency Stop) 등 최우선 순위는 즉각 반영하여 불필요한 연산을 막습니다.
         if (Action.ActionType == EAction::Stop)
         {
             ExecuteIdle();
             continue;
         }
 
-        // 2. Parallel Action: Dialogue (즉시 실행, 큐잉하지 않음)
+        // [의도(Why)] 대화는 걸으면서도 할 수 있어야 하므로 큐 시스템 밖에서 비동기적(즉시)으로 실행시킵니다.
         if (Action.ActionType == EAction::Dialogue && !bIsDialogueActive)
         {
             bIsDialogueActive = true;
-            // 대화는 즉시 감정/상태 변화를 동반할 수 있음
-
             FString TextContent = Action.Parameters.FindRef(NPCActionKeys::Key_Text);
-            EFacialState Emotion = Action.FacialState;
-
-            BaseDialogue(TextContent, Emotion);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Dialogue Executed. Text: %s"),
-            *GetOwnerAgentID(), *TextContent);
+            BaseDialogue(TextContent, Action.FacialState);
+            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Dialogue Executed. Text: %s"), *GetOwnerAgentID(), *TextContent);
         }
         else
         {
-            // 3. Physical Action → Queue에 추가
+            // [의도(Why)] 일반 물리적 액션은 이전 행동이 끝나길 기다렸다가 순차적으로 실행(Queue)되도록 보장합니다.
             ActionQueue.Enqueue(Action);
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
             *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
@@ -164,6 +210,8 @@ void UNPCActionComponent::StopAllActions()
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
+    ResetAllStateTagsToIdle(GetOwner());
+
     if (ASmartNPCAIController* AI = GetOwnerAIController())
     {
         if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
@@ -181,8 +229,7 @@ void UNPCActionComponent::StopAllActions()
 
 void UNPCActionComponent::ProcessNextAction()
 {
-    if (bIsBusy) return;
-    if (ActionQueue.IsEmpty()) return;
+    if (bIsBusy || ActionQueue.IsEmpty()) return;
 
     FGameAction Action;
     if (ActionQueue.Dequeue(Action))
@@ -191,6 +238,8 @@ void UNPCActionComponent::ProcessNextAction()
         
         if (StateComponent) StateComponent->SetCurrentActionType(Action.ActionType);
         
+        TransitionStateTag(GetOwner(), Action.ActionType);
+
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(Action);
 
@@ -205,41 +254,17 @@ void UNPCActionComponent::ProcessNextAction()
         if (!BB) return;
 
         // Blackboard에 액션 정보 설정 (BT Task가 읽어서 실행)
-        //  비효율적인 문자열 파싱 대신 Enum 값을 직접 전달하여 타입 안정성과 성능을 확보합니다.
         BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
         BB->SetValueAsEnum(ASmartNPCAIController::Key_SubAction, (uint8)Action.ActionType);
 
         // Parameters → JSON 문자열로 변환하여 Blackboard에 저장
-        TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
-        for (const auto& Pair : Action.Parameters)
-        {
-            JsonObj->SetStringField(Pair.Key, Pair.Value);
-        }
-
-        FString OutputString;
-        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-        FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
-        BB->SetValueAsString(ASmartNPCAIController::Key_Parameters, OutputString);
+        FString JsonParams = SerializeParametersToJson(Action.Parameters);
+        BB->SetValueAsString(ASmartNPCAIController::Key_Parameters, JsonParams);
 
         // target_loc JSON → FVector 변환
         if (Action.Parameters.Contains(NPCActionKeys::Key_TargetLoc))
         {
-            FString LocJsonStr = Action.Parameters[NPCActionKeys::Key_TargetLoc];
-            TSharedPtr<FJsonObject> LocJson;
-            TSharedRef<TJsonReader<>> LocReader = TJsonReaderFactory<>::Create(LocJsonStr);
-
-            if (FJsonSerializer::Deserialize(LocReader, LocJson) && LocJson.IsValid())
-            {
-                FVector Loc;
-                Loc.X = LocJson->GetNumberField(NPCActionKeys::Loc_X);
-                Loc.Y = LocJson->GetNumberField(NPCActionKeys::Loc_Y);
-                Loc.Z = LocJson->GetNumberField(NPCActionKeys::Loc_Z);
-                BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Failed to parse target_loc: %s"), *LocJsonStr);
-            }
+            TryParseAndSetTargetLocation(BB, Action.Parameters[NPCActionKeys::Key_TargetLoc]);
         }
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
@@ -254,6 +279,8 @@ void UNPCActionComponent::OnActionCompleted()
     FString CompletedActionStr = UEnum::GetValueAsString(CompletedAction);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."), *GetOwnerAgentID(), *CompletedActionStr);
+
+    RevertStateTagToIdle(GetOwner(), CompletedAction);
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
@@ -280,6 +307,11 @@ void UNPCActionComponent::AbortCurrentAction()
     // 이를 위해서는 ExecuteAction/ActionQueue 처리 시 Python이 전달한 msg_id를 보관해야 할 수 있습니다.
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: ABORTING Action"), *GetOwnerAgentID());
+    
+    EAction AbortedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
+
+    RevertStateTagToIdle(GetOwner(), AbortedAction);
+
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
     // 물리 상태 초기화 (애니메이션 중지, 이동 중지)
@@ -436,23 +468,7 @@ TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float SearchRa
 
     if (TargetEntityType == EEntityType::Item)
     {
-        // ItemManager의 물리 스윕 기반 최적화 검색을 활용하여, 전체 순회 없이 반경 내 아이템 목록만 빠르고 안전하게 추출합니다.
-        UGameInstance* GameInstance = OwnerCharacter->GetGameInstance();
-        if (IsValid(GameInstance))
-        {
-            if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
-            {
-                const FVector SearchLocation = OwnerCharacter->GetActorLocation();
-                TArray<FDroppedItemData> FoundItems = ItemManager->GetItemsInRange(SearchLocation, SearchRadius);
-                
-                for (const FDroppedItemData& ItemData : FoundItems)
-                {
-                    // 아이템 ID별로 수량을 누적시켜 인벤토리 추가 등의 로직에서 활용하기 좋게 가공합니다.
-                    int32& CurrentAmount = DetectedEntities.FindOrAdd(ItemData.ItemTemplateID);
-                    CurrentAmount += 1;
-                }
-            }
-        }
+        ScanItemsInRange(OwnerCharacter, SearchRadius, DetectedEntities);
     }
     else
     {
@@ -474,12 +490,6 @@ void UNPCActionComponent::BaseSendEventToActor(AActor* TargetActor, const FStrin
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s가 %s에게 이벤트 '%s' 전달"), *GetOwnerAgentID(), *TargetActor->GetName(), *EventName);
 }
 
-void UNPCActionComponent::BasePlaySound(const FString& SoundName)
-{
-    // 시각적 몽타주뿐만 아니라 효과음이나 보이스 등 청각적인 피드백을 통해 몰입감을 더해주기 위함입니다.
-    // TODO: SoundBase 검색 후 UGameplayStatics::PlaySoundAtLocation 등 실행 로직 작성
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 사운드 재생: %s"), *SoundName);
-}
 
 void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 {
@@ -533,16 +543,29 @@ FVector UNPCActionComponent::ParseVectorParam(const FString& ParamStr) const
 
 void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetActor, const TMap<FString, FString>& Params)
 {
-    //  Parameter의 파싱 책임을 BTTask에서 컴포넌트로 이관하여 다양한 형태(Location, Text 등)의 인자를 안정적으로 받아냅니다.
+    // [의도(Why)] 다양한 형태(위치, 텍스트, 다중 파라미터)의 JSON 인자를 BTTask 대신 컴포넌트 레벨에서 일괄 파싱 및 캐싱하여 각 세부 Execute 함수로 안전하게 전달합니다. 
     FString TargetID = Params.FindRef(TEXT("TargetID"));
-    if (TargetID.IsEmpty())
-    {
-        TargetID = Params.FindRef(TEXT("ItemID")); // Fallback
-    }
+    if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("ItemID")); // Fallback
 
     FVector Location = ParseVectorParam(Params.FindRef(TEXT("Location")));
     FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
     FString TextBody = Params.FindRef(TEXT("DialogueText"));
+
+    // Task, Social, Investigate 특수 파라미터 추출
+    FVector StartLocation = ParseVectorParam(Params.FindRef(TEXT("StartLocation")));
+    FVector EndLocation = ParseVectorParam(Params.FindRef(TEXT("EndLocation")));
+    
+    FString GiveItemID = Params.FindRef(TEXT("GiveItemID"));
+    int32 GiveAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GiveAmount"))));
+    FString GetItemID = Params.FindRef(TEXT("GetItemID"));
+    int32 GetAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GetAmount"))));
+    
+    int32 Amount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("Amount"))));
+
+    TArray<FString> CraftItemIDs;
+    FString CraftItemsStr = Params.FindRef(TEXT("ItemIDs"));
+    if (CraftItemsStr.IsEmpty()) CraftItemsStr = TargetID;
+    CraftItemsStr.ParseIntoArray(CraftItemIDs, TEXT(","), true);
 
     // 단일화된 EAction enum 값에 따라 세부적인 행동 함수로 라우팅합니다.
     switch (ActionType)
@@ -565,26 +588,31 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::SignalAllies: ExecuteSignalAllies(TargetID); break;
 
     // Social
-    case EAction::Trade:        ExecuteTrade(TargetActor, TargetID, 1, TEXT(""), 0); break;
+    case EAction::Trade:        ExecuteTrade(TargetActor, GiveItemID.IsEmpty() ? TargetID : GiveItemID, GiveAmount, GetItemID, GetAmount); break;
+    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, TargetID, Amount); break;
     case EAction::Comfort:      ExecuteComfort(TargetActor); break;
-    case EAction::Emote:        ExecuteEmote(TargetID); break;
     case EAction::HandObject:   ExecuteHandObject(TargetID); break;
     
     // Task
     case EAction::PickUp:       ExecutePickUp(Location); break;
     case EAction::Drop:         ExecuteDrop(TargetID); break;
+    case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
     case EAction::Repair:       ExecuteRepair(TargetID); break;
     
     // Investigate
     case EAction::Investigate:  ExecuteInvestigate(Location); break;
+    case EAction::Scout:        ExecuteScout(StartLocation.IsNearlyZero() ? Location : StartLocation, EndLocation.IsNearlyZero() ? Location : EndLocation); break;
     
-    // Lifestyle
-    case EAction::Sit:          ExecuteSit(TargetActor); break;
-    case EAction::Sleep:        ExecuteSleep(TargetActor); break;
-    case EAction::Read:         ExecuteRead(TargetActor); break;
-    case EAction::Pray:         ExecutePray(Location.IsNearlyZero() && TargetActor ? TargetActor->GetActorLocation() : Location); break;
-    case EAction::Dance:        ExecuteDance(TargetID); break;
-    case EAction::Sing:         ExecuteSing(TargetID); break;
+    // Lifestyle & Social (Emote)
+    case EAction::Sit:
+    case EAction::Sleep:
+    case EAction::Read:
+    case EAction::Pray:
+    case EAction::Dance:
+    case EAction::Sing:
+    case EAction::Emote:
+        ExecuteLifestyleAction(ActionType, TargetActor, Location, TargetID);
+        break;
 
     default:
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지원되지 않는 ActionType이 ExecuteInteraction으로 유입됨"));
@@ -598,7 +626,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 // [1] Common Behaviors
 // ==========================================
 
-// 아무 동작도 하지 않는 대기 상태입니다. 현재 수행 중인 물리적/시각적 동작을 안전하게 초기화합니다.
+// [의도(Why)] 위협 상황이나 명령 취소 시, 현재 진행 중인 모든 애니메이션/이동/동작을 강제 리셋하여 대기 상태로 되돌립니다.
 void UNPCActionComponent::ExecuteIdle() 
 {
     BaseStopCurrentAction();
@@ -636,12 +664,10 @@ void UNPCActionComponent::UpdateEQSParams()
         SearchRadius, CoverWeight, (100.f - Intel) * 0.005f, Attr.Combat.Range * 0.8f);
 }
 
-// 목표 위치 혹은 대상 액터를 향해 이동합니다.
-// TacticalState 값에 따라 적절한 EQS 쿼리를 동적으로 선택해 실행합니다.
-// EQS 에셋이 할당되지 않은 경우 기존 BaseMove를 Fallback으로 사용합니다.
+// [의도(Why)] 전술 상태(TacticalState)를 결합하여 EQS 에셋을 교체함으로써, 단순 목적지 접근뿐만 아니라 엄폐, 은신, 포위 기동 등의 입체적인 이동을 1개의 함수로 통합 처리합니다.
 void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType, ETacticalMoveState TacticalState)
 {
-    // 쿵에 스탯 기반 EQS 파라미터 갱신
+    // [의도(Why)] 안전 거리, 시야, 은폐 성향 등 현재 변경된 동적 스탯을 EQS 쿼리 직전에 밀어넣어 반영합니다.
     UpdateEQSParams();
 
     UEnvQuery* SelectedQuery = nullptr;
@@ -821,14 +847,14 @@ void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign)
 // [3] Social Behaviors
 // ==========================================
 
-// 다른 캐릭터와 물물교환을 시도합니다. 내 아이템 소모 및 상대와의 상호작용을 처리합니다.
+// [의도(Why)] 다른 캐릭터와 물물교환을 시도하여 경제/사교적 상호작용의 기반을 마련합니다.
 void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount) 
 {
     // TODO: 인벤토리 아이템 GetItemCount로 개수 확인 후 GiveItem 실행
     ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
 }
 
-// 대가 없이 다른 캐릭터에게 내 소유의 아이템을 건네줍니다.
+// [의도(Why)] 대가 없이 아이템을 건네주어 호감도 상승이나 퀘스트 이벤트를 성립시킵니다.
 void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount) 
 {
     if (InventoryComponent && InventoryComponent->HasItem(ItemID, Amount))
@@ -865,7 +891,7 @@ void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 // [4] Task Behaviors
 // ==========================================
 
-// 지정된 위치 근방에 떨어진 물건 액터를 탐색 후 인벤토리에 수집합니다.
+// [의도(Why)] 월드에 존재하는 물리적 아이템을 인벤토리로 수거하여 자원 시스템과 연동합니다.
 void UNPCActionComponent::ExecutePickUp(FVector Location) 
 {
     // 타겟 위치로 걷기 지시 후 줍기 전용 애니메이션을 재생하여 몰입감을 높입니다.
@@ -954,14 +980,14 @@ void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID)
     }
 }
 
-// 인벤토리의 재료들을 소모하여 새로운 결과물을 합성해냅니다.
+// [의도(Why)] 다중 재료를 소모해 결과물(아이템)을 합성/제작하는 생산 시스템의 엔드포인트입니다.
 void UNPCActionComponent::ExecuteCraft(const TArray<FString>& ItemIDs) 
 {
     // TODO: 제작 레시피 검증 및 아이템 소모/생성 로직 연동
     BasePlayActionMedia(TEXT("Craft"));
 }
 
-// 파손된 장비 혹은 객체의 내구도를 복구합니다.
+// [의도(Why)] 파손된 객체나 장비의 내구도를 회복시켜 유지보수 관련 태스크 행동을 구현합니다.
 void UNPCActionComponent::ExecuteRepair(const FString& ItemID) 
 {
     BasePlayActionMedia(TEXT("Repair"));
@@ -981,7 +1007,7 @@ void UNPCActionComponent::ExecuteRepair(const FString& ItemID)
 // [5] Investigation Behaviors
 // ==========================================
 
-// 소음이나 단서가 발생한 지점으로 조심스럽게 이동 후, 면밀한 수색 모션을 진행합니다.
+// [의도(Why)] 소음/단서가 발생한 곳으로 접근한 후 주변 환경을 스캔하여 은닉된 위협을 능동적으로 찾아냅니다.
 void UNPCActionComponent::ExecuteInvestigate(FVector Location) 
 {
     BaseMove(Location, EMoveType::Walk);
@@ -989,76 +1015,52 @@ void UNPCActionComponent::ExecuteInvestigate(FVector Location)
 }
 
 // 두 지정된 지점 사이를 정찰하며 위협 요소를 파악합니다.
+// [의도(Why)] 현재 위치에서 가장 가까운 정찰 지점을 파악하여 이동시킴으로써 비합리적인 동선을 방지합니다. 왕복 순찰 루프는 상위 BT에서 제어함을 전제로 합니다.
 void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocation) 
 {
-    // [설명] 단순하게 목적지로 보내는 형태입니다. 
-    // 나중엔 BehaviorTree의 Loop 구조와 결합해 왕복하게끔 설계해야 함
-    // 현위치에서 StartLocation, EndLocation중 가까운걸 찾기
+    FVector TargetDestination = EndLocation;
 
-    BaseMove(EndLocation, EMoveType::Walk);
+    if (AActor* OwnerActor = GetOwner())
+    {
+        FVector CurrentLoc = OwnerActor->GetActorLocation();
+        float DistToStart = FVector::DistSquared(CurrentLoc, StartLocation);
+        float DistToEnd = FVector::DistSquared(CurrentLoc, EndLocation);
+        
+        TargetDestination = (DistToStart < DistToEnd) ? StartLocation : EndLocation;
+    }
+    // TODO::나중엔 BehaviorTree의 Loop 구조와 결합해 왕복하게끔 설계해야 함
+    BaseMove(TargetDestination, EMoveType::Walk);
 }
 
 // ==========================================
 // [6] Lifestyle Behaviors
 // ==========================================
 
-// 의자나 쉼터(Entity)를 대상으로 이동한 후 착석 애니메이션을 수행합니다.
-void UNPCActionComponent::ExecuteSit(AActor* TargetEntity) 
+// [의도(Why)] 기존에 파편화되어 있던 앉기, 자기, 기도, 춤, 노래, 감정표현 등의 라이프스타일 액션들을
+// 하나의 라우팅 함수로 통합하여 코드 중복을 제거하고 유지보수성을 극대화합니다.
+void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
 {
-    if (TargetEntity)
+    // 1. 공통 이동 및 회전 보간 처리 (이동 필요 여부에 따라)
+    FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
+    if (!Dest.IsNearlyZero())
     {
-        BaseMove(TargetEntity->GetActorLocation(), EMoveType::Walk);
-        ExecuteTurnTo(FVector::ZeroVector, TargetEntity);
+        // 걷기로 느긋하게 이동 후 대상을 바라봅니다.
+        BaseMove(Dest, EMoveType::Walk);
+        ExecuteTurnTo(Dest, TargetEntity);
     }
-    BaseSitDown(TargetEntity);
-}
 
-// 침대나 바닥을 대상으로 이동한 후 눕는 모션을 수행해 휴식(Sleep) 상태로 진입합니다.
-void UNPCActionComponent::ExecuteSleep(AActor* TargetEntity) 
-{
-    if (TargetEntity)
+    // 2. 타입에 따른 미디어(몽타주/애니) 처리 분기
+    switch (LifestyleType)
     {
-        BaseMove(TargetEntity->GetActorLocation(), EMoveType::Walk);
-        ExecuteTurnTo(FVector::ZeroVector, TargetEntity);
+        case EAction::Sit:   BaseSitDown(TargetEntity); break;
+        case EAction::Sleep: BaseLieDown(TargetEntity); break;
+        case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
+        case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
+        case EAction::Dance: BaseDance(StringParam); break;
+        case EAction::Sing:  BaseSing(StringParam); break;
+        case EAction::Emote: BaseEmote(StringParam); break;
+        // Clean 등 추가 확장이 필요하다면 여기에 분기를 추가합니다.
+        default: break;
     }
-    BaseLieDown(TargetEntity);
-}
-
-// 지정된 반경 내 환경을 청소하거나 빗자루질 같은 정리 애니메이션을 반복합니다.
-void UNPCActionComponent::ExecuteClean(FVector Location, float Radius) 
-{
-    BaseMove(Location, EMoveType::Walk);
-    BasePlayActionMedia(TEXT("Clean"));
-}
-
-// 문서를 들여다보거나 책을 읽는 모션을 통해 정보 습득 행동을 가시화합니다.
-void UNPCActionComponent::ExecuteRead(AActor* TargetEntity)
-{
-    BasePlayActionMedia(TEXT("Read"));
-}
-
-// 특정 장소를 향해 경건한 자세를 취하며 기도를 올립니다.
-void UNPCActionComponent::ExecutePray(FVector Location)
-{
-    BaseMove(Location, EMoveType::Walk, 100.0f);
-    ExecuteTurnTo(Location, nullptr);
-    BasePlayActionMedia(TEXT("Pray"));
-}
-
-// 분위기 환기 및 사교적 교류를 위해 춤을 춥니다.
-void UNPCActionComponent::ExecuteDance(const FString& DanceName)
-{
-    BaseDance(DanceName);
-}
-
-// 노래를 부르며 다른 캐릭터들의 이목을 끌거나 오락을 제공합니다. (오디오 연동 필요)
-void UNPCActionComponent::ExecuteSing(const FString& SingName)
-{
-    BaseSing(SingName);
-}
-
-void UNPCActionComponent::ExecuteEmote(const FString& EmoteName)
-{
-    BaseEmote(EmoteName);
 }
 

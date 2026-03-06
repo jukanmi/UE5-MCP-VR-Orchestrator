@@ -43,6 +43,7 @@ class PerceptionData(BaseModel):
     distance: float
     in_line_of_sight: bool
     location: Dict[str, float]  # {"x", "y", "z"}
+    activity_context: str = "Idle"  # "State.Action.Move.Run" 등 대상의 상태 태그
 
 
 class EQSQueryResult(BaseModel):

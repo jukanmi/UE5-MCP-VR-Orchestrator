@@ -124,7 +124,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             // [Blueprint 반영]: 
             // 현재 NPC의 상태는 중앙 집중형 LLM이 일괄 제어하므로, 소리를 듣는 순간 즉시 행동을 덮어씌울 필요는 없습니다.
             // 대신 현재 의심 위치(TargetLocation)가 다음 StateUpdate 스냅샷 등을 통해 서버로 전달되면, 
-            // "어디선가 소리가 났음"을 바탕으로 EQS 좌표 쿼리가 동작하여 LLM에 최종 반영됩니다.
+            // "어디선가 소리가 났음"을 바탕으로 LLM 작동후 EQS 쿼리가 동작하여 행동이 결정됨.
         }
     }
     else

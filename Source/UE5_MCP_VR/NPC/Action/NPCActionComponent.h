@@ -74,11 +74,7 @@ public:
 
     // --- Public API: Batch & Queue ---
 
-    /**
-     * ActionBatch 전체를 실행합니다.
-     * 1. BehaviorMode / FacialState 업데이트
-     * 2. Actions 배열을 Dispatch (Dialogue는 즉시, 나머지는 Queue)
-     */
+    // [의도(Why)] LLM으로부터 수신된 다중 행동(ActionBatch)을 순차 처리하기 위해 큐 트랜잭션을 시작하고 주요 상태를 갱신합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Action")
     void ExecuteActionBatch(const FActionBatch& Batch);
 
@@ -155,14 +151,11 @@ protected:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BasePlaySound(const FString& SoundName);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BasePlayActionMedia(const FString& AssetID);
 
-    // [Tactical EQS] NPC 스탯/상태를 블랙보드 EQS 파라미터에 반영합니다.
-    // ExecuteMove 호출 직전에 자동으로 실행되어 반경, 가중치 등을 최신 스탯으로 갱신합니다.
+    // [의도(Why)] 전술 이동(EQS) 시작 직전에 변동된 스탯을 파라미터에 미리 주입하여 가장 합리적인 위치를 도출하게 합니다.
     void UpdateEQSParams();
 
 private:
@@ -174,10 +167,10 @@ public:
     // [EAction 래퍼 함수 (Action Wrappers)]
     // ============================================================================
 
-    // 파라미터 문자열("(X=100.0,Y=200.0,Z=0.0)")을 FVector로 파싱하는 내부 구조체용 헬퍼 함수
+    // [의도(Why)] LLM에서 들어오는 위치 데이터 형식("(X=...,Y=...)")을 엔진 좌표계 객체(FVector)로 안전하게 변환합니다.
     FVector ParseVectorParam(const FString& ParamStr) const;
 
-    // 라우팅 래퍼: EAction에 따라 세부 Execute 함수들을 호출합니다. 파라미터를 Map 단위로 주고받아 확장성을 확보합니다.
+    // [의도(Why)] JSON으로 언패킹된 파라미터들을 각 세부 액션(Execute~)의 인자로 알맞게 매핑 및 라우팅합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteInteraction(EAction ActionType, AActor* TargetActor, const TMap<FString, FString>& Params);
 
@@ -244,9 +237,6 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteComfort(AActor* TargetActor);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteEmote(const FString& EmoteName);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteHandObject(const FString& ItemID);
@@ -278,26 +268,7 @@ public:
     // ----------------------------------------------------------------------------
     // [6] Lifestyle Behaviors
     // ----------------------------------------------------------------------------
-    // TODO: DanceName, SingName은 추후 UEnum 대체 고려 (일단은 FString 파라미터 활용)
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteSit(AActor* TargetEntity);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteSleep(AActor* TargetEntity);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteClean(FVector Location, float Radius);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteRead(AActor* TargetEntity);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecutePray(FVector Location);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteDance(const FString& DanceName);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteSing(const FString& SingName);
+    void ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam);
 
 };

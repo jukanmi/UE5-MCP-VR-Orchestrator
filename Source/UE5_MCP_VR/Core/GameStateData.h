@@ -1,7 +1,3 @@
-// File: GameStateData.h
-// Purpose: Python 백엔드로 전송할 UE5 월드 상태(State) 데이터를 담는 구조체 모음.
-//          모든 필드는 LLM이 상황을 파악할 수 있는 '최소한의 컨텍스트'만 유지합니다.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -63,6 +59,7 @@ struct FPerceptionData
 /**
  * FGameStateData: UE5 → Python 단방향 전송을 위한 상태 스냅샷(Snapshot).
  * NPC가 5초마다 한 번씩 자신의 상황을 정합화하여 채워보냅니다.
+ * TODO: 필요할때 LLM을 부르는 방식으로 수정예정이라 레거시가 될 예정
  */
 USTRUCT(BlueprintType)
 struct FGameStateData

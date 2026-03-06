@@ -57,6 +57,9 @@ void AVRPlayerCharacter::BeginPlay()
 		}
 	}
 
+    // 기본 대기 태그 부여
+    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+
 	// 3. Enhanced Input Subsystem에 IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
@@ -154,6 +157,16 @@ void AVRPlayerCharacter::Move(const FInputActionValue& Value)
 		// add movement 
 		AddMovementInput(ForwardDirection, MovementVector.Y);
 		AddMovementInput(RightDirection, MovementVector.X);
+
+        // 이동 태그 부여 (Idle 제거 및 Run 부여)
+        RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+        AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Move.Run")));
+	}
+	else
+	{
+		// 입력이 없을 경우 대기 상태 복구
+		RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Move.Run")));
+		AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
 	}
 }
 
@@ -262,6 +275,13 @@ void AVRPlayerCharacter::PerformAttack()
 {
 	if (!GetController()) return;
 
+    // 공격 태그 부여
+    RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Combat.Attack")));
+    
+    // 공격 소음 발생
+    UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 0.0f);
+
 	// Get camera location and forward direction
 	FVector CameraLocation;
 	FRotator CameraRotation;
@@ -305,6 +325,10 @@ void AVRPlayerCharacter::PerformAttack()
 		// Miss - draw debug line to show attack direction
 		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.0f);
 	}
+
+    // [TODO/임시] 공격 즉시 태그 회수 (실제 환경에서는 애니메이션 몽타주 종료 델리게이트를 통해 회수해야 정교합니다)
+    RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Combat.Attack")));
+    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
 }
 
 void AVRPlayerCharacter::ApplyMovementSpeed()
@@ -360,8 +384,33 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
+        RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+        AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Condition.Dead")));
 		// TODO: Handle player death (respawn, game over, etc.)
 	}
 
 	return ActualDamage;
+}
+
+// --- IGameplayTagAssetInterface 구현 ---
+
+void AVRPlayerCharacter::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
+{
+    TagContainer = GameplayTags;
+}
+
+void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
+{
+    if (Tag.IsValid())
+    {
+        GameplayTags.AddTag(Tag);
+    }
+}
+
+void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
+{
+    if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
+    {
+        GameplayTags.RemoveTag(Tag);
+    }
 }
