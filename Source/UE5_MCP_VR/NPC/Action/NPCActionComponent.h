@@ -26,6 +26,9 @@ class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
 {
@@ -33,6 +36,14 @@ class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
 
 public:
     UNPCActionComponent();
+
+    // --- Action Events ---
+    // Blackboard 제어 결합도를 낮추기 위한 이벤트 (SmartNPCAIController 등이 바인딩하여 사용)
+    UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
+    FOnActionStateChanged OnActionStarted;
+
+    UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
+    FOnAllActionsStopped OnActionStoppedAll;
 
     // --- Dependencies (외부 컴포넌트 참조) ---
     // Owner에서 자동 검색하므로 Blueprint에서 직접 설정할 필요 없음
@@ -65,6 +76,12 @@ public:
 
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
+    
+    // 현재 진행 중인 액션 캐싱 (BTTask 등에서 참조)
+    FGameAction CurrentAction;
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
+    const FGameAction& GetCurrentAction() const { return CurrentAction; }
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsBusy = false;

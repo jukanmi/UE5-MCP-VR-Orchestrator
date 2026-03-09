@@ -61,6 +61,7 @@ enum class ESenseType : uint8
 	None       UMETA(DisplayName = "None"),
 	Sight      UMETA(DisplayName = "Sight"),
 	Hearing    UMETA(DisplayName = "Hearing"),
+	Hit        UMETA(DisplayName = "Hit"),
 	Other      UMETA(DisplayName = "Other")
 };
 

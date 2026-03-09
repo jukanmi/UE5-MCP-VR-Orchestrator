@@ -2,11 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Struct/CharacterAttributes.h"
-#include "Struct/NPCActionTypes.h" // EFacialState
+#include "../Core/CharacterAttributes.h"      // FNPCAttributes, FCharacterAttributesBase
+#include "../Core/GameStateData.h"            // FPerceptionData
+#include "Struct/NPCActionTypes.h"             // EFacialState
 #include "NPCStateComponent.generated.h"
 
 class ASmartNPCAIController;
+class ASmartNPC;
 
 /**
  * NPC 상태 관리 컴포넌트 (NPC State Component).
@@ -21,10 +23,6 @@ public:
     UNPCStateComponent();
 
 protected:
-    // --- Character Attributes (능력치 전체) ---
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Stats")
-    FCharacterAttributes CurrentStats;
-
     // --- Facial State (표정 상태) ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Facial")
     EFacialState CurrentFacialState = EFacialState::Neutral;
@@ -48,29 +46,9 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     float LastHitTime = 0.0f;
 
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    FCharacterAttributes GetCurrentStats() const
-    { 
-        return CurrentStats;
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    float GetCurrentHealth() const
-    { 
-        return CurrentStats.Resources.Health;
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    float GetCurrentMaxHealth() const
-    { 
-        return CurrentStats.Resources.MaxHealth;
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    float GetCurrentHealthRatio() const
-    { 
-        return CurrentStats.Resources.Health / FMath::Max(1.f, CurrentStats.Resources.MaxHealth);
-    }
+    // --- Helper: Owner Attributes Access ---
+    FNPCAttributes GetAttributes() const;
+    FNPCAttributes& GetMutableAttributes();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     EFacialState GetCurrentFacialState() const
@@ -93,15 +71,12 @@ public:
 
     // --- Public API ---
 
-    // [의도(Why)] 빈번한 동일 표정 갱신 호출로부터 Blackboard 및 애니메이션 시스템의 불필요한 트리거 오버헤드를 방지합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Facial")
     void SetFacialExpression(EFacialState NewExpression);
 
-    // [의도(Why)] 장비 변경, 레벨업, 버프 등에 의한 스탯 변동 시 하위 파생치(전투, 이동속도)를 한 번에 동기화하여 불일치를 해소합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     void RefreshStats();
 
-    // [의도(Why)] 데이터 상의 이동 속도(Stats)와 실제 엔진 물리(CharacterMovementComponent) 간의 속도를 일치시킵니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     void ApplyMovementSpeed();
 
@@ -109,13 +84,35 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Reflex")
     bool TryReflexAction(int32 Difficulty);
 
-    // [의도(Why)] 피격 처리 및 방어력 연산 후 최종 데미지만 체력에 반영하여 사망(Death) 조건을 중앙 통제합니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     float ApplyDamage(float DamageAmount);
 
-    // [의도(Why)] 체력 저하나 피격 등 치명적 이벤트 발생 시, 다음 루프를 기다리지 않고 서버(LLM)에 즉각적인 상황 인지 요청을 보내기 위함입니다.
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
-    void RequestEmergencyCognition(const FString& EventType, const FString& Description);
+    void RequestEventCognition(const FPerceptionData& Perception);
+
+    // --- Affinity (호감도) ---
+    
+    // [의도(Why)] 파이썬 서버가 계산한 타겟과의 호감도(Affinity)를 로컬 캐싱하여, 퍼셉션(시각/청각) 이벤트 발생 시 대상에 대한 즉각적인 위험도(Multiplier) 판단에 사용합니다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Relations")
+    TMap<FString, int32> AffinityCache;
+
+    // 에디터에서 디자이너가 튜닝 가능한 호감도 임계값
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
+    int32 AffinityFriendlyThreshold = 30;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
+    int32 AffinityHostileThreshold = -30;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
+    float AffinityDefaultMultiplier = 0.5f;
+
+    // NPCManager 등이 서버로부터 호감도 업데이트를 받을 때 호출
+    UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
+    void UpdateAffinity(const FString& TargetID, int32 NewScore);
+
+    // 타겟 ID를 기반으로 호감도에 따른 위험도 배율 반환 (아군: 0.0, 적군: 1.0, 중립: 0.5)
+    UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
+    float GetAffinityMultiplier(const FString& TargetID) const;
 
 protected:
     virtual void BeginPlay() override;
@@ -123,4 +120,11 @@ protected:
 private:
     // 캐싱: Owner의 AIController에서 Blackboard 접근 시 사용
     ASmartNPCAIController* GetOwnerAIController() const;
+
+    // --- Event Debounce ---
+    FTimerHandle EventDebounceTimer;
+    TArray<FPerceptionData> LocalEventQueue;
+
+    UFUNCTION()
+    void FlushEventReport();
 };

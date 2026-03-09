@@ -36,13 +36,6 @@ public:
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * state_update Envelope 생성.
-     * @param PayloadJson - StateUpdatePayload를 직렬화한 JSON 문자열
-     * @return            - 완성된 Envelope JSON 문자열
-     */
-    static FString BuildStateUpdate(const FString& PayloadJson);
-
-    /**
      * prompt Envelope 생성. 플레이어 음성/제스처 명령 전송 시 사용.
      * @param PayloadJson - PromptPayload를 직렬화한 JSON 문자열
      * @return            - 완성된 Envelope JSON 문자열
@@ -58,8 +51,8 @@ public:
     static FString BuildActionFailed(const FString& RefMsgId, const FString& PayloadJson);
 
     /**
-     * emergency_report Envelope 생성. 다수 NPC의 긴급 이벤트를 묶어서 전송.
-     * @param PayloadJson - 여러 NPC의 이벤트를 담은 JSON 배열 문자열
+     * emergency_report Envelope 생성. NPC의 긴급 이벤트를 묶어서 전송.
+     * @param PayloadJson - NPC의 이벤트를 담은 JSON 배열 문자열
      * @return            - 완성된 Envelope JSON 문자열
      */
     static FString BuildEmergencyReport(const FString& PayloadJson);

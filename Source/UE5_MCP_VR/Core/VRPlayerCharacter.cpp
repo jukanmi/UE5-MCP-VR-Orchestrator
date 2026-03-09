@@ -15,11 +15,13 @@
 #include "DrawDebugHelpers.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
+#include "TimerManager.h" // Added for TimerManager
+#include "../NPC/Struct/NPCActionKeys.h" // Added for NPCActionKeys
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+ 	// Set this character to call Tick() every frame.  You can turn off this to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
     // AI Perception Stimuli Source
@@ -37,15 +39,6 @@ void AVRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// 1. Initialize WebSocket
-	WebSocketClient = NewObject<UWebSocketClient>(this);
-	if (WebSocketClient)
-	{
-		WebSocketClient->OnMessageReceived.AddDynamic(this, &AVRPlayerCharacter::OnWebSocketMessage);
-		WebSocketClient->Initialize(WebSocketURL);
-	}
-
-	// 2. Initialize UI (Hidden by default)
 	if (ChatWidgetClass)
 	{
 		ChatWidgetInstance = CreateWidget<UChatWidget>(GetWorld(), ChatWidgetClass);
@@ -53,7 +46,6 @@ void AVRPlayerCharacter::BeginPlay()
 		{
 			ChatWidgetInstance->AddToViewport();
 			ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-			ChatWidgetInstance->WebSocketClient = WebSocketClient; // Pass WS reference
 		}
 	}
 
@@ -72,20 +64,6 @@ void AVRPlayerCharacter::BeginPlay()
         }
     }
 
-    // 4. Bind WebSocket to NPCManager so it receives ActionBatch messages
-    if (WebSocketClient)
-    {
-        if (UGameInstance* GI = GetGameInstance())
-        {
-            if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-            {
-                Manager->BindWebSocket(WebSocketClient);
-                UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
-            }
-        }
-    }
-
-    // 5. Initialize derived stats and apply movement speeds
     RefreshStats();
 }
 
@@ -280,7 +258,7 @@ void AVRPlayerCharacter::PerformAttack()
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Combat.Attack")));
     
     // 공격 소음 발생
-    UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 0.0f);
+    UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 0.0f, NPCActionKeys::NoiseTag_Attack);
 
 	// Get camera location and forward direction
 	FVector CameraLocation;
@@ -399,7 +377,7 @@ void AVRPlayerCharacter::GetOwnedGameplayTags(FGameplayTagContainer& TagContaine
     TagContainer = GameplayTags;
 }
 
-void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
+void AVRPlayerCharacter::AddStateTag_Implementation(FGameplayTag Tag)
 {
     if (Tag.IsValid())
     {
@@ -407,7 +385,7 @@ void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
     }
 }
 
-void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
+void AVRPlayerCharacter::RemoveStateTag_Implementation(FGameplayTag Tag)
 {
     if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
     {

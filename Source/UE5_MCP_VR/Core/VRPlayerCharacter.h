@@ -2,19 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "../NPC/Struct/CharacterAttributes.h"
+#include "../Core/Entity.h"          // IPlayerEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
 #include "../UI/ChatWidget.h"
-#include "../Core/Entity.h"          // IPlayerEntity 계층 인터페이스
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
-#include "GameplayTagAssetInterface.h"
-#include "GameplayTagContainer.h"
 #include "VRPlayerCharacter.generated.h"
 
 UCLASS()
-class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IGameplayTagAssetInterface, public IPlayerEntity
+class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerEntity
 {
 	GENERATED_BODY()
 
@@ -36,12 +33,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags")
 	FGameplayTagContainer GameplayTags;
 
-	UFUNCTION(BlueprintCallable, Category = "Tags")
-	void AddStateTag(FGameplayTag Tag);
-	
-	UFUNCTION(BlueprintCallable, Category = "Tags")
-	void RemoveStateTag(FGameplayTag Tag);
-
 	// Player Stats (FPlayerAttributes: AI BehavioralTraits 없이 플레이어 전용 스탯만 보유)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	FPlayerAttributes CurrentStats;
@@ -50,10 +41,15 @@ protected:
     virtual FString GetEntityID_Implementation() const override { return GetName(); }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
-    virtual float GetHealth_Implementation() const override { return CurrentStats.Resources.Health; }
+
+    // ICharacterEntity
+    virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
     virtual bool IsAlive_Implementation() const override { return CurrentStats.Resources.IsAlive(); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterEntity>& Other) const override { return false; }
+
+    // IPlayerEntity
     virtual FString GetPlayerName_Implementation() const override { return GetName(); }
+    virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 
 public:	
 	// Called every frame

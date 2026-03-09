@@ -33,4 +33,10 @@ namespace NPCActionKeys
     inline const float Noise_Attack         = 1.5f;     // 공격 등 큰 소음
     inline const float Noise_UseItem        = 0.5f;     // 아이템 사용 등 작은 소음
     inline const float Noise_Drop           = 0.8f;     // 물건을 떨어뜨리는 소음
+
+    // --- Noise Tag Config (형식: "EventType:BaseDanger") ---
+    inline const FName NoiseTag_Dialogue    = FName("Dialogue:0.1");
+    inline const FName NoiseTag_Attack      = FName("Attack:0.9");
+    inline const FName NoiseTag_UseItem     = FName("UseItem:0.2");
+    inline const FName NoiseTag_Drop        = FName("Drop:0.4");
 }

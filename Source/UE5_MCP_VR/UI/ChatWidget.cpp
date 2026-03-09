@@ -7,6 +7,7 @@
 #include "JsonObjectConverter.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "../NPC/Struct/NPCActionKeys.h"
 
 void UChatWidget::NativeConstruct()
 {
@@ -53,7 +54,7 @@ void UChatWidget::SendChatMessage()
 
 			// --- [NEW] Trigger engine noise event for AI Hearing ---
 			// Loudness 1.0 (Normal speech), Range is controlled by NPC's HearingRange
-			UAISense_Hearing::ReportNoiseEvent(GetWorld(), PlayerLoc, 1.0f, Pawn, 0.0f);
+			UAISense_Hearing::ReportNoiseEvent(GetWorld(), PlayerLoc, 1.0f, Pawn, 0.0f, NPCActionKeys::NoiseTag_Dialogue);
 			UE_LOG(LogTemp, Log, TEXT("[ChatWidget] Reported Speech Noise at %s"), *PlayerLoc.ToString());
 		}
 	}

@@ -16,6 +16,7 @@ struct FActionMediaData
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Media")
     USoundBase* Sound = nullptr;
+    
 };
 
 /**

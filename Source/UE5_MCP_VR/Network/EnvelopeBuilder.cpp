@@ -123,11 +123,6 @@ FString FEnvelopeBuilder::BuildEnvelope(
 }
 
 
-FString FEnvelopeBuilder::BuildStateUpdate(const FString& PayloadJson)
-{
-    return BuildEnvelope(EEnvelopeType::StateUpdate, PayloadJson);
-}
-
 
 FString FEnvelopeBuilder::BuildPrompt(const FString& PayloadJson)
 {

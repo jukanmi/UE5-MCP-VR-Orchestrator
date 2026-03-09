@@ -335,8 +335,3 @@ struct FPlayerAttributes : public FCharacterAttributesBase
 
     FPlayerAttributes() {}
 };
-
-// [래거시를 위해 유지] 기존 FCharacterAttributes 이름을 FNPCAttributes로 대체하거나 별칭을 고려할 수 있습니다.
-// 여기서는 핵심 구조를 FNPCAttributes로 명명하고 기존 코드가 NPC용임을 명확히 합니다.
-typedef FNPCAttributes FCharacterAttributes;
-

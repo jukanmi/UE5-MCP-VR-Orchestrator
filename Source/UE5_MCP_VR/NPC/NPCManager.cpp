@@ -5,122 +5,11 @@
 #include "Engine/GameInstance.h"
 #include "Struct/NPCActionKeys.h"
 
-// --- ULLMNetworkClient ---
-
-void ULLMNetworkClient::BindWebSocket(UWebSocketClient* InSocket)
-{
-    if (!InSocket)
-    {
-        UE_LOG(LogTemp, Error, TEXT("[LLMNetworkClient] BindWebSocket: Invalid WebSocket pointer."));
-        return;
-    }
-    Socket = InSocket;
-    Socket->OnMessageReceived.AddDynamic(this, &ULLMNetworkClient::OnMessageReceivedHandler);
-    Socket->OnConnectionChanged.AddDynamic(this, &ULLMNetworkClient::OnConnectionChangedHandler);
-    UE_LOG(LogTemp, Log, TEXT("[LLMNetworkClient] Successfully Bound to LLM WebSocket Pipeline"));
-}
-
-void ULLMNetworkClient::SendPrompt(const FString& JsonData)
-{
-    if (bIsServerConnected && Socket)
-    {
-        Socket->SendPrompt(JsonData);
-    }
-}
-
-void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
-{
-    if (!bIsServerConnected || !Socket)
-    {
-        return;
-    }
-
-    FString PayloadJson = UMCPJsonUtils::SerializeGameState(StateData);
-    if (PayloadJson.IsEmpty())
-    {
-        UE_LOG(LogTemp, Error, TEXT("[LLMNetworkClient] SendStateUpdate: Payload Json serialization failed."));
-        return;
-    }
-    
-    FString FinalEnvelopeJson = FEnvelopeBuilder::BuildStateUpdate(PayloadJson);
-    if (FinalEnvelopeJson.IsEmpty())
-    {
-        UE_LOG(LogTemp, Error, TEXT("[LLMNetworkClient] SendStateUpdate: Final Envelope Json serialization failed."));
-        return;
-    }
-    Socket->SendStateUpdate(FinalEnvelopeJson);
-}
-
-void ULLMNetworkClient::OnMessageReceivedHandler(const FString& Message)
-{
-    OnMessageReceived.Broadcast(Message);
-}
-
-void ULLMNetworkClient::OnConnectionChangedHandler(bool bIsConnected)
-{
-    bIsServerConnected = bIsConnected;
-    OnConnectionChanged.Broadcast(bIsConnected);
-}
-
-// --- USLMNetworkClient ---
-
-void USLMNetworkClient::Initialize()
-{
-    Socket = NewObject<UWebSocketClient>(this);
-    if (Socket)
-    {
-        Socket->OnMessageReceived.AddDynamic(this, &USLMNetworkClient::OnMessageReceivedHandler);
-        Socket->OnConnectionChanged.AddDynamic(this, &USLMNetworkClient::OnConnectionChangedHandler);
-        Socket->Initialize(SLMWebSocketURL);
-        UE_LOG(LogTemp, Log, TEXT("[SLMNetworkClient] SLM WebSocket initialized. URL: %s"), *SLMWebSocketURL);
-    }
-}
-
-void USLMNetworkClient::SendPrompt(const FString& JsonData)
-{
-    if (!Socket)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[SLMNetworkClient] SendPrompt: SLM socket is not initialized."));
-        return;
-    }
-    Socket->SendSLMPrompt(JsonData);
-}
-
-void USLMNetworkClient::OnMessageReceivedHandler(const FString& Message)
-{
-    OnMessageReceived.Broadcast(Message);
-}
 
 // --- UNPCMap ---
 
-void UNPCMap::DispatchActionBatch(const FActionBatch& ActionBatch)
-{
-    const bool bIsBroadcastMessage = ActionBatch.AgentID.Equals(NPCActionKeys::Agent_Broadcast, ESearchCase::IgnoreCase);
 
-    if (bIsBroadcastMessage)
-    {
-        BroadcastToAllNPCs(ActionBatch);
-    }
-    else
-    {
-        DeliverToSpecificNPC(ActionBatch.AgentID, ActionBatch);
-    }
-}
-
-void UNPCMap::BroadcastToAllNPCs(const FActionBatch& ActionBatch)
-{
-    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Broadcasting Batch to ALL Registered Entities (%d Total)"), ActiveNPCs.Num());
-
-    for (const auto& NPCPair : ActiveNPCs)
-    {
-        if (IsValid(NPCPair.Value))
-        {
-            NPCPair.Value->ExecuteActionBatch(ActionBatch);
-        }
-    }
-}
-
-void UNPCMap::DeliverToSpecificNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch)
+void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch)
 {
     if (ASmartNPC* TargetNPC = GetValidNPC(TargetAgentID))
     {
@@ -132,32 +21,26 @@ void UNPCMap::DeliverToSpecificNPC(const FString& TargetAgentID, const FActionBa
     }
 }
 
-void UNPCMap::ProcessStateUpdateQueue(int32 MaxNPCsPerTick)
+
+void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
-    if (StateUpdateQueue.IsEmpty()) return;
+    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received Debug JSON Payload (Size: %d bytes)"), JsonMessage.Len());
 
-    int32 SendCount = 0;
-    while (!StateUpdateQueue.IsEmpty() && SendCount < MaxNPCsPerTick)
+    FModeActionRequest ParsedRequest;
+    const bool bIsParsedSuccessfully = UMCPJsonUtils::ParseModeActionRequest(JsonMessage, ParsedRequest);
+
+    if (!bIsParsedSuccessfully)
     {
-        FString AgentID = StateUpdateQueue[0];
-        StateUpdateQueue.RemoveAt(0);
-
-        if (ASmartNPC* ValidNPC = GetValidNPC(AgentID))
-        {
-            ValidNPC->CollectAndSendStateUpdate();
-            SendCount++;
-        }
+        UE_LOG(LogTemp, Error, TEXT("[NPCMap] Failed to Parse Valid ModeActionRequest! Ensure Standard JSON Format."));
+        return;
     }
 
-    if (StateUpdateQueue.IsEmpty())
+    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Request Validated! Master Mode: %d, BatchCount: %d"),
+        static_cast<int32>(ParsedRequest.Mode), ParsedRequest.ActionBatches.Num());
+
+    for (const auto& BatchPair : ParsedRequest.ActionBatches)
     {
-        for (const auto& NPCPair : ActiveNPCs)
-        {
-            if (IsValid(NPCPair.Value))
-            {
-                StateUpdateQueue.AddUnique(NPCPair.Key);
-            }
-        }
+        DeliverToNPC(BatchPair.Key, BatchPair.Value);
     }
 }
 
@@ -173,14 +56,14 @@ void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
     if (LLMClient)
     {
         LLMClient->OnMessageReceived.AddDynamic(this, &UNPCManager::OnLLMMessageReceived);
-        LLMClient->OnConnectionChanged.AddDynamic(this, &UNPCManager::OnWebSocketConnectionChanged);
+        LLMClient->InitializeLLM();
     }
 
     SLMClient = NewObject<USLMNetworkClient>(this);
     if (SLMClient)
     {
         SLMClient->OnMessageReceived.AddDynamic(this, &UNPCManager::OnSLMMessageReceived);
-        SLMClient->Initialize(); // Update initialization
+        SLMClient->InitializeSLM();
     }
 }
 
@@ -196,32 +79,37 @@ void UNPCManager::Deinitialize()
     Super::Deinitialize();
 }
 
-void UNPCManager::BindWebSocket(UWebSocketClient* InSocket)
+void UNPCManager::RegisterNPC(const FString& AgentID, ASmartNPC* NPC)
 {
-    if (LLMClient)
+    if (NPCMap)
     {
-        LLMClient->BindWebSocket(InSocket);
+        NPCMap->RegisterNPC(AgentID, NPC);
     }
 }
 
-void UNPCManager::OnWebSocketConnectionChanged(bool bIsConnected)
+void UNPCManager::UnregisterNPC(const FString& AgentID)
 {
-    if (!bIsConnected)
+    if (NPCMap)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] WebSocket Disconnected! setting all NPCs to Offline Fallback mode."));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("[NPCManager] WebSocket Reconnected. Resuming online AI mode."));
+        NPCMap->UnregisterNPC(AgentID);
     }
 }
+
+void UNPCManager::OnWebSocketMessageReceived(const FString& JsonMessage)
+{
+    if (NPCMap)
+    {
+        NPCMap->OnWebSocketMessageReceived(JsonMessage);
+    }
+}
+
 
 bool UNPCManager::IsServerConnected() const
 {
     return LLMClient ? LLMClient->IsConnected() : false;
 }
 
-void UNPCManager::SendPromptToLLM(const FString& JsonData)
+void UNPCManager::SendEnvelopePromptToLLM(const FString& JsonData)
 {
     if (LLMClient)
     {
@@ -237,7 +125,7 @@ void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
     }
 }
 
-void UNPCManager::SendPromptToSLM(const FString& JsonData)
+void UNPCManager::SendEnvelopePromptToSLM(const FString& JsonData)
 {
     if (SLMClient)
     {
@@ -250,7 +138,6 @@ void UNPCManager::OnSLMMessageReceived(const FString& JsonMessage)
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] SLM 응답 수신 (TODO: 응답 양식 미확정) -> %s"), *JsonMessage);
     // TODO: 응답 포맷 확정 후 파싱 및 NPC 즉각 리액션 로직 구현
 }
-// ProcessStateUpdateQueue removed - this logic is in UNPCMap now
 
 void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 {
@@ -272,7 +159,20 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     {
         if (NPCMap)
         {
-            NPCMap->DispatchActionBatch(BatchPair.Value);
+            NPCMap->DeliverToNPC(BatchPair.Key, BatchPair.Value);
         }
+    }
+}
+
+void UNPCManager::SendEventReport(const FString& AgentID, const FString& CombinedPayload)
+{
+    // 이미 NPCStateComponent에서 취합/배치/JSON화가 끝난 데이터를 받음
+    // 여기서는 Envelope 래핑만 해서 즉시 발송
+    FString Envelope = FEnvelopeBuilder::BuildEmergencyReport(CombinedPayload);
+    
+    if (LLMClient && LLMClient->IsConnected())
+    {
+        LLMClient->SendPrompt(Envelope);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Event Report Sent for Agent: %s"), *AgentID);
     }
 }

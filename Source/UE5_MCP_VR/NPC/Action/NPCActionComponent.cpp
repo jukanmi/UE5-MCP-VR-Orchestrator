@@ -214,15 +214,11 @@ void UNPCActionComponent::StopAllActions()
 
     if (ASmartNPCAIController* AI = GetOwnerAIController())
     {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-        {
-            BB->SetValueAsEnum(ASmartNPCAIController::Key_SubAction, (uint8)EAction::Idle);
-            BB->ClearValue(ASmartNPCAIController::Key_TargetLocation);
-            BB->ClearValue(ASmartNPCAIController::Key_TargetActor);
-            BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, false);
-        }
         AI->StopMovement();
     }
+    
+    // [FIX] 결합도를 낮추기 위해 직접 BlackBoard를 수정하지 않고 델리게이트 브로드캐스트
+    OnActionStoppedAll.Broadcast();
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Stopped All Actions."), *GetOwnerAgentID());
 }
@@ -231,43 +227,33 @@ void UNPCActionComponent::ProcessNextAction()
 {
     if (bIsBusy || ActionQueue.IsEmpty()) return;
 
-    FGameAction Action;
-    if (ActionQueue.Dequeue(Action))
+    if (ActionQueue.Dequeue(CurrentAction))
     {
         bIsBusy = true;
         
-        if (StateComponent) StateComponent->SetCurrentActionType(Action.ActionType);
+        if (StateComponent) StateComponent->SetCurrentActionType(CurrentAction.ActionType);
         
-        TransitionStateTag(GetOwner(), Action.ActionType);
+        TransitionStateTag(GetOwner(), CurrentAction.ActionType);
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
-        UpdateActionState(Action);
+        UpdateActionState(CurrentAction);
 
-        ASmartNPCAIController* AI = GetOwnerAIController();
-        if (!AI)
+        // [FIX] 결합도를 낮추기 위해 직접 BlackBoard를 수정하지 않고 델리게이트 브로드캐스트
+        OnActionStarted.Broadcast(CurrentAction);
+        
+        // target_loc 특수 처리는 여전히 남겨두지만 의존성이 낮아지면 이동 가능
+        if (ASmartNPCAIController* AI = GetOwnerAIController())
         {
-            OnActionCompleted();
-            return;
+            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
+            {
+                if (CurrentAction.Parameters.Contains(NPCActionKeys::Key_TargetLoc))
+                {
+                    TryParseAndSetTargetLocation(BB, CurrentAction.Parameters[NPCActionKeys::Key_TargetLoc]);
+                }
+            }
         }
 
-        UBlackboardComponent* BB = AI->GetBlackboardComponent();
-        if (!BB) return;
-
-        // Blackboard에 액션 정보 설정 (BT Task가 읽어서 실행)
-        BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
-        BB->SetValueAsEnum(ASmartNPCAIController::Key_SubAction, (uint8)Action.ActionType);
-
-        // Parameters → JSON 문자열로 변환하여 Blackboard에 저장
-        FString JsonParams = SerializeParametersToJson(Action.Parameters);
-        BB->SetValueAsString(ASmartNPCAIController::Key_Parameters, JsonParams);
-
-        // target_loc JSON → FVector 변환
-        if (Action.Parameters.Contains(NPCActionKeys::Key_TargetLoc))
-        {
-            TryParseAndSetTargetLocation(BB, Action.Parameters[NPCActionKeys::Key_TargetLoc]);
-        }
-
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
     }
 }
 
@@ -363,7 +349,7 @@ void UNPCActionComponent::BaseDialogue(const FString& DialogueText, const EFacia
     // 대화 발생 시 주변(NPC 등)이 듣고 반응할 수 있도록 소음 이벤트 등록
     if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
     {
-        UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Dialogue, OwnerCharacter, 0.0f);
+        UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Dialogue, OwnerCharacter, 0.0f, NPCActionKeys::NoiseTag_Dialogue);
     }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 대화 실행: %s (표정: %d) - 내용: %s"), 
@@ -766,7 +752,7 @@ void UNPCActionComponent::ExecuteUseItem(const FString& ItemID)
         // 아이템 소모/조작 시 작은 소음 발생
         if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         {
-            UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_UseItem, OwnerCharacter, 0.0f);
+            UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_UseItem, OwnerCharacter, 0.0f, NPCActionKeys::NoiseTag_UseItem);
         }
     }
 }
@@ -807,7 +793,7 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
         // 공격 액션 시 주변에 큰 소음 발생
         if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         {
-            UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.0f);
+            UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.0f, NPCActionKeys::NoiseTag_Attack);
         }
     }
 }

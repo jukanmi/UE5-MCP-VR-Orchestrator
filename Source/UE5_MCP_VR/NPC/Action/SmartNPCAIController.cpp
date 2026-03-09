@@ -85,7 +85,34 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
 		{
 			RunBehaviorTree(NPC->BehaviorTreeAsset);
 		}
+
+        // --- Bind ActionComponent Delegates ---
+        if (UNPCActionComponent* ActionComp = NPC->ActionComponent)
+        {
+            ActionComp->OnActionStarted.AddDynamic(this, &ASmartNPCAIController::HandleActionStarted);
+            ActionComp->OnActionStoppedAll.AddDynamic(this, &ASmartNPCAIController::HandleAllActionsStopped);
+        }
 	}
+}
+
+void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
+{
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        BB->SetValueAsBool(Key_HasAction, true);
+        BB->SetValueAsEnum(Key_SubAction, (uint8)Action.ActionType);
+    }
+}
+
+void ASmartNPCAIController::HandleAllActionsStopped()
+{
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        BB->SetValueAsEnum(Key_SubAction, (uint8)EAction::Idle);
+        BB->ClearValue(Key_TargetLocation);
+        BB->ClearValue(Key_TargetActor);
+        BB->SetValueAsBool(Key_HasAction, false);
+    }
 }
 
 void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
@@ -101,10 +128,35 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
 
         if (Stimulus.Type == SightID)
         {
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *Actor->GetName());
-            // Found target via SIGHT (Exact location known)
+            const FString TargetID = Actor->GetName();
+            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *TargetID);
+
+            // 1. Blackboard 업데이트 (BehaviorTree용 즉각 반응)
             Blackboard->SetValueAsObject(Key_TargetActor, Actor);
             Blackboard->SetValueAsVector(Key_TargetLocation, Actor->GetActorLocation());
+
+            // 2. FPerceptionData 조립 후 EventCognition으로 넘김
+            if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn()))
+            {
+                if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
+                {
+                    // 시각 위협도 기본값 (직접 발각)
+                    constexpr float SightBaseDanger = 0.6f;
+
+                    // 호감도 기반 최종 위협도 (Friend: 0.0, Neutral: 0.3, Enemy: 0.6)
+                    float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
+                    float FinalDanger = SightBaseDanger * Multiplier;
+
+                    FPerceptionData Perception;
+                    Perception.TargetID = TargetID;
+                    Perception.SenseType = ESenseType::Sight;
+                    Perception.Location = Actor->GetActorLocation(); // 정확한 위치
+                    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Actor->GetActorLocation());
+                    Perception.DangerScore = FinalDanger;
+
+                    StateComp->RequestEventCognition(Perception);
+                }
+            }
         }
         else if (Stimulus.Type == HearingID)
         {
@@ -114,17 +166,48 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                 return;
             }
 
+            // 1. Tag 디코딩 (형식: "EventType:BaseDanger")
+            FString TagStr = Stimulus.Tag.ToString();
+            FString EventType, DangerStr;
+            float BaseDanger = 0.2f; // 기본값
+
+            if (TagStr.Split(TEXT(":"), &EventType, &DangerStr))
+            {
+                BaseDanger = FCString::Atof(*DangerStr);
+            }
+            else
+            {
+                EventType = TagStr; // Tag가 없으면 원본 그대로 EventType으로 사용
+            }
+
             FString SourceName = Actor ? Actor->GetName() : TEXT("Unknown");
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] HEARING: Detected Noise from %s at %s"), *SourceName, *Stimulus.StimulusLocation.ToString());
+            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] HEARING: Detected %s Noise from %s at %s"), 
+                *EventType, *SourceName, *Stimulus.StimulusLocation.ToString());
             
             // Heard something! 
             // 시각 정보가 아니므로 TargetActor를 즉각 설정하지는 않지만, 소음 발생 위치를 조사(Investigate)의 목적으로 유지합니다.
             Blackboard->SetValueAsVector(Key_TargetLocation, Stimulus.StimulusLocation);
 
-            // [Blueprint 반영]: 
-            // 현재 NPC의 상태는 중앙 집중형 LLM이 일괄 제어하므로, 소리를 듣는 순간 즉시 행동을 덮어씌울 필요는 없습니다.
-            // 대신 현재 의심 위치(TargetLocation)가 다음 StateUpdate 스냅샷 등을 통해 서버로 전달되면, 
-            // "어디선가 소리가 났음"을 바탕으로 LLM 작동후 EQS 쿼리가 동작하여 행동이 결정됨.
+            // 2. 호감도(Affinity) 기반 가중치 계산
+            if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn()))
+            {
+                if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
+                {
+                    // StateComponent에 캐싱된 대상과의 호감도 기반 배율 (Friend: 0.0, Neutral: 0.5, Enemy: 1.0)
+                    float Multiplier = StateComp->GetAffinityMultiplier(SourceName);
+                    float FinalDanger = BaseDanger * Multiplier;
+
+                    // 3. FPerceptionData 조립 후 EventCognition으로 넘김
+                    FPerceptionData Perception;
+                    Perception.TargetID = SourceName;
+                    Perception.SenseType = ESenseType::Hearing;
+                    Perception.Location = Stimulus.StimulusLocation; // [FIX] 소음 발생 위치 추가
+                    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Stimulus.StimulusLocation);
+                    Perception.DangerScore = FinalDanger;
+
+                    StateComp->RequestEventCognition(Perception);
+                }
+            }
         }
     }
     else

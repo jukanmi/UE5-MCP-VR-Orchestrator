@@ -38,28 +38,25 @@ struct FPerceptionData
 {
     GENERATED_BODY()
 
-    // 인지된 대상의 고유 ID 혹은 정체 불명 식별자 
-    // (예: 너무 멀어 움직임만 보이거나, 소리만 들려 누군지 모를 경우 "unknown" 할당)
+    // 인지된 대상의 고유 ID 혹은 Unknown
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     FString TargetID;
 
-    // [의도] 문자열 비교의 오버헤드를 없애고 타입 안정성을 확보하기 위해 직접 선언된 Enum을 사용함.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     ESenseType SenseType = ESenseType::None;
     
-    // 대상의 월드 좌표 (cm 단위)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     FVector Location = FVector::ZeroVector;
 
-    // 대상까지의 거리
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
     float Distance = 0.f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
+    float DangerScore = 0.f;
 };
 
 /**
- * FGameStateData: UE5 → Python 단방향 전송을 위한 상태 스냅샷(Snapshot).
- * NPC가 5초마다 한 번씩 자신의 상황을 정합화하여 채워보냅니다.
- * TODO: 필요할때 LLM을 부르는 방식으로 수정예정이라 레거시가 될 예정
+ * NPC가 연달아 오는 정보를 취합하여 자신의 상황을 채워보냅니다.
  */
 USTRUCT(BlueprintType)
 struct FGameStateData

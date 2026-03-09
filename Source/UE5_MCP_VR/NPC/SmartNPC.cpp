@@ -76,210 +76,7 @@ void ASmartNPC::ExecuteActionBatch_Implementation(const FActionBatch& Batch)
     }
 }
 
-float ASmartNPC::GetHealth_Implementation() const
-{
-    return StateComponent ? StateComponent->GetCurrentStats().Resources.Health : 0.f;
-}
 
-bool ASmartNPC::IsAlive_Implementation() const
-{
-    return StateComponent ? StateComponent->GetCurrentStats().Resources.IsAlive() : false;
-}
-
-namespace
-{
-    FString ExtractActivityContext(AActor* SensedActor)
-    {
-        if (IGameplayTagAssetInterface* TagInterface = Cast<IGameplayTagAssetInterface>(SensedActor))
-        {
-            FGameplayTagContainer TargetTags;
-            TagInterface->GetOwnedGameplayTags(TargetTags);
-            
-            for (const FGameplayTag& Tag : TargetTags)
-            {
-                if (Tag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("State.Action"))))
-                {
-                    return Tag.GetTagName().ToString();
-                }
-            }
-        }
-        return TEXT("Idle");
-    }
-
-    bool TryIdentifySightTarget(AActor* SensedActor, float Distance, float BaseIdentifyThreshold, float CurrentTime, TMap<TWeakObjectPtr<AActor>, FKnownTargetInfo>& KnownTargetsMap, APawn*& OutIdentifiedPawn)
-    {
-        TWeakObjectPtr<AActor> WeakActor(SensedActor);
-        bool bWasAlreadyIdentified = KnownTargetsMap.Contains(WeakActor);
-        
-        float ThresholdToUse = bWasAlreadyIdentified ? (BaseIdentifyThreshold + 200.f) : BaseIdentifyThreshold;
-
-        if (Distance <= ThresholdToUse)
-        {
-            OutIdentifiedPawn = Cast<APawn>(SensedActor);
-            if (OutIdentifiedPawn)
-            {
-                FKnownTargetInfo KnownInfo;
-                KnownInfo.LastLocation = SensedActor->GetActorLocation();
-                KnownInfo.LastSeenTime = CurrentTime;
-                KnownTargetsMap.Add(WeakActor, KnownInfo);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    bool TryIdentifyHearingTarget(AActor* SensedActor, const FAIStimulus& Stimulus, float HearingAssocRadius, float TargetTTL, float CurrentTime, TMap<TWeakObjectPtr<AActor>, FKnownTargetInfo>& KnownTargetsMap, APawn*& OutIdentifiedPawn)
-    {
-        TWeakObjectPtr<AActor> BestMatchActor = nullptr;
-        float ClosestDistSq = FMath::Square(HearingAssocRadius);
-
-        for (auto It = KnownTargetsMap.CreateIterator(); It; ++It)
-        {
-            TWeakObjectPtr<AActor> SavedActor = It.Key();
-            FKnownTargetInfo& KnownInfo = It.Value();
-
-            if (!SavedActor.IsValid())
-            {
-                It.RemoveCurrent();
-                continue;
-            }
-
-            if (CurrentTime - KnownInfo.LastSeenTime > TargetTTL)
-            {
-                It.RemoveCurrent();
-                continue;
-            }
-
-            float DistSq = FVector::DistSquared(Stimulus.StimulusLocation, KnownInfo.LastLocation);
-            if (DistSq < ClosestDistSq)
-            {
-                ClosestDistSq = DistSq;
-                BestMatchActor = SavedActor;
-            }
-        }
-
-        if (BestMatchActor.IsValid())
-        {
-            OutIdentifiedPawn = Cast<APawn>(BestMatchActor.Get());
-            return true;
-        }
-        
-        if (Stimulus.Tag == FName("Voice")) 
-        {
-            OutIdentifiedPawn = Cast<APawn>(SensedActor);
-            return OutIdentifiedPawn != nullptr;
-        }
-
-        return false;
-    }
-
-    bool TryProcessStimulus(
-        AActor* SensedActor, const FAIStimulus& Stimulus, float CurrentTime, 
-        float IdentifyRadius, float HearingRadius, float MemoryTTL,
-        TMap<TWeakObjectPtr<AActor>, FKnownTargetInfo>& KnownTargetsMap,
-        const FVector& OwnerLocation,
-        FPerceptionData& OutPercData)
-    {
-        OutPercData.Location = SensedActor->GetActorLocation();
-        OutPercData.Distance = FVector::Dist(OwnerLocation, OutPercData.Location);
-
-        FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
-        FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
-
-        bool bIsIdentified = false;
-        APawn* IdentifiedPawn = nullptr;
-
-        if (Stimulus.Type == SightID)
-        {
-            float CurrentLightFactor = 1.0f; 
-            float DynamicThreshold = IdentifyRadius * CurrentLightFactor;
-            bIsIdentified = TryIdentifySightTarget(SensedActor, OutPercData.Distance, DynamicThreshold, CurrentTime, KnownTargetsMap, IdentifiedPawn);
-            OutPercData.SenseType = ESenseType::Sight;
-        }
-        else if (Stimulus.Type == HearingID)
-        {
-            bIsIdentified = TryIdentifyHearingTarget(SensedActor, Stimulus, HearingRadius, MemoryTTL, CurrentTime, KnownTargetsMap, IdentifiedPawn);
-            OutPercData.SenseType = ESenseType::Hearing;
-        }
-        else
-        {
-            OutPercData.SenseType = ESenseType::Other;
-        }
-
-        OutPercData.TargetID = (bIsIdentified && IdentifiedPawn) ? IdentifiedPawn->GetName() : TEXT("unknown");
-        OutPercData.ActivityContext = ExtractActivityContext(SensedActor);
-
-        return true;
-    }
-
-    void CollectPerceptionData(
-        ASmartNPC* NPC, 
-        TArray<FPerceptionData>& OutPerceivedTargets)
-    {
-        ASmartNPCAIController* AIController = Cast<ASmartNPCAIController>(NPC->GetController());
-        if (!AIController) return;
-        
-        UAIPerceptionComponent* PerceptionComp = AIController->GetAIPerceptionComponent();
-        if (!PerceptionComp) return;
-
-        TArray<AActor*> SensedActors;
-        PerceptionComp->GetKnownPerceivedActors(nullptr, SensedActors);
-        
-        float CurrentTime = NPC->GetWorld()->GetTimeSeconds();
-
-        for (AActor* SensedActor : SensedActors)
-        {
-            if (!IsValid(SensedActor) || SensedActor == NPC) continue;
-
-            FActorPerceptionBlueprintInfo Info;
-            if (!PerceptionComp->GetActorsPerception(SensedActor, Info)) continue;
-
-            for (const FAIStimulus& Stimulus : Info.LastSensedStimuli)
-            {
-                if (!Stimulus.WasSuccessfullySensed()) continue;
-
-                FPerceptionData PercData;
-                if (TryProcessStimulus(SensedActor, Stimulus, CurrentTime, NPC->BaseIdentificationRadius, NPC->HearingAssociationRadius, NPC->TargetMemoryTTL, NPC->KnownTargetsMap, NPC->GetActorLocation(), PercData))
-                {
-                    OutPerceivedTargets.Add(PercData);
-                    break;
-                }
-            }
-        }
-    }
-
-    FString DetermineThreatLevel(UNPCStateComponent* StateComponent)
-    {
-        if (!StateComponent) return TEXT("Low");
-
-        const FCharacterAttributes CurrentStats = StateComponent->GetCurrentStats();
-        const float HealthRatio = CurrentStats.Resources.Health / FMath::Max(1.f, CurrentStats.Resources.MaxHealth);
-        
-        if (HealthRatio < 0.3f) return TEXT("High");
-        if (HealthRatio < 0.6f) return TEXT("Medium");
-        return TEXT("Low");
-    }
-}
-
-void ASmartNPC::CollectAndSendStateUpdate()
-{
-    if (!IsValid(this) || AgentID.IsEmpty()) return;
-    
-    FGameStateData StateSnapshot;
-    StateSnapshot.OwnerAgentID = AgentID;
-    StateSnapshot.OwnerLocation = GetActorLocation();
-    StateSnapshot.ThreatLevel = DetermineThreatLevel(StateComponent);
-
-    CollectPerceptionData(this, StateSnapshot.PerceivedTargets);
-
-    if (UGameInstance* GI = GetGameInstance())
-    {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            Manager->SendStateToMCP(StateSnapshot);
-        }
-    }
-}
 
 void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
 {
@@ -314,21 +111,24 @@ void ASmartNPC::OnActionCompleted()
     }
 }
 
-FCharacterAttributes ASmartNPC::GetStats() const
-{
-    return StateComponent ? StateComponent->GetCurrentStats() : FCharacterAttributes();
-}
-
 float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, 
     AController* EventInstigator, AActor* DamageCauser)
 {
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     
-    if (StateComponent && GetWorld()->GetTimeSeconds() - StateComponent->LastHitTime > 2.0f)
+    if (StateComponent)
     {
         StateComponent->ApplyDamage(ActualDamage);
-        StateComponent->RequestEmergencyCognition(TEXT("Hit"), 
-            FString::Printf(TEXT("Took %.1f Damage"), ActualDamage));
+
+        // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
+        FPerceptionData DamageEventPerc;
+        DamageEventPerc.TargetID = DamageCauser ? DamageCauser->GetName() : TEXT("Unknown");
+        DamageEventPerc.SenseType = ESenseType::Hit; // 물리적 충격
+        DamageEventPerc.Location = DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation();
+        DamageEventPerc.Distance = DamageCauser ? FVector::Dist(GetActorLocation(), DamageEventPerc.Location) : 0.0f;
+        DamageEventPerc.DangerScore = 1.0f; // 피격은 즉각적인 최대 위협으로 간주
+        
+        StateComponent->RequestEventCognition(DamageEventPerc);
     }
 
     return ActualDamage;
@@ -405,7 +205,7 @@ void ASmartNPC::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
     TagContainer = GameplayTags;
 }
 
-void ASmartNPC::AddStateTag(FGameplayTag Tag)
+void ASmartNPC::AddStateTag_Implementation(FGameplayTag Tag)
 {
     if (Tag.IsValid())
     {
@@ -413,7 +213,7 @@ void ASmartNPC::AddStateTag(FGameplayTag Tag)
     }
 }
 
-void ASmartNPC::RemoveStateTag(FGameplayTag Tag)
+void ASmartNPC::RemoveStateTag_Implementation(FGameplayTag Tag)
 {
     if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
     {

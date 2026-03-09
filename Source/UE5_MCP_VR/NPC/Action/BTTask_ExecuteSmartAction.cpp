@@ -44,18 +44,14 @@ EBTNodeResult::Type UBTTask_ExecuteSmartAction::ExecuteTask(UBehaviorTreeCompone
 	UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
 	if (!BB) return EBTNodeResult::Failed;
 
-	// [의도(Why)] JSON으로 직렬화된 파라미터를 Map 구조로 안전하게 추출(파싱)하기 위해 별도 분리한 헬퍼 함수를 호출합니다.
-	FString ParamsJsonStr = BB->GetValueAsString(ASmartNPCAIController::Key_Parameters);
-	TMap<FString, FString> Params = ParseParametersFromJson(ParamsJsonStr);
-
-    // [의도(Why)] 블랙보드에서 EAction(Enum) 값을 직접 추출하여 불필요한 String 비교 연산을 회피하고 라우팅 속도를 높입니다.
-	EAction ActionType = (EAction)BB->GetValueAsEnum(ASmartNPCAIController::Key_SubAction);
 	AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
 	
-	// [의도(Why)] 파라미터(Type, Target, Params Map)의 파싱 및 라우팅 책임을 온전히 NPCActionComponent에 단일 위임(Delegate)하여 BT Task는 "명령 전달" 역할에만 충실하도록 설계합니다.
+	// [의도(Why)] 파라미터(Type, Target, Params Map)의 라우팅 책임을 온전히 NPCActionComponent에 단일 위임(Delegate)
+	// Blackboard를 경유한 JSON 직렬화/역직렬화 오버헤드를 방지하고 컴포넌트의 CurrentAction을 직접 참조합니다.
     if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
     {
-        ActionComp->ExecuteInteraction(ActionType, TargetActor, Params);
+        const FGameAction& Action = ActionComp->GetCurrentAction();
+        ActionComp->ExecuteInteraction(Action.ActionType, TargetActor, Action.Parameters);
     }
 
 	NPC->OnActionCompleted();
