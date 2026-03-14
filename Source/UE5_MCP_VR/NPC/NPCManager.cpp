@@ -135,32 +135,27 @@ void UNPCManager::SendEnvelopePromptToSLM(const FString& JsonData)
 
 void UNPCManager::OnSLMMessageReceived(const FString& JsonMessage)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] SLM 응답 수신 (TODO: 응답 양식 미확정) -> %s"), *JsonMessage);
-    // TODO: 응답 포맷 확정 후 파싱 및 NPC 즉각 리액션 로직 구현
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] SLM 응답 수신 -> %s"), *JsonMessage);
+
+    if (NPCMap)
+    {
+        NPCMap->OnWebSocketMessageReceived(JsonMessage);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Cannot route SLM response; NPCMap is not ready."));
+    }
 }
 
 void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received JSON Payload (Size: %d bytes)"), JsonMessage.Len());
-
-    FModeActionRequest ParsedRequest;
-    const bool bIsParsedSuccessfully = UMCPJsonUtils::ParseModeActionRequest(JsonMessage, ParsedRequest);
-
-    if (!bIsParsedSuccessfully)
+    if (NPCMap)
     {
-        UE_LOG(LogTemp, Error, TEXT("[NPCManager] Failed to Parse Valid ModeActionRequest! Ensure Standard JSON Format."));
-        return;
+        NPCMap->OnWebSocketMessageReceived(JsonMessage);
     }
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Request Validated! Master Mode: %d, BatchCount: %d"),
-        static_cast<int32>(ParsedRequest.Mode), ParsedRequest.ActionBatches.Num());
-
-    for (const auto& BatchPair : ParsedRequest.ActionBatches)
+    else
     {
-        if (NPCMap)
-        {
-            NPCMap->DeliverToNPC(BatchPair.Key, BatchPair.Value);
-        }
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Received LLM response but NPCMap is not initialized."));
     }
 }
 

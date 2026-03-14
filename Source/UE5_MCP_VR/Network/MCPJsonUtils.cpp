@@ -16,6 +16,14 @@ namespace
         return LocObj;
     }
 
+    FString SenseTypeToString(ESenseType Sense)
+    {
+        if (const UEnum* EnumPtr = StaticEnum<ESenseType>())
+        {
+            return EnumPtr->GetNameStringByValue(static_cast<int64>(Sense));
+        }
+        return TEXT("None");
+    }
 }
 
 
@@ -140,4 +148,35 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
     }
 
     return true;
+}
+
+FString UMCPJsonUtils::SerializePerceptionReport(const TArray<FPerceptionData>& PerceptionEvents)
+{
+    TArray<TSharedPtr<FJsonValue>> EventValues;
+    EventValues.Reserve(PerceptionEvents.Num());
+
+    for (const FPerceptionData& Event : PerceptionEvents)
+    {
+        TSharedPtr<FJsonObject> EventObj = MakeShared<FJsonObject>();
+        EventObj->SetStringField(
+            TEXT("target_id"),
+            Event.TargetID.IsEmpty() ? TEXT("Unknown") : Event.TargetID);
+        EventObj->SetStringField(TEXT("sense_type"), SenseTypeToString(Event.SenseType));
+        EventObj->SetObjectField(TEXT("location"), ConvertLocationToJson(Event.Location));
+        EventObj->SetNumberField(TEXT("distance"), Event.Distance);
+        EventObj->SetNumberField(TEXT("danger_score"), FMath::Clamp(Event.DangerScore, 0.f, 1.f));
+
+        EventValues.Add(MakeShared<FJsonValueObject>(EventObj));
+    }
+
+    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetArrayField(TEXT("perceptions"), EventValues);
+    Root->SetNumberField(TEXT("generated_at"),
+        (FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalSeconds());
+
+    FString Output;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+
+    return Output;
 }
