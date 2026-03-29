@@ -1,4 +1,6 @@
 #include "SmartNPCAIController.h"
+#include "NPCActionComponent.h"
+#include "../NPCStateComponent.h"
 #include "../SmartNPC.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"

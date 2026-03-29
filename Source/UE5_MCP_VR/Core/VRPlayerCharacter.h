@@ -11,7 +11,7 @@
 #include "VRPlayerCharacter.generated.h"
 
 UCLASS()
-class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerEntity
+class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerBase
 {
 	GENERATED_BODY()
 
@@ -27,8 +27,10 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	// --- IGameplayTagAssetInterface 구현 ---
 	virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;
+
+	void AddStateTag(FGameplayTag Tag);
+	void RemoveStateTag(FGameplayTag Tag);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags")
 	FGameplayTagContainer GameplayTags;
@@ -42,12 +44,11 @@ protected:
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
 
-    // ICharacterEntity
+    // ICharacterBase
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
-    virtual bool IsAlive_Implementation() const override { return CurrentStats.Resources.IsAlive(); }
-    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterEntity>& Other) const override { return false; }
+    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
 
-    // IPlayerEntity
+    // IPlayerBase
     virtual FString GetPlayerName_Implementation() const override { return GetName(); }
     virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 

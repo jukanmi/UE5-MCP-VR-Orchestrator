@@ -31,6 +31,26 @@ namespace
 
 namespace
 {
+    template<typename TEnum>
+    bool TryParseEnumFromJson(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, TEnum& OutEnum)
+    {
+        FString EnumString;
+        if (JsonObj->TryGetStringField(FieldName, EnumString) || 
+            JsonObj->TryGetStringField(FieldName.ToLower(), EnumString))
+        {
+            if (const UEnum* EnumPtr = StaticEnum<TEnum>())
+            {
+                int64 EnumValue = EnumPtr->GetValueByNameString(EnumString);
+                if (EnumValue != INDEX_NONE)
+                {
+                    OutEnum = static_cast<TEnum>(EnumValue);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     bool TryParseBehaviorMode(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, ENPCBehaviorMode& OutMode)
     {
         return TryParseEnumFromJson(JsonObj, FieldName, OutMode);
@@ -59,26 +79,7 @@ namespace
         }
     }
 
-    template<typename TEnum>
-    bool TryParseEnumFromJson(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, TEnum& OutEnum)
-    {
-        FString EnumString;
-        // PascalCase 및 snake_case 모두 지원
-        if (JsonObj->TryGetStringField(FieldName, EnumString) || 
-            JsonObj->TryGetStringField(FieldName.ToLower(), EnumString))
-        {
-            if (const UEnum* EnumPtr = StaticEnum<TEnum>())
-            {
-                int64 EnumValue = EnumPtr->GetValueByNameString(EnumString);
-                if (EnumValue != INDEX_NONE)
-                {
-                    OutEnum = static_cast<TEnum>(EnumValue);
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+
 
     bool TryExtractGameAction(TSharedPtr<FJsonObject> ActionObj, FGameAction& OutAction)
     {

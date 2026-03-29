@@ -13,7 +13,7 @@
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionComponent.h"
-#include "Perception/UAIPerceptionStimuliSourceComponent.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -67,8 +67,8 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 // === Facade: 외부 호출을 컴포넌트로 전달 ===
 
-// [의도(Why)] 기존 직접 호출(ExecuteActionBatch)은 INPCEntity 인터페이스 구현체로 통합합니다.
-void ASmartNPC::ExecuteActionBatch_Implementation(const FActionBatch& Batch)
+// [의도(Why)] 기존 직접 호출(ExecuteActionBatch)은 INPC 인터페이스 구현체로 통합합니다.
+void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
 {
     if (ActionComponent)
     {
@@ -205,7 +205,7 @@ void ASmartNPC::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
     TagContainer = GameplayTags;
 }
 
-void ASmartNPC::AddStateTag_Implementation(FGameplayTag Tag)
+void ASmartNPC::AddStateTag(FGameplayTag Tag)
 {
     if (Tag.IsValid())
     {
@@ -213,7 +213,7 @@ void ASmartNPC::AddStateTag_Implementation(FGameplayTag Tag)
     }
 }
 
-void ASmartNPC::RemoveStateTag_Implementation(FGameplayTag Tag)
+void ASmartNPC::RemoveStateTag(FGameplayTag Tag)
 {
     if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
     {

@@ -3,12 +3,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ItemManager.h"
-#include "../Core/Entity.h"   // IItemEntity 계층 인터페이스
+#include "../Core/Entity.h"
 #include "DroppedItemBase.generated.h"
 
 // [의도(Why)] 월드 상에 드랍되어 물리적으로 동작하고, ItemManager에 의해 글로벌하게 추적되는 기본 아이템 블루프린트용 부모 클래스입니다.
 UCLASS(Blueprintable, BlueprintType)
-class UE5_MCP_VR_API ADroppedItemBase : public AActor, public IItemEntity
+class UE5_MCP_VR_API ADroppedItemBase : public AActor, public IItem
 {
     GENERATED_BODY()
     
@@ -38,7 +38,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Item|Action")
     void ConsumeItem();
 
-    // === IEntity / IItemEntity 인터페이스 구현 ===
+    // === IItem 인터페이스 구현 ===
     virtual FString GetEntityID_Implementation() const override { return ItemData.ItemInstanceID; }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Item; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }

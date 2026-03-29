@@ -3,6 +3,7 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "MCPJsonUtils.h"
+#include "JsonObjectConverter.h"
 // --- UWebSocketClient ---
 
 void UWebSocketClient::Initialize(FString ServerURL)
@@ -80,7 +81,17 @@ void UNetworkClientBase::Initialize(const FString& InURL)
     }
 }
 
+void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
+{
+    FString StateJson;
+    if (!FJsonObjectConverter::UStructToJsonObjectString(StateData, StateJson))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[LLMNetworkClient] Failed to serialize FGameStateData."));
+        return;
+    }
 
+    SendPrompt(StateJson);
+}
 
 void ULLMNetworkClient::OnMessageReceivedHandler(const FString& Message)
 {

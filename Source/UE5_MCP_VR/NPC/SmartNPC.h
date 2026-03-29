@@ -11,17 +11,20 @@ class UNPCActionComponent;
 class UNPCInventoryComponent;
 class UAIPerceptionComponent;
 class UAIPerceptionStimuliSourceComponent;
-
-
+class UBehaviorTree;
+struct FActionBatch;
 
 UCLASS(BlueprintType, Blueprintable)
-class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPCEntity
+class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPC
 {
 	GENERATED_BODY()
 
 public:
     // --- IGameplayTagAssetInterface 구현 ---
 	virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;
+
+	void AddStateTag(FGameplayTag Tag);
+	void RemoveStateTag(FGameplayTag Tag);
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags")
     FGameplayTagContainer GameplayTags;
@@ -113,15 +116,14 @@ public:
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::NPC; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
 
-    // ICharacterEntity
+    // ICharacterBase
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return NPCAttributes; }
-    virtual bool IsAlive_Implementation() const override { return NPCAttributes.Resources.IsAlive(); }
-    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterEntity>& Other) const override { return false; } // TODO: 팩션 시스템 연동
+    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; } // TODO: 팩션 시스템 연동
 
-    // INPCEntity
+    // INPC
     virtual FString GetAgentID_Implementation() const override { return AgentID; }
     virtual FNPCAttributes GetNPCAttributes_Implementation() const override { return NPCAttributes; }
-    virtual void ExecuteActionBatch_Implementation(const FActionBatch& Batch) override;
+    void ExecuteActionBatch(const FActionBatch& Batch);
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
     void OnActionCompleted();
 

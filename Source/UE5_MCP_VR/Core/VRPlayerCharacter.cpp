@@ -7,17 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../NPC/SmartNPC.h"
-#include "../NPC/NPCManager.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
 #include "Engine/OverlapResult.h"
-#include "Engine/DamageEvents.h"
-#include "DrawDebugHelpers.h"
-#include "Perception/AISense_Sight.h"
-#include "Perception/AISense_Hearing.h"
-#include "TimerManager.h" // Added for TimerManager
-#include "../NPC/Struct/NPCActionKeys.h" // Added for NPCActionKeys
-
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
 {
@@ -237,18 +227,6 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 	}
 }
 
-void AVRPlayerCharacter::OnWebSocketMessage(const FString& Message)
-{
-	// Parse ActionBatch to find "Speak" actions
-	// We can reuse the ChatWidget's logic or parse here.
-	// For robust JSON parsing, let's look for "Speak" action type.
-	
-	TSharedPtr<FJsonObject> JsonObject;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
-
-	
-}
-
 void AVRPlayerCharacter::PerformAttack()
 {
 	if (!GetController()) return;
@@ -377,7 +355,7 @@ void AVRPlayerCharacter::GetOwnedGameplayTags(FGameplayTagContainer& TagContaine
     TagContainer = GameplayTags;
 }
 
-void AVRPlayerCharacter::AddStateTag_Implementation(FGameplayTag Tag)
+void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
 {
     if (Tag.IsValid())
     {
@@ -385,7 +363,7 @@ void AVRPlayerCharacter::AddStateTag_Implementation(FGameplayTag Tag)
     }
 }
 
-void AVRPlayerCharacter::RemoveStateTag_Implementation(FGameplayTag Tag)
+void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
 {
     if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
     {

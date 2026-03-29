@@ -66,7 +66,8 @@ AActor* UItemManager::GetItemActorByID(const FString& InInstanceID) const
 TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const
 {
     TArray<FDroppedItemData> FoundItems;
-    UWorld* World = GetWorld();
+    UGameInstance* GI = GetGameInstance();
+    UWorld* World = GI ? GI->GetWorld() : nullptr;
     if (!World)
     {
         return FoundItems;

@@ -28,6 +28,7 @@ class EEnvelopeType(str, Enum):
     STATE_UPDATE  = "state_update"   # UE5 상태 주기 동기화
     PROMPT        = "prompt"         # 플레이어 명령/대화
     ACTION_FAILED = "action_failed"  # UE5에서 명령 실행 실패 통보
+    EMERGENCY_REPORT = "emergency_report" # 긴급 이벤트 배치 전송
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -41,9 +42,10 @@ class PerceptionData(BaseModel):
     target_id: str
     sense_type: str      # "Sight", "Hearing", "Other"
     distance: float
-    in_line_of_sight: bool
+    danger_score: float = 0.0 # C++ FPerceptionData.DangerScore 대응
+    in_line_of_sight: bool = False
     location: Dict[str, float]  # {"x", "y", "z"}
-    activity_context: str = "Idle"  # "State.Action.Move.Run" 등 대상의 상태 태그
+    activity_context: str = "Idle"
 
 
 class EQSQueryResult(BaseModel):
@@ -58,9 +60,10 @@ class EQSQueryResult(BaseModel):
 class StateUpdatePayload(BaseModel):
     """
     state_update 타입의 payload.
-    WHY: UE5의 주기적 상태 스냅샷. 이 정보는 LLM 추론의 '현재 컨텍스트'가 된다.
-    소수점 2자리로 제한하는 이유: LLM 토큰 다이어트 (불필요한 정밀도 제거).
+    WHY: UE5의 주기적 상태 스냅샷.
     """
+    owner_agent_id: str                         # C++ FGameStateData.OwnerAgentID
+    current_mode: str = "Common"                # C++ FGameStateData.CurrentMode
     owner_location: Dict[str, float]            # {"x": float, "y": float, "z": float}
     threat_level: str = "None"                  # "None", "Low", "Medium", "High"
     in_cover: bool = False

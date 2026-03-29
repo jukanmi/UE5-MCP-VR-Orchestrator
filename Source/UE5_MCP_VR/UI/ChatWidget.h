@@ -20,10 +20,6 @@ class UE5_MCP_VR_API UChatWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 
-	// WebSocket Reference
-	UPROPERTY(BlueprintReadWrite, Category = "Chat")
-	UWebSocketClient* WebSocketClient;
-
 	// UI Components
 	UPROPERTY(meta = (BindWidget))
 	UScrollBox* ChatHistoryScrollBox;

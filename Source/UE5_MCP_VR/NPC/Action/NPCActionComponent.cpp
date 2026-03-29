@@ -1,4 +1,5 @@
 #include "NPCActionComponent.h"
+#include "Engine/OverlapResult.h"
 #include "../NPCStateComponent.h"
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
@@ -40,8 +41,6 @@ namespace
                 return FName("State.Action.Interact");
             
             case EAction::Attack:
-            case EAction::Magic:
-            case EAction::RangeAttack:
                 return FName("State.Action.Combat.Attack");
             case EAction::Block:
             case EAction::Dodge:
@@ -65,6 +64,81 @@ namespace
             
             default:
                 return NAME_None;
+        }
+    }
+
+    void TryParseAndSetTargetLocation(UBlackboardComponent* BB, const FString& TargetLocStr)
+    {
+        if (TargetLocStr.IsEmpty()) return;
+        FVector Loc;
+        if (Loc.InitFromString(TargetLocStr))
+        {
+            BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
+        }
+    }
+
+    void ResetAllStateTagsToIdle(AActor* Target)
+    {
+        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
+        {
+            NPC->GameplayTags.Reset();
+            NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+        }
+    }
+
+    void TransitionStateTag(AActor* Target, EAction ActionType)
+    {
+        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
+        {
+            NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+            FName ActionTagName = GetGameplayTagForAction(ActionType);
+            if (!ActionTagName.IsNone())
+            {
+                NPC->AddStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
+            }
+        }
+    }
+
+    void RevertStateTagToIdle(AActor* Target, EAction ActionType)
+    {
+        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
+        {
+            FName ActionTagName = GetGameplayTagForAction(ActionType);
+            if (!ActionTagName.IsNone())
+            {
+                NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
+            }
+            NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+        }
+    }
+
+    void ScanItemsInRange(AActor* OwnerActor, float SearchRadius, TMap<FString, int32>& OutEntities)
+    {
+        if (!OwnerActor) return;
+        TArray<FOverlapResult> Overlaps;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(OwnerActor);
+        bool bHit = OwnerActor->GetWorld()->OverlapMultiByObjectType(
+            Overlaps,
+            OwnerActor->GetActorLocation(),
+            FQuat::Identity,
+            FCollisionObjectQueryParams(ECC_PhysicsBody),
+            FCollisionShape::MakeSphere(SearchRadius),
+            Params
+        );
+        if (bHit)
+        {
+            for (auto& Result : Overlaps)
+            {
+                if (AActor* HitActor = Result.GetActor())
+                {
+                    if (HitActor->GetClass()->ImplementsInterface(UItem::StaticClass()))
+                    {
+                        FString ItemID = IItem::Execute_GetItemID(HitActor);
+                        OutEntities.FindOrAdd(ItemID, 0)++;
+                    }
+                }
+            }
         }
     }
 }
@@ -127,11 +201,11 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 {
     if (!StateComponent) return 200.f; // Fallback
 
-    if (Type == EMoveType::Walk)   return StateComponent->GetCurrentStats().Movement.WalkSpeed;
-    if (Type == EMoveType::Run)    return StateComponent->GetCurrentStats().Movement.RunSpeed;
-    if (Type == EMoveType::Sprint) return StateComponent->GetCurrentStats().Movement.SprintSpeed;
-    if (Type == EMoveType::Crouch) return StateComponent->GetCurrentStats().Movement.CrouchSpeed;
-    return StateComponent->GetCurrentStats().Movement.WalkSpeed;
+    if (Type == EMoveType::Walk)   return StateComponent->GetAttributes().Movement.WalkSpeed;
+    if (Type == EMoveType::Run)    return StateComponent->GetAttributes().Movement.RunSpeed;
+    if (Type == EMoveType::Sprint) return StateComponent->GetAttributes().Movement.SprintSpeed;
+    if (Type == EMoveType::Crouch) return StateComponent->GetAttributes().Movement.CrouchSpeed;
+    return StateComponent->GetAttributes().Movement.WalkSpeed;
 }
 
 // === Action Batch System ===
@@ -625,7 +699,7 @@ void UNPCActionComponent::UpdateEQSParams()
     UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
     if (!BB) return;
 
-    const FCharacterAttributes& Attr = StateComponent->GetCurrentStats();
+    const FNPCAttributes& Attr = StateComponent->GetAttributes();
 
     // [1] Perception -> 탐색 반경 (최대 3000 Clamp)
     float SearchRadius = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
@@ -667,7 +741,7 @@ void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActo
     // Default + 원거리 무기일 때 원거리 쿼리로 자동 전환
     if (TacticalState == ETacticalMoveState::Default && StateComponent)
     {
-        if (StateComponent->GetCurrentStats().Combat.Range > 500.f && RangedOptimalPositionQuery)
+        if (StateComponent->GetAttributes().Combat.Range > 500.f && RangedOptimalPositionQuery)
         {
             SelectedQuery = RangedOptimalPositionQuery;
         }
@@ -977,7 +1051,7 @@ void UNPCActionComponent::ExecuteRepair(const FString& ItemID)
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 수리 완료: %s"), *ItemID);
     if (InventoryComponent && InventoryComponent->HasItem(ItemID))
     {
-        float RepairAmount = StateComponent ? StateComponent->GetCurrentStats().BaseStats.Perception : 10.0f;
+        float RepairAmount = StateComponent ? StateComponent->GetAttributes().BaseStats.Perception : 10.0f;
         InventoryComponent->RepairItem(ItemID, RepairAmount);
     }
     else

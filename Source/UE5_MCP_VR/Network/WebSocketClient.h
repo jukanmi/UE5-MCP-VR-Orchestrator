@@ -118,6 +118,10 @@ public:
     // LLM 전용 추가 기능이 필요하다면 여기에 작성
     void SendStateUpdate(const struct FGameStateData& StateData);
 
+protected:
+    virtual void OnMessageReceivedHandler(const FString& Message) override;
+    virtual void OnConnectionChangedHandler(bool bIsConnected) override;
+
 private:
     UPROPERTY(EditAnywhere, Category = "MCP|Network")
     FString LLMWebSocketURL = TEXT("ws://127.0.0.1:8000/ws/llm");
@@ -138,4 +142,8 @@ public:
 private:
     UPROPERTY(EditAnywhere, Category = "MCP|Network")
     FString SLMWebSocketURL = TEXT("ws://127.0.0.1:8000/ws/slm");
+
+protected:
+    virtual void OnMessageReceivedHandler(const FString& Message) override;
+    virtual void OnConnectionChangedHandler(bool bIsConnected) override;
 };
