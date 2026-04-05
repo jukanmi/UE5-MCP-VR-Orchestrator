@@ -1,131 +1,111 @@
 import os
-import subprocess
 import re
 import json
 from typing import Optional
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 
 load_dotenv()
 
+# ==============================================================================
+# 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
+# ==============================================================================
 MODELS = {
-    "qwen": "qwen3:30b",
-    "llama": "llama3.3:70b",
-    "gemma-4b": "gemma-3-4b-it",
-    "gemma-12b": "gemma-3-12b-it",
-    "gemma-27b": "gemma-3-27b-it",
-    "gemma": "gemma-3-27b-it",
-    "gemini": "gemini-2.5-flash",
-    "gemini-3": "gemini-3-flash",
-    "qwen_slm": "qwen2.5:1.5b",
-    "openai": "gpt-5-nano",
+    # Ollama 로컬 모델
+    "qwen":     "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "qwen_slm": "qwen3:1.7b",    # 경량 보조 구조화 모델 (alias)
+    "llama":    "llama3.3:70b",  # 대형 추론 모델 (고품질 필요 시)
+    # OpenAI (API Key 필요)
+    "openai":   "gpt-4o-mini",
 }
 
-DIALOGUE_MODELS = {
-    "extra": "gemma-4b",
-    "normal": "gemma-12b",
-    "core": "gemma-27b",
-}
+# 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
+DEFAULT_MODEL = "qwen"
 
-DEFAULT_MODEL = "gemini"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 
-GEMINI_CLI_COMMAND = os.getenv("GEMINI_CLI_COMMAND", "gemini")
-
+# ==============================================================================
+# 통합 LLM 팩토리 함수
+# get_llm / get_dialogue_llm을 통합 → 단일 인터페이스로 사용
+# ==============================================================================
 def get_llm(model_name: str = None, temperature: float = 0.0):
+    """
+    model_name: "qwen" | "qwen_slm" | "llama" | "openai" | None (→ DEFAULT_MODEL)
+    temperature: 창의성 수준 (0.0 = 결정적, 1.0 = 창의적)
+    """
     if model_name is None:
         model_name = DEFAULT_MODEL
-    
+
     model_name = model_name.lower()
-    
-    if model_name in ["qwen", "llama", "qwen_slm"]:
+
+    if model_name in ("qwen", "qwen_slm", "llama"):
         model_id = MODELS.get(model_name, MODELS["qwen"])
-        
-        print(f"[LLM Factory] Using Ollama model: {model_id}")
-        
+        print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
         return ChatOllama(
             model=model_id,
             temperature=temperature,
             base_url=OLLAMA_BASE_URL,
         )
-    
-    elif model_name in ["gemma", "gemma-4b", "gemma-12b", "gemma-27b", "gemini", "gemini-3"]:
-        model_id = MODELS.get(model_name, MODELS["gemini"])
-        
-        print(f"[LLM Factory] Using Google model: {model_id}")
-        
-        return ChatGoogleGenerativeAI(
-            model=model_id,
-            temperature=temperature,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            convert_system_message_to_human=True
-        )
-    
+
     elif model_name == "openai":
         model_id = MODELS["openai"]
-        
-        print(f"[LLM Factory] Using OpenAI model: {model_id}")
-        
+        print(f"[LLM Factory] OpenAI 모델 사용: {model_id}")
         return ChatOpenAI(
             model=model_id,
             temperature=temperature,
             api_key=os.getenv("OPENAI_API_KEY"),
-            max_retries=2
+            max_retries=2,
         )
-    
+
     else:
-        raise ValueError(f"Unknown model_name: {model_name}. Available: {list(MODELS.keys())}")
-
-
-def get_dialogue_llm(importance: str = "normal", temperature: float = 0.7):
-    importance = importance.lower()
-    model_key = DIALOGUE_MODELS.get(importance, "gemma-12b")
-    
-    print(f"[LLM Factory] Dialogue model for '{importance}' importance: {MODELS[model_key]}")
-    
-    return get_llm(model_name=model_key, temperature=temperature)
-
-
-def call_gemini_cli(prompt_text: str, extract_json: bool = True) -> Optional[str]:
-    try:
-        cmd = [
-            "powershell", "-ExecutionPolicy", "Bypass", "-Command",
-            f"{GEMINI_CLI_COMMAND} '{prompt_text}'"
-        ]
-        
-        print(f"[LLM Factory] Calling Gemini CLI: {GEMINI_CLI_COMMAND}")
-        
-        result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
-            encoding='utf-8',
-            timeout=60
+        raise ValueError(
+            f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. "
+            f"선택 가능: {list(MODELS.keys())}"
         )
-        
-        if result.returncode != 0:
-            print(f"[LLM Factory] CLI Error (code {result.returncode}): {result.stderr}")
-            return None
-        
-        output = result.stdout
-        
+
+
+# ==============================================================================
+# Ollama 직접 호출 유틸리티 (JSON 구조화 등 단발성 추론에 사용)
+# ==============================================================================
+def call_ollama_direct(prompt_text: str, extract_json: bool = True) -> Optional[str]:
+    """
+    경량 SLM(qwen_slm)을 사용해 단발성 텍스트/JSON 추론을 즉시 수행합니다.
+    - extract_json=True : 응답에서 JSON 블록을 자동으로 파싱/추출
+    - extract_json=False: 응답 전체 텍스트를 그대로 반환
+    """
+    try:
+        print("[LLM Factory] Ollama 직접 호출 (qwen_slm 구조화 용도)...")
+        llm = get_llm("qwen_slm", temperature=0.1)
+        response = llm.invoke(prompt_text)
+
+        output = response.content if hasattr(response, "content") else str(response)
+
         if extract_json:
-            json_match = re.search(r'```json\s*(.*?)\s*```', output, re.DOTALL)
+            # ```json ... ``` 블록 우선 파싱
+            json_match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
             if json_match:
                 extracted = json_match.group(1).strip()
-                print(f"[LLM Factory] CLI Success: Extracted JSON ({len(extracted)} chars)")
+                print(f"[LLM Factory] JSON 추출 성공 ({len(extracted)} chars)")
                 return extracted
-            else:
-                print("[LLM Factory] CLI Warning: No JSON block found, returning raw output")
-        
+
+            # 블록 없이 JSON 기호([ 또는 {)가 있는 경우 폴백
+            start_marks = [output.find('['), output.find('{')]
+            end_marks = [output.rfind(']'), output.rfind('}')]
+            
+            valid_starts = [i for i in start_marks if i != -1]
+            valid_ends = [i for i in end_marks if i != -1]
+            
+            if valid_starts and valid_ends:
+                idx_start = min(valid_starts)
+                idx_end = max(valid_ends) + 1
+                return output[idx_start:idx_end].strip()
+
+            print("[LLM Factory] 경고: JSON 블록 없음 → 원문 반환")
+
         return output.strip()
-        
-    except subprocess.TimeoutExpired:
-        print("[LLM Factory] CLI Timeout: Command took longer than 60 seconds")
-        return None
+
     except Exception as e:
-        print(f"[LLM Factory] CLI Exception: {e}")
+        print(f"[LLM Factory] 오류: {e}")
         return None

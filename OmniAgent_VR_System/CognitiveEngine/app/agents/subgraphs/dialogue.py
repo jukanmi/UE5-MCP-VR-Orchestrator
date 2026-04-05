@@ -21,7 +21,7 @@
 ║                                                                              ║
 ║ LLM SELECTION:                                                               ║
 ║   - High importance NPCs → Gemma 3 API (premium quality)                    ║
-║   - Normal NPCs → Gemini CLI (cost-effective)                               ║
+║   - Normal NPCs → Ollama (qwen)                                             ║
 ║                                                                              ║
 ║ EXAMPLE:                                                                     ║
 ║   IN:  "Player is pointing at door and asking to open it"                   ║
@@ -31,7 +31,7 @@
 import yaml
 import os
 import json
-from ...utils.llm_factory import get_dialogue_llm, call_gemini_cli
+from ...utils.llm_factory import get_llm, call_ollama_direct
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
@@ -214,44 +214,37 @@ def dialogue_node(state: AgentState):
 
     raw_response = None
 
-    # --- Choose LLM based on NPC importance ---
+    # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
     importance = persona.get('importance', 'normal')
     
-    if importance in ['high', 'core']:
-        # High importance NPC → Use Gemma 3 API for quality
-        print(f"[Dialogue] Using Gemma 3 API (importance: {importance})")
-        
-        try:
-            llm = get_dialogue_llm(importance=importance, temperature=0.7)
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "{system_msg}"),
-                ("human", "Context: {context}")
-            ])
-            
-            response = (prompt | llm).invoke({
-                "system_msg": system_content,
-                "context": natural_context
-            })
-            raw_response = response.content if hasattr(response, 'content') else str(response)
-            raw_response = raw_response.strip()
-            print(f"[Dialogue] Gemma 3 response: '{raw_response[:80]}...'")
-        except Exception as e:
-            print(f"[Dialogue] Gemma 3 Error: {e}")
+    # 모든 중요도에서 Ollama 로칼 모델 사용 (Gemma/Gemini API 제거)
+    model_name = "llama" if importance in ("high", "core") else "qwen"
+    print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
     
-    if not raw_response:
-        # Normal NPC or API failed → Use Gemini CLI
-        print(f"[Dialogue] Using Gemini CLI (importance: {importance})")
-        
+    try:
+        llm = get_llm(model_name=model_name, temperature=0.7)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "{system_msg}"),
+            ("human", "Context: {context}")
+        ])
+        response = (prompt | llm).invoke({
+            "system_msg": system_content,
+            "context": natural_context
+        })
+        raw_response = response.content if hasattr(response, 'content') else str(response)
+        raw_response = raw_response.strip()
+        print(f"[Dialogue] 응답: '{raw_response[:80]}...'")
+    except Exception as e:
+        print(f"[Dialogue] LLM 오류 ({model_name}): {e}")
+        # 폴백: call_ollama_direct 직접 호출
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
-        raw_response = call_gemini_cli(cli_prompt, extract_json=False)
-        
+        raw_response = call_ollama_direct(cli_prompt, extract_json=False)
         if raw_response:
             raw_response = raw_response.strip()
-            print(f"[Dialogue] CLI response: '{raw_response[:80]}...'")
-    
-    # Fallback if everything fails
+
+    # 모든 방법 실패 시 기본 응답
     if not raw_response:
-        print("[Dialogue] All LLMs failed, using fallback response")
+        print("[Dialogue] 모든 LLM 실패, 기본 응답 사용")
         raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
 
     # [Mode: X] [Facial: Y] 태그는 raw_response에 포함된 채로 전달.

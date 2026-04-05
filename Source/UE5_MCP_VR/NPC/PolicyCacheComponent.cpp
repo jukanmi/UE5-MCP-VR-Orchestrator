@@ -5,7 +5,7 @@
 #include "AIController.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
-#include "../AI/SmartNPC.h" 
+#include "SmartNPC.h" 
 
 // Blackboard Keys (Assumed names, verify with user project)
 const FName KEY_HAS_VALID_POLICY = FName("HasValidPolicy");

@@ -6,7 +6,20 @@
 #include "../Struct/NPCActionTypes.h" // Enums
 #include "../NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
+#include "EnvironmentQuery/EnvQueryTypes.h"
 #include "NPCActionComponent.generated.h"
+
+// --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
+// WHY: BTTask가 async 패턴(InProgress → Tick → Succeeded)으로 폴링하기 위한 상태 머신.
+UENUM()
+enum class ETacticalQueryState : uint8
+{
+    Idle,          // 쿼리 없음 (기본)
+    WaitingEQS,    // EQS AllMatching 쿼리 실행 중
+    WaitingLLM,    // EQS 완료, LLM 응답 대기 중
+    ResultReady,   // LLM 응답 수신, 결과 준비 완료
+    Failed,        // 실패 (EQS 없음 / LLM 오류 등)
+};
 
 // --- 전술적 이동 상태 Enum ---
 // LLM이 전송하는 "TacticalState" JSON 값과 1:1 대응합니다.
@@ -74,6 +87,23 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* RangedOptimalPositionQuery; // 원거리 최적 포지션 쿼리
 
+    /** EQS+LLM 분업 파이프라인용: AllMatching 모드로 다수 후보 위치를 뽑는 쿼리.
+     *  WHY: 기존 SingleResult 쿼리는 EQS만으로 최선 위치를 고르지만,
+     *       여기서는 LLM이 최종 선택하도록 복수 후보가 필요하다.
+     *  미할당 시 DefaultMoveQuery로 폴백. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
+    UEnvQuery* TacticalPositionsQuery;     // 전술 위치 후보 다중 쿼리
+
+    // --- 전술 위치 결정 파이프라인 상태 (BTTask가 폴링) ---
+
+    ETacticalQueryState TacticalQueryState = ETacticalQueryState::Idle;
+
+    /** 최종 선택된 전술 이동 목적지 (LLM이 chosen_id로 선택한 후보의 위치) */
+    FVector TacticalQueryResult = FVector::ZeroVector;
+
+    /** LLM이 응답한 chosen_id로 위치를 역조회하기 위한 맵 */
+    TMap<FString, FVector> TacticalCandidateMap;
+
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
     
@@ -96,7 +126,7 @@ public:
     void ExecuteActionBatch(const FActionBatch& Batch);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
-    void ProcessNextAction();
+    bool ProcessNextAction();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
     void OnActionCompleted();
@@ -175,6 +205,12 @@ protected:
     // [의도(Why)] 전술 이동(EQS) 시작 직전에 변동된 스탯을 파라미터에 미리 주입하여 가장 합리적인 위치를 도출하게 합니다.
     void UpdateEQSParams();
 
+    // --- 전술 위치 파이프라인 내부 ---
+    TArray<FVector> CachedEnemyLocations; // StartTacticalQuery → OnTacticalCandidatesDone 전달용
+
+    /** EQS AllMatching 콜백: 후보 스코어링 + LLM 전송 */
+    void OnTacticalCandidatesDone(TSharedPtr<struct FEnvQueryResult> Result);
+
 private:
     // Cached references
     ASmartNPCAIController* GetOwnerAIController() const;
@@ -201,8 +237,21 @@ public:
     void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk,
                      ETacticalMoveState TacticalState = ETacticalMoveState::Default);
 
-    // EQS 실행 완료 시 호출되는 콜백
+    // EQS 실행 완료 시 호출되는 콜백 (SingleResult - 기존 ExecuteMove 용)
     void OnTacticalMoveCompleted(TSharedPtr<struct FEnvQueryResult> Result);
+
+    // ============================================================================
+    // [전술 위치 결정 파이프라인 API]
+    // ============================================================================
+
+    /** BTTask_PrepareNextAction이 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
+     *  @param EnemyLocations  현재 인지된 적 위치 목록 (스코어링에 사용)
+     *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
+    void StartTacticalQuery(const TArray<FVector>& EnemyLocations);
+
+    /** NPCManager가 LLM 응답 수신 시 호출.
+     *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */
+    void NotifyLocationDecisionReady(const FString& ChosenCandidateId);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteFollow(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);

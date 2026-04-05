@@ -25,6 +25,7 @@ enum class EEnvelopeType : uint8
     Prompt,         // "prompt"       - 플레이어 명령/대화
     ActionFailed,   // "action_failed"- UE5에서 명령 실행 실패 통보
     EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
+    LocationDecision,// "location_decision" - EQS 후보 → LLM 전술 위치 결정 요청
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder
@@ -56,6 +57,16 @@ public:
      * @return            - 완성된 Envelope JSON 문자열
      */
     static FString BuildEmergencyReport(const FString& PayloadJson);
+
+    /**
+     * location_decision Envelope 생성.
+     * EQS가 뽑은 후보 위치들을 LLM에 전달하여 최적 위치를 선택하게 한다.
+     * WHY: 모든 이동 좌표를 LLM이 직접 생성하면 지연·비용이 크다.
+     *      C++에서 EQS+스코어링으로 후보를 추려낸 뒤, 경량 판단만 LLM에 요청한다.
+     * @param PayloadJson - FLocationDecisionRequest를 직렬화한 JSON 문자열
+     * @return            - 완성된 Envelope JSON 문자열
+     */
+    static FString BuildLocationDecisionRequest(const FString& PayloadJson);
 
 private:
     // ─────────────────────────────────────────────────────────────────────

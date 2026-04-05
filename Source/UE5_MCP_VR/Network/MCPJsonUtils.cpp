@@ -151,7 +151,7 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
     return true;
 }
 
-FString UMCPJsonUtils::SerializePerceptionReport(const TArray<FPerceptionData>& PerceptionEvents)
+FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents)
 {
     TArray<TSharedPtr<FJsonValue>> EventValues;
     EventValues.Reserve(PerceptionEvents.Num());
@@ -171,6 +171,7 @@ FString UMCPJsonUtils::SerializePerceptionReport(const TArray<FPerceptionData>& 
     }
 
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("agent_id"), AgentID);
     Root->SetArrayField(TEXT("perceptions"), EventValues);
     Root->SetNumberField(TEXT("generated_at"),
         (FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalSeconds());
@@ -180,4 +181,24 @@ FString UMCPJsonUtils::SerializePerceptionReport(const TArray<FPerceptionData>& 
     FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
 
     return Output;
+}
+
+bool UMCPJsonUtils::ParseLocationDecisionResult(
+    const FString& Json, FString& OutAgentId, FString& OutChosenId)
+{
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+
+    // 타입 확인
+    FString TypeStr;
+    if (!Root->TryGetStringField(TEXT("type"), TypeStr) || TypeStr != TEXT("location_decision_result"))
+        return false;
+
+    // payload에서 agent_id, chosen_id 추출
+    const TSharedPtr<FJsonObject>* PayloadObj;
+    if (!Root->TryGetObjectField(TEXT("payload"), PayloadObj)) return false;
+
+    return (*PayloadObj)->TryGetStringField(TEXT("agent_id"), OutAgentId)
+        && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
 }

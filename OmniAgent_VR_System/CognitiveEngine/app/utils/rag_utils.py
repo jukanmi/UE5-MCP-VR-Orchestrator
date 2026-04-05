@@ -24,8 +24,12 @@ _vectorstore_cache = {}
 
 def get_embeddings():
     """Get the embedding model for vector operations."""
+    # 로컬 경로가 있으면 해당 파일을 로드 (오프라인 모드)
+    local_path = "app/models/embeddings/all-MiniLM-L6-v2"
+    model_id = local_path if os.path.exists(local_path) else "sentence-transformers/all-MiniLM-L6-v2"
+    
     return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_name=model_id,
         model_kwargs={'device': 'cpu'}
     )
 

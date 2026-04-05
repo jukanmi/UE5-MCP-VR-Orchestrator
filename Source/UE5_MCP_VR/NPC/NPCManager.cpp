@@ -4,6 +4,7 @@
 #include "../Network/EnvelopeBuilder.h"
 #include "Engine/GameInstance.h"
 #include "Struct/NPCActionKeys.h"
+#include "Action/NPCActionComponent.h"
 
 
 // --- UNPCMap ---
@@ -22,16 +23,62 @@ void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& Act
 }
 
 
+void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId)
+{
+    ASmartNPC* NPC = GetValidNPC(AgentID);
+    if (!NPC)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCMap] DeliverLocationDecision - NPC '%s' 없음"), *AgentID);
+        return;
+    }
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId);
+    }
+}
+
 void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received Debug JSON Payload (Size: %d bytes)"), JsonMessage.Len());
+    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
 
+    // ── 사전 필터링: 서버의 단순 ACK / 에러 응답을 조용히 무시 ─────────────
+    // WHY: 서버는 emergency_report, state_update 등에 대해
+    //      {"status": "received", "msg_id": "..."} 형태의 ACK을 반환한다.
+    //      이 응답은 NPC에게 실행시킬 액션이 없으므로, ModeActionRequest
+    //      파서로 넘기기 전에 "ActionBatches" 필드 존재 여부로 걸러낸다.
+    {
+        TSharedPtr<FJsonObject> PreCheckObj;
+        TSharedRef<TJsonReader<>> PreCheckReader = TJsonReaderFactory<>::Create(JsonMessage);
+        if (!FJsonSerializer::Deserialize(PreCheckReader, PreCheckObj) || !PreCheckObj.IsValid())
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[NPCMap] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
+                *JsonMessage);
+            return;
+        }
+
+        if (!PreCheckObj->HasField(TEXT("ActionBatches")))
+        {
+            // ActionBatches 없음 = ACK / 에러 / 메타 응답으로 간주하고 무시
+            FString StatusValue;
+            PreCheckObj->TryGetStringField(TEXT("status"), StatusValue);
+            UE_LOG(LogTemp, Verbose,
+                TEXT("[NPCMap] Non-action response received (status='%s'). Skipping dispatch."),
+                *StatusValue);
+            return;
+        }
+    }
+
+    // ── 실제 ModeActionRequest 파싱 ────────────────────────────────────────
     FModeActionRequest ParsedRequest;
     const bool bIsParsedSuccessfully = UMCPJsonUtils::ParseModeActionRequest(JsonMessage, ParsedRequest);
 
     if (!bIsParsedSuccessfully)
     {
-        UE_LOG(LogTemp, Error, TEXT("[NPCMap] Failed to Parse Valid ModeActionRequest! Ensure Standard JSON Format."));
+        // ActionBatches 필드는 있지만 내부 포맷이 잘못된 경우
+        UE_LOG(LogTemp, Error,
+            TEXT("[NPCMap] Failed to Parse ModeActionRequest! ActionBatches field exists but format is invalid.\nRaw (first 500 chars): %.500s"),
+            *JsonMessage);
         return;
     }
 
@@ -149,14 +196,23 @@ void UNPCManager::OnSLMMessageReceived(const FString& JsonMessage)
 
 void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 {
-    if (NPCMap)
-    {
-        NPCMap->OnWebSocketMessageReceived(JsonMessage);
-    }
-    else
+    if (!NPCMap)
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Received LLM response but NPCMap is not initialized."));
+        return;
     }
+
+    // location_decision_result 메시지는 전술 위치 파이프라인으로 별도 라우팅
+    // (ActionBatches 필드가 없으므로 일반 OnWebSocketMessageReceived에서는 무시됨)
+    FString AgentID;
+    FString ChosenCandidateId;
+    if (UMCPJsonUtils::ParseLocationDecisionResult(JsonMessage, AgentID, ChosenCandidateId))
+    {
+        NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId);
+        return;
+    }
+
+    NPCMap->OnWebSocketMessageReceived(JsonMessage);
 }
 
 void UNPCManager::SendEventReport(const FString& AgentID, const FString& CombinedPayload)

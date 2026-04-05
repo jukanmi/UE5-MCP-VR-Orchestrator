@@ -18,6 +18,9 @@
 #include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
 #include "../SmartNPC.h"
+#include "../../Network/EnvelopeBuilder.h"
+#include "Engine/GameInstance.h"
+#include "../NPCManager.h"
 
 namespace
 {
@@ -25,43 +28,63 @@ namespace
     {
         switch(ActionType)
         {
+            // Common
             case EAction::Move:
             case EAction::Follow:
-            case EAction::Scan:
-            case EAction::Investigate:
-                return FName("State.Action.Move.Run");
+                return FName("State.Action.Common.Move");
             case EAction::TurnTo:
-                return FName("State.Action.TurnTo");
+                return FName("State.Action.Common.TurnTo");
+            case EAction::Scan:
+                return FName("State.Action.Common.Scan");
             case EAction::UseItem:
+                return FName("State.Action.Common.UseItem");
             case EAction::Equip:
+                return FName("State.Action.Common.Equip");
             case EAction::Unequip:
-            case EAction::PickUp:
-            case EAction::Drop:
-            case EAction::Repair:
-                return FName("State.Action.Interact");
-            
+                return FName("State.Action.Common.Unequip");
+            case EAction::Dialogue:
+                return FName("State.Action.Common.Dialogue");
+
+            // Combat
             case EAction::Attack:
                 return FName("State.Action.Combat.Attack");
             case EAction::Block:
+                return FName("State.Action.Combat.Block");
             case EAction::Dodge:
                 return FName("State.Action.Combat.Dodge");
             case EAction::Flee:
                 return FName("State.Action.Combat.Flee");
             case EAction::SignalAllies:
-                return FName("State.Action.Social.Signal");
+                return FName("State.Action.Combat.SignalAllies");
 
-            case EAction::Dialogue:
-                return FName("State.Action.Social.Dialogue");
-            case EAction::Comfort:
+            // Social
             case EAction::Emote:
-            case EAction::HandObject:
-            case EAction::Trade:
                 return FName("State.Action.Social.Emote");
-            
+            case EAction::Trade:
+                return FName("State.Action.Social.Trade");
+            case EAction::GiveItem:
+                return FName("State.Action.Social.GiveItem");
+            case EAction::Comfort:
+                return FName("State.Action.Social.Comfort");
+            case EAction::HandObject:
+                return FName("State.Action.Social.HandObject");
             case EAction::Dance:
-            case EAction::Sing:
                 return FName("State.Action.Social.Dance");
-            
+            case EAction::Sing:
+                return FName("State.Action.Social.Sing");
+
+            // Task
+            case EAction::PickUp:
+                return FName("State.Action.Task.PickUp");
+            case EAction::Drop:
+                return FName("State.Action.Task.Drop");
+            case EAction::Repair:
+                return FName("State.Action.Task.Repair");
+
+            // Investigation
+            case EAction::Investigate:
+                return FName("State.Action.Investigation.Investigate");
+
             default:
                 return NAME_None;
         }
@@ -218,8 +241,29 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
         if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
         {
             BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Batch.Mode);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Batch Executed. Actions: %d"),
-            *GetOwnerAgentID(), Batch.Actions.Num());
+            // [상세 로그] 서버로부터 수신된 리액션 덤프
+            UE_LOG(LogTemp, Warning, TEXT("=================================================="));
+            UE_LOG(LogTemp, Warning, TEXT("[ACTION RECEIVED] NPC: %s | Mode: %s"), 
+                *GetOwnerAgentID(), *UEnum::GetValueAsString(Batch.Mode));
+            
+            for (int32 i = 0; i < Batch.Actions.Num(); ++i)
+            {
+                const FGameAction& Action = Batch.Actions[i];
+                FString ParamStr;
+                for (auto& Pair : Action.Parameters)
+                {
+                    ParamStr += FString::Printf(TEXT("%s=%s, "), *Pair.Key, *Pair.Value);
+                }
+                
+                UE_LOG(LogTemp, Warning, TEXT("  Action[%d]: %s (Facial: %s)"), 
+                    i, *UEnum::GetValueAsString(Action.ActionType), *UEnum::GetValueAsString(Action.FacialState));
+                if (!ParamStr.IsEmpty())
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("    - Params: %s"), *ParamStr);
+                }
+            }
+            UE_LOG(LogTemp, Warning, TEXT("=================================================="));
+
         }
     }
 
@@ -272,7 +316,17 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
     }
 
     // Queue 처리 시작
-    ProcessNextAction();
+    // Queue 처리 시작을 BT에게 위임 (HasAction 플래그 세팅)
+    if (!ActionQueue.IsEmpty())
+    {
+        if (ASmartNPCAIController* AI = GetOwnerAIController())
+        {
+            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
+            {
+                BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
+            }
+        }
+    }
 }
 
 // === Action Queue System ===
@@ -297,9 +351,9 @@ void UNPCActionComponent::StopAllActions()
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Stopped All Actions."), *GetOwnerAgentID());
 }
 
-void UNPCActionComponent::ProcessNextAction()
+bool UNPCActionComponent::ProcessNextAction()
 {
-    if (bIsBusy || ActionQueue.IsEmpty()) return;
+    if (bIsBusy || ActionQueue.IsEmpty()) return false;
 
     if (ActionQueue.Dequeue(CurrentAction))
     {
@@ -328,7 +382,9 @@ void UNPCActionComponent::ProcessNextAction()
         }
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
+        return true;
     }
+    return false;
 }
 
 void UNPCActionComponent::OnActionCompleted()
@@ -344,18 +400,12 @@ void UNPCActionComponent::OnActionCompleted()
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
-    // 다음 큐 항목 처리
-    ProcessNextAction();
-
-    // 더 이상 큐에 처리할 액션이 없다면 HasAction 플래그를 해제 (Decorator 제어용)
-    if (!bIsBusy)
+    // 다음 큐 항목 처리는 BTTask_PrepareNextAction이 주도함
+    if (ASmartNPCAIController* AI = GetOwnerAIController())
     {
-        if (ASmartNPCAIController* AI = GetOwnerAIController())
+        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
         {
-            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-            {
-                BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, false);
-            }
+            BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, !ActionQueue.IsEmpty());
         }
     }
 }
@@ -774,8 +824,294 @@ void UNPCActionComponent::OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Re
         BestLocation.X, BestLocation.Y, BestLocation.Z);
 }
 
+// ============================================================================
+// [전술 위치 결정 파이프라인] EQS AllMatching → 스코어링 → LLM 전송
+// ============================================================================
+
+namespace
+{
+    /** 후보 위치에서 가장 가까운 적까지의 거리 반환. 적 없으면 FLT_MAX */
+    float CalcDistToNearestEnemy(const FVector& Loc, const TArray<FVector>& Enemies)
+    {
+        float MinDist = FLT_MAX;
+        for (const FVector& E : Enemies)
+            MinDist = FMath::Min(MinDist, FVector::Dist(Loc, E));
+        return MinDist;
+    }
+
+    /** 위치에서 적 방향으로 시야 체크 (블로킹 있으면 엄폐 = 1.0) */
+    float CalcCoverRating(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier)
+    {
+        if (Enemies.IsEmpty() || !World) return 0.f;
+        int32 BlockedCount = 0;
+        FCollisionQueryParams Params(NAME_None, false, Querier);
+        for (const FVector& E : Enemies)
+        {
+            FHitResult Hit;
+            const FVector Start = Loc + FVector(0, 0, 60.f);
+            const FVector End   = E  + FVector(0, 0, 60.f);
+            if (World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params)
+                && Hit.GetActor() && Hit.GetActor() != Querier)
+            {
+                ++BlockedCount;
+            }
+        }
+        return static_cast<float>(BlockedCount) / Enemies.Num();
+    }
+
+    /** Safe 스코어: 멀수록, 엄폐할수록, HP 낮을수록 가중치 */
+    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    {
+        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
+        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
+        // 적이 없으면 LOS 없음 → penalty 없음
+        const bool bLOS   = (Cover < 0.5f);
+        float Score = FMath::Min(Dist / 1500.f, 1.f) * 3.f;  // 거리: 0~3
+        Score += Cover * 2.f;                                  // 엄폐: 0~2
+        Score += bLOS ? -1.f : 0.f;                           // LOS 노출 패널티
+        Score += (1.f - HpPct) * 1.5f;                        // HP 낮을수록 도주 보너스
+        return Score;
+    }
+
+    /** Aggressive 스코어: 가까울수록, LOS 있을수록 */
+    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    {
+        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
+        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
+        const bool bLOS   = (Cover < 0.5f);
+        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * 3.f; // 가까울수록 ↑
+        Score += bLOS ? 2.f : 0.f;                                    // LOS: 적 보여야 공격 가능
+        Score += Cover * -0.5f;                                        // 엄폐는 소폭 페널티
+        Score += HpPct * 1.f;                                          // HP 높을수록 공격 선호
+        return Score;
+    }
+
+    /** Optimal 스코어: 중간 거리 + LOS + 적당한 엄폐 */
+    float EvalOptimalScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float)
+    {
+        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
+        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
+        const bool bLOS   = (Cover < 0.5f);
+        // 600~1000 구간 선호 (정규화 곡선 대신 단순 선형 피크)
+        const float IdealDist = 800.f;
+        const float DistScore = FMath::Max(0.f, 2.f - FMath::Abs(Dist - IdealDist) / 800.f);
+        return DistScore + Cover * 1.f + (bLOS ? 1.f : 0.f);
+    }
+
+    FString CategoryToString(ELocationCategory Cat)
+    {
+        switch (Cat)
+        {
+        case ELocationCategory::Safe:       return TEXT("SAFE");
+        case ELocationCategory::Aggressive: return TEXT("AGGRESSIVE");
+        default:                            return TEXT("OPTIMAL");
+        }
+    }
+}
+
+void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocations)
+{
+    if (TacticalQueryState != ETacticalQueryState::Idle)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] StartTacticalQuery 호출 무시 - 이미 진행 중 (%d)"),
+            static_cast<int32>(TacticalQueryState));
+        return;
+    }
+
+    CachedEnemyLocations = EnemyLocations;
+    TacticalCandidateMap.Empty();
+
+    UEnvQuery* QueryAsset = TacticalPositionsQuery ? TacticalPositionsQuery : DefaultMoveQuery;
+    if (!QueryAsset)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] StartTacticalQuery - EQS 에셋 없음 → Failed"));
+        TacticalQueryState = ETacticalQueryState::Failed;
+        return;
+    }
+
+    UpdateEQSParams();
+    TacticalQueryState = ETacticalQueryState::WaitingEQS;
+
+    // AllMatching: 복수 후보 전부 반환
+    FEnvQueryRequest QueryRequest(QueryAsset, GetOwner());
+    QueryRequest.Execute(EEnvQueryRunMode::AllMatching,
+        this, &UNPCActionComponent::OnTacticalCandidatesDone);
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술 EQS 쿼리 시작 (적 %d명)"),
+        *GetOwnerAgentID(), EnemyLocations.Num());
+}
+
+void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> Result)
+{
+    if (!Result || !Result->IsSuccessful() || Result->Items.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전술 EQS 결과 없음 → Failed"));
+        TacticalQueryState = ETacticalQueryState::Failed;
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    AActor* Owner = GetOwner();
+    const float HpPct = StateComponent
+        ? StateComponent->GetAttributes().Resources.GetHealthPercent()
+        : 0.5f;
+
+    // ── 스코어링 ─────────────────────────────────────────────────────────────
+    TArray<FLocationCandidate> AllCandidates;
+    AllCandidates.Reserve(Result->Items.Num());
+
+    for (int32 i = 0; i < Result->Items.Num(); ++i)
+    {
+        const FVector Loc = Result->GetItemAsLocation(i);
+
+        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
+        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
+        const float OptScore   = EvalOptimalScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
+
+        ELocationCategory BestCat;
+        float BestScore;
+        if (SafeScore >= AggrScore && SafeScore >= OptScore) { BestCat = ELocationCategory::Safe;       BestScore = SafeScore; }
+        else if (AggrScore >= SafeScore && AggrScore >= OptScore) { BestCat = ELocationCategory::Aggressive; BestScore = AggrScore; }
+        else { BestCat = ELocationCategory::Optimal; BestScore = OptScore; }
+
+        FLocationCandidate Cand;
+        Cand.Category       = BestCat;
+        Cand.Location       = Loc;
+        Cand.Score          = BestScore;
+        Cand.DistanceToEnemy = CalcDistToNearestEnemy(Loc, CachedEnemyLocations);
+        Cand.CoverRating    = CalcCoverRating(Loc, CachedEnemyLocations, World, Owner);
+        Cand.HeightDelta    = CachedEnemyLocations.IsEmpty() ? 0.f
+            : Loc.Z - CachedEnemyLocations[0].Z;
+        AllCandidates.Add(Cand);
+    }
+
+    // ── 카테고리별 Top-3 추리기 ───────────────────────────────────────────────
+    TMap<ELocationCategory, TArray<FLocationCandidate*>> ByCategory;
+    for (FLocationCandidate& C : AllCandidates)
+        ByCategory.FindOrAdd(C.Category).Add(&C);
+
+    TArray<FLocationCandidate> Pruned;
+    for (auto& KV : ByCategory)
+    {
+        KV.Value.Sort([](const FLocationCandidate& A, const FLocationCandidate& B){ return A.Score > B.Score; });
+        const int32 TopN = FMath::Min(3, KV.Value.Num());
+        int32 Idx = 0;
+        for (int32 k = 0; k < TopN; ++k)
+        {
+            FLocationCandidate C = *KV.Value[k];
+            C.CandidateId = FString::Printf(TEXT("%s_%d"), *CategoryToString(C.Category), Idx++);
+            Pruned.Add(C);
+        }
+    }
+
+    if (Pruned.IsEmpty())
+    {
+        TacticalQueryState = ETacticalQueryState::Failed;
+        return;
+    }
+
+    // ── TacticalCandidateMap 저장 (LLM 응답 역조회용) ─────────────────────────
+    TacticalCandidateMap.Empty();
+    for (const FLocationCandidate& C : Pruned)
+        TacticalCandidateMap.Add(C.CandidateId, C.Location);
+
+    // ── JSON Payload 직렬화 ──────────────────────────────────────────────────
+    const FString AgentID = GetOwnerAgentID();
+
+    // context_summary 간략 문자열
+    FString ContextSummary = FString::Printf(TEXT("HP:%.0f%% Enemies:%d"),
+        HpPct * 100.f, CachedEnemyLocations.Num());
+    if (StateComponent)
+    {
+        const FBehavioralTraits& Behavior = StateComponent->GetAttributes().Behavior;
+        ContextSummary += FString::Printf(TEXT(" Aggr:%.0f Fear:%.0f"),
+            Behavior.Aggression, Behavior.Fear);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> CandidateArray;
+    for (const FLocationCandidate& C : Pruned)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetStringField(TEXT("id"),        C.CandidateId);
+        Obj->SetStringField(TEXT("category"),  CategoryToString(C.Category));
+        Obj->SetNumberField(TEXT("dist_to_enemy"), C.DistanceToEnemy);
+        Obj->SetNumberField(TEXT("cover_rating"),  C.CoverRating);
+        Obj->SetNumberField(TEXT("height_delta"),  C.HeightDelta);
+        Obj->SetNumberField(TEXT("score"),         C.Score);
+        CandidateArray.Add(MakeShared<FJsonValueObject>(Obj));
+    }
+
+    TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("agent_id"),        AgentID);
+    Payload->SetStringField(TEXT("context_summary"), ContextSummary);
+    Payload->SetArrayField(TEXT("candidates"),       CandidateArray);
+
+    FString PayloadStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
+    FJsonSerializer::Serialize(Payload.ToSharedRef(), Writer);
+
+    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadStr);
+
+    // ── LLMClient로 전송 ─────────────────────────────────────────────────────
+    if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            Manager->SendEnvelopePromptToLLM(Envelope);
+            TacticalQueryState = ETacticalQueryState::WaitingLLM;
+            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - location_decision 전송 (후보 %d개)"),
+                *AgentID, Pruned.Num());
+        }
+        else
+        {
+            TacticalQueryState = ETacticalQueryState::Failed;
+        }
+    }
+    else
+    {
+        TacticalQueryState = ETacticalQueryState::Failed;
+    }
+}
+
+void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId)
+{
+    const FVector* Found = TacticalCandidateMap.Find(ChosenCandidateId);
+    if (!Found)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[NPCAction] NotifyLocationDecisionReady - 알 수 없는 CandidateId: %s. Fallback 최초 항목 사용."),
+            *ChosenCandidateId);
+
+        // Fallback: 맵의 첫 항목 사용
+        if (TacticalCandidateMap.Num() > 0)
+        {
+            TacticalQueryResult = TacticalCandidateMap.CreateConstIterator().Value();
+        }
+        else
+        {
+            TacticalQueryState = ETacticalQueryState::Failed;
+            return;
+        }
+    }
+    else
+    {
+        TacticalQueryResult = *Found;
+    }
+
+    // Move 액션을 큐에 주입 → ProcessNextAction()이 정상 처리
+    FGameAction MoveAction;
+    MoveAction.ActionType = EAction::Move;
+    MoveAction.Parameters.Add(TEXT("TargetLoc"), TacticalQueryResult.ToString());
+    ActionQueue.Enqueue(MoveAction);
+
+    TacticalQueryState = ETacticalQueryState::ResultReady;
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술 위치 결정 완료: %s → (%.0f, %.0f, %.0f)"),
+        *GetOwnerAgentID(), *ChosenCandidateId,
+        TacticalQueryResult.X, TacticalQueryResult.Y, TacticalQueryResult.Z);
+}
+
 // 지정된 타겟 액터를 일정 간격을 두고 따라다닙니다. 호위나 감시 등의 상황에 유용합니다.
-void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType) 
+void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType)
 {
     if (TargetActor)
     {

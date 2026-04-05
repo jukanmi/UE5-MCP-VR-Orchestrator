@@ -28,6 +28,9 @@ public:
     void DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch);
     void ProcessStateUpdateQueue(int32 MaxNPCsPerTick);
 
+    /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달 */
+    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId);
+
     void OnWebSocketMessageReceived(const FString& JsonMessage);
 
 private:

@@ -14,7 +14,7 @@
 ║                                                                              ║
 ║ 구조화 전략:                                                                  ║
 ║   1단계: [Mode: X] [Facial: Y] 파싱 → behavior_mode, facial_state 결정     ║
-║   2단계: Gemini CLI로 action 구조화 시도                                      ║
+║   2단계: Ollama(로컬)로 action 구조화 시도                                      ║
 ║   3단계: 실패 시 regex 기반 폴백 파서 사용                                    ║
 ║   4단계: action_category 자동 추론 (CATEGORY_ACTION_MAP 역참조)              ║
 ║                                                                              ║
@@ -31,7 +31,7 @@ from ..schemas.actions import (
     ActionBatch, GameAction,
     CATEGORY_ACTION_MAP,
 )
-from ..utils.llm_factory import call_gemini_cli
+from ..utils.llm_factory import call_ollama_direct
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ def _infer_category(action_type: str, behavior_mode: str = "Common") -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gemini CLI용 구조화 프롬프트
+# Ollama 구조화 봇 프롬프트
 # ActionType은 C++ Enum과 1:1 대응되므로 정확한 값만 사용해야 함.
 # ─────────────────────────────────────────────────────────────────────────────
 STRUCTURING_PROMPT = """You are an Action Structurer for a VR game engine.
@@ -139,10 +139,18 @@ def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str]:
     mode_match = re.search(r'\[Mode:\s*(\w+)\]', raw_response, re.IGNORECASE)
     facial_match = re.search(r'\[Facial:\s*(\w+)\]', raw_response, re.IGNORECASE)
 
+    VALID_MODES = {"Combat", "Social", "Task", "Investigation", "Lifestyle", "Common"}
+    VALID_FACIALS = {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}
+
     if mode_match:
-        mode = mode_match.group(1)
+        parsed_mode = mode_match.group(1).capitalize()
+        if parsed_mode in VALID_MODES:
+            mode = parsed_mode
+            
     if facial_match:
-        facial = facial_match.group(1)
+        parsed_facial = facial_match.group(1).capitalize()
+        if parsed_facial in VALID_FACIALS:
+            facial = parsed_facial
 
     # 태그 라인 제거
     cleaned = re.sub(
@@ -178,15 +186,15 @@ def interface_output_node(state: AgentState):
     print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
-    # 2단계: Gemini CLI로 구조화 시도
+    # 2단계: Ollama로 구조화 시도
     prompt = STRUCTURING_PROMPT.format(
         raw_response=clean_response,
         behavior_mode=behavior_mode,
         facial_state=facial_state
     )
 
-    print("[Interface Output] Calling Gemini CLI for action structuring...")
-    cli_result = call_gemini_cli(prompt, extract_json=True)
+    print("[Interface Output] Calling Ollama for action structuring...")
+    cli_result = call_ollama_direct(prompt, extract_json=True)
 
     action_batch = None
 
@@ -224,7 +232,7 @@ def interface_output_node(state: AgentState):
 
 def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
     """
-    Gemini CLI가 반환한 액션 딕셔너리 목록 → GameAction Pydantic 모델로 변환.
+    Ollama가 반환한 액션 딕셔너리 목록 → GameAction Pydantic 모델로 변환.
     """
     from ..schemas.actions import GameAction
     actions = []
@@ -239,6 +247,13 @@ def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
             continue
 
         facial = action_dict.get("FacialState") or action_dict.get("emotion") or action_dict.get("facial_state", "Neutral")
+        if isinstance(facial, str):
+            facial = facial.capitalize()
+            if facial not in {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}:
+                facial = "Neutral"
+        else:
+            facial = "Neutral"
+            
         params = action_dict.get("Parameters") or action_dict.get("parameters", {})
         
         # 레거시(잘못 생성된) target_id, target_loc을 Parameters로 강제 편입

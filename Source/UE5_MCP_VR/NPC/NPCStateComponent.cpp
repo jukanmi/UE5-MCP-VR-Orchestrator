@@ -7,6 +7,7 @@
 #include "SmartNPC.h"
 #include "NPCManager.h"
 #include "Engine/GameInstance.h"
+#include "../Network/MCPJsonUtils.h"
 
 UNPCStateComponent::UNPCStateComponent()
 {
@@ -173,10 +174,10 @@ void UNPCStateComponent::FlushEventReport()
     }
 
     // 4. 서버 전송 및 큐 초기화
-    FString Payload = UMCPJsonUtils::SerializePerceptionReport(RefinedEvents);
+    FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
-        Manager->SendEventReport(OwnerNPC->GetAgentID(), Payload);
+        Manager->SendEventReport(OwnerNPC->AgentID, Payload);
     }
     LocalEventQueue.Empty();
 }

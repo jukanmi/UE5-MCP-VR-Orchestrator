@@ -24,7 +24,7 @@ import re
 import json
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
-from ..utils.llm_factory import call_gemini_cli
+from ..utils.llm_factory import call_ollama_direct
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ def _format_stats(stats) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 컨텍스트 변환 프롬프트 — Gemini CLI(무료)로 GesPrompt → 자연어 변환
+# 컨텍스트 변환 프롬프트 — Ollama(로컬)로 GesPrompt → 자연어 변환
 # ─────────────────────────────────────────────────────────────────────────────
 CONTEXT_CONVERSION_PROMPT = """You are a Context Translator for a VR game AI system.
 Convert the following structured game data into a concise natural language summary.
@@ -129,7 +129,7 @@ def interface_input_node(state: AgentState) -> dict:
     [처리 순서]
     1. Guardrail 검사 → Jailbreak 감지 시 즉시 에러 반환 (LLM 없이)
     2. 긴급 이벤트(Hit/Ambush) 감지 → LLM 없이 즉각 응전 컨텍스트 생성
-    3. Gemini CLI로 GesPrompt → natural_context 변환
+    3. 로컬 Ollama로 GesPrompt → natural_context 변환
     4. 실패 시 수동 폴백으로 basic context 생성
 
     Input: AgentState (vr_context 포함)
@@ -215,7 +215,7 @@ def interface_input_node(state: AgentState) -> dict:
         else:
             perceived_str = "None visible/audible"
 
-    # ── Gemini CLI 호출 (비용 최소화) ───────────────────────────
+    # ── Ollama 호출 (비용 Zero) ───────────────────────────
     prompt = CONTEXT_CONVERSION_PROMPT.format(
         transcript=transcript,
         gestures=gesture_str,
@@ -226,12 +226,12 @@ def interface_input_node(state: AgentState) -> dict:
         stats=stats_str,
     )
 
-    print("[Interface Input] Gemini CLI 호출 중...")
-    natural_context = call_gemini_cli(prompt, extract_json=False)
+    print("[Interface Input] Ollama 변환 호출 중...")
+    natural_context = call_ollama_direct(prompt, extract_json=False)
 
-    # ── CLI 실패 시 수동 폴백 ───────────────────────────────────
+    # ── Ollama 실패 시 수동 폴백 ───────────────────────────────────
     if not natural_context:
-        print("[Interface Input] CLI 실패, 수동 폴백 사용")
+        print("[Interface Input] 로컬 LLM 변환 실패, 수동 폴백 사용")
         natural_context = f'Player said: "{transcript}"'
         if vr_context.looking_at_entity_id:
             natural_context += f", looking at {vr_context.looking_at_entity_id}"

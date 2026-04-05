@@ -21,5 +21,12 @@ public:
 
     // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static FString SerializePerceptionReport(const TArray<FPerceptionData>& PerceptionEvents);
+    static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents);
+
+    /** location_decision_result 메시지 파싱.
+     *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "..." } }
+     *  @return true이면 OutAgentId / OutChosenId에 값이 채워짐 */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
+    static bool ParseLocationDecisionResult(
+        const FString& Json, FString& OutAgentId, FString& OutChosenId);
 };

@@ -163,6 +163,55 @@ struct FActionBatch
 	TArray<FGameAction> Actions;
 };
 
+// ============================================================================
+// [전술 위치 결정 시스템 - EQS + LLM 분업 구조]
+// WHY: 모든 이동 결정을 LLM에 위임하면 지연이 크다.
+//      C++에서 EQS로 후보를 생성·스코어링하고, 최종 판단만 LLM에 위임하여
+//      LLM 호출 횟수와 페이로드 크기를 모두 줄인다.
+// ============================================================================
+
+/** ELocationCategory: 전술 위치 후보 분류 */
+UENUM(BlueprintType)
+enum class ELocationCategory : uint8
+{
+    Safe        UMETA(DisplayName = "Safe"),       // 방어·은폐 우선
+    Optimal     UMETA(DisplayName = "Optimal"),    // 교전 최적 포지션
+    Aggressive  UMETA(DisplayName = "Aggressive"), // 근접·돌격 우선
+};
+
+/** FLocationCandidate: EQS 결과 위치 + 로컬 스코어링 결과 */
+USTRUCT(BlueprintType)
+struct FLocationCandidate
+{
+    GENERATED_BODY()
+
+    /** "SAFE_0", "OPTIMAL_1" 형태 - LLM 응답에서 식별자로 사용 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    FString CandidateId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    ELocationCategory Category = ELocationCategory::Optimal;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    FVector Location = FVector::ZeroVector;
+
+    /** 카테고리 내 스코어 (높을수록 우선) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    float Score = 0.f;
+
+    /** 가장 가까운 적과의 거리 (cm) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    float DistanceToEnemy = 0.f;
+
+    /** 0 = 완전 노출, 1 = 완전 은폐 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    float CoverRating = 0.f;
+
+    /** 적 대비 높이 차이 (양수 = NPC가 높음) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
+    float HeightDelta = 0.f;
+};
+
 /** FModeActionRequest: interfaceOutput에서 NPCManager로 전달되는 NPC뭉터기들이 뭘할지 정해주는 정형화된 요청 데이터 */
 USTRUCT(BlueprintType)
 struct FModeActionRequest

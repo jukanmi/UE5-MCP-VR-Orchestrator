@@ -2,12 +2,24 @@
 
 
 #include "VRPlayerCharacter.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Idle, "State.Idle")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Common_Move, "State.Action.Common.Move")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Combat_Attack, "State.Action.Combat.Attack")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Condition_Dead, "State.Condition.Dead")
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../NPC/SmartNPC.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/DamageEvents.h"
+#include "DrawDebugHelpers.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
+#include "../NPC/Struct/NPCActionKeys.h"
+
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
 {
@@ -40,7 +52,7 @@ void AVRPlayerCharacter::BeginPlay()
 	}
 
     // 기본 대기 태그 부여
-    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+    AddStateTag(TAG_State_Idle);
 
 	// 3. Enhanced Input Subsystem에 IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -127,14 +139,14 @@ void AVRPlayerCharacter::Move(const FInputActionValue& Value)
 		AddMovementInput(RightDirection, MovementVector.X);
 
         // 이동 태그 부여 (Idle 제거 및 Run 부여)
-        RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-        AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Move.Run")));
+        RemoveStateTag(TAG_State_Idle);
+        AddStateTag(TAG_State_Action_Common_Move);
 	}
 	else
 	{
 		// 입력이 없을 경우 대기 상태 복구
-		RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Move.Run")));
-		AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+		RemoveStateTag(TAG_State_Action_Common_Move);
+		AddStateTag(TAG_State_Idle);
 	}
 }
 
@@ -232,8 +244,8 @@ void AVRPlayerCharacter::PerformAttack()
 	if (!GetController()) return;
 
     // 공격 태그 부여
-    RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Combat.Attack")));
+    RemoveStateTag(TAG_State_Idle);
+    AddStateTag(TAG_State_Action_Combat_Attack);
     
     // 공격 소음 발생
     UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 0.0f, NPCActionKeys::NoiseTag_Attack);
@@ -283,8 +295,8 @@ void AVRPlayerCharacter::PerformAttack()
 	}
 
     // [TODO/임시] 공격 즉시 태그 회수 (실제 환경에서는 애니메이션 몽타주 종료 델리게이트를 통해 회수해야 정교합니다)
-    RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Action.Combat.Attack")));
-    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+    RemoveStateTag(TAG_State_Action_Combat_Attack);
+    AddStateTag(TAG_State_Idle);
 }
 
 void AVRPlayerCharacter::ApplyMovementSpeed()
@@ -340,8 +352,8 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
-        RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-        AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Condition.Dead")));
+        RemoveStateTag(TAG_State_Idle);
+        AddStateTag(TAG_State_Condition_Dead);
 		// TODO: Handle player death (respawn, game over, etc.)
 	}
 
