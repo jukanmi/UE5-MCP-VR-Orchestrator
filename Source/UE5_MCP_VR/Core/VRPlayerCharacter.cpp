@@ -197,6 +197,15 @@ void AVRPlayerCharacter::ToggleChat()
 
 void AVRPlayerCharacter::DetectNearbyNPC()
 {
+	// 이미 대화 중이면 닫기
+	if (ChatWidgetInstance && ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
+	{
+		ChatWidgetInstance->CurrentTargetNPCID = TEXT("");
+		CurrentTargetID = TEXT("");
+		ToggleChat();
+		return;
+	}
+
 	// SimpleSphere Trace or Overlap
 	FVector Start = GetActorLocation();
 	float Radius = 500.0f; 
