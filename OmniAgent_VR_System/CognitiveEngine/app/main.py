@@ -15,7 +15,6 @@ from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
 from .middleware import validate_auth_token, is_stale_packet
-from .utils.llm_factory import get_llm
 
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
@@ -108,19 +107,17 @@ async def websocket_slm_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("[Main] UE5 SLM 클라이언트 연결됨")
 
-    slm_engine = get_llm(model_name="qwen_slm", temperature=0.7)
-
     try:
         while True:
             raw_data = await websocket.receive_text()
-            response = await _process_slm_message(raw_data, slm_engine)
+            response = await _process_slm_message(raw_data)
             await websocket.send_text(response)
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 SLM 클라이언트 연결 종료")
 
 
-async def _process_slm_message(raw_data: str, slm_engine) -> str:
+async def _process_slm_message(raw_data: str) -> str:
     try:
         # TODO: Step 1: 원시 데이터 수신
         # TODO: Step 2: Ollama SLM 비동기 호출
@@ -300,53 +297,14 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         logger.info(f"[Main] location_decision 수신: agent={payload.agent_id}, "
                     f"candidates={len(payload.candidates)}")
 
-        llm = get_llm(model_name="gpt-4o-mini", temperature=0.3)
+        if not payload.candidates:
+            raise ValueError("No location candidates provided by UE5.")
 
-        # 후보 목록 텍스트화
-        candidate_lines = "\n".join(
-            f"  id={c.id} category={c.category} "
-            f"dist={c.dist_to_enemy:.0f}cm cover={c.cover_rating:.2f} "
-            f"height_delta={c.height_delta:.0f} score={c.score:.2f}"
-            for c in payload.candidates
-        )
+        best_candidate = max(payload.candidates, key=lambda c: c.score)
+        chosen_id = best_candidate.id
+        reason = f"Fast-Path: Selected highest score ({best_candidate.score:.2f}) from EQS"
 
-        system_prompt = (
-            "You are a tactical AI assistant for an NPC in a VR game.\n"
-            "Choose exactly ONE candidate id from the list below.\n"
-            "Respond ONLY with valid JSON: "
-            '{"chosen_id": "<id>", "reason": "<one sentence>"}\n'
-            "Do NOT output anything else."
-        )
-        user_message = (
-            f"NPC: {payload.agent_id}\n"
-            f"Situation: {payload.context_summary}\n\n"
-            f"Candidates:\n{candidate_lines}\n\n"
-            "Which position should the NPC move to?"
-        )
-
-        from langchain_core.messages import SystemMessage, HumanMessage
-        response = await llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message),
-        ])
-
-        raw = response.content.strip()
-        try:
-            parsed = json.loads(raw)
-            chosen_id = parsed.get("chosen_id", payload.candidates[0].id)
-            reason    = parsed.get("reason", "")
-        except json.JSONDecodeError:
-            logger.warning(f"[Main] location_decision LLM 응답 파싱 실패. Fallback 사용. raw={raw}")
-            chosen_id = payload.candidates[0].id
-            reason    = "fallback"
-
-        # chosen_id 유효성 확인
-        valid_ids = {c.id for c in payload.candidates}
-        if chosen_id not in valid_ids:
-            logger.warning(f"[Main] LLM이 유효하지 않은 id 반환: {chosen_id}. Fallback.")
-            chosen_id = payload.candidates[0].id
-
-        logger.info(f"[Main] location_decision 결과: chosen={chosen_id} reason={reason}")
+        logger.info(f"[Main] location_decision 결과(Fast-Path): chosen={chosen_id} reason={reason}")
 
         return json.dumps({
             "type": "location_decision_result",

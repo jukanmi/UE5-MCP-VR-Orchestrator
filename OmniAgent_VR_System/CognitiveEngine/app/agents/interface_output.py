@@ -31,7 +31,6 @@ from ..schemas.actions import (
     ActionBatch, GameAction,
     CATEGORY_ACTION_MAP,
 )
-from ..utils.llm_factory import call_ollama_direct
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,57 +66,6 @@ def _infer_category(action_type: str, behavior_mode: str = "Common") -> str:
     # 역참조 테이블에서 찾기
     return ACTION_TO_CATEGORY.get(action_type, "Common")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ollama 구조화 봇 프롬프트
-# ActionType은 C++ Enum과 1:1 대응되므로 정확한 값만 사용해야 함.
-# ─────────────────────────────────────────────────────────────────────────────
-STRUCTURING_PROMPT = """You are an Action Structurer for a VR game engine.
-Convert the NPC's natural language response into structured game actions.
-
-NPC Response: "{raw_response}"
-Behavior Mode: "{behavior_mode}"
-Facial State: "{facial_state}"
-
-Available Action Types (MUST use these exact strings):
-
-[Common Actions] - Basic actions available in all modes
-  Idle, Move, Follow, Wait, Dialogue, TurnTo, Stop, Scan, UseItem, Equip, Unequip
-
-[Combat Actions] - Fighting and defense
-  Attack, Block, Dodge, Flee, SignalAllies
-
-[Social Actions] - Social interaction
-  Trade, Emote, GiveItem, Comfort, HandObject
-
-[Task Actions] - Object interaction
-  PickUp, Drop, Craft, Repair
-
-[Investigation Actions] - Searching and tracking
-  Investigate, Track, Scout
-
-[Lifestyle Actions] - Daily life activities
-  Sit, Sleep, Clean, Read, Pray, Dance, Sing
-
-MAPPING RULES:
-1. Speech in "quotes" → ActionType: "Dialogue", Parameters: {{"text": "...", "tone": "..."}}
-2. *runs/walks/goes to* → ActionType: "Move", Parameters: {{"target_loc": {{"x": 0, "y": 0, "z": 0}}, "style": "Run"/"Walk"}}
-3. *attacks/strikes/hits* → ActionType: "Attack", Parameters: {{"target_id": "..."}}
-4. *blocks/defends/shields* → ActionType: "Block"
-5. *dodges/rolls/evades* → ActionType: "Dodge"
-6. *opens/closes/takes/uses* → match to PickUp/Drop/UseItem as appropriate
-7. *waves/nods/bows/smiles* → ActionType: "Emote", Parameters: {{"gesture": "Wave"/"Nod"/"Bow"}}
-8. *sits/sits down* → ActionType: "Sit"
-9. *waits/stops/pauses* → ActionType: "Wait", Parameters: {{"duration": "3.0"}}
-10. *looks around/searches* → ActionType: "Scan" or "Investigate"
-
-RULES:
-- Always include a Dialogue action if there is speech in "quotes"
-- Output ONLY a JSON array of action objects
-- Each object MUST follow exactly this format: {{"ActionType": "...", "FacialState": "{facial_state}", "Parameters": {{...}}}}
-- target_id and target_loc MUST be placed inside the Parameters dictionary.
-
-Output format: [{{"ActionType": "...", "FacialState": "...", "Parameters": {{}}}}, ...]"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,42 +134,18 @@ def interface_output_node(state: AgentState):
     print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
-    # 2단계: Ollama로 구조화 시도
-    prompt = STRUCTURING_PROMPT.format(
-        raw_response=clean_response,
-        behavior_mode=behavior_mode,
-        facial_state=facial_state
-    )
-
-    print("[Interface Output] Calling Ollama for action structuring...")
-    cli_result = call_ollama_direct(prompt, extract_json=True)
-
     action_batch = None
 
-    if cli_result:
-        try:
-            actions_data = json.loads(cli_result)
-            if isinstance(actions_data, dict):
-                actions_data = [actions_data]
+    # 2단계: Regex 파싱 (dialogue.py 출력 형식 기준)
+    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
 
-            actions = _parse_actions(actions_data, npc_id, behavior_mode)
-
-            action_batch = ActionBatch(
-                AgentID=npc_id,
-                Mode=behavior_mode,
-                Actions=actions
-            )
-            print(f"[Interface Output] Success: {len(actions)} actions created")
-
-        except json.JSONDecodeError as e:
-            print(f"[Interface Output] JSON parse error: {e}")
-        except Exception as e:
-            print(f"[Interface Output] Error: {e}")
-
-    # 3단계: 실패 시 Regex 폴백
-    if not action_batch:
-        print("[Interface Output] CLI failed, using regex fallback...")
-        action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
+    if action_batch and action_batch.Actions:
+        print(f"[Interface Output] Regex 파싱 성공: {len(action_batch.Actions)}개 액션")
+    else:
+        # 형식 완전 이탈 시 전체 텍스트를 Dialogue로 처리
+        print("[Interface Output] 액션 없음, 전체 텍스트를 Dialogue로 처리")
+        action_batch = _create_empty_batch(npc_id)
+        action_batch.Actions[0].Parameters["text"] = clean_response[:200]
 
     return {
         "action_batch": action_batch,
@@ -229,63 +153,6 @@ def interface_output_node(state: AgentState):
         "next": "Rules"
     }
 
-
-def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
-    """
-    Ollama가 반환한 액션 딕셔너리 목록 → GameAction Pydantic 모델로 변환.
-    """
-    from ..schemas.actions import GameAction
-    actions = []
-
-    for action_dict in actions_data:
-        # LLM이 Pydantic 필드명(PascalCase)을 따랐는지 지원
-        action_type = action_dict.get("ActionType") or action_dict.get("action_type", "")
-        
-        # action_type 유효성 검증
-        if action_type not in ACTION_TO_CATEGORY and action_type != "Dialogue":
-            print(f"[Interface Output] Skipping invalid action_type: {action_type}")
-            continue
-
-        facial = action_dict.get("FacialState") or action_dict.get("emotion") or action_dict.get("facial_state", "Neutral")
-        if isinstance(facial, str):
-            facial = facial.capitalize()
-            if facial not in {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}:
-                facial = "Neutral"
-        else:
-            facial = "Neutral"
-            
-        params = action_dict.get("Parameters") or action_dict.get("parameters", {})
-        
-        # 레거시(잘못 생성된) target_id, target_loc을 Parameters로 강제 편입
-        if "target_id" in action_dict and "target_id" not in params:
-            params["target_id"] = action_dict.get("target_id")
-        if "target_loc" in action_dict and "target_loc" not in params:
-            # GameVector3 변환은 내부적으로 처리 않음(JSON 직렬화만 수행)
-            # dict 형식일 경우에 대비
-            loc = action_dict.get("target_loc")
-            if isinstance(loc, dict):
-                # JSON 문자열 포맷팅
-                params["target_loc"] = f'{{"x":{loc.get("x",0)},"y":{loc.get("y",0)},"z":{loc.get("z",0)}}}'
-        
-        # Move 스타일 보정
-        if action_type == "Move" and params.get("style") not in VALID_MOVE_STYLES:
-            params["style"] = "Walk"
-
-        # 모든 Parameter를 string value로 변환 (C++ TMap<FString, FString> 대응)
-        str_params = {}
-        for k, v in params.items():
-            if isinstance(v, (dict, list)):
-                str_params[k] = json.dumps(v)
-            else:
-                str_params[k] = str(v)
-
-        actions.append(GameAction(
-            ActionType=action_type,
-            FacialState=facial,
-            Parameters=str_params
-        ))
-
-    return actions
 
 
 def _regex_fallback_parse(raw_response: str, npc_id: str,

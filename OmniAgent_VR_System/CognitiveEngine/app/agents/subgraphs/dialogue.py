@@ -217,12 +217,12 @@ def dialogue_node(state: AgentState):
     # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
     importance = persona.get('importance', 'normal')
     
-    # 모든 중요도에서 Ollama 로칼 모델 사용 (Gemma/Gemini API 제거)
-    model_name = "llama" if importance in ("high", "core") else "qwen"
+    # 최적화 3번: 무거운 70B(llama) 대신 26B(gemma4) 또는 8B(qwen) 사용
+    model_name = "gemma4" if importance in ("high", "core") else "qwen"
     print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
     
     try:
-        llm = get_llm(model_name=model_name, temperature=0.7)
+        llm = get_llm(model_name=model_name, temperature=0.7, num_predict=300)
         prompt = ChatPromptTemplate.from_messages([
             ("system", "{system_msg}"),
             ("human", "Context: {context}")

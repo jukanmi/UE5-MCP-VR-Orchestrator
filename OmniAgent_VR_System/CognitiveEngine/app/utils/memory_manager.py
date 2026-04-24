@@ -115,11 +115,15 @@ class ConversationMemory:
         self._save_to_file()
 
     def _check_and_summarize(self):
-        """토큰 예산이 임계치를 초과했는지 확인하고 요약 처리한다."""
-        current_tokens = self.estimate_total_tokens()
+        """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다."""
         threshold = int(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD)
 
-        if current_tokens >= threshold:
+        while self.estimate_total_tokens() >= threshold:
+            non_summary_count = sum(1 for e in self.entries if not e.is_summary)
+            if non_summary_count < ENTRIES_TO_SUMMARIZE:
+                # 요약할 non-summary 항목이 부족하면 더 이상 진행 불가
+                break
+            current_tokens = self.estimate_total_tokens()
             print(f"[Memory] {self.agent_id} 토큰 임계치 도달 ({current_tokens}/{MAX_TOKENS_PER_NPC}), 요약 중...")
             self._summarize_oldest_entries()
 
@@ -134,7 +138,7 @@ class ConversationMemory:
         conversation_text = "\n".join(f"{e.speaker}: {e.content}" for e in to_summarize)
 
         try:
-            llm = get_llm(temperature=0.3)
+            llm = get_llm(model_name="gemma4_e2b", temperature=0.0)
             summary_prompt = (
                 f"Summarize the following conversation between Player and {self.agent_id} "
                 "into a brief third-person narrative. Keep important facts and emotional context. "

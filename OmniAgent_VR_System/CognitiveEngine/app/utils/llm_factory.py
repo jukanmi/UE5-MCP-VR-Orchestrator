@@ -35,10 +35,11 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # 통합 LLM 팩토리 함수
 # get_llm / get_dialogue_llm을 통합 → 단일 인터페이스로 사용
 # ==============================================================================
-def get_llm(model_name: str = None, temperature: float = 0.0):
+def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int = 150):
     """
-    model_name: "qwen" | "qwen_slm" | "llama" | "openai" | None (→ DEFAULT_MODEL)
+    model_name:  "qwen" | "qwen_slm" | "llama" | "openai" | None (→ DEFAULT_MODEL)
     temperature: 창의성 수준 (0.0 = 결정적, 1.0 = 창의적)
+    num_predict: 최대 출력 토큰 수 (대화용은 300, 구조화/요약용은 150)
     """
     if model_name is None:
         model_name = DEFAULT_MODEL
@@ -53,6 +54,9 @@ def get_llm(model_name: str = None, temperature: float = 0.0):
             model=model_id,
             temperature=temperature,
             base_url=OLLAMA_BASE_URL,
+            num_ctx=2048,
+            num_predict=num_predict,
+            num_thread=8
         )
 
     elif model_name == "openai":
