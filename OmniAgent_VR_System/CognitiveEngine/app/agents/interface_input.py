@@ -24,7 +24,6 @@ import re
 import json
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
-from ..utils.llm_factory import call_ollama_direct
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -97,30 +96,6 @@ def _format_stats(stats) -> str:
     return ", ".join([f"{k}: {v}" for k, v in stats.items()])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 컨텍스트 변환 프롬프트 — Ollama(로컬)로 GesPrompt → 자연어 변환
-# ─────────────────────────────────────────────────────────────────────────────
-CONTEXT_CONVERSION_PROMPT = """You are a Context Translator for a VR game AI system.
-Convert the following structured game data into a concise natural language summary.
-
-Rules:
-- Be clear and specific about what the player wants
-- Include spatial information if available
-- Include emotional/urgency context from events
-- Keep it under 3 sentences
-- Write in English
-
-Input Data:
-- Player said: "{transcript}"
-- Player gestures: {gestures}
-- Player location: {location}
-- Looking at: {looking_at}
-- Known Nearby Entities: {perceived_targets}
-- Last event: {last_event}
-- Player stats: {stats}
-
-Output a single natural language summary paragraph. No JSON, no formatting."""
-
 
 def interface_input_node(state: AgentState) -> dict:
     """
@@ -128,9 +103,8 @@ def interface_input_node(state: AgentState) -> dict:
 
     [처리 순서]
     1. Guardrail 검사 → Jailbreak 감지 시 즉시 에러 반환 (LLM 없이)
-    2. 긴급 이벤트(Hit/Ambush) 감지 → LLM 없이 즉각 응전 컨텍스트 생성
-    3. 로컬 Ollama로 GesPrompt → natural_context 변환
-    4. 실패 시 수동 폴백으로 basic context 생성
+    2. 긴급 이벤트(Hit/Ambush) 감지 → 즉각 응전 컨텍스트 생성
+    3. GesPrompt 필드를 직접 조합해 natural_context 생성 (LLM 없이)
 
     Input: AgentState (vr_context 포함)
     Output: natural_context + target_npc, 또는 has_error=True
@@ -215,28 +189,18 @@ def interface_input_node(state: AgentState) -> dict:
         else:
             perceived_str = "None visible/audible"
 
-    # ── Ollama 호출 (비용 Zero) ───────────────────────────
-    prompt = CONTEXT_CONVERSION_PROMPT.format(
-        transcript=transcript,
-        gestures=gesture_str,
-        location=location_str,
-        looking_at=vr_context.looking_at_entity_id or "Nothing specific",
-        perceived_targets=perceived_str,
-        last_event=vr_context.last_event or "None",
-        stats=stats_str,
-    )
-
-    print("[Interface Input] Ollama 변환 호출 중...")
-    natural_context = call_ollama_direct(prompt, extract_json=False)
-
-    # ── Ollama 실패 시 수동 폴백 ───────────────────────────────────
-    if not natural_context:
-        print("[Interface Input] 로컬 LLM 변환 실패, 수동 폴백 사용")
-        natural_context = f'Player said: "{transcript}"'
-        if vr_context.looking_at_entity_id:
-            natural_context += f", looking at {vr_context.looking_at_entity_id}"
-        if gesture_str != "None":
-            natural_context += f", with gestures: {gesture_str}"
+    # ── 구조화 컨텍스트 직접 조합 (LLM 없이) ────────────────────────
+    natural_context = f'Player said: "{transcript}"'
+    if vr_context.looking_at_entity_id:
+        natural_context += f", looking at {vr_context.looking_at_entity_id}"
+    if gesture_str != "None":
+        natural_context += f", with gestures: {gesture_str}"
+    if location_str != "Unknown":
+        natural_context += f", at location {location_str}"
+    if vr_context.last_event:
+        natural_context += f", last event: {vr_context.last_event}"
+    if perceived_str not in ("Unknown", "None visible/audible"):
+        natural_context += f", nearby: {perceived_str}"
 
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
 

@@ -20,6 +20,23 @@ void UChatWidget::NativeConstruct()
 	{
 		InputTextBox->OnTextCommitted.AddDynamic(this, &UChatWidget::OnInputTextCommitted);
 	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UNPCManager* NPCManager = GI->GetSubsystem<UNPCManager>())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] UNPCManager Found. Binding OnNPCResponseReceived."));
+			NPCManager->OnNPCResponseReceived.AddDynamic(this, &UChatWidget::OnNPCResponseReceived);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ChatWidget] UNPCManager NOT found during NativeConstruct!"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[ChatWidget] GameInstance NOT found during NativeConstruct!"));
+	}
 }
 
 void UChatWidget::SendChatMessage()
@@ -36,6 +53,10 @@ void UChatWidget::SendChatMessage()
 	
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 	JsonObject->SetStringField("player_id", "Player_1");
+	if (!CurrentTargetNPCID.IsEmpty())
+	{
+		JsonObject->SetStringField("target_npc_id", CurrentTargetNPCID); // 추가
+	}
 	JsonObject->SetStringField("voice_transcript", MessageText);
 	JsonObject->SetNumberField("timestamp", FDateTime::UtcNow().ToUnixTimestamp());
 	
@@ -127,5 +148,32 @@ void UChatWidget::AddMessageToHistory(const FString& Sender, const FString& Mess
 
 		ChatHistoryScrollBox->AddChild(NewMessageBlock);
 		ChatHistoryScrollBox->ScrollToEnd();
+	}
+}
+
+void UChatWidget::OnNPCResponseReceived(const FString& NPCName, const FString& Message)
+{
+	UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] Received NPC Response. NPCName='%s', CurrentTarget='%s', Message='%s'"), *NPCName, *CurrentTargetNPCID, *Message);
+
+	// 현재 대화 중인 NPC의 응답만 표시 (필터링)
+	if (NPCName == CurrentTargetNPCID)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ChatWidget] Target Match! Adding to history."));
+		AddMessageToHistory(NPCName, Message);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] Target Mismatch. Filtering out."));
+	}
+}
+
+void UChatWidget::CloseChat()
+{
+	SetVisibility(ESlateVisibility::Hidden);
+	
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->SetShowMouseCursor(false);
+		PC->SetInputMode(FInputModeGameOnly());
 	}
 }

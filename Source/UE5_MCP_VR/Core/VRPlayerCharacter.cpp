@@ -73,8 +73,6 @@ void AVRPlayerCharacter::BeginPlay()
 void AVRPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
-	DetectNearbyNPC();
 }
 
 // Called to bind functionality to input
@@ -113,6 +111,12 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		if (FireAction)
 		{
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::PerformAttack);
+		}
+
+		// Interact
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::DetectNearbyNPC);
 		}
 	}
 }
@@ -230,12 +234,26 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 		}
 	}
 
-	CurrentTargetID = FoundNPCID;
-	
-	// Update UI with target
-	if (ChatWidgetInstance)
+	if (bHit && FoundNPCID != "")
 	{
-		ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetID;
+		CurrentTargetID = FoundNPCID;
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s. 대화를 시작합니다."), *CurrentTargetID);
+		
+		// Update UI with target
+		if (ChatWidgetInstance)
+		{
+			ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetID;
+			
+			// UI 강제 열기
+			if (ChatWidgetInstance->GetVisibility() != ESlateVisibility::Visible)
+			{
+				ToggleChat(); // ToggleChat에서 마우스 모드 전환까지 처리해줌
+			}
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 주변에 대화할 NPC가 없습니다."));
 	}
 }
 

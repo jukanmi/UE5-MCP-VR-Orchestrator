@@ -41,4 +41,11 @@ public:
 	// Target NPC
 	UPROPERTY(BlueprintReadWrite, Category = "Chat")
 	FString CurrentTargetNPCID;
+
+	UFUNCTION()
+	void OnNPCResponseReceived(const FString& NPCName, const FString& Message);
+
+	// 대화창 닫기
+	UFUNCTION(BlueprintCallable, Category = "Chat")
+	void CloseChat();
 };

@@ -42,12 +42,16 @@ private:
 };
 
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCResponseReceived, const FString&, NPCName, const FString&, Message);
+
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API UNPCManager : public UGameInstanceSubsystem
 {
     GENERATED_BODY()
 
 public:
+    UPROPERTY(BlueprintAssignable, Category = "MCP|Chat")
+    FOnNPCResponseReceived OnNPCResponseReceived;
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
 
@@ -96,4 +100,6 @@ private:
     UFUNCTION()
     void OnSLMMessageReceived(const FString& JsonMessage);
 
+    UFUNCTION()
+    void HandleNPCDialogue(const FString& AgentID, const FString& DialogueText);
 };

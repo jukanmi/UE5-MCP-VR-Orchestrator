@@ -128,9 +128,14 @@ void UNPCManager::Deinitialize()
 
 void UNPCManager::RegisterNPC(const FString& AgentID, ASmartNPC* NPC)
 {
-    if (NPCMap)
+    if (NPCMap && NPC)
     {
         NPCMap->RegisterNPC(AgentID, NPC);
+
+        if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+        {
+            ActionComp->OnNPCDialogue.AddDynamic(this, &UNPCManager::HandleNPCDialogue);
+        }
     }
 }
 
@@ -138,6 +143,13 @@ void UNPCManager::UnregisterNPC(const FString& AgentID)
 {
     if (NPCMap)
     {
+        if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
+        {
+            if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+            {
+                ActionComp->OnNPCDialogue.RemoveDynamic(this, &UNPCManager::HandleNPCDialogue);
+            }
+        }
         NPCMap->UnregisterNPC(AgentID);
     }
 }
@@ -226,4 +238,9 @@ void UNPCManager::SendEventReport(const FString& AgentID, const FString& Combine
         LLMClient->SendPrompt(Envelope);
         UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Event Report Sent for Agent: %s"), *AgentID);
     }
+}
+
+void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)
+{
+    OnNPCResponseReceived.Broadcast(AgentID, DialogueText);
 }

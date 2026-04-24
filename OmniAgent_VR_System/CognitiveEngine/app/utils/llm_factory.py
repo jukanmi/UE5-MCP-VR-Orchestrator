@@ -12,16 +12,21 @@ load_dotenv()
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
 # ==============================================================================
 MODELS = {
-    # Ollama 로컬 모델
+    # Ollama 로컬 모델 — Gemma 4
+    "gemma4":     "gemma4:26b",   # 메인 LLM (대화/추론)
+    "gemma4_slm": "gemma4:e4b",   # 경량 구조화 모델 (JSON 추출 등)
+    "gemma4_31b": "gemma4:31b",   # 최고 품질 (고부하 작업 시)
+    "gemma4_e2b": "gemma4:e2b",   # 초경량 (지연 민감 구간)
+    # 기존 모델 (폴백 용도)
     "qwen":     "huihui_ai/qwen3-vl-abliterated:8b-instruct",
-    "qwen_slm": "qwen3:1.7b",    # 경량 보조 구조화 모델 (alias)
-    "llama":    "llama3.3:70b",  # 대형 추론 모델 (고품질 필요 시)
+    "qwen_slm": "qwen3:1.7b",
+    "llama":    "llama3.3:70b",
     # OpenAI (API Key 필요)
     "openai":   "gpt-4o-mini",
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
-DEFAULT_MODEL = "qwen"
+DEFAULT_MODEL = "gemma4"
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -40,8 +45,9 @@ def get_llm(model_name: str = None, temperature: float = 0.0):
 
     model_name = model_name.lower()
 
-    if model_name in ("qwen", "qwen_slm", "llama"):
-        model_id = MODELS.get(model_name, MODELS["qwen"])
+    OLLAMA_MODELS = {"gemma4", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen", "qwen_slm", "llama"}
+    if model_name in OLLAMA_MODELS:
+        model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
         return ChatOllama(
             model=model_id,
@@ -62,7 +68,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0):
     else:
         raise ValueError(
             f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. "
-            f"선택 가능: {list(MODELS.keys())}"
+            f"선택 가능: {list(MODELS.keys()) + ['openai']}"
         )
 
 
@@ -76,8 +82,8 @@ def call_ollama_direct(prompt_text: str, extract_json: bool = True) -> Optional[
     - extract_json=False: 응답 전체 텍스트를 그대로 반환
     """
     try:
-        print("[LLM Factory] Ollama 직접 호출 (qwen_slm 구조화 용도)...")
-        llm = get_llm("qwen_slm", temperature=0.1)
+        print("[LLM Factory] Ollama 직접 호출 (gemma4_slm 구조화 용도)...")
+        llm = get_llm("gemma4_slm", temperature=0.1)
         response = llm.invoke(prompt_text)
 
         output = response.content if hasattr(response, "content") else str(response)

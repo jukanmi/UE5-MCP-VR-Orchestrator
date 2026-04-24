@@ -41,6 +41,7 @@ class UNPCInventoryComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCDialogue, const FString&, AgentID, const FString&, DialogueText);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCActionComponent : public UActorComponent
@@ -58,6 +59,9 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
     FOnAllActionsStopped OnActionStoppedAll;
 
+    UPROPERTY(BlueprintAssignable, Category = "NPC|Events|Dialogue")
+    FOnNPCDialogue OnNPCDialogue;
+
     // --- Dependencies (외부 컴포넌트 참조) ---
     // Owner에서 자동 검색하므로 Blueprint에서 직접 설정할 필요 없음
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Action|Refs")
@@ -71,6 +75,9 @@ public:
     UNPCActionDataAsset* ActionData;
 
     // --- Tactical EQS Query Assets ---
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Debug")
+    bool bEQSDebugDraw = false;
+
     // 언리얼 에디터에서 상황별 EQS 에셋을 할당하세요.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* DefaultMoveQuery;    // 기본 이동 쿼리
@@ -210,6 +217,11 @@ protected:
 
     /** EQS AllMatching 콜백: 후보 스코어링 + LLM 전송 */
     void OnTacticalCandidatesDone(TSharedPtr<struct FEnvQueryResult> Result);
+
+    // 후보 위치 시각화 (Pruned 목록 기준)
+    void DrawEQSCandidates(const TArray<FLocationCandidate>& Candidates, float Duration = 5.f) const;
+    // 최종 선택 위치 시각화
+    void DrawEQSChosenLocation(const FVector& Loc, const FString& CandidateId, float Duration = 8.f) const;
 
 private:
     // Cached references
