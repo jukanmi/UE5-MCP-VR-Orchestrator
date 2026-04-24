@@ -21,7 +21,7 @@
 """
 from typing import Literal
 from .state import AgentState
-from ..schemas.actions import ActionBatch, NPCAction
+from ..schemas.actions import ActionBatch, GameAction
 
 
 def supervisor_node(state: AgentState) -> dict:
@@ -86,7 +86,7 @@ def supervisor_node(state: AgentState) -> dict:
     if current_speaker == "Interface_Output":
         action_batch = state.get("action_batch")
 
-        if not action_batch or not action_batch.actions:
+        if not action_batch or not action_batch.Actions:
             print("[Supervisor] ⚠️  ActionBatch 비어있음, 폴백 배치 생성")
             npc_id = state.get("target_npc", "Elara")
             return {
@@ -104,11 +104,10 @@ def supervisor_node(state: AgentState) -> dict:
     if current_speaker == "Rules":
         action_batch = state.get("action_batch")
 
-        # ActionBatch 거부 판정: reasoning에 "REJECTED" 포함 또는 액션 없음
+        # ActionBatch 거부 판정: 액션 없음
         is_rejected = (
             not action_batch
-            or "REJECTED" in (action_batch.reasoning or "")
-            or not action_batch.actions
+            or not action_batch.Actions
         )
 
         if is_rejected:
@@ -150,13 +149,11 @@ def _create_fallback_batch(npc_id: str) -> ActionBatch:
     빈 배치보다 "혼란스러운 표정"이 UE5에서 더 자연스럽게 처리됨.
     """
     return ActionBatch(
-        agent_id=npc_id,
-        actions=[NPCAction(
-            action_category="Common",
-            action_type="Dialogue",
-            executor_npc_id=npc_id,
-            emotion="Confused",
-            parameters={"text": "...", "emotion": "Confused"},
-        )],
-        reasoning="Supervisor Fallback: 빈 배치 수신"
+        AgentID=npc_id,
+        Mode="Common",
+        Actions=[GameAction(
+            ActionType="Dialogue",
+            FacialState="Surprised",
+            Parameters={"text": "...", "emotion": "Confused"},
+        )]
     )

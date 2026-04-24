@@ -2,24 +2,28 @@
 
 
 #include "VRPlayerCharacter.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Idle, "State.Idle")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Common_Move, "State.Action.Common.Move")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Combat_Attack, "State.Action.Combat.Attack")
+UE_DEFINE_GAMEPLAY_TAG(TAG_State_Condition_Dead, "State.Condition.Dead")
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../NPC/SmartNPC.h"
-#include "../NPC/NPCManager.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
+#include "../NPC/Struct/NPCActionKeys.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+ 	// Set this character to call Tick() every frame.  You can turn off this to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
     // AI Perception Stimuli Source
@@ -37,15 +41,6 @@ void AVRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// 1. Initialize WebSocket
-	WebSocketClient = NewObject<UWebSocketClient>(this);
-	if (WebSocketClient)
-	{
-		WebSocketClient->OnMessageReceived.AddDynamic(this, &AVRPlayerCharacter::OnWebSocketMessage);
-		WebSocketClient->Initialize(WebSocketURL);
-	}
-
-	// 2. Initialize UI (Hidden by default)
 	if (ChatWidgetClass)
 	{
 		ChatWidgetInstance = CreateWidget<UChatWidget>(GetWorld(), ChatWidgetClass);
@@ -53,9 +48,11 @@ void AVRPlayerCharacter::BeginPlay()
 		{
 			ChatWidgetInstance->AddToViewport();
 			ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-			ChatWidgetInstance->WebSocketClient = WebSocketClient; // Pass WS reference
 		}
 	}
+
+    // 기본 대기 태그 부여
+    AddStateTag(TAG_State_Idle);
 
 	// 3. Enhanced Input Subsystem에 IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -69,20 +66,6 @@ void AVRPlayerCharacter::BeginPlay()
         }
     }
 
-    // 4. Bind WebSocket to NPCManager so it receives ActionBatch messages
-    if (WebSocketClient)
-    {
-        if (UGameInstance* GI = GetGameInstance())
-        {
-            if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-            {
-                Manager->BindWebSocket(WebSocketClient);
-                UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPCManager bound to WebSocket"));
-            }
-        }
-    }
-
-    // 5. Initialize derived stats and apply movement speeds
     RefreshStats();
 }
 
@@ -90,8 +73,6 @@ void AVRPlayerCharacter::BeginPlay()
 void AVRPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
-	DetectNearbyNPC();
 }
 
 // Called to bind functionality to input
@@ -131,6 +112,12 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		{
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::PerformAttack);
 		}
+
+		// Interact
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::DetectNearbyNPC);
+		}
 	}
 }
 
@@ -154,6 +141,16 @@ void AVRPlayerCharacter::Move(const FInputActionValue& Value)
 		// add movement 
 		AddMovementInput(ForwardDirection, MovementVector.Y);
 		AddMovementInput(RightDirection, MovementVector.X);
+
+        // 이동 태그 부여 (Idle 제거 및 Run 부여)
+        RemoveStateTag(TAG_State_Idle);
+        AddStateTag(TAG_State_Action_Common_Move);
+	}
+	else
+	{
+		// 입력이 없을 경우 대기 상태 복구
+		RemoveStateTag(TAG_State_Action_Common_Move);
+		AddStateTag(TAG_State_Idle);
 	}
 }
 
@@ -200,6 +197,15 @@ void AVRPlayerCharacter::ToggleChat()
 
 void AVRPlayerCharacter::DetectNearbyNPC()
 {
+	// 이미 대화 중이면 닫기
+	if (ChatWidgetInstance && ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
+	{
+		ChatWidgetInstance->CurrentTargetNPCID = TEXT("");
+		CurrentTargetID = TEXT("");
+		ToggleChat();
+		return;
+	}
+
 	// SimpleSphere Trace or Overlap
 	FVector Start = GetActorLocation();
 	float Radius = 500.0f; 
@@ -237,30 +243,39 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 		}
 	}
 
-	CurrentTargetID = FoundNPCID;
-	
-	// Update UI with target
-	if (ChatWidgetInstance)
+	if (bHit && FoundNPCID != "")
 	{
-		ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetID;
+		CurrentTargetID = FoundNPCID;
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s. 대화를 시작합니다."), *CurrentTargetID);
+		
+		// Update UI with target
+		if (ChatWidgetInstance)
+		{
+			ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetID;
+			
+			// UI 강제 열기
+			if (ChatWidgetInstance->GetVisibility() != ESlateVisibility::Visible)
+			{
+				ToggleChat(); // ToggleChat에서 마우스 모드 전환까지 처리해줌
+			}
+		}
 	}
-}
-
-void AVRPlayerCharacter::OnWebSocketMessage(const FString& Message)
-{
-	// Parse ActionBatch to find "Speak" actions
-	// We can reuse the ChatWidget's logic or parse here.
-	// For robust JSON parsing, let's look for "Speak" action type.
-	
-	TSharedPtr<FJsonObject> JsonObject;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
-
-	
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 주변에 대화할 NPC가 없습니다."));
+	}
 }
 
 void AVRPlayerCharacter::PerformAttack()
 {
 	if (!GetController()) return;
+
+    // 공격 태그 부여
+    RemoveStateTag(TAG_State_Idle);
+    AddStateTag(TAG_State_Action_Combat_Attack);
+    
+    // 공격 소음 발생
+    UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 0.0f, NPCActionKeys::NoiseTag_Attack);
 
 	// Get camera location and forward direction
 	FVector CameraLocation;
@@ -305,6 +320,10 @@ void AVRPlayerCharacter::PerformAttack()
 		// Miss - draw debug line to show attack direction
 		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.0f);
 	}
+
+    // [TODO/임시] 공격 즉시 태그 회수 (실제 환경에서는 애니메이션 몽타주 종료 델리게이트를 통해 회수해야 정교합니다)
+    RemoveStateTag(TAG_State_Action_Combat_Attack);
+    AddStateTag(TAG_State_Idle);
 }
 
 void AVRPlayerCharacter::ApplyMovementSpeed()
@@ -360,8 +379,33 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
+        RemoveStateTag(TAG_State_Idle);
+        AddStateTag(TAG_State_Condition_Dead);
 		// TODO: Handle player death (respawn, game over, etc.)
 	}
 
 	return ActualDamage;
+}
+
+// --- IGameplayTagAssetInterface 구현 ---
+
+void AVRPlayerCharacter::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
+{
+    TagContainer = GameplayTags;
+}
+
+void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
+{
+    if (Tag.IsValid())
+    {
+        GameplayTags.AddTag(Tag);
+    }
+}
+
+void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
+{
+    if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
+    {
+        GameplayTags.RemoveTag(Tag);
+    }
 }

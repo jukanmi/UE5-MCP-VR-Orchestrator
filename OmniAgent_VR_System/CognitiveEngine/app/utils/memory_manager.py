@@ -115,38 +115,54 @@ class ConversationMemory:
         self._save_to_file()
 
     def _check_and_summarize(self):
-        """토큰 예산이 임계치를 초과했는지 확인하고 요약 처리한다."""
-        current_tokens = self.estimate_total_tokens()
+        """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다."""
         threshold = int(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD)
 
-        if current_tokens >= threshold:
+        while self.estimate_total_tokens() >= threshold:
+            non_summary_count = sum(1 for e in self.entries if not e.is_summary)
+            if non_summary_count < ENTRIES_TO_SUMMARIZE:
+                # 요약할 non-summary 항목이 부족하면 더 이상 진행 불가
+                break
+            current_tokens = self.estimate_total_tokens()
             print(f"[Memory] {self.agent_id} 토큰 임계치 도달 ({current_tokens}/{MAX_TOKENS_PER_NPC}), 요약 중...")
             self._summarize_oldest_entries()
 
     def _summarize_oldest_entries(self):
-        """오래된 non-summary 항목들을 LLM으로 요약해 1개 항목으로 압축한다."""
+        """
+        오래된 non-summary 항목 + 기존 summary 항목을 모두 묶어 1개 summary로 압축.
+        WHY: summary를 누적 추가하면 summary끼리 토큰을 잠식해 무한 요약 루프가 발생함.
+             항상 summary가 최대 1개만 유지되도록 기존 summary를 새 요약에 병합한다.
+        """
         non_summary = [e for e in self.entries if not e.is_summary]
 
         if len(non_summary) < ENTRIES_TO_SUMMARIZE:
             return
 
-        to_summarize = non_summary[:ENTRIES_TO_SUMMARIZE]
-        conversation_text = "\n".join(f"{e.speaker}: {e.content}" for e in to_summarize)
+        existing_summaries = [e for e in self.entries if e.is_summary]
+        to_compress = non_summary[:ENTRIES_TO_SUMMARIZE]
+
+        lines = []
+        for e in existing_summaries:
+            lines.append(f"[Previous summary] {e.content}")
+        for e in to_compress:
+            lines.append(f"{e.speaker}: {e.content}")
+
+        conversation_text = "\n".join(lines)
 
         try:
-            llm = get_llm(temperature=0.3)
+            llm = get_llm(model_name="gemma4_e2b", temperature=0.0)
             summary_prompt = (
-                f"Summarize the following conversation between Player and {self.agent_id} "
-                "into a brief third-person narrative. Keep important facts and emotional context. "
+                f"Summarize the following into a brief third-person narrative about "
+                f"{self.agent_id} and Player. Keep important facts and emotional context. "
                 "Maximum 2-3 sentences.\n\n"
-                f"Conversation:\n{conversation_text}\n\nSummary:"
+                f"{conversation_text}\n\nSummary:"
             )
 
             response = llm.invoke(summary_prompt)
             summary_text = response.content if hasattr(response, "content") else str(response)
 
-            # 오래된 항목 제거 후 요약 항목 삽입
-            for entry in to_summarize:
+            # 기존 summary + 압축 대상 non-summary 모두 제거 후 단일 summary로 교체
+            for entry in existing_summaries + to_compress:
                 self.entries.remove(entry)
 
             self.entries.insert(0, MemoryEntry(
@@ -155,7 +171,7 @@ class ConversationMemory:
                 content=summary_text.strip(),
                 is_summary=True,
             ))
-            print(f"[Memory] {len(to_summarize)}개 항목 → 1개 요약 완료")
+            print(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
         except Exception as e:
             print(f"[Memory] 요약 실패: {e}")
 

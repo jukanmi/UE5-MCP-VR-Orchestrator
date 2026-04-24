@@ -38,6 +38,13 @@ protected:
     UFUNCTION()
     void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 
+    /** Callback events for NPCActionComponent */
+    UFUNCTION()
+    void HandleActionStarted(const FGameAction& Action);
+
+    UFUNCTION()
+    void HandleAllActionsStopped();
+
 public:
 	// --- Blackboard Keys ---
 	// Target Location Vector (e.g. for MoveTo)

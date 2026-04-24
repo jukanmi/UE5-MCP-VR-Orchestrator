@@ -24,7 +24,6 @@ import re
 import json
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
-from ..utils.llm_factory import call_gemini_cli
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -97,30 +96,6 @@ def _format_stats(stats) -> str:
     return ", ".join([f"{k}: {v}" for k, v in stats.items()])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 컨텍스트 변환 프롬프트 — Gemini CLI(무료)로 GesPrompt → 자연어 변환
-# ─────────────────────────────────────────────────────────────────────────────
-CONTEXT_CONVERSION_PROMPT = """You are a Context Translator for a VR game AI system.
-Convert the following structured game data into a concise natural language summary.
-
-Rules:
-- Be clear and specific about what the player wants
-- Include spatial information if available
-- Include emotional/urgency context from events
-- Keep it under 3 sentences
-- Write in English
-
-Input Data:
-- Player said: "{transcript}"
-- Player gestures: {gestures}
-- Player location: {location}
-- Looking at: {looking_at}
-- Known Nearby Entities: {perceived_targets}
-- Last event: {last_event}
-- Player stats: {stats}
-
-Output a single natural language summary paragraph. No JSON, no formatting."""
-
 
 def interface_input_node(state: AgentState) -> dict:
     """
@@ -128,9 +103,8 @@ def interface_input_node(state: AgentState) -> dict:
 
     [처리 순서]
     1. Guardrail 검사 → Jailbreak 감지 시 즉시 에러 반환 (LLM 없이)
-    2. 긴급 이벤트(Hit/Ambush) 감지 → LLM 없이 즉각 응전 컨텍스트 생성
-    3. Gemini CLI로 GesPrompt → natural_context 변환
-    4. 실패 시 수동 폴백으로 basic context 생성
+    2. 긴급 이벤트(Hit/Ambush) 감지 → 즉각 응전 컨텍스트 생성
+    3. GesPrompt 필드를 직접 조합해 natural_context 생성 (LLM 없이)
 
     Input: AgentState (vr_context 포함)
     Output: natural_context + target_npc, 또는 has_error=True
@@ -215,53 +189,47 @@ def interface_input_node(state: AgentState) -> dict:
         else:
             perceived_str = "None visible/audible"
 
-    # ── Gemini CLI 호출 (비용 최소화) ───────────────────────────
-    prompt = CONTEXT_CONVERSION_PROMPT.format(
-        transcript=transcript,
-        gestures=gesture_str,
-        location=location_str,
-        looking_at=vr_context.looking_at_entity_id or "Nothing specific",
-        perceived_targets=perceived_str,
-        last_event=vr_context.last_event or "None",
-        stats=stats_str,
-    )
-
-    print("[Interface Input] Gemini CLI 호출 중...")
-    natural_context = call_gemini_cli(prompt, extract_json=False)
-
-    # ── CLI 실패 시 수동 폴백 ───────────────────────────────────
-    if not natural_context:
-        print("[Interface Input] CLI 실패, 수동 폴백 사용")
-        natural_context = f'Player said: "{transcript}"'
-        if vr_context.looking_at_entity_id:
-            natural_context += f", looking at {vr_context.looking_at_entity_id}"
-        if gesture_str != "None":
-            natural_context += f", with gestures: {gesture_str}"
+    # ── 구조화 컨텍스트 직접 조합 (LLM 없이) ────────────────────────
+    natural_context = f'Player said: "{transcript}"'
+    if gesture_str != "None":
+        natural_context += f", with gestures: {gesture_str}"
+    if location_str != "Unknown":
+        natural_context += f", at location {location_str}"
+    if vr_context.last_event:
+        natural_context += f", last event: {vr_context.last_event}"
+    if perceived_str not in ("Unknown", "None visible/audible"):
+        natural_context += f", nearby: {perceived_str}"
 
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱) ───────────────────────────
     target_npc = _extract_target_npc(transcript, vr_context)
 
-    return {
+    result = {
         "natural_context": natural_context,
-        "target_npc": target_npc,
-        "target_npcs": [target_npc] if target_npc else [],
         "current_speaker": "Interface_Input",
         "next": "Dialogue",
     }
+    # target_npc를 찾은 경우에만 state에 기록 → 없으면 기존 값(C++ AgentID 등) 보존
+    if target_npc:
+        result["target_npc"] = target_npc
+        result["target_npcs"] = [target_npc]
+
+    return result
 
 
-def _extract_target_npc(transcript: str, vr_context: GesPrompt) -> str:
+def _extract_target_npc(transcript: str, vr_context: GesPrompt):
     """
     대화 내용이나 시선에서 대상 NPC를 추출한다.
 
     우선순위:
     1. 발화에 NPC 이름이 포함된 경우
     2. 현재 바라보고 있는 Entity ID
-    3. 기본값: "Elara"
+    3. None → 호출 측에서 기존 state 값을 보존
+
+    WHY: "Elara"를 하드코딩으로 반환하면 emergency_report 등에서
+         이미 설정된 target_npc(C++ AgentID)를 덮어써 Dispatch 실패가 발생함.
     """
-    # 알려진 NPC 목록 (추후 config에서 로드)
     known_npcs = ["elara", "james", "guard", "merchant", "blacksmith"]
 
     transcript_lower = transcript.lower()
@@ -269,8 +237,4 @@ def _extract_target_npc(transcript: str, vr_context: GesPrompt) -> str:
         if npc in transcript_lower:
             return npc.capitalize()
 
-    # 시선이 NPC를 향하고 있는 경우
-    if vr_context.looking_at_entity_id:
-        return vr_context.looking_at_entity_id
-
-    return "Elara"
+    return None

@@ -1,20 +1,23 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "../NPC/Struct/CharacterAttributes.h"
-#include "../Network/WebSocketClient.h"
+#include "../Core/Entity.h"          // IPlayerEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
 #include "../UI/ChatWidget.h"
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "NativeGameplayTags.h"
 #include "VRPlayerCharacter.generated.h"
 
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Idle)
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Action_Common_Move)
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Action_Combat_Attack)
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Condition_Dead)
+
 UCLASS()
-class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter
+class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerBase
 {
 	GENERATED_BODY()
 
@@ -30,9 +33,30 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	// Player Stats (FPlayerAttributes: no behavioral traits, UI controls instead of AI)
+	virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;
+
+	void AddStateTag(FGameplayTag Tag);
+	void RemoveStateTag(FGameplayTag Tag);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags")
+	FGameplayTagContainer GameplayTags;
+
+	// Player Stats (FPlayerAttributes: AI BehavioralTraits 없이 플레이어 전용 스탯만 보유)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	FPlayerAttributes CurrentStats;
+
+    // === IEntity / IPlayerEntity 인터페이스 구현 ===
+    virtual FString GetEntityID_Implementation() const override { return GetName(); }
+    virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
+    virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
+
+    // ICharacterBase
+    virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
+    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
+
+    // IPlayerBase
+    virtual FString GetPlayerName_Implementation() const override { return GetName(); }
+    virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 
 public:	
 	// Called every frame
@@ -53,16 +77,6 @@ public:
 
 	// Override TakeDamage to apply to Resources.Health
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
-
-	// --- Network ---
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP Network")
-	UWebSocketClient* WebSocketClient;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP Network")
-	FString WebSocketURL = "ws://127.0.0.1:8000/ws/ue5";
-
-	UFUNCTION()
-	void OnWebSocketMessage(const FString& Message);
 
 	// --- UI ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
@@ -93,6 +107,10 @@ public:
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
+
+	/** Interact Input Action (대화 시작 등) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* InteractAction;
 
 	/** Fire/Attack Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))

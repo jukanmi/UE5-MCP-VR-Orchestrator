@@ -7,7 +7,6 @@
 
 /**
  * 인벤토리의 한 슬롯을 정의하는 구조체 (슬롯 번호 없음, 배열 인덱스 기반).
- * - ItemData가 nullptr이거나 Count가 0이면 빈 슬롯으로 간주.
  */
 USTRUCT(BlueprintType)
 struct FInventorySlot

@@ -7,6 +7,10 @@
 #include "JsonObjectConverter.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "../NPC/Struct/NPCActionKeys.h"
+#include "../NPC/NPCManager.h"
+#include "../Network/EnvelopeBuilder.h"
+#include "Engine/GameInstance.h"
 
 void UChatWidget::NativeConstruct()
 {
@@ -15,6 +19,23 @@ void UChatWidget::NativeConstruct()
 	if (InputTextBox)
 	{
 		InputTextBox->OnTextCommitted.AddDynamic(this, &UChatWidget::OnInputTextCommitted);
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UNPCManager* NPCManager = GI->GetSubsystem<UNPCManager>())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] UNPCManager Found. Binding OnNPCResponseReceived."));
+			NPCManager->OnNPCResponseReceived.AddDynamic(this, &UChatWidget::OnNPCResponseReceived);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ChatWidget] UNPCManager NOT found during NativeConstruct!"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[ChatWidget] GameInstance NOT found during NativeConstruct!"));
 	}
 }
 
@@ -32,18 +53,16 @@ void UChatWidget::SendChatMessage()
 	
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 	JsonObject->SetStringField("player_id", "Player_1");
+	if (!CurrentTargetNPCID.IsEmpty())
+	{
+		JsonObject->SetStringField("target_npc_id", CurrentTargetNPCID); // 추가
+	}
 	JsonObject->SetStringField("voice_transcript", MessageText);
 	JsonObject->SetNumberField("timestamp", FDateTime::UtcNow().ToUnixTimestamp());
 	
 	// Gestures (Empty list for text chat)
 	TArray<TSharedPtr<FJsonValue>> GesturesArray;
 	JsonObject->SetArrayField("gestures", GesturesArray);
-
-	// Context (Looking at)
-	if (!CurrentTargetNPCID.IsEmpty())
-	{
-		JsonObject->SetStringField("looking_at_entity_id", CurrentTargetNPCID);
-	}
 
 	// Add Player Location for "come here" type commands
 	if (APlayerController* PC = GetOwningPlayer())
@@ -59,7 +78,7 @@ void UChatWidget::SendChatMessage()
 
 			// --- [NEW] Trigger engine noise event for AI Hearing ---
 			// Loudness 1.0 (Normal speech), Range is controlled by NPC's HearingRange
-			UAISense_Hearing::ReportNoiseEvent(GetWorld(), PlayerLoc, 1.0f, Pawn, 0.0f);
+			UAISense_Hearing::ReportNoiseEvent(GetWorld(), PlayerLoc, 1.0f, Pawn, 0.0f, NPCActionKeys::NoiseTag_Dialogue);
 			UE_LOG(LogTemp, Log, TEXT("[ChatWidget] Reported Speech Noise at %s"), *PlayerLoc.ToString());
 		}
 	}
@@ -68,20 +87,23 @@ void UChatWidget::SendChatMessage()
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
 	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
 
-	// TODO: [UE5] Python 서버가 새로운 MessageEnvelope 구조를 요구하므로, 
-	// FEnvelopeBuilder::BuildPrompt(JsonString)를 사용하여 완성된 문자열을 얻은 후 전송해야 합니다.
-	// 예시: FString EnvelopeJson = FEnvelopeBuilder::BuildPrompt(JsonString);
-	//       WebSocketClient->SendPrompt(EnvelopeJson); // SendPrompt 내부 구현도 범용으로 수정 필요
-
-	// Send via WebSocket
-	if (WebSocketClient)
+	// Send via UNPCManager Subsystem
+	if (UGameInstance* GI = GetGameInstance())
 	{
-		WebSocketClient->SendPrompt(JsonString);
-		AddMessageToHistory("Player", MessageText); // Show own message
+		if (UNPCManager* NPCManager = GI->GetSubsystem<UNPCManager>())
+		{
+			FString Envelope = FEnvelopeBuilder::BuildPrompt(JsonString);
+			NPCManager->SendEnvelopePromptToLLM(Envelope);
+			AddMessageToHistory("Player", MessageText); // Show own message
+		}
+		else
+		{
+			AddMessageToHistory("System", "Error: NPCManager Subsystem not found");
+		}
 	}
 	else
 	{
-		AddMessageToHistory("System", "Error: WebSocket Disconnected");
+		AddMessageToHistory("System", "Error: GameInstance not found");
 	}
 
 	// Clear Input
@@ -126,5 +148,32 @@ void UChatWidget::AddMessageToHistory(const FString& Sender, const FString& Mess
 
 		ChatHistoryScrollBox->AddChild(NewMessageBlock);
 		ChatHistoryScrollBox->ScrollToEnd();
+	}
+}
+
+void UChatWidget::OnNPCResponseReceived(const FString& NPCName, const FString& Message)
+{
+	UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] Received NPC Response. NPCName='%s', CurrentTarget='%s', Message='%s'"), *NPCName, *CurrentTargetNPCID, *Message);
+
+	// 현재 대화 중인 NPC의 응답만 표시 (필터링)
+	if (NPCName == CurrentTargetNPCID)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ChatWidget] Target Match! Adding to history."));
+		AddMessageToHistory(NPCName, Message);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ChatWidget] Target Mismatch. Filtering out."));
+	}
+}
+
+void UChatWidget::CloseChat()
+{
+	SetVisibility(ESlateVisibility::Hidden);
+	
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->SetShowMouseCursor(false);
+		PC->SetInputMode(FInputModeGameOnly());
 	}
 }

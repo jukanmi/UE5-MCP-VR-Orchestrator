@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /c/github/UE5_MCP_VR/*.sln)",
+      "Bash(ls /c/github/UE5_MCP_VR/*.vcxproj)",
+      "Bash(git add:*)"
+    ]
+  }
+}

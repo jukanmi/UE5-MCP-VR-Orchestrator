@@ -59,9 +59,8 @@ def validate_auth_token(token: str) -> bool:
         logger.error("[Auth] WS_AUTH_TOKEN 미설정으로 인해 모든 요청이 거부됩니다.")
         return False
 
-    # WHY: constant-time 비교가 이상적이지만, 내부 네트워크 환경에서는
-    #      단순 비교로도 충분하다. 외부 노출 시 hmac.compare_digest()로 교체 권장.
-    is_valid = token == _EXPECTED_AUTH_TOKEN
+    import hmac
+    is_valid = hmac.compare_digest(token, _EXPECTED_AUTH_TOKEN)
     if not is_valid:
         logger.warning(f"[Auth] 잘못된 auth_token: '{token[:8]}...' (8자리 이후 생략)")
     return is_valid

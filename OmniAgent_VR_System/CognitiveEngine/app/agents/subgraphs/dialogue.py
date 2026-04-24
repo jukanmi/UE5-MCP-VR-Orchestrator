@@ -21,7 +21,7 @@
 ║                                                                              ║
 ║ LLM SELECTION:                                                               ║
 ║   - High importance NPCs → Gemma 3 API (premium quality)                    ║
-║   - Normal NPCs → Gemini CLI (cost-effective)                               ║
+║   - Normal NPCs → Ollama (qwen)                                             ║
 ║                                                                              ║
 ║ EXAMPLE:                                                                     ║
 ║   IN:  "Player is pointing at door and asking to open it"                   ║
@@ -31,7 +31,7 @@
 import yaml
 import os
 import json
-from ...utils.llm_factory import get_dialogue_llm, call_gemini_cli
+from ...utils.llm_factory import get_llm, call_ollama_direct
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
@@ -110,27 +110,51 @@ def load_persona(agent_id: str):
     """
     Load persona by agent_id.
     Searches in core/ first, then generic/.
-    Falls back to default if not found.
+    YAML이 없으면 generic/ 에 기본 파일을 자동 생성 후 반환.
     """
     agent_lower = agent_id.lower()
     search_paths = [
         os.path.join(PERSONAS_BASE_PATH, "core", f"{agent_lower}.yaml"),
         os.path.join(PERSONAS_BASE_PATH, "generic", f"{agent_lower}.yaml"),
     ]
-    
+
     for path in search_paths:
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
 
-    # Fallback to default
-    default_path = os.path.join(PERSONAS_BASE_PATH, "core", "elara.yaml")
-    print(f"[Dialogue] Persona '{agent_id}' not found, using default: {default_path}")
-    if os.path.exists(default_path):
-        with open(default_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-            
-    return None
+    return _create_persona(agent_id)
+
+
+def _create_persona(agent_id: str) -> dict:
+    """
+    알 수 없는 NPC용 기본 페르소나를 생성하고 generic/ 에 저장한다.
+    WHY: 등록되지 않은 NPC가 요청을 보낼 때 elara 페르소나로 응답하면
+         완전히 다른 인물이 대답하는 문제가 생긴다.
+         최소한의 정체성(이름, 중립 성격)을 부여해 일관성을 유지한다.
+    """
+    persona = {
+        "name": agent_id,
+        "importance": "normal",
+        "role": "Inhabitant",
+        "traits": ["Cautious", "Reserved", "Observant"],
+        "memory_summary": {
+            "key_events": [],
+            "sentiment": "Neutral",
+            "last_interaction_timestamp": 0,
+        },
+    }
+
+    save_path = os.path.join(PERSONAS_BASE_PATH, "generic", f"{agent_id.lower()}.yaml")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    try:
+        with open(save_path, 'w', encoding='utf-8') as f:
+            yaml.dump(persona, f, allow_unicode=True, default_flow_style=False)
+        print(f"[Dialogue] Persona '{agent_id}' not found → created: {save_path}")
+    except Exception as e:
+        print(f"[Dialogue] Persona 파일 생성 실패: {e}")
+
+    return persona
 
 
 def dialogue_node(state: AgentState):
@@ -150,18 +174,6 @@ def dialogue_node(state: AgentState):
     
     # Determine agent ID
     agent_id = target_npc
-    
-    # Fallback to vr_context looking_at
-    if agent_id == "Elara":
-        vr_context = state.get("vr_context")
-        if vr_context:
-            looking_at = None
-            if hasattr(vr_context, 'looking_at_entity_id'):
-                looking_at = vr_context.looking_at_entity_id
-            elif isinstance(vr_context, dict):
-                looking_at = vr_context.get("looking_at_entity_id")
-            if looking_at:
-                agent_id = looking_at
 
     # Load persona
     persona = load_persona(agent_id) or {"name": agent_id, "importance": "normal"}
@@ -214,44 +226,37 @@ def dialogue_node(state: AgentState):
 
     raw_response = None
 
-    # --- Choose LLM based on NPC importance ---
+    # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
     importance = persona.get('importance', 'normal')
     
-    if importance in ['high', 'core']:
-        # High importance NPC → Use Gemma 3 API for quality
-        print(f"[Dialogue] Using Gemma 3 API (importance: {importance})")
-        
-        try:
-            llm = get_dialogue_llm(importance=importance, temperature=0.7)
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "{system_msg}"),
-                ("human", "Context: {context}")
-            ])
-            
-            response = (prompt | llm).invoke({
-                "system_msg": system_content,
-                "context": natural_context
-            })
-            raw_response = response.content if hasattr(response, 'content') else str(response)
-            raw_response = raw_response.strip()
-            print(f"[Dialogue] Gemma 3 response: '{raw_response[:80]}...'")
-        except Exception as e:
-            print(f"[Dialogue] Gemma 3 Error: {e}")
+    # 최적화 3번: 무거운 70B(llama) 대신 26B(gemma4) 또는 8B(qwen) 사용
+    model_name = "gemma4" if importance in ("high", "core") else "qwen"
+    print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
     
-    if not raw_response:
-        # Normal NPC or API failed → Use Gemini CLI
-        print(f"[Dialogue] Using Gemini CLI (importance: {importance})")
-        
+    try:
+        llm = get_llm(model_name=model_name, temperature=0.7, num_predict=300)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "{system_msg}"),
+            ("human", "Context: {context}")
+        ])
+        response = (prompt | llm).invoke({
+            "system_msg": system_content,
+            "context": natural_context
+        })
+        raw_response = response.content if hasattr(response, 'content') else str(response)
+        raw_response = raw_response.strip()
+        print(f"[Dialogue] 응답: '{raw_response[:80]}...'")
+    except Exception as e:
+        print(f"[Dialogue] LLM 오류 ({model_name}): {e}")
+        # 폴백: call_ollama_direct 직접 호출
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
-        raw_response = call_gemini_cli(cli_prompt, extract_json=False)
-        
+        raw_response = call_ollama_direct(cli_prompt, extract_json=False)
         if raw_response:
             raw_response = raw_response.strip()
-            print(f"[Dialogue] CLI response: '{raw_response[:80]}...'")
-    
-    # Fallback if everything fails
+
+    # 모든 방법 실패 시 기본 응답
     if not raw_response:
-        print("[Dialogue] All LLMs failed, using fallback response")
+        print("[Dialogue] 모든 LLM 실패, 기본 응답 사용")
         raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
 
     # [Mode: X] [Facial: Y] 태그는 raw_response에 포함된 채로 전달.
@@ -267,7 +272,7 @@ def dialogue_node(state: AgentState):
 
     return {
         "raw_response": raw_response,  # 태그 포함 원본 전달
-        "target_npc": persona_name,
+        "target_npc": agent_id,        # C++ AgentID 원본 보존 (persona_name과 대소문자 다를 수 있음)
         "current_speaker": "Dialogue",
         "next": "Interface_Output"
     }

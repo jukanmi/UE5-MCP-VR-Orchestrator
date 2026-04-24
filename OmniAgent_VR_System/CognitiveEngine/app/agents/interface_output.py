@@ -14,7 +14,7 @@
 ║                                                                              ║
 ║ 구조화 전략:                                                                  ║
 ║   1단계: [Mode: X] [Facial: Y] 파싱 → behavior_mode, facial_state 결정     ║
-║   2단계: Gemini CLI로 action 구조화 시도                                      ║
+║   2단계: Ollama(로컬)로 action 구조화 시도                                      ║
 ║   3단계: 실패 시 regex 기반 폴백 파서 사용                                    ║
 ║   4단계: action_category 자동 추론 (CATEGORY_ACTION_MAP 역참조)              ║
 ║                                                                              ║
@@ -28,10 +28,9 @@ import json
 import re
 from .state import AgentState
 from ..schemas.actions import (
-    ActionBatch, NPCAction, GameVector3,
-    CATEGORY_ACTION_MAP, AllActionType,
+    ActionBatch, GameAction,
+    CATEGORY_ACTION_MAP,
 )
-from ..utils.llm_factory import call_gemini_cli
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -68,59 +67,6 @@ def _infer_category(action_type: str, behavior_mode: str = "Common") -> str:
     return ACTION_TO_CATEGORY.get(action_type, "Common")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Gemini CLI용 구조화 프롬프트
-# action_type은 C++ Enum과 1:1 대응되므로 정확한 값만 사용해야 함.
-# ─────────────────────────────────────────────────────────────────────────────
-STRUCTURING_PROMPT = """You are an Action Structurer for a VR game engine.
-Convert the NPC's natural language response into structured game actions.
-
-NPC Response: "{raw_response}"
-NPC ID: "{npc_id}"
-Behavior Mode: "{behavior_mode}"
-
-Available Action Types (MUST use these exact strings):
-
-[Common Actions] - Basic actions available in all modes
-  Idle, Move, Follow, Wait, Dialogue, TurnTo, Stop, Scan, UseItem, Equip, Unequip
-
-[Combat Actions] - Fighting and defense
-  Attack, Block, Dodge, Flee, SignalAllies
-
-[Social Actions] - Social interaction
-  Trade, Follow, Emote, GiveItem, Comfort, HandObject
-
-[Task Actions] - Object interaction
-  PickUp, Drop, Craft, Repair
-
-[Investigation Actions] - Searching and tracking
-  Investigate, Track, Scout
-
-[Lifestyle Actions] - Daily life activities
-  Sit, Sleep, Clean, Read, Pray, Dance, Sing
-
-MAPPING RULES:
-1. Speech in "quotes" → action_type: "Dialogue", parameters: {{"text": "...", "emotion": "..."}}
-2. *runs/walks/goes to* → action_type: "Move", target_loc: {{"x": 0, "y": 0, "z": 0}}, parameters: {{"style": "Run"/"Walk"}}
-3. *attacks/strikes/hits* → action_type: "Attack", target_id: "..."
-4. *blocks/defends/shields* → action_type: "Block"
-5. *dodges/rolls/evades* → action_type: "Dodge"
-6. *opens/closes/takes/uses* → match to PickUp/Drop/UseItem as appropriate
-7. *waves/nods/bows/smiles* → action_type: "Emote", parameters: {{"gesture": "Wave"/"Nod"/"Bow"}}
-8. *sits/sits down* → action_type: "Sit"
-9. *waits/stops/pauses* → action_type: "Wait", parameters: {{"duration": "3.0"}}
-10. *looks around/searches* → action_type: "Scan" or "Investigate"
-
-RULES:
-- Always include a Dialogue action if there is speech in "quotes"
-- Use the behavior_mode hint to prefer actions from the matching category
-- Default target_id is "Player" if not specified
-- Output ONLY a JSON array of action objects
-- Coordinates MUST be a top-level field: "target_loc": {{"x": float, "y": float, "z": float}}. NEVER put coordinates inside parameters.
-- Each object: {{"action_type": "...", "executor_npc_id": "{npc_id}", "target_id": "...", "target_loc": {{...}}, "emotion": "...", "parameters": {{...}}}}
-
-Output format: [{{"action_type": "...", ...}}, ...]"""
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 유효성 검증용 상수
@@ -141,10 +87,18 @@ def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str]:
     mode_match = re.search(r'\[Mode:\s*(\w+)\]', raw_response, re.IGNORECASE)
     facial_match = re.search(r'\[Facial:\s*(\w+)\]', raw_response, re.IGNORECASE)
 
+    VALID_MODES = {"Combat", "Social", "Task", "Investigation", "Lifestyle", "Common"}
+    VALID_FACIALS = {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}
+
     if mode_match:
-        mode = mode_match.group(1)
+        parsed_mode = mode_match.group(1).capitalize()
+        if parsed_mode in VALID_MODES:
+            mode = parsed_mode
+            
     if facial_match:
-        facial = facial_match.group(1)
+        parsed_facial = facial_match.group(1).capitalize()
+        if parsed_facial in VALID_FACIALS:
+            facial = parsed_facial
 
     # 태그 라인 제거
     cleaned = re.sub(
@@ -180,44 +134,18 @@ def interface_output_node(state: AgentState):
     print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
-    # 2단계: Gemini CLI로 구조화 시도
-    prompt = STRUCTURING_PROMPT.format(
-        raw_response=clean_response,
-        npc_id=npc_id,
-        behavior_mode=behavior_mode
-    )
-
-    print("[Interface Output] Calling Gemini CLI for action structuring...")
-    cli_result = call_gemini_cli(prompt, extract_json=True)
-
     action_batch = None
 
-    if cli_result:
-        try:
-            actions_data = json.loads(cli_result)
-            if isinstance(actions_data, dict):
-                actions_data = [actions_data]
+    # 2단계: Regex 파싱 (dialogue.py 출력 형식 기준)
+    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
 
-            actions = _parse_actions(actions_data, npc_id, behavior_mode)
-
-            action_batch = ActionBatch(
-                agent_id=npc_id,
-                behavior_mode=behavior_mode,
-                facial_state=facial_state,
-                actions=actions,
-                reasoning=f"Structured from: {clean_response[:200]}"
-            )
-            print(f"[Interface Output] Success: {len(actions)} actions created")
-
-        except json.JSONDecodeError as e:
-            print(f"[Interface Output] JSON parse error: {e}")
-        except Exception as e:
-            print(f"[Interface Output] Error: {e}")
-
-    # 3단계: 실패 시 Regex 폴백
-    if not action_batch:
-        print("[Interface Output] CLI failed, using regex fallback...")
-        action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
+    if action_batch and action_batch.Actions:
+        print(f"[Interface Output] Regex 파싱 성공: {len(action_batch.Actions)}개 액션")
+    else:
+        # 형식 완전 이탈 시 전체 텍스트를 Dialogue로 처리
+        print("[Interface Output] 액션 없음, 전체 텍스트를 Dialogue로 처리")
+        action_batch = _create_empty_batch(npc_id)
+        action_batch.Actions[0].Parameters["text"] = clean_response[:200]
 
     return {
         "action_batch": action_batch,
@@ -225,71 +153,6 @@ def interface_output_node(state: AgentState):
         "next": "Rules"
     }
 
-
-def _parse_actions(actions_data: list, npc_id: str, behavior_mode: str) -> list:
-    """
-    Gemini CLI가 반환한 액션 딕셔너리 목록 → NPCAction Pydantic 모델로 변환.
-
-    핵심: action_category를 자동 추론하여 주입.
-    왜: LLM은 action_type만 출력하지만, Pydantic NPCAction은 action_category도 필수.
-    """
-    actions = []
-
-    for action_dict in actions_data:
-        action_type = action_dict.get("action_type", "")
-
-        # action_type 유효성 검증 (AllActionType과 대조)
-        if action_type not in ACTION_TO_CATEGORY and action_type != "Dialogue":
-            print(f"[Interface Output] Skipping invalid action_type: {action_type}")
-            continue
-
-        executor_id = action_dict.get("executor_npc_id", npc_id)
-
-        # action_category 자동 추론
-        category = _infer_category(action_type, behavior_mode)
-
-        # target_loc 추출 → GameVector3 전용 필드로 분리
-        raw_loc = action_dict.get("target_loc")
-        target_loc = None
-        if raw_loc and isinstance(raw_loc, dict):
-            try:
-                target_loc = GameVector3(**raw_loc)
-            except Exception:
-                print(f"[Interface Output] Invalid target_loc: {raw_loc}, skipping")
-
-        # Move 스타일 보정
-        params = action_dict.get("parameters", {})
-        # parameters 안에 target_loc이 있으면 꺼내기 (validator로도 처리되지만 명시적 처리)
-        if "target_loc" in params:
-            loc_from_params = params.pop("target_loc")
-            if target_loc is None and isinstance(loc_from_params, dict):
-                try:
-                    target_loc = GameVector3(**loc_from_params)
-                except Exception:
-                    pass
-        if action_type == "Move" and params.get("style") not in VALID_MOVE_STYLES:
-            params["style"] = "Walk"
-
-        # Dialogue의 text를 parameters에 통합
-        if action_type == "Dialogue":
-            text = action_dict.get("text", "")
-            if text and "text" not in params:
-                params["text"] = text
-            emotion = action_dict.get("emotion", "Neutral")
-            if "emotion" not in params:
-                params["emotion"] = emotion
-
-        actions.append(NPCAction(
-            action_category=category,
-            action_type=action_type,
-            executor_npc_id=executor_id,
-            emotion=action_dict.get("emotion", "Neutral"),
-            target_id=action_dict.get("target_id"),
-            target_loc=target_loc,
-            parameters=params,
-        ))
-
-    return actions
 
 
 def _regex_fallback_parse(raw_response: str, npc_id: str,
@@ -299,6 +162,7 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
     Regex 기반 폴백 파서.
     CLI 실패 시 raw_response에서 "quotes", *asterisks*, (emotions)를 직접 추출.
     """
+    from ..schemas.actions import GameAction
     actions = []
 
     # 1. 대사 추출 ("quotes" → Dialogue 액션)
@@ -307,18 +171,16 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
         emotion_matches = re.findall(r'\(([^)]+)\)', raw_response)
         emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
 
-        actions.append(NPCAction(
-            action_category=_infer_category("Dialogue", behavior_mode),
-            action_type="Dialogue",
-            executor_npc_id=npc_id,
-            emotion=emotion,
-            parameters={"text": speech_matches[0], "emotion": emotion},
+        actions.append(GameAction(
+            ActionType="Dialogue",
+            FacialState=emotion,
+            Parameters={"text": speech_matches[0], "emotion": emotion},
         ))
 
-    # 2. 물리 액션 추출 (*asterisks* → 해당 action_type 매핑)
+    # 2. 물리 액션 추출 (*asterisks* → 해당 ActionType 매핑)
     action_matches = re.findall(r'\*([^*]+)\*', raw_response)
     for action_text in action_matches:
-        parsed = _parse_natural_action(action_text, npc_id, behavior_mode)
+        parsed = _parse_natural_action(action_text, behavior_mode)
         if parsed:
             actions.append(parsed)
 
@@ -326,29 +188,26 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
     if not actions:
         clean_text = re.sub(r'[*()]', '', raw_response).strip()
         if clean_text:
-            actions.append(NPCAction(
-                action_category="Common",
-                action_type="Dialogue",
-                executor_npc_id=npc_id,
-                emotion="Neutral",
-                parameters={"text": clean_text[:200], "emotion": "Neutral"},
+            actions.append(GameAction(
+                ActionType="Dialogue",
+                FacialState="Neutral",
+                Parameters={"text": clean_text[:200], "emotion": "Neutral"},
             ))
 
     return ActionBatch(
-        agent_id=npc_id,
-        behavior_mode=behavior_mode,
-        facial_state=facial_state,
-        actions=actions,
-        reasoning=f"Regex fallback from: {raw_response[:200]}"
+        AgentID=npc_id,
+        Mode=behavior_mode,
+        Actions=actions
     )
 
 
-def _parse_natural_action(text: str, npc_id: str, behavior_mode: str = "Common"):
+def _parse_natural_action(text: str, behavior_mode: str = "Common"):
     """
-    단일 자연어 액션 → NPCAction 변환.
+    단일 자연어 액션 → GameAction 변환.
 
     키워드 매칭 테이블 순서가 중요: 더 구체적인 패턴을 먼저 배치.
     """
+    from ..schemas.actions import GameAction
     text_lower = text.lower()
 
     # (keywords, action_type, target_id, parameters) 매핑 테이블
@@ -397,12 +256,17 @@ def _parse_natural_action(text: str, npc_id: str, behavior_mode: str = "Common")
 
     for keywords, action_type, target_id, parameters in KEYWORD_ACTION_MAP:
         if any(word in text_lower for word in keywords):
-            return NPCAction(
-                action_category=_infer_category(action_type, behavior_mode),
-                action_type=action_type,
-                executor_npc_id=npc_id,
-                target_id=target_id,
-                parameters=parameters,
+            params = parameters.copy()
+            if target_id:
+                params["target_id"] = target_id
+            
+            # String 변환
+            str_params = {k: str(v) for k, v in params.items()}
+
+            return GameAction(
+                ActionType=action_type,
+                FacialState="Neutral",
+                Parameters=str_params,
             )
 
     # Emote (세부 분기가 필요해서 별도 처리)
@@ -415,11 +279,10 @@ def _parse_natural_action(text: str, npc_id: str, behavior_mode: str = "Common")
             gesture = "Nod"
         else:
             gesture = "Smile"
-        return NPCAction(
-            action_category=_infer_category("Emote", behavior_mode),
-            action_type="Emote",
-            executor_npc_id=npc_id,
-            parameters={"gesture": gesture},
+        return GameAction(
+            ActionType="Emote",
+            FacialState="Neutral",
+            Parameters={"gesture": gesture},
         )
 
     return None
@@ -453,16 +316,13 @@ def _normalize_emotion(emotion_text: str) -> str:
 
 def _create_empty_batch(npc_id: str) -> ActionBatch:
     """폴백용 빈 ActionBatch 생성."""
+    from ..schemas.actions import ActionBatch, GameAction
     return ActionBatch(
-        agent_id=npc_id,
-        behavior_mode="Common",
-        facial_state="Neutral",
-        actions=[NPCAction(
-            action_category="Common",
-            action_type="Dialogue",
-            executor_npc_id=npc_id,
-            emotion="Neutral",
-            parameters={"text": "...", "emotion": "Neutral"},
-        )],
-        reasoning="Fallback: No raw_response available"
+        AgentID=npc_id,
+        Mode="Common",
+        Actions=[GameAction(
+            ActionType="Dialogue",
+            FacialState="Neutral",
+            Parameters={"text": "...", "emotion": "Neutral"},
+        )]
     )

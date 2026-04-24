@@ -5,66 +5,117 @@
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
 
-/**
- * FGameStateData를 Python 백엔드가 읽을 수 있는 state_update JSON으로 직렬화합니다.
- * auth_token은 호출 측에서 별도 보안 채널로 주입받아야 하지만,
- * 여기서는 구조적 완성도를 위한 플레이스홀더로 빈 문자열을 사용합니다.
- */
-FString UMCPJsonUtils::SerializeGameState(const FGameStateData& StateData)
+namespace
 {
-    // --- 상태 페이로드 (Payload) ---
-    TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
-    PayloadObject->SetStringField(TEXT("owner_agent_id"), StateData.OwnerAgentID);
-    PayloadObject->SetStringField(TEXT("threat_level"), StateData.ThreatLevel);
-    PayloadObject->SetBoolField(TEXT("in_cover"), StateData.bIsInCover);
-    PayloadObject->SetBoolField(TEXT("line_of_sight"), StateData.bHasLineOfSight);
-
-    // 소유자(NPC) 위치 - 소수점 2자리로 제한해 토큰 낭비를 막습니다.
-    TSharedPtr<FJsonObject> LocationObject = MakeShared<FJsonObject>();
-    LocationObject->SetNumberField(TEXT("x"), FMath::RoundToFloat(StateData.OwnerLocation.X * 100.f) / 100.f);
-    LocationObject->SetNumberField(TEXT("y"), FMath::RoundToFloat(StateData.OwnerLocation.Y * 100.f) / 100.f);
-    LocationObject->SetNumberField(TEXT("z"), FMath::RoundToFloat(StateData.OwnerLocation.Z * 100.f) / 100.f);
-    PayloadObject->SetObjectField(TEXT("owner_location"), LocationObject);
-
-    // 순수 시각/청각 인지 결과(Perception) JSON 파싱 로직
-    TArray<TSharedPtr<FJsonValue>> PerceptionArray;
-    for (const FPerceptionData& Target : StateData.PerceivedTargets)
+    TSharedPtr<FJsonObject> ConvertLocationToJson(const FVector& Location)
     {
-        TSharedPtr<FJsonObject> TargetObj = MakeShared<FJsonObject>();
-        // 고유 ID 또는 정체 불명 시 "unknown"
-        TargetObj->SetStringField(TEXT("target_id"), Target.TargetID);
-        
-        // [의도] Enum 구조체의 타입 안정성을 챙기되 JSON 전송 규격에 맞게 파싱하여 전달합니다.
-        FString SenseStr = TEXT("Other");
-        if (Target.SenseType == ESenseType::Sight) SenseStr = TEXT("Sight");
-        else if (Target.SenseType == ESenseType::Hearing) SenseStr = TEXT("Hearing");
-
-        TargetObj->SetStringField(TEXT("sense_type"), SenseStr);
-        TargetObj->SetNumberField(TEXT("distance"), FMath::RoundToFloat(Target.Distance));
-        
         TSharedPtr<FJsonObject> LocObj = MakeShared<FJsonObject>();
-        LocObj->SetNumberField(TEXT("x"), FMath::RoundToFloat(Target.Location.X * 100.f) / 100.f);
-        LocObj->SetNumberField(TEXT("y"), FMath::RoundToFloat(Target.Location.Y * 100.f) / 100.f);
-        LocObj->SetNumberField(TEXT("z"), FMath::RoundToFloat(Target.Location.Z * 100.f) / 100.f);
-        TargetObj->SetObjectField(TEXT("location"), LocObj);
-        
-        PerceptionArray.Add(MakeShared<FJsonValueObject>(TargetObj));
+        LocObj->SetNumberField(TEXT("x"), FMath::RoundToFloat(Location.X * 100.f) / 100.f);
+        LocObj->SetNumberField(TEXT("y"), FMath::RoundToFloat(Location.Y * 100.f) / 100.f);
+        LocObj->SetNumberField(TEXT("z"), FMath::RoundToFloat(Location.Z * 100.f) / 100.f);
+        return LocObj;
     }
-    PayloadObject->SetArrayField(TEXT("perceived_targets"), PerceptionArray);
 
-    // 최종 직렬화: Envelope 포장 없이 순수 Payload Object만 직렬화합니다.
-    FString OutputJson;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputJson);
-    if (!FJsonSerializer::Serialize(PayloadObject.ToSharedRef(), Writer))
+    FString SenseTypeToString(ESenseType Sense)
     {
-        UE_LOG(LogTemp, Error, TEXT("[MCPJsonUtils] Failed to serialize GameStateData Payload to JSON."));
-        return FString();
+        if (const UEnum* EnumPtr = StaticEnum<ESenseType>())
+        {
+            return EnumPtr->GetNameStringByValue(static_cast<int64>(Sense));
+        }
+        return TEXT("None");
     }
-    return OutputJson;
 }
 
 
 
+
+namespace
+{
+    template<typename TEnum>
+    bool TryParseEnumFromJson(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, TEnum& OutEnum)
+    {
+        FString EnumString;
+        if (JsonObj->TryGetStringField(FieldName, EnumString) || 
+            JsonObj->TryGetStringField(FieldName.ToLower(), EnumString))
+        {
+            if (const UEnum* EnumPtr = StaticEnum<TEnum>())
+            {
+                int64 EnumValue = EnumPtr->GetValueByNameString(EnumString);
+                if (EnumValue != INDEX_NONE)
+                {
+                    OutEnum = static_cast<TEnum>(EnumValue);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool TryParseBehaviorMode(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, ENPCBehaviorMode& OutMode)
+    {
+        return TryParseEnumFromJson(JsonObj, FieldName, OutMode);
+    }
+
+    void ExtractActionParameters(TSharedPtr<FJsonObject> ActionObj, TMap<FString, FString>& OutParameters)
+    {
+        const TSharedPtr<FJsonObject>* ParamsObj;
+        if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj) || 
+            ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
+        {
+            for (const auto& ParamPair : (*ParamsObj)->Values)
+            {
+                if (ParamPair.Value->Type == EJson::Object)
+                {
+                    FString NestedString;
+                    TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedString);
+                    FJsonSerializer::Serialize(ParamPair.Value->AsObject().ToSharedRef(), NestedWriter);
+                    OutParameters.Add(ParamPair.Key, NestedString);
+                }
+                else
+                {
+                    OutParameters.Add(ParamPair.Key, ParamPair.Value->AsString());
+                }
+            }
+        }
+    }
+
+
+
+    bool TryExtractGameAction(TSharedPtr<FJsonObject> ActionObj, FGameAction& OutAction)
+    {
+        if (!ActionObj.IsValid()) return false;
+
+        TryParseEnumFromJson(ActionObj, TEXT("ActionType"), OutAction.ActionType);
+
+        TryParseEnumFromJson(ActionObj, TEXT("FacialState"), OutAction.FacialState);
+
+        ExtractActionParameters(ActionObj, OutAction.Parameters);
+        return true;
+    }
+
+    bool TryExtractActionBatch(const FString& AgentID, TSharedPtr<FJsonObject> BatchObj, FActionBatch& OutBatch)
+    {
+        if (!BatchObj.IsValid()) return false;
+
+        OutBatch.AgentID = AgentID;
+        
+        TryParseBehaviorMode(BatchObj, TEXT("Mode"), OutBatch.Mode);
+
+        const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
+        if (BatchObj->TryGetArrayField(TEXT("Actions"), ActionsArray))
+        {
+            for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
+            {
+                FGameAction NewAction;
+                if (TryExtractGameAction(Val->AsObject(), NewAction))
+                {
+                    OutBatch.Actions.Add(NewAction);
+                }
+            }
+        }
+        return true;
+    }
+}
 
 bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
 {
@@ -76,102 +127,78 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
         return false;
     }
 
-    // Check for "ActionBatches" field (Sign of FModeActionRequest)
-    if (!RootObject->HasField(TEXT("ActionBatches"))) return false;
-
-    // 1. Mode
-    FString ModeStr = RootObject->GetStringField(TEXT("Mode"));
-    const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
-    if (ModeEnum)
+    // "ActionBatches" 속성으로 유효한 FModeActionRequest 포맷인지 판별
+    if (!RootObject->HasField(TEXT("ActionBatches"))) 
     {
-        int64 EnumVal = ModeEnum->GetValueByNameString(ModeStr);
-        if (EnumVal != INDEX_NONE) OutRequest.Mode = (ENPCBehaviorMode)EnumVal;
+        return false;
     }
 
-    // 2. ActionBatches (Map)
+    TryParseBehaviorMode(RootObject, TEXT("Mode"), OutRequest.Mode);
+
     TSharedPtr<FJsonObject> BatchesObj = RootObject->GetObjectField(TEXT("ActionBatches"));
     if (BatchesObj.IsValid())
     {
         for (const auto& Pair : BatchesObj->Values)
         {
-            FString AgentID = Pair.Key;
-            TSharedPtr<FJsonObject> BatchObj = Pair.Value->AsObject();
-            if (!BatchObj.IsValid()) continue;
-
             FActionBatch NewBatch;
-            NewBatch.AgentID = AgentID;
-            
-            // Mode in Batch
-            FString BatchModeStr = BatchObj->GetStringField(TEXT("Mode"));
-            if (ModeEnum)
+            if (TryExtractActionBatch(Pair.Key, Pair.Value->AsObject(), NewBatch))
             {
-                int64 EnumVal = ModeEnum->GetValueByNameString(BatchModeStr);
-                if (EnumVal != INDEX_NONE) NewBatch.Mode = (ENPCBehaviorMode)EnumVal;
+                OutRequest.ActionBatches.Add(Pair.Key, NewBatch);
             }
-
-            // Actions in Batch
-            const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-            if (BatchObj->TryGetArrayField(TEXT("Actions"), ActionsArray))
-            {
-                for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
-                {
-                    TSharedPtr<FJsonObject> ActionObj = Val->AsObject();
-                    if (!ActionObj.IsValid()) continue;
-
-                    FGameAction NewAction;
-                    
-                    // ActionType (Accept ActionType or action_type)
-                    FString ActionTypeStr;
-                    if (ActionObj->TryGetStringField(TEXT("ActionType"), ActionTypeStr) || 
-                        ActionObj->TryGetStringField(TEXT("action_type"), ActionTypeStr))
-                    {
-                        const UEnum* ActionEnum = StaticEnum<EAction>();
-                        if (ActionEnum)
-                        {
-                            int64 EnumVal = ActionEnum->GetValueByNameString(ActionTypeStr);
-                            if (EnumVal != INDEX_NONE) NewAction.ActionType = (EAction)EnumVal;
-                        }
-                    }
-
-                    // FacialState (Accept FacialState or facial_state) - Optional
-                    FString FacialStr;
-                    if (ActionObj->TryGetStringField(TEXT("FacialState"), FacialStr) || 
-                        ActionObj->TryGetStringField(TEXT("facial_state"), FacialStr))
-                    {
-                        const UEnum* FacialEnum = StaticEnum<EFacialState>();
-                        if (FacialEnum)
-                        {
-                            int64 EnumVal = FacialEnum->GetValueByNameString(FacialStr);
-                            if (EnumVal != INDEX_NONE) NewAction.FacialState = (EFacialState)EnumVal;
-                        }
-                    }
-
-                    // Parameters - Optional
-                    const TSharedPtr<FJsonObject>* ParamsObj;
-                    if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj) || 
-                        ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
-                    {
-                        for (const auto& ParamPair : (*ParamsObj)->Values)
-                        {
-                            if (ParamPair.Value->Type == EJson::Object)
-                            {
-                                FString NestedStr;
-                                TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedStr);
-                                FJsonSerializer::Serialize(ParamPair.Value->AsObject().ToSharedRef(), NestedWriter);
-                                NewAction.Parameters.Add(ParamPair.Key, NestedStr);
-                            }
-                            else
-                            {
-                                NewAction.Parameters.Add(ParamPair.Key, ParamPair.Value->AsString());
-                            }
-                        }
-                    }
-                    NewBatch.Actions.Add(NewAction);
-                }
-            }
-            OutRequest.ActionBatches.Add(AgentID, NewBatch);
         }
     }
 
     return true;
+}
+
+FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents)
+{
+    TArray<TSharedPtr<FJsonValue>> EventValues;
+    EventValues.Reserve(PerceptionEvents.Num());
+
+    for (const FPerceptionData& Event : PerceptionEvents)
+    {
+        TSharedPtr<FJsonObject> EventObj = MakeShared<FJsonObject>();
+        EventObj->SetStringField(
+            TEXT("target_id"),
+            Event.TargetID.IsEmpty() ? TEXT("Unknown") : Event.TargetID);
+        EventObj->SetStringField(TEXT("sense_type"), SenseTypeToString(Event.SenseType));
+        EventObj->SetObjectField(TEXT("location"), ConvertLocationToJson(Event.Location));
+        EventObj->SetNumberField(TEXT("distance"), Event.Distance);
+        EventObj->SetNumberField(TEXT("danger_score"), FMath::Clamp(Event.DangerScore, 0.f, 1.f));
+
+        EventValues.Add(MakeShared<FJsonValueObject>(EventObj));
+    }
+
+    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("agent_id"), AgentID);
+    Root->SetArrayField(TEXT("perceptions"), EventValues);
+    Root->SetNumberField(TEXT("generated_at"),
+        (FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalSeconds());
+
+    FString Output;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+
+    return Output;
+}
+
+bool UMCPJsonUtils::ParseLocationDecisionResult(
+    const FString& Json, FString& OutAgentId, FString& OutChosenId)
+{
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+
+    // 타입 확인
+    FString TypeStr;
+    if (!Root->TryGetStringField(TEXT("type"), TypeStr) || TypeStr != TEXT("location_decision_result"))
+        return false;
+
+    // payload에서 agent_id, chosen_id 추출
+    const TSharedPtr<FJsonObject>* PayloadObj;
+    if (!Root->TryGetObjectField(TEXT("payload"), PayloadObj)) return false;
+
+    return (*PayloadObj)->TryGetStringField(TEXT("agent_id"), OutAgentId)
+        && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
 }

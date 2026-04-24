@@ -22,7 +22,7 @@
 import json
 import os
 from ..state import AgentState
-from ...schemas.actions import ActionBatch, NPCAction, WORLD_CONSTANTS
+from ...schemas.actions import ActionBatch, GameAction, WORLD_CONSTANTS
 from ...utils import db_manager
 
 
@@ -52,7 +52,7 @@ def _is_target_id_valid(target_id: str | None) -> bool:
     return target_id in VALID_NPC_IDS
 
 
-def _is_target_loc_in_bounds(target_loc) -> bool:
+def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
     """
     target_loc 좌표가 월드 경계(WORLD_BOUNDS) 안에 있는지 검증한다.
 
@@ -61,10 +61,16 @@ def _is_target_loc_in_bounds(target_loc) -> bool:
 
     Returns: True이면 경계 내 (또는 WORLD_BOUNDS 미설정)
     """
-    if not target_loc or not WORLD_BOUNDS:
+    if not target_loc_str or not WORLD_BOUNDS:
         return True
 
-    x, y, z = target_loc.x, target_loc.y, target_loc.z
+    try:
+        import ast
+        loc_dict = ast.literal_eval(target_loc_str)
+        x, y, z = loc_dict.get("x", 0), loc_dict.get("y", 0), loc_dict.get("z", 0)
+    except Exception:
+        # Pydantic 파싱에서 실패한 경우 무시
+        return True
 
     x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
     y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
@@ -73,7 +79,7 @@ def _is_target_loc_in_bounds(target_loc) -> bool:
     return x_ok and y_ok and z_ok
 
 
-def validate_and_clamp_action(action: NPCAction) -> tuple:
+def validate_and_clamp_action(action: 'GameAction') -> tuple:
     """
     단일 액션의 파라미터를 검증하고 범위를 보정(clamp)한다.
 
@@ -84,33 +90,37 @@ def validate_and_clamp_action(action: NPCAction) -> tuple:
     """
     corrections = []
 
+    params = action.Parameters or {}
+    target_id = params.get("target_id")
+    target_loc_str = params.get("target_loc")
+
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
-    if not _is_target_id_valid(action.target_id):
-        reason = f"유효하지 않은 target_id '{action.target_id}' → 액션 제거"
+    if not _is_target_id_valid(target_id):
+        reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
         print(f"[Rules] ❌ {reason}")
         return None, [reason]
 
     # ── [신규] 좌표 범위 검증 ───────────────────────────────────
-    if not _is_target_loc_in_bounds(action.target_loc):
+    if not _is_target_loc_in_bounds(target_loc_str):
         reason = (
-            f"target_loc {action.target_loc} 이 WORLD_BOUNDS 밖 → 액션 제거 "
-            f"(action: {action.action_type})"
+            f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 "
+            f"(action: {action.ActionType})"
         )
         print(f"[Rules] ❌ {reason}")
         return None, [reason]
 
     # Dialogue 액션은 수치 파라미터 없음 → 검증 불필요
-    if action.action_type == "Dialogue":
+    if action.ActionType == "Dialogue":
         return action, corrections
 
-    if not action.parameters:
+    if not action.Parameters:
         return action, corrections
 
     # 파라미터를 문자열로 통일 (C++ 호환성)
-    params = {str(k): str(v) for k, v in action.parameters.items()}
+    params = {str(k): str(v) for k, v in action.Parameters.items()}
 
     # ── Attack: damage 클램핑 ───────────────────────────────────
-    if action.action_type == "Attack" and "damage" in params:
+    if action.ActionType == "Attack" and "damage" in params:
         try:
             damage = float(params["damage"])
             max_damage = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
@@ -125,7 +135,7 @@ def validate_and_clamp_action(action: NPCAction) -> tuple:
             corrections.append("damage 비유효 → 기본값 10")
 
     # ── Move: speed 클램핑 ──────────────────────────────────────
-    elif action.action_type == "Move" and "speed" in params:
+    elif action.ActionType == "Move" and "speed" in params:
         try:
             speed = float(params["speed"])
             max_speed = WORLD_CONSTANTS.get("MAX_SPEED", 600)
@@ -140,7 +150,7 @@ def validate_and_clamp_action(action: NPCAction) -> tuple:
             corrections.append("speed 비유효 → 기본값 300")
 
     # ── Heal: amount 클램핑 ─────────────────────────────────────
-    elif action.action_type == "Heal" and "amount" in params:
+    elif action.ActionType == "Heal" and "amount" in params:
         try:
             amount = float(params["amount"])
             max_health = WORLD_CONSTANTS.get("MAX_HEALTH", 100)
@@ -154,9 +164,8 @@ def validate_and_clamp_action(action: NPCAction) -> tuple:
             params["amount"] = "10"
             corrections.append("heal amount 비유효 → 기본값 10")
 
-    action.parameters = params
+    action.Parameters = params
     return action, corrections
-
 
 def rules_node(state: AgentState) -> dict:
     """
@@ -172,9 +181,10 @@ def rules_node(state: AgentState) -> dict:
         return {"next": "End", "current_speaker": "Rules"}
 
     all_corrections: list[str] = []
-    validated_actions: list[NPCAction] = []
+    from ...schemas.actions import GameAction
+    validated_actions: list[GameAction] = []
 
-    for action in batch.actions:
+    for action in batch.Actions:
         validated_action, corrections = validate_and_clamp_action(action)
 
         if validated_action is None:
@@ -186,22 +196,24 @@ def rules_node(state: AgentState) -> dict:
         all_corrections.extend(corrections)
 
     # 모든 액션이 제거된 경우 → reasoning에 REJECTED 표시
-    # Supervisor가 이를 감지해 Dialogue 재시도를 트리거
     if not validated_actions:
         print("[Rules] ❌ 모든 액션이 검증 실패, REJECTED 처리")
-        batch.reasoning = f"REJECTED: 유효한 액션 없음. 이유: {'; '.join(all_corrections)}"
-        batch.actions = []
+        # Optional field 처리에 유의
+        current_reasoning = getattr(batch, "reasoning", "") or ""
+        setattr(batch, "reasoning", f"REJECTED: 유효한 액션 없음. 이유: {'; '.join(all_corrections)}")
+        batch.Actions = []
         return {
             "action_batch": batch,
             "current_speaker": "Rules",
             "next": "End",
         }
 
-    batch.actions = validated_actions
+    batch.Actions = validated_actions
 
     if all_corrections:
         summary = "; ".join(all_corrections)
-        batch.reasoning = f"{batch.reasoning or ''} | Rules: {summary}"
+        current_reasoning = getattr(batch, "reasoning", "") or ""
+        setattr(batch, "reasoning", f"{current_reasoning} | Rules: {summary}")
         print(f"[Rules] ✅ {len(all_corrections)}개 보정 적용: {summary}")
     else:
         print("[Rules] ✅ 검증 통과, 보정 없음")
@@ -215,7 +227,7 @@ def rules_node(state: AgentState) -> dict:
         "next": "End",
     }
 
-def _evaluate_and_update_affinity(state: AgentState, batch: ActionBatch):
+def _evaluate_and_update_affinity(state: AgentState, batch: 'ActionBatch'):
     """
     ActionBatch에 담긴 행동과 감정을 분석하여
     대상(Player 등)에 대한 우호도(Affinity)를 조정한다.
@@ -228,7 +240,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: ActionBatch):
         return
     
     player_id = vr_context.get("player_id", "Player") if isinstance(vr_context, dict) else getattr(vr_context, "player_id", "Player")
-    npc_id = batch.agent_id
+    npc_id = batch.AgentID
     
     if not npc_id:
         return
@@ -237,30 +249,28 @@ def _evaluate_and_update_affinity(state: AgentState, batch: ActionBatch):
     score_delta = 0
     interaction_summary = []
 
-    # 전체 감정에 따른 기본 보정치
-    if batch.facial_state == "Happy":
-        score_delta += 1
-        interaction_summary.append("Smiled/Happy")
-    elif batch.facial_state == "Angry":
-        score_delta -= 2
-        interaction_summary.append("Angry expression")
-
+    # 전체 감정에 따른 기본 보정치 (FacialState가 batch 레벨에는 없으므로 첫 번째 액션 참조 또는 생략)
+    # ActionBatch는 Mode만 가짐, 개별 Action에 FacialState가 있음. 여기선 단순히 0으로 시작.
+    
     # 구체적 액션 평가
-    for action in batch.actions:
+    for action in batch.Actions:
+        params = action.Parameters or {}
+        target_id = params.get("target_id", "")
+        
         # Player를 대상으로 한 액션인지 확인
-        target_id = action.target_id
         if target_id and target_id.lower() == player_id.lower():
-            if action.action_type == "Attack":
+            if action.ActionType == "Attack":
                 score_delta -= 10
                 interaction_summary.append(f"Attacked player (-10)")
-            elif action.action_type == "Heal":
+            elif action.ActionType == "Heal":
                 score_delta += 5
                 interaction_summary.append(f"Healed player (+5)")
-            elif action.action_type == "Dialogue":
-                if action.emotion == "Happy":
+            elif action.ActionType == "Dialogue":
+                facial = action.FacialState
+                if facial == "Happy":
                      score_delta += 2
                      interaction_summary.append("Spoke happily (+2)")
-                elif action.emotion == "Angry":
+                elif facial == "Angry":
                      score_delta -= 2
                      interaction_summary.append("Spoke angrily (-2)")
 

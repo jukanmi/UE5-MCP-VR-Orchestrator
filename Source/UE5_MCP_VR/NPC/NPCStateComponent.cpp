@@ -7,6 +7,7 @@
 #include "SmartNPC.h"
 #include "NPCManager.h"
 #include "Engine/GameInstance.h"
+#include "../Network/MCPJsonUtils.h"
 
 UNPCStateComponent::UNPCStateComponent()
 {
@@ -17,20 +18,33 @@ void UNPCStateComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 초기 스탯 계산 및 이동속도 적용
     RefreshStats();
+}
+
+FNPCAttributes UNPCStateComponent::GetAttributes() const
+{
+    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+    {
+        return OwnerNPC->NPCAttributes;
+    }
+    return FNPCAttributes();
+}
+
+FNPCAttributes& UNPCStateComponent::GetMutableAttributes()
+{
+    ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
+    check(OwnerNPC && "[NPCStateComponent] Owner is not ASmartNPC");
+    return OwnerNPC->NPCAttributes;
 }
 
 // --- Facial Expression ---
 
 void UNPCStateComponent::SetFacialExpression(EFacialState NewExpression)
 {
-    // 중복 업데이트 방지: 같은 표정이면 무시
     if (CurrentFacialState == NewExpression) return;
 
     CurrentFacialState = NewExpression;
 
-    // Blackboard 동기화 (AnimBP 또는 BT에서 참조)
     if (ASmartNPCAIController* AI = GetOwnerAIController())
     {
         if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
@@ -46,38 +60,33 @@ void UNPCStateComponent::SetFacialExpression(EFacialState NewExpression)
 
 void UNPCStateComponent::RefreshStats()
 {
-    // Base Stats에서 파생 스탯(전투, 이동 등) 재계산
-    CurrentStats.RecalculateCombatStats();
+    FNPCAttributes& Attrs = GetMutableAttributes();
+    Attrs.RecalculateCombatStats();
 
-    // 이동속도를 CharacterMovementComponent에 반영
     ApplyMovementSpeed();
 
     UE_LOG(LogTemp, Log, TEXT("[NPCState] Stats Refreshed. HP: %.0f/%.0f, ATK: %.0f"),
-        CurrentStats.Resources.Health,
-        CurrentStats.Resources.MaxHealth,
-        CurrentStats.Combat.AttackPower);
+        Attrs.Resources.Health,
+        Attrs.Resources.MaxHealth,
+        Attrs.Combat.AttackPower);
 }
 
 void UNPCStateComponent::ApplyMovementSpeed()
 {
-    // Owner의 CharacterMovementComponent에 이동속도 적용
-    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-    {
-        if (UCharacterMovementComponent* CMC = OwnerChar->GetCharacterMovement())
-        {
-            CMC->MaxWalkSpeed = CurrentStats.Movement.WalkSpeed;
-            // RunSpeed, SprintSpeed는 BT Task에서 EMoveType에 따라 동적 변경
-        }
-    }
+    ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
+    if (!OwnerChar) return;
+    
+    UCharacterMovementComponent* CMC = OwnerChar->GetCharacterMovement();
+    if (!CMC) return;
+    
+    CMC->MaxWalkSpeed = GetAttributes().Movement.WalkSpeed;
 }
 
 // --- Reflex ---
 
 bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
 {
-    // 반사 판정: Perception + 주사위(D100) vs Difficulty
-    // 왜 Perception인가: 반사 행동은 "위험을 감지"하는 능력에 의존
-    int32 PerceptionBonus = CurrentStats.BaseStats.Perception;
+    int32 PerceptionBonus = GetAttributes().BaseStats.Perception;
     int32 Roll = UDiceSystem::RollD100();
     int32 Total = Roll + PerceptionBonus;
 
@@ -93,22 +102,20 @@ bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
 
 float UNPCStateComponent::ApplyDamage(float DamageAmount)
 {
-    // 방어력에 따른 데미지 감소 (간단한 flat reduction)
-    float EffectiveDamage = FMath::Max(0.0f, DamageAmount - CurrentStats.Combat.Defense);
-    CurrentStats.Resources.Health -= EffectiveDamage;
+    FNPCAttributes& Attrs = GetMutableAttributes();
+    float EffectiveDamage = FMath::Max(0.0f, DamageAmount - Attrs.Combat.Defense);
+    Attrs.Resources.Health -= EffectiveDamage;
 
-    // 마지막 피격 시간 기록
     if (UWorld* World = GetWorld())
     {
         LastHitTime = World->GetTimeSeconds();
     }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCState] Damage Applied: %.1f (Raw: %.1f, Defense: %.1f). HP: %.0f/%.0f"),
-        EffectiveDamage, DamageAmount, CurrentStats.Combat.Defense,
-        CurrentStats.Resources.Health, CurrentStats.Resources.MaxHealth);
+        EffectiveDamage, DamageAmount, Attrs.Combat.Defense,
+        Attrs.Resources.Health, Attrs.Resources.MaxHealth);
 
-    // 사망 판정
-    if (!CurrentStats.Resources.IsAlive())
+    if (!Attrs.Resources.IsAlive())
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCState] NPC is DEAD!"));
         // TODO: Death Event Broadcast (Delegate 등)
@@ -117,33 +124,114 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
     return EffectiveDamage;
 }
 
-// --- Emergency Cognition ---
+// --- Event Cognition ---
 
-void UNPCStateComponent::RequestEmergencyCognition(const FString& EventType, const FString& Description)
+void UNPCStateComponent::RequestEventCognition(const FPerceptionData& Perception)
 {
-    // 긴급 상황 시 즉시 LLM으로 직접 패킷을 쏘는 대신 Event Debouncing을 위해 Manager에 등록
-    UE_LOG(LogTemp, Warning, TEXT("[NPCState] EMERGENCY COGNITION Flagged: %s - %s"), *EventType, *Description);
+    ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
+    if (!OwnerNPC) return;
 
-    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+    LocalEventQueue.Add(Perception);
+
+    // 0.3초 타이머 (이미 돌고 있다면 무시하여 0.3초 내의 모든 이벤트를 모음)
+    if (UWorld* World = GetWorld())
     {
-        if (UGameInstance* GI = OwnerNPC->GetGameInstance())
+        if (!World->GetTimerManager().IsTimerActive(EventDebounceTimer))
         {
-            if (UNPCManager* NPCManager = GI->GetSubsystem<UNPCManager>())
-            {
-                // [Batching] 매니저의 긴급 큐에 접수. (매니저가 0.5초 등 주기에 맞춰 하나로 뭉쳐 발송)
-                NPCManager->RegisterEmergencyEvent(OwnerNPC->AgentID, EventType, Description);
-            }
+            World->GetTimerManager().SetTimer(
+                EventDebounceTimer,
+                this, &UNPCStateComponent::FlushEventReport,
+                0.3f,
+                false
+            );
         }
     }
+}
+
+void UNPCStateComponent::FlushEventReport()
+{
+    // 1. 타이머 및 유효성 검사
+    if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(EventDebounceTimer);
+    ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
+    if (!OwnerNPC || LocalEventQueue.IsEmpty()) return;
+
+    // 2. 위험도 기준 내림차순 정렬
+    LocalEventQueue.Sort([](const FPerceptionData& A, const FPerceptionData& B) {
+        return A.DangerScore > B.DangerScore;
+    });
+
+    // 3. 고위험/저위험 데이터 교차 추출 (최대 4개)
+    TArray<FPerceptionData> RefinedEvents;
+    int32 Count = LocalEventQueue.Num();
+
+    if (Count <= 4) {
+        RefinedEvents = LocalEventQueue;
+    } else {
+        RefinedEvents.Add(LocalEventQueue[0]);          // Highest
+        RefinedEvents.Add(LocalEventQueue[Count - 1]);  // Lowest
+        RefinedEvents.Add(LocalEventQueue[1]);          // 2nd Highest
+        RefinedEvents.Add(LocalEventQueue[Count - 2]);  // 2nd Lowest
+    }
+
+    // 4. 최대 위험도 계산 → SLM(반사)/LLM(전략) 분기 결정
+    float MaxDanger = 0.0f;
+    for (const FPerceptionData& P : RefinedEvents)
+    {
+        MaxDanger = FMath::Max(MaxDanger, P.DangerScore);
+    }
+
+    FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
+    if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
+    {
+        if (MaxDanger >= SLMDangerThreshold)
+        {
+            // 즉각적인 위협 → SLM 반사 채널 (목표 500ms)
+            Manager->SendReflexReport(OwnerNPC->AgentID, Payload);
+        }
+        else
+        {
+            // 저위험 인지 이벤트 → LLM 전략 채널
+            Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+        }
+    }
+    LocalEventQueue.Empty();
 }
 
 // --- Internal Helper ---
 
 ASmartNPCAIController* UNPCStateComponent::GetOwnerAIController() const
 {
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    APawn* OwnerPawn = Cast<APawn>(GetOwner());
+    if (!OwnerPawn) return nullptr;
+    
+    return Cast<ASmartNPCAIController>(OwnerPawn->GetController());
+}
+
+// --- Affinity ---
+
+void UNPCStateComponent::UpdateAffinity(const FString& TargetID, int32 NewScore)
+{
+    AffinityCache.Add(TargetID, NewScore);
+    UE_LOG(LogTemp, Verbose, TEXT("[NPCState] Updated Affinity for %s -> %s: %d"), 
+        *GetOwner()->GetName(), *TargetID, NewScore);
+}
+
+float UNPCStateComponent::GetAffinityMultiplier(const FString& TargetID) const
+{
+    const int32* Score = AffinityCache.Find(TargetID);
+    if (!Score) 
     {
-        return Cast<ASmartNPCAIController>(OwnerPawn->GetController());
+        return AffinityDefaultMultiplier; // 캐시(Target)가 없으면 기본 중립 배율 처리
     }
-    return nullptr;
+
+    if (*Score >= AffinityFriendlyThreshold)
+    {
+        return 0.0f; // 우호적(Friendly): 위협이 아님
+    }
+    else if (*Score <= AffinityHostileThreshold)
+    {
+        return 1.0f; // 적대적(Hostile): 최대 위협
+    }
+    
+    return AffinityDefaultMultiplier; // 중립(Neutral)
 }

@@ -18,8 +18,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     static bool ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest);
 
-    // UE5의 현재 월드 상태(FGameStateData)를 Python 백엔드로 전송할 JSON 봉투(Envelope)로 직렬화합니다.
-    // msg_id는 호출 시마다 새로운 GUID로 자동 생성됩니다.
+
+    // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static FString SerializeGameState(const FGameStateData& StateData);
+    static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents);
+
+    /** location_decision_result 메시지 파싱.
+     *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "..." } }
+     *  @return true이면 OutAgentId / OutChosenId에 값이 채워짐 */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
+    static bool ParseLocationDecisionResult(
+        const FString& Json, FString& OutAgentId, FString& OutChosenId);
 };

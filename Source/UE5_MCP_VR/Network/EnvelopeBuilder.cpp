@@ -54,6 +54,7 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
         case EEnvelopeType::Prompt:       return TEXT("prompt");
         case EEnvelopeType::ActionFailed: return TEXT("action_failed");
         case EEnvelopeType::EmergencyReport: return TEXT("emergency_report");
+        case EEnvelopeType::LocationDecision: return TEXT("location_decision");
         default:
             UE_LOG(LogTemp, Warning, TEXT("[EnvelopeBuilder] 알 수 없는 EEnvelopeType. 'prompt'으로 폴백."));
             return TEXT("prompt");
@@ -123,11 +124,6 @@ FString FEnvelopeBuilder::BuildEnvelope(
 }
 
 
-FString FEnvelopeBuilder::BuildStateUpdate(const FString& PayloadJson)
-{
-    return BuildEnvelope(EEnvelopeType::StateUpdate, PayloadJson);
-}
-
 
 FString FEnvelopeBuilder::BuildPrompt(const FString& PayloadJson)
 {
@@ -151,6 +147,10 @@ FString FEnvelopeBuilder::BuildActionFailed(const FString& RefMsgId, const FStri
 
 FString FEnvelopeBuilder::BuildEmergencyReport(const FString& PayloadJson)
 {
-    // EmergencyReport는 별도의 RefMsgId가 필요하지 않음
     return BuildEnvelope(EEnvelopeType::EmergencyReport, PayloadJson);
+}
+
+FString FEnvelopeBuilder::BuildLocationDecisionRequest(const FString& PayloadJson)
+{
+    return BuildEnvelope(EEnvelopeType::LocationDecision, PayloadJson);
 }

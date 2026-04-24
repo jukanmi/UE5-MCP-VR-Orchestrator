@@ -28,6 +28,8 @@ class EEnvelopeType(str, Enum):
     STATE_UPDATE  = "state_update"   # UE5 상태 주기 동기화
     PROMPT        = "prompt"         # 플레이어 명령/대화
     ACTION_FAILED = "action_failed"  # UE5에서 명령 실행 실패 통보
+    EMERGENCY_REPORT = "emergency_report" # 긴급 이벤트 배치 전송
+    LOCATION_DECISION = "location_decision" # EQS 후보 → LLM 전술 위치 결정 요청
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -41,8 +43,10 @@ class PerceptionData(BaseModel):
     target_id: str
     sense_type: str      # "Sight", "Hearing", "Other"
     distance: float
-    in_line_of_sight: bool
+    danger_score: float = 0.0 # C++ FPerceptionData.DangerScore 대응
+    in_line_of_sight: bool = False
     location: Dict[str, float]  # {"x", "y", "z"}
+    activity_context: str = "Idle"
 
 
 class EQSQueryResult(BaseModel):
@@ -57,9 +61,10 @@ class EQSQueryResult(BaseModel):
 class StateUpdatePayload(BaseModel):
     """
     state_update 타입의 payload.
-    WHY: UE5의 주기적 상태 스냅샷. 이 정보는 LLM 추론의 '현재 컨텍스트'가 된다.
-    소수점 2자리로 제한하는 이유: LLM 토큰 다이어트 (불필요한 정밀도 제거).
+    WHY: UE5의 주기적 상태 스냅샷.
     """
+    owner_agent_id: str                         # C++ FGameStateData.OwnerAgentID
+    current_mode: str = "Common"                # C++ FGameStateData.CurrentMode
     owner_location: Dict[str, float]            # {"x": float, "y": float, "z": float}
     threat_level: str = "None"                  # "None", "Low", "Medium", "High"
     in_cover: bool = False
@@ -82,7 +87,6 @@ class PromptPayload(BaseModel):
     player_id: str
     voice_transcript: str
     gestures: List[Dict[str, Any]] = Field(default_factory=list)
-    looking_at_entity_id: Optional[str] = None
     player_location: Optional[Dict[str, float]] = None
     last_event: Optional[str] = None
     stats: Optional[Dict[str, float]] = None
@@ -98,6 +102,38 @@ class ActionFailedPayload(BaseModel):
     failed_action_type: str         # 실패한 액션 종류 (e.g., "Move", "Attack")
     reason: str                     # 실패 이유 (e.g., "PathNotFound", "TargetDead")
     executor_npc_id: str            # 명령을 시도했던 NPC ID
+
+
+class EmergencyReportPayload(BaseModel):
+    """
+    emergency_report 타입의 payload.
+    WHY: NPC가 위험 상황이나 소음을 감지했을 때 즉각적인 대응을 위해 서버로 전송.
+    """
+    agent_id: str                               # 이벤트를 감지한 주체 NPC ID
+    perceptions: List[PerceptionData]           # 감지된 이벤트 목록 (위험도순 정렬됨)
+    generated_at: float                         # 리포트 생성 시각 (UNIX)
+
+
+class LocationCandidate(BaseModel):
+    """단일 전술 위치 후보 (C++ FLocationCandidate 대응)."""
+    id: str                  # e.g. "SAFE_0", "AGGRESSIVE_1"
+    category: str            # "SAFE" | "OPTIMAL" | "AGGRESSIVE"
+    dist_to_enemy: float
+    cover_rating: float      # 0 ~ 1
+    height_delta: float      # 양수 = NPC가 더 높음
+    score: float
+
+
+class LocationDecisionPayload(BaseModel):
+    """
+    location_decision 타입의 payload.
+    WHY: C++ EQS가 후보 위치들을 스코어링한 뒤 최종 카테고리 선택을 LLM에 위임.
+         LLM은 context_summary와 후보 목록을 보고 chosen_id 하나를 골라 반환한다.
+    """
+    agent_id: str
+    context_summary: str             # "HP:45% Enemies:2 Aggr:60 Fear:30" 등 경량 요약
+    candidates: List[LocationCandidate]
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -136,3 +172,7 @@ class MessageEnvelope(BaseModel):
     def parse_action_failed_payload(self) -> ActionFailedPayload:
         """payload를 ActionFailedPayload로 파싱. type이 action_failed일 때만 호출할 것."""
         return ActionFailedPayload(**self.payload)
+
+    def parse_emergency_report_payload(self) -> EmergencyReportPayload:
+        """payload를 EmergencyReportPayload로 파싱. type이 emergency_report일 때만 호출할 것."""
+        return EmergencyReportPayload(**self.payload)
