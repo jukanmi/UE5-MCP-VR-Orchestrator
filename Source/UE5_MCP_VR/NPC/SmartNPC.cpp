@@ -220,3 +220,12 @@ void ASmartNPC::RemoveStateTag(FGameplayTag Tag)
         GameplayTags.RemoveTag(Tag);
     }
 }
+
+bool ASmartNPC::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const
+{
+    if (!StateComponent || !Other.GetObject()) return false;
+
+    const FString OtherID = ICharacterBase::Execute_GetEntityID(Other.GetObject());
+    // AffinityHostileThreshold 이하면 적대 관계
+    return StateComponent->GetAffinityMultiplier(OtherID) >= 1.0f;
+}

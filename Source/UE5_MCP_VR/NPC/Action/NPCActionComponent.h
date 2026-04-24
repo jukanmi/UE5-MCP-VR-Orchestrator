@@ -78,6 +78,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Debug")
     bool bEQSDebugDraw = false;
 
+    // 후보 구체 표시 지속 시간 (초)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Debug", meta = (EditCondition = "bEQSDebugDraw", ClampMin = "1.0", ClampMax = "30.0"))
+    float EQSDebugDuration = 8.f;
+
     // 언리얼 에디터에서 상황별 EQS 에셋을 할당하세요.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* DefaultMoveQuery;    // 기본 이동 쿼리
@@ -220,8 +224,8 @@ protected:
 
     // 후보 위치 시각화 (Pruned 목록 기준)
     void DrawEQSCandidates(const TArray<FLocationCandidate>& Candidates, float Duration = 5.f) const;
-    // 최종 선택 위치 시각화
-    void DrawEQSChosenLocation(const FVector& Loc, const FString& CandidateId, float Duration = 8.f) const;
+    // 최종 선택 위치 시각화 (LLM reason 포함)
+    void DrawEQSChosenLocation(const FVector& Loc, const FString& CandidateId, const FString& Reason = TEXT(""), float Duration = 8.f) const;
 
 private:
     // Cached references
@@ -263,7 +267,7 @@ public:
 
     /** NPCManager가 LLM 응답 수신 시 호출.
      *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */
-    void NotifyLocationDecisionReady(const FString& ChosenCandidateId);
+    void NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason = TEXT(""));
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteFollow(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);

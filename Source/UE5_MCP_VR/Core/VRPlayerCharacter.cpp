@@ -19,6 +19,7 @@ UE_DEFINE_GAMEPLAY_TAG(TAG_State_Condition_Dead, "State.Condition.Dead")
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "../NPC/Struct/NPCActionKeys.h"
+#include "GameFramework/PlayerStart.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
@@ -321,9 +322,25 @@ void AVRPlayerCharacter::PerformAttack()
 		DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.0f);
 	}
 
-    // [TODO/임시] 공격 즉시 태그 회수 (실제 환경에서는 애니메이션 몽타주 종료 델리게이트를 통해 회수해야 정교합니다)
-    RemoveStateTag(TAG_State_Action_Combat_Attack);
-    AddStateTag(TAG_State_Idle);
+    // 몽타주 재생 → 종료 델리게이트에서 태그 회수
+    if (AttackMontage)
+    {
+        UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+        if (AnimInstance)
+        {
+            AnimInstance->Montage_Play(AttackMontage);
+
+            FOnMontageEnded EndDelegate;
+            EndDelegate.BindUObject(this, &AVRPlayerCharacter::OnAttackMontageEnded);
+            AnimInstance->Montage_SetEndDelegate(EndDelegate, AttackMontage);
+        }
+    }
+    else
+    {
+        // 몽타주 미할당 시 즉시 회수
+        RemoveStateTag(TAG_State_Action_Combat_Attack);
+        AddStateTag(TAG_State_Idle);
+    }
 }
 
 void AVRPlayerCharacter::ApplyMovementSpeed()
@@ -381,7 +398,7 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
         RemoveStateTag(TAG_State_Idle);
         AddStateTag(TAG_State_Condition_Dead);
-		// TODO: Handle player death (respawn, game over, etc.)
+		HandleDeath();
 	}
 
 	return ActualDamage;
@@ -408,4 +425,82 @@ void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
     {
         GameplayTags.RemoveTag(Tag);
     }
+}
+
+void AVRPlayerCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    RemoveStateTag(TAG_State_Action_Combat_Attack);
+    AddStateTag(TAG_State_Idle);
+}
+
+void AVRPlayerCharacter::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
+{
+    if (!CurrentStats.Resources.IsAlive()) return;
+
+    bHasCheckpoint    = true;
+    CheckpointLocation = Location;
+    CheckpointRotation = Rotation;
+    CheckpointHP       = CurrentStats.Resources.Health;
+
+    UE_LOG(LogTemp, Log, TEXT("[Checkpoint] 저장 — 위치: %s, HP: %.1f"), *Location.ToString(), CheckpointHP);
+}
+
+void AVRPlayerCharacter::HandleDeath()
+{
+    // 입력 차단
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        DisableInput(PC);
+        PC->bShowMouseCursor = false;
+        PC->SetInputMode(FInputModeGameOnly());
+    }
+
+    // 채팅창 닫기
+    if (ChatWidgetInstance && ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
+    {
+        ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+    }
+
+    // 충돌/메시 비활성화
+    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    GetMesh()->SetVisibility(false);
+
+    UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] 사망 — %.1f초 후 리스폰"), RespawnDelay);
+
+    GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AVRPlayerCharacter::Respawn, RespawnDelay, false);
+}
+
+void AVRPlayerCharacter::Respawn()
+{
+    if (bHasCheckpoint)
+    {
+        SetActorLocationAndRotation(CheckpointLocation, CheckpointRotation);
+        CurrentStats.Resources.Health = CheckpointHP;
+    }
+    else
+    {
+        // 체크포인트 미도달 시 PlayerStart 폴백
+        AActor* StartPoint = UGameplayStatics::GetActorOfClass(GetWorld(), APlayerStart::StaticClass());
+        if (StartPoint)
+        {
+            SetActorLocationAndRotation(StartPoint->GetActorLocation(), StartPoint->GetActorRotation());
+        }
+        CurrentStats.Resources.Health = CurrentStats.Resources.MaxHealth;
+    }
+
+    // 충돌/메시 복구
+    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    GetMesh()->SetVisibility(true);
+
+    // 태그 초기화
+    RemoveStateTag(TAG_State_Condition_Dead);
+    AddStateTag(TAG_State_Idle);
+
+    // 입력 복구
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        EnableInput(PC);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 리스폰 완료 — HP: %.1f"), CurrentStats.Resources.Health);
 }

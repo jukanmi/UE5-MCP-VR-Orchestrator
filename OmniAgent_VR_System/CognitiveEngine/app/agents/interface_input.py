@@ -230,7 +230,9 @@ def _extract_target_npc(transcript: str, vr_context: GesPrompt):
     WHY: "Elara"를 하드코딩으로 반환하면 emergency_report 등에서
          이미 설정된 target_npc(C++ AgentID)를 덮어써 Dispatch 실패가 발생함.
     """
-    known_npcs = ["elara", "james", "guard", "merchant", "blacksmith"]
+    from ..schemas.actions import WORLD_CONSTANTS
+    valid_ids = WORLD_CONSTANTS.get("valid_npc_ids", [])
+    known_npcs = [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "guard", "merchant", "blacksmith"]
 
     transcript_lower = transcript.lower()
     for npc in known_npcs:

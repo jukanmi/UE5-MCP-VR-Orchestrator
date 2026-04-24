@@ -29,7 +29,7 @@ public:
     void ProcessStateUpdateQueue(int32 MaxNPCsPerTick);
 
     /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달 */
-    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId);
+    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason = TEXT(""));
 
     void OnWebSocketMessageReceived(const FString& JsonMessage);
 

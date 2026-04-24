@@ -33,40 +33,6 @@ from ..schemas.actions import (
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# action_type → action_category 역참조 테이블
-# 왜: LLM이 action_type만 출력하면, 어떤 카테고리(서브트리)에 속하는지 자동 추론.
-# CATEGORY_ACTION_MAP을 뒤집어서 생성. 중복(Follow 등)은 첫 매칭 우선.
-# ─────────────────────────────────────────────────────────────────────────────
-ACTION_TO_CATEGORY: dict[str, str] = {}
-for category, actions in CATEGORY_ACTION_MAP.items():
-    for action in actions:
-        if action not in ACTION_TO_CATEGORY:
-            ACTION_TO_CATEGORY[action] = category
-
-
-def _infer_category(action_type: str, behavior_mode: str = "Common") -> str:
-    """
-    action_type에서 action_category를 자동 추론.
-
-    추론 로직:
-    1. behavior_mode와 action_type이 모두 매칭되면 → behavior_mode 우선 사용
-    2. 매칭 안 되면 → ACTION_TO_CATEGORY 역참조 테이블에서 찾기
-    3. 그래도 없으면 → "Common" 폴백
-
-    왜 behavior_mode를 우선하는가:
-    "Follow"는 Common과 Social 양쪽에 존재. behavior_mode가 "Social"이면
-    Social.Follow로 분류해야 BT 서브트리가 올바르게 동작함.
-    """
-    # behavior_mode에 해당하는 카테고리에 action_type이 있으면 그걸 사용
-    mode_actions = CATEGORY_ACTION_MAP.get(behavior_mode, set())
-    if action_type in mode_actions:
-        return behavior_mode
-
-    # 역참조 테이블에서 찾기
-    return ACTION_TO_CATEGORY.get(action_type, "Common")
-
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 유효성 검증용 상수
