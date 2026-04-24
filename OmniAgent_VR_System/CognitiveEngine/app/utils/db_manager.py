@@ -129,6 +129,18 @@ def update_affinity_sync(source_id: str, target_id: str, score_delta: int, inter
     relation.is_dirty = True
     logger.debug(f"[DBManager] 캐시 업데이트 (Dirty Mark): {key} -> Score: {relation.affinity_score}")
 
+def get_relations_from_cache(source_id: str) -> list:
+    """캐시에 있는 source_id의 모든 관계를 동기적으로 반환 (state_update 응답용)."""
+    return [
+        {
+            "target_id": rel.target_id,
+            "affinity_score": rel.affinity_score,
+            "reputation_tag": rel.reputation_tag,
+        }
+        for (src, _), rel in _affinity_cache.items()
+        if src == source_id
+    ]
+
 async def _background_sync_loop():
     """주기적으로 변경사항을 DB에 쓰는 타이머 루프"""
     while not _is_shutting_down:

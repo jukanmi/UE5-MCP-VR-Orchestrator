@@ -123,6 +123,9 @@ public:
 	// --- Combat ---
 	void PerformAttack();
 
+	UFUNCTION()
+	void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
 	// AttackDamage is now derived from CurrentStats.Combat.AttackPower, but can be overridden
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float AttackDamage = 25.0f;
@@ -130,9 +133,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float AttackRange = 3000.0f; // 30m
 
+	// 공격 애니메이션 몽타주 — BP_Player에서 할당. 미할당 시 즉시 태그 회수 폴백.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+	UAnimMontage* AttackMontage = nullptr;
+
 	
 	// --- Interaction ---
 	void DetectNearbyNPC();
 	FString CurrentTargetID;
 
+	// --- Death / Respawn ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+	float RespawnDelay = 5.0f;
+
+	// 체크포인트 액터가 호출 — 현재 위치/HP를 저장
+	void SaveCheckpoint(const FVector& Location, const FRotator& Rotation);
+
+	void HandleDeath();
+
+private:
+	void Respawn();
+
+	// 마지막으로 저장된 체크포인트 데이터 (체크포인트 미도달 시 IsSet=false)
+	bool bHasCheckpoint = false;
+	FVector CheckpointLocation;
+	FRotator CheckpointRotation;
+	float CheckpointHP = 0.f;
+
+	FTimerHandle RespawnTimerHandle;
 };

@@ -1,9 +1,8 @@
 #include "NPCManager.h"
 #include "SmartNPC.h"
+#include "NPCStateComponent.h"
 #include "../Network/MCPJsonUtils.h"
 #include "../Network/EnvelopeBuilder.h"
-#include "Engine/GameInstance.h"
-#include "Struct/NPCActionKeys.h"
 #include "Action/NPCActionComponent.h"
 
 
@@ -23,7 +22,7 @@ void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& Act
 }
 
 
-void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId)
+void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason)
 {
     ASmartNPC* NPC = GetValidNPC(AgentID);
     if (!NPC)
@@ -33,7 +32,7 @@ void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& Cho
     }
     if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
     {
-        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId);
+        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId, Reason);
     }
 }
 
@@ -214,13 +213,34 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         return;
     }
 
+    // state_update 응답 — relations(호감도) 데이터가 포함된 경우 AffinityCache 갱신
+    {
+        FString AgentID;
+        TMap<FString, int32> Relations;
+        if (UMCPJsonUtils::ParseAffinityUpdate(JsonMessage, AgentID, Relations) && Relations.Num() > 0)
+        {
+            if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
+            {
+                if (UNPCStateComponent* StateComp = NPC->GetStateComponent())
+                {
+                    for (const auto& Pair : Relations)
+                    {
+                        StateComp->UpdateAffinity(Pair.Key, Pair.Value);
+                    }
+                    UE_LOG(LogTemp, Log, TEXT("[NPCManager] %s AffinityCache 갱신: %d건"), *AgentID, Relations.Num());
+                }
+            }
+            return;
+        }
+    }
+
     // location_decision_result 메시지는 전술 위치 파이프라인으로 별도 라우팅
-    // (ActionBatches 필드가 없으므로 일반 OnWebSocketMessageReceived에서는 무시됨)
     FString AgentID;
     FString ChosenCandidateId;
-    if (UMCPJsonUtils::ParseLocationDecisionResult(JsonMessage, AgentID, ChosenCandidateId))
+    FString Reason;
+    if (UMCPJsonUtils::ParseLocationDecisionResult(JsonMessage, AgentID, ChosenCandidateId, Reason))
     {
-        NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId);
+        NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason);
         return;
     }
 

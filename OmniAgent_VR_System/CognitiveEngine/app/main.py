@@ -14,7 +14,7 @@ from .schemas.actions import ActionBatch, ModeActionRequest
 from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
-from .middleware import validate_auth_token, is_stale_packet
+from .middleware import validate_auth_token, is_stale_packet, build_failed_event
 
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
@@ -230,67 +230,16 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
 
 
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
-    global _cached_world_state, _failed_action_history
-
     try:
         payload = envelope.parse_emergency_report_payload()
         logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
-        # 1. Perception 요약 텍스트 생성
-        lines = []
-        for p in payload.perceptions:
-            lines.append(f"- Detected '{p.target_id}' via {p.sense_type} at dist {p.distance:.1f} (Danger: {p.danger_score:.2f})")
-        
-        system_transcript = "[SYSTEM ALERT] I perceived the following events:\n" + "\n".join(lines) + "\nHow should I react immediately?"
-
-        # 2. 합성된 GesPrompt 생성 (System 프롬프트로 우회)
-        ges_prompt = GesPrompt(
-            player_id="System",
-            voice_transcript=system_transcript,
-            gestures=[],
-            timestamp=envelope.timestamp,
-            last_event="EmergencyEventDetected",
-            stats=None,
-            player_location=None,
-        )
-
-        initial_state: AgentState = AgentState(
-            messages=[],
-            vr_context=ges_prompt,
-            cached_world_state=_cached_world_state,
-            failed_action_history=list(_failed_action_history),
-            next="",
-            current_speaker="",
-            natural_context=None,
-            raw_response=None,
-            target_npc=payload.agent_id, # 이벤트를 감지한 해당 NPC가 행동하도록 지정
-            behavior_mode=None,
-            facial_state=None,
-            action_batch=None,
-            target_npcs=[],
-            msg_id=envelope.msg_id,
-            timestamp=envelope.timestamp,
-            has_error=False,
-            error_msg=None,
-        )
-
-        logger.info(f"[Main] 긴급 이벤트로 인한 Graph 비동기 실행 시작... (Target NPC: {payload.agent_id})")
-        
-        result = await app_graph.ainvoke(initial_state)
-        
-        final_action: Optional[ActionBatch] = result.get("action_batch")
-
-        if final_action:
-            logger.info(f"[Main] Emergency ActionBatch 생성 완료: agent_id={final_action.AgentID}")
-            wrapper = ModeActionRequest(
-                Mode=final_action.Mode,
-                ActionBatches={final_action.AgentID: final_action}
-            )
-            return wrapper.model_dump_json()
-        else:
-            logger.warning("[Main] 에이전트가 긴급 상황에 대한 ActionBatch를 생성하지 않았습니다.")
-            fallback = ModeActionRequest(Mode="Common", ActionBatches={})
-            return fallback.model_dump_json()
+        # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
+        # 기존에는 무거운 LangGraph 파이프라인(26B 모델)을 전체 순회하여
+        # 수 초간의 지연이 발생했으나, 이제는 즉시 4B 경량 SLM 또는 키워드 폴백으로
+        # 우회 처리(Bypass)하여 체감 지연 시간을 제로에 가깝게 최적화함.
+        logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
+        return await _handle_slm_reflex(payload)
 
     except Exception as e:
         logger.error(f"[Main] _handle_emergency_report 실행 중 치명적 오류: {e}")
@@ -372,11 +321,35 @@ def _handle_state_update(envelope: MessageEnvelope) -> str:
         _cached_world_state = state_payload.model_dump()
         logger.info(f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, "
                     f"threat_level={state_payload.threat_level}")
-        return json.dumps({"status": "cached", "msg_id": envelope.msg_id})
+
+        # 해당 NPC의 관계 데이터를 캐시에서 읽어 응답에 포함
+        relations = db_manager.get_relations_from_cache(state_payload.owner_agent_id)
+
+        return json.dumps({
+            "status": "cached",
+            "msg_id": envelope.msg_id,
+            "agent_id": state_payload.owner_agent_id,
+            "relations": relations,
+        })
 
     except Exception as e:
         logger.error(f"[Main] state_update 파싱 실패: {e}")
         return json.dumps({"error": f"state_update parse error: {e}"})
+
+
+_LOCATION_DECISION_PROMPT = """\
+NPC '{agent_id}' must choose a tactical position.
+Situation: {context}
+
+Candidates:
+{candidate_lines}
+
+Rules:
+- SAFE positions: prefer when HP is low or outnumbered
+- OPTIMAL positions: balanced engagement range and cover
+- AGGRESSIVE positions: prefer when HP is high and enemy is isolated
+
+Reply with ONLY the candidate ID (e.g. SAFE_0). Nothing else."""
 
 
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
@@ -389,44 +362,66 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         { "type": "location_decision_result",
           "payload": { "agent_id": "...", "chosen_id": "SAFE_0", "reason": "..." } }
     """
+    from .utils.llm_factory import get_llm
+
+    payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
+    agent_id = payload_raw.get("agent_id", "unknown")
+    candidates_raw = payload_raw.get("candidates", [])
+
+    def _fast_path_fallback(reason: str) -> str:
+        if not candidates_raw:
+            fallback_id = "OPTIMAL_0"
+        else:
+            fallback_id = max(candidates_raw, key=lambda c: c.get("score", 0)).get("id", candidates_raw[0]["id"])
+        logger.info(f"[LocationDecision] Fast-Path fallback ({reason}): {fallback_id}")
+        return json.dumps({
+            "type": "location_decision_result",
+            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": f"fallback:{reason}"}
+        })
+
     try:
-        payload = LocationDecisionPayload(**(envelope.payload if isinstance(envelope.payload, dict) else dict(envelope.payload)))
-        logger.info(f"[Main] location_decision 수신: agent={payload.agent_id}, "
-                    f"candidates={len(payload.candidates)}")
+        payload = LocationDecisionPayload(**(payload_raw))
+        logger.info(f"[LocationDecision] 수신: agent={payload.agent_id}, candidates={len(payload.candidates)}")
 
         if not payload.candidates:
-            raise ValueError("No location candidates provided by UE5.")
+            return _fast_path_fallback("no_candidates")
 
-        best_candidate = max(payload.candidates, key=lambda c: c.score)
-        chosen_id = best_candidate.id
-        reason = f"Fast-Path: Selected highest score ({best_candidate.score:.2f}) from EQS"
+        valid_ids = {c.id for c in payload.candidates}
 
-        logger.info(f"[Main] location_decision 결과(Fast-Path): chosen={chosen_id} reason={reason}")
+        # 후보 목록 텍스트 구성
+        candidate_lines = "\n".join(
+            f"  {c.id} | {c.category} | dist={c.dist_to_enemy:.0f} cover={c.cover_rating:.2f} height={c.height_delta:+.0f} score={c.score:.2f}"
+            for c in payload.candidates
+        )
+
+        prompt = _LOCATION_DECISION_PROMPT.format(
+            agent_id=payload.agent_id,
+            context=payload.context_summary,
+            candidate_lines=candidate_lines,
+        )
+
+        llm = get_llm(model_name="gemma4_e2b", temperature=0.0, num_predict=20)
+        raw = await asyncio.to_thread(llm.invoke, prompt)
+        text = (raw.content if hasattr(raw, "content") else str(raw)).strip().split()[0].upper()
+
+        # 유효한 ID인지 검증 (대소문자 무시)
+        chosen_id = next((vid for vid in valid_ids if vid.upper() == text), None)
+
+        if not chosen_id:
+            logger.warning(f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path")
+            return _fast_path_fallback("invalid_llm_response")
+
+        reason = f"LLM chose {chosen_id} ({payload.context_summary})"
+        logger.info(f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}")
 
         return json.dumps({
             "type": "location_decision_result",
-            "payload": {
-                "agent_id": payload.agent_id,
-                "chosen_id": chosen_id,
-                "reason": reason,
-            }
+            "payload": {"agent_id": payload.agent_id, "chosen_id": chosen_id, "reason": reason}
         })
 
     except Exception as e:
-        logger.error(f"[Main] _handle_location_decision 오류: {e}")
-        traceback.print_exc()
-        # 빈 응답 대신 첫 번째 후보로 폴백
-        try:
-            payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
-            agent_id = payload_raw.get("agent_id", "unknown")
-            candidates = payload_raw.get("candidates", [])
-            fallback_id = candidates[0]["id"] if candidates else "OPTIMAL_0"
-            return json.dumps({
-                "type": "location_decision_result",
-                "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": "error_fallback"}
-            })
-        except Exception:
-            return json.dumps({"error": "location_decision failed"})
+        logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
+        return _fast_path_fallback("exception")
 
 
 def _handle_action_failed(envelope: MessageEnvelope) -> str:

@@ -28,5 +28,11 @@ public:
      *  @return true이면 OutAgentId / OutChosenId에 값이 채워짐 */
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     static bool ParseLocationDecisionResult(
-        const FString& Json, FString& OutAgentId, FString& OutChosenId);
+        const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason);
+
+    /** state_update 응답에서 relations 파싱.
+     *  { "status": "cached", "agent_id": "...", "relations": [{"target_id":"...", "affinity_score":N, ...}] }
+     *  @return true이면 OutAgentId와 OutRelations(TargetID→Score)에 값이 채워짐 */
+    static bool ParseAffinityUpdate(
+        const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations);
 };

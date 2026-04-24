@@ -711,15 +711,18 @@ void UNPCActionComponent::DrawEQSCandidates(const TArray<FLocationCandidate>& Ca
 #endif
 }
 
-void UNPCActionComponent::DrawEQSChosenLocation(const FVector& Loc, const FString& CandidateId, float Duration) const
+void UNPCActionComponent::DrawEQSChosenLocation(const FVector& Loc, const FString& CandidateId, const FString& Reason, float Duration) const
 {
 #if !UE_BUILD_SHIPPING
     if (!bEQSDebugDraw || !GetWorld()) return;
 
     DrawDebugSphere(GetWorld(), Loc, 80.f, 16, FColor::Cyan, false, Duration);
-    DrawDebugString(GetWorld(), Loc + FVector(0, 0, 120.f),
-        FString::Printf(TEXT("★ CHOSEN: %s\n(%.0f, %.0f, %.0f)"), *CandidateId, Loc.X, Loc.Y, Loc.Z),
-        nullptr, FColor::White, Duration);
+
+    FString Label = FString::Printf(TEXT("★ CHOSEN: %s\n(%.0f, %.0f, %.0f)"), *CandidateId, Loc.X, Loc.Y, Loc.Z);
+    if (!Reason.IsEmpty())
+        Label += FString::Printf(TEXT("\n%s"), *Reason);
+
+    DrawDebugString(GetWorld(), Loc + FVector(0, 0, 120.f), Label, nullptr, FColor::White, Duration);
 #endif
 }
 // ==========================================
@@ -1060,7 +1063,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
                 *AgentID, Pruned.Num());
                 
             // LLM 전송 성공 후 시각화 & 구조화 로그 출력
-            DrawEQSCandidates(Pruned);
+            DrawEQSCandidates(Pruned, EQSDebugDuration);
 
             UE_LOG(LogTemp, Log, TEXT("=== [EQS Candidates] %s ==="), *AgentID);
             for (const FLocationCandidate& C : Pruned)
@@ -1083,7 +1086,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     }
 }
 
-void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId)
+void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason)
 {
     const FVector* Found = TacticalCandidateMap.Find(ChosenCandidateId);
     if (!Found)
@@ -1116,7 +1119,7 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
 
     TacticalQueryState = ETacticalQueryState::ResultReady;
     
-    DrawEQSChosenLocation(TacticalQueryResult, ChosenCandidateId);
+    DrawEQSChosenLocation(TacticalQueryResult, ChosenCandidateId, Reason, EQSDebugDuration);
 
     // 최종 선택 좌표 표준 로그 (구조 통일)
     UE_LOG(LogTemp, Log,

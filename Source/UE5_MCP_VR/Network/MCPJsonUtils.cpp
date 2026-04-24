@@ -184,21 +184,49 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
 }
 
 bool UMCPJsonUtils::ParseLocationDecisionResult(
-    const FString& Json, FString& OutAgentId, FString& OutChosenId)
+    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
 {
     TSharedPtr<FJsonObject> Root;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
     if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
 
-    // 타입 확인
     FString TypeStr;
     if (!Root->TryGetStringField(TEXT("type"), TypeStr) || TypeStr != TEXT("location_decision_result"))
         return false;
 
-    // payload에서 agent_id, chosen_id 추출
     const TSharedPtr<FJsonObject>* PayloadObj;
     if (!Root->TryGetObjectField(TEXT("payload"), PayloadObj)) return false;
 
+    (*PayloadObj)->TryGetStringField(TEXT("reason"), OutReason);  // optional
     return (*PayloadObj)->TryGetStringField(TEXT("agent_id"), OutAgentId)
         && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
+}
+
+bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations)
+{
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+
+    FString Status;
+    if (!Root->TryGetStringField(TEXT("status"), Status) || Status != TEXT("cached")) return false;
+    if (!Root->TryGetStringField(TEXT("agent_id"), OutAgentId)) return false;
+
+    const TArray<TSharedPtr<FJsonValue>>* RelationsArray;
+    if (!Root->TryGetArrayField(TEXT("relations"), RelationsArray)) return false;
+
+    for (const TSharedPtr<FJsonValue>& Entry : *RelationsArray)
+    {
+        const TSharedPtr<FJsonObject>* EntryObj;
+        if (!Entry->TryGetObject(EntryObj)) continue;
+
+        FString TargetID;
+        int32 Score = 0;
+        if (!(*EntryObj)->TryGetStringField(TEXT("target_id"), TargetID)) continue;
+        (*EntryObj)->TryGetNumberField(TEXT("affinity_score"), Score);
+
+        OutRelations.Add(TargetID, Score);
+    }
+
+    return true;
 }

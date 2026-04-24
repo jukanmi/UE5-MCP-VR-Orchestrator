@@ -118,7 +118,7 @@ public:
 
     // ICharacterBase
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return NPCAttributes; }
-    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; } // TODO: 팩션 시스템 연동
+    virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override;
 
     // INPC
     virtual FString GetAgentID_Implementation() const override { return AgentID; }
