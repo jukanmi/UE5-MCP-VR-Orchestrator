@@ -271,7 +271,10 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
         }
     }
 
-    // [의도(Why)] 대화 액션은 이동 등의 물리적인 행동과 병동 실행(단기 병렬 큐)되어야 하므로 따로 처리하고, 나머지는 물리 액션 큐에 순차 적재합니다.
+    // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
+    bIsDialogueActive = false;
+
+    // [의도(Why)] 대화 액션은 이동 등의 물리적인 행동과 병렬 실행(단기 병렬 큐)되어야 하므로 따로 처리하고, 나머지는 물리 액션 큐에 순차 적재합니다.
     DispatchActions(Batch.Actions);
 }
 
@@ -604,7 +607,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     FVector Location = ParseVectorParam(Params.FindRef(TEXT("Location")));
     if (Location.IsZero()) Location = ParseVectorParam(Params.FindRef(TEXT("TargetLoc")));
     FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
-    FString TextBody = Params.FindRef(TEXT("DialogueText"));
+    FString TextBody = Params.FindRef(NPCActionKeys::Key_Text);
 
     // Task, Social, Investigate 특수 파라미터 추출
     FVector StartLocation = ParseVectorParam(Params.FindRef(TEXT("StartLocation")));
@@ -669,8 +672,14 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
         ExecuteLifestyleAction(ActionType, TargetActor, Location, TargetID);
         break;
 
+    case EAction::Wait:
+        // BT Task가 ExecuteInteraction 직후 OnActionCompleted를 호출하므로 여기선 아무것도 하지 않음
+        // duration 기반 실제 대기가 필요하다면 BTTask_ExecuteSmartAction을 LatentTask로 전환해야 함
+        break;
+
     default:
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지원되지 않는 ActionType이 ExecuteInteraction으로 유입됨"));
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지원되지 않는 ActionType이 ExecuteInteraction으로 유입됨: %s"),
+            *UEnum::GetValueAsString(ActionType));
         break;
     }
 }

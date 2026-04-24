@@ -87,7 +87,6 @@ class PromptPayload(BaseModel):
     player_id: str
     voice_transcript: str
     gestures: List[Dict[str, Any]] = Field(default_factory=list)
-    looking_at_entity_id: Optional[str] = None
     player_location: Optional[Dict[str, float]] = None
     last_event: Optional[str] = None
     stats: Optional[Dict[str, float]] = None

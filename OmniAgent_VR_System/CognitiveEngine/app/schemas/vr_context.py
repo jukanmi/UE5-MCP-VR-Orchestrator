@@ -39,7 +39,5 @@ class GesPrompt(BaseModel):
     last_event: Optional[str] = None # e.g. "Hit", "Ambush"
     stats: Optional[Dict[str, float]] = None # e.g. {"hp": 80, "agility": 0.9}
     
-    # Context resolved by UE5 before sending:
-    looking_at_entity_id: Optional[str] = None
     player_location: Optional[Vector3D] = None  # Player's world location for "come here" commands
 

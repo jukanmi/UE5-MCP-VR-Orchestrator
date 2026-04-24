@@ -191,8 +191,6 @@ def interface_input_node(state: AgentState) -> dict:
 
     # ── 구조화 컨텍스트 직접 조합 (LLM 없이) ────────────────────────
     natural_context = f'Player said: "{transcript}"'
-    if vr_context.looking_at_entity_id:
-        natural_context += f", looking at {vr_context.looking_at_entity_id}"
     if gesture_str != "None":
         natural_context += f", with gestures: {gesture_str}"
     if location_str != "Unknown":
@@ -207,25 +205,31 @@ def interface_input_node(state: AgentState) -> dict:
     # ── 대상 NPC 추출 (단순 휴리스틱) ───────────────────────────
     target_npc = _extract_target_npc(transcript, vr_context)
 
-    return {
+    result = {
         "natural_context": natural_context,
-        "target_npc": target_npc,
-        "target_npcs": [target_npc] if target_npc else [],
         "current_speaker": "Interface_Input",
         "next": "Dialogue",
     }
+    # target_npc를 찾은 경우에만 state에 기록 → 없으면 기존 값(C++ AgentID 등) 보존
+    if target_npc:
+        result["target_npc"] = target_npc
+        result["target_npcs"] = [target_npc]
+
+    return result
 
 
-def _extract_target_npc(transcript: str, vr_context: GesPrompt) -> str:
+def _extract_target_npc(transcript: str, vr_context: GesPrompt):
     """
     대화 내용이나 시선에서 대상 NPC를 추출한다.
 
     우선순위:
     1. 발화에 NPC 이름이 포함된 경우
     2. 현재 바라보고 있는 Entity ID
-    3. 기본값: "Elara"
+    3. None → 호출 측에서 기존 state 값을 보존
+
+    WHY: "Elara"를 하드코딩으로 반환하면 emergency_report 등에서
+         이미 설정된 target_npc(C++ AgentID)를 덮어써 Dispatch 실패가 발생함.
     """
-    # 알려진 NPC 목록 (추후 config에서 로드)
     known_npcs = ["elara", "james", "guard", "merchant", "blacksmith"]
 
     transcript_lower = transcript.lower()
@@ -233,8 +237,4 @@ def _extract_target_npc(transcript: str, vr_context: GesPrompt) -> str:
         if npc in transcript_lower:
             return npc.capitalize()
 
-    # 시선이 NPC를 향하고 있는 경우
-    if vr_context.looking_at_entity_id:
-        return vr_context.looking_at_entity_id
-
-    return "Elara"
+    return None

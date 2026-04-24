@@ -62,9 +62,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void UnregisterNPC(const FString& AgentID);
 
-    // === 취합된 긴급 인지 이벤트 전송 ===
+    // === 취합된 긴급 인지 이벤트 전송 (LLM: 전략 판단) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEventReport(const FString& AgentID, const FString& CombinedPayload);
+
+    // === 고위험 반사 이벤트 전송 (SLM: 즉각 반응, 목표 500ms) ===
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    void SendReflexReport(const FString& AgentID, const FString& CombinedPayload);
 
     // === 디버그: WebSocket 메시지 직접 주입 ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")

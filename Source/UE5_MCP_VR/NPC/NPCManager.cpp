@@ -240,6 +240,26 @@ void UNPCManager::SendEventReport(const FString& AgentID, const FString& Combine
     }
 }
 
+void UNPCManager::SendReflexReport(const FString& AgentID, const FString& CombinedPayload)
+{
+    FString Envelope = FEnvelopeBuilder::BuildEmergencyReport(CombinedPayload);
+
+    if (SLMClient && SLMClient->IsConnected())
+    {
+        SLMClient->SendPrompt(Envelope);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Reflex Report → SLM. Agent: %s"), *AgentID);
+    }
+    else
+    {
+        // SLM 미연결 시 LLM 폴백
+        if (LLMClient && LLMClient->IsConnected())
+        {
+            LLMClient->SendPrompt(Envelope);
+            UE_LOG(LogTemp, Warning, TEXT("[NPCManager] SLM 미연결 → LLM 폴백. Agent: %s"), *AgentID);
+        }
+    }
+}
+
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)
 {
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);

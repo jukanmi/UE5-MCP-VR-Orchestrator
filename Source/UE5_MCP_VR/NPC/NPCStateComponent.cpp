@@ -173,11 +173,26 @@ void UNPCStateComponent::FlushEventReport()
         RefinedEvents.Add(LocalEventQueue[Count - 2]);  // 2nd Lowest
     }
 
-    // 4. 서버 전송 및 큐 초기화
+    // 4. 최대 위험도 계산 → SLM(반사)/LLM(전략) 분기 결정
+    float MaxDanger = 0.0f;
+    for (const FPerceptionData& P : RefinedEvents)
+    {
+        MaxDanger = FMath::Max(MaxDanger, P.DangerScore);
+    }
+
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
-        Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+        if (MaxDanger >= SLMDangerThreshold)
+        {
+            // 즉각적인 위협 → SLM 반사 채널 (목표 500ms)
+            Manager->SendReflexReport(OwnerNPC->AgentID, Payload);
+        }
+        else
+        {
+            // 저위험 인지 이벤트 → LLM 전략 채널
+            Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+        }
     }
     LocalEventQueue.Empty();
 }

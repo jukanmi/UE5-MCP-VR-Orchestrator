@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload, LocationDecisionPayload
+from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload, LocationDecisionPayload, EmergencyReportPayload
 from .schemas.vr_context import GesPrompt, GestureData
 from .schemas.actions import ActionBatch, ModeActionRequest
 from .agents.state import AgentState
@@ -119,16 +119,115 @@ async def websocket_slm_endpoint(websocket: WebSocket):
 
 async def _process_slm_message(raw_data: str) -> str:
     try:
-        # TODO: Step 1: 원시 데이터 수신
-        # TODO: Step 2: Ollama SLM 비동기 호출
-        # TODO: Step 3: UE5로 보낼 응답 양식 확정 후 구현
-        return '{"status": "TODO: SLM Response Format"}'
+        raw_json = json.loads(raw_data)
+        envelope = MessageEnvelope(**raw_json)
 
+        if not validate_auth_token(envelope.auth_token):
+            return json.dumps({"error": "Unauthorized", "msg_id": envelope.msg_id})
+
+        if is_stale_packet(envelope.timestamp, threshold_seconds=1.0):
+            return json.dumps({"status": "dropped", "reason": "stale_packet", "msg_id": envelope.msg_id})
+
+        if envelope.type != EEnvelopeType.EMERGENCY_REPORT:
+            return json.dumps({"error": f"SLM only handles emergency_report, got: {envelope.type}"})
+
+        payload = envelope.parse_emergency_report_payload()
+        return await _handle_slm_reflex(payload)
+
+    except ValidationError as ve:
+        logger.error(f"[SLM] Envelope 검증 실패: {ve}")
+        return json.dumps({"error": "Schema validation failed"})
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON format"})
     except Exception as e:
-        logger.error(f"[Main] SLM 처리 중 오류 발생: {e}")
-        import traceback
+        logger.error(f"[SLM] 처리 오류: {e}")
         traceback.print_exc()
         return json.dumps({"error": str(e)})
+
+_REFLEX_FACIAL: dict = {
+    "Attack": "Angry", "Block": "Fear", "Dodge": "Surprised",
+    "Flee": "Fear", "SignalAllies": "Surprised", "Scan": "Surprised",
+}
+
+_REFLEX_PROMPT = """\
+NPC '{agent_id}' detects a threat:
+- Target: {target_id}, Sense: {sense}, Distance: {dist:.1f}m, Danger: {danger:.2f}
+{extra_lines}
+Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
+Reply with ONLY the action name, e.g.: Attack"""
+
+
+async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
+    """
+    SLM 반사 행동 결정 (목표 500ms).
+    LangGraph 없이 단일 경량 SLM 호출로 즉각 전투/회피 액션 생성.
+    """
+    from .utils.llm_factory import get_llm
+    from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
+
+    agent_id = payload.agent_id
+    perceptions = payload.perceptions
+
+    if not perceptions:
+        batch = ActionBatch(AgentID=agent_id, Mode="Combat", Actions=[
+            GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})
+        ])
+        return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
+
+    top = max(perceptions, key=lambda p: p.danger_score)
+
+    extra_lines = ""
+    if len(perceptions) > 1:
+        others = [f"  - {p.target_id} ({p.sense_type}, dist {p.distance:.1f})" for p in perceptions[1:3]]
+        extra_lines = "Other threats:\n" + "\n".join(others)
+
+    prompt = _REFLEX_PROMPT.format(
+        agent_id=agent_id,
+        target_id=top.target_id,
+        sense=top.sense_type,
+        dist=top.distance,
+        danger=top.danger_score,
+        extra_lines=extra_lines,
+    )
+
+    action_type = "Scan"
+    try:
+        llm = get_llm(model_name="gemma4_slm", temperature=0.0, num_predict=10)
+        raw = await asyncio.to_thread(llm.invoke, prompt)
+        text = (raw.content if hasattr(raw, "content") else str(raw)).strip().split()[0]
+
+        valid = {"Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"}
+        if text.capitalize() in valid:
+            action_type = text.capitalize()
+        else:
+            # 키워드 검색 폴백
+            text_l = text.lower()
+            for a in valid:
+                if a.lower() in text_l:
+                    action_type = a
+                    break
+
+    except Exception as e:
+        logger.error(f"[SLM] 추론 실패, 위험도 기반 폴백 사용: {e}")
+        action_type = "Attack" if top.danger_score >= 0.85 else "Flee"
+
+    params: dict = {}
+    if action_type == "Attack":
+        params["target_id"] = top.target_id
+    elif action_type in {"Move", "Flee"}:
+        params["style"] = "Run"
+
+    facial = _REFLEX_FACIAL.get(action_type, "Neutral")
+    batch = ActionBatch(
+        AgentID=agent_id,
+        Mode="Combat",
+        Actions=[GameAction(ActionType=action_type, FacialState=facial, Parameters=params)]
+    )
+    result = ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch})
+
+    logger.info(f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})")
+    return result.model_dump_json()
+
 
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
     global _cached_world_state, _failed_action_history
@@ -152,7 +251,6 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
             timestamp=envelope.timestamp,
             last_event="EmergencyEventDetected",
             stats=None,
-            looking_at_entity_id=None,
             player_location=None,
         )
 
@@ -216,7 +314,6 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         timestamp=envelope.timestamp,
         last_event=prompt_payload.last_event,
         stats=prompt_payload.stats,
-        looking_at_entity_id=prompt_payload.looking_at_entity_id,
         player_location=prompt_payload.player_location,
     )
 
