@@ -205,10 +205,17 @@ def dialogue_node(state: AgentState):
         sentiment = memory.get("sentiment", "Neutral")
 
     # Extract user input for RAG/memory
-    user_input = natural_context
+    # [최적화] 메타데이터가 섞인 natural_context 대신 순수 대사(voice_transcript)만 추출하여 검색 품질 향상
+    vr_context = state.get("vr_context")
+    clean_query = ""
+    if vr_context:
+        if hasattr(vr_context, 'voice_transcript'):
+            clean_query = vr_context.voice_transcript
+        elif isinstance(vr_context, dict):
+            clean_query = vr_context.get("voice_transcript", "")
 
     # Retrieve context via RAG and memory
-    rag_context = retrieve_context(agent_id, user_input, k=3)
+    rag_context = retrieve_context(agent_id, clean_query, k=3) if clean_query else ""
     chat_history = get_conversation_context(agent_id, k=5)
 
     # Build system prompt with persona info
@@ -229,7 +236,6 @@ def dialogue_node(state: AgentState):
     # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
     importance = persona.get('importance', 'normal')
     
-    # 최적화 3번: 무거운 70B(llama) 대신 26B(gemma4) 또는 8B(qwen) 사용
     model_name = "gemma4" if importance in ("high", "core") else "qwen"
     print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
     
@@ -268,7 +274,10 @@ def dialogue_node(state: AgentState):
     clean_for_memory = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
     speech_parts = re.findall(r'"([^"]+)"', clean_for_memory)
     speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
-    add_conversation(agent_id, user_input, speech_for_memory)
+    
+    # [버그 수정] 삭제된 user_input 대신, 깔끔한 대사(clean_query)를 우선 기록하고 없으면 natural_context 기록
+    memory_input = clean_query if clean_query else natural_context
+    add_conversation(agent_id, memory_input, speech_for_memory)
 
     return {
         "raw_response": raw_response,  # 태그 포함 원본 전달

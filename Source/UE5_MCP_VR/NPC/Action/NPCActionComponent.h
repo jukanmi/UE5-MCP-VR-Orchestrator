@@ -265,6 +265,17 @@ public:
      *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
     void StartTacticalQuery(const TArray<FVector>& EnemyLocations);
 
+    /** Perception 이벤트에서 호출 — 쿨다운 & 상태 체크 후 전술 쿼리 시작.
+     *  결과 Move 액션은 ActionQueue에 자동 enqueue되어 BT가 자연스럽게 처리. */
+    void TryStartTacticalQueryForCombat(const TArray<FVector>& EnemyLocations);
+
+    /** 전술 쿼리 재발동 최소 간격 (초). 연속 SIGHT/HEARING에 매번 쿼리하지 않도록 방지. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|EQS", meta = (ClampMin = "0.5", ClampMax = "30.0"))
+    float TacticalQueryCooldown = 2.0f;
+
+    /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
+    float LastTacticalQueryTime = -1000.0f;
+
     /** NPCManager가 LLM 응답 수신 시 호출.
      *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */
     void NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason = TEXT(""));

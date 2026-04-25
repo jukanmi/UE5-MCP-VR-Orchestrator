@@ -90,10 +90,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void RequestEventCognition(const FPerceptionData& Perception);
 
-    // DangerScore 이 이상이면 SLM(즉각 반사), 미만이면 LLM(전략 판단) 채널로 전송
-    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Cognition")
-    float SLMDangerThreshold = 0.7f;
-
     // --- Affinity (호감도) ---
     
     // [의도(Why)] 파이썬 서버가 계산한 타겟과의 호감도(Affinity)를 로컬 캐싱하여, 퍼셉션(시각/청각) 이벤트 발생 시 대상에 대한 즉각적인 위험도(Multiplier) 판단에 사용합니다.

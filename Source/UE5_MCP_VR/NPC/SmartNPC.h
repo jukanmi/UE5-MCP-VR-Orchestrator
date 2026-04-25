@@ -84,6 +84,7 @@ public:
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void Tick(float DeltaSeconds) override;
 
     /**
      * [Offline Fallback] NPCManager가 WebSocket 연결 상태 변화 시 호출합니다.
@@ -136,4 +137,11 @@ public:
 
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
 	void Debug_Test_Combat_Attack();
+
+    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
+    void Debug_PrintAffinity();
+
+    /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")
+    bool bShowAffinityOnScreen = false;
 };

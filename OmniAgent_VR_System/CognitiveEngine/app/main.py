@@ -1,5 +1,9 @@
+import os
+os.environ["TORCH_DYNAMO_DISABLE"] = "1"
+
 import json
 import logging
+import random
 import traceback
 import asyncio
 
@@ -102,47 +106,9 @@ async def _process_llm_message(raw_data: str) -> str:
         logger.error(f"[Main] 예기치 않은 오류: \n{traceback.format_exc()}")
         return json.dumps({"error": "Internal server error", "detail": str(e)})
 
-@app.websocket("/ws/slm")
-async def websocket_slm_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    logger.info("[Main] UE5 SLM 클라이언트 연결됨")
-
-    try:
-        while True:
-            raw_data = await websocket.receive_text()
-            response = await _process_slm_message(raw_data)
-            await websocket.send_text(response)
-
-    except WebSocketDisconnect:
-        logger.info("[Main] UE5 SLM 클라이언트 연결 종료")
-
-
-async def _process_slm_message(raw_data: str) -> str:
-    try:
-        raw_json = json.loads(raw_data)
-        envelope = MessageEnvelope(**raw_json)
-
-        if not validate_auth_token(envelope.auth_token):
-            return json.dumps({"error": "Unauthorized", "msg_id": envelope.msg_id})
-
-        if is_stale_packet(envelope.timestamp, threshold_seconds=1.0):
-            return json.dumps({"status": "dropped", "reason": "stale_packet", "msg_id": envelope.msg_id})
-
-        if envelope.type != EEnvelopeType.EMERGENCY_REPORT:
-            return json.dumps({"error": f"SLM only handles emergency_report, got: {envelope.type}"})
-
-        payload = envelope.parse_emergency_report_payload()
-        return await _handle_slm_reflex(payload)
-
-    except ValidationError as ve:
-        logger.error(f"[SLM] Envelope 검증 실패: {ve}")
-        return json.dumps({"error": "Schema validation failed"})
-    except json.JSONDecodeError:
-        return json.dumps({"error": "Invalid JSON format"})
-    except Exception as e:
-        logger.error(f"[SLM] 처리 오류: {e}")
-        traceback.print_exc()
-        return json.dumps({"error": str(e)})
+# NOTE: 이전에 존재했던 @app.websocket("/ws/slm") 엔드포인트는 제거됨.
+# 모든 emergency_report는 /ws/llm으로 들어오고, _handle_emergency_report 내부에서
+# _handle_slm_reflex로 자동 라우팅됨 → 단일 채널로 통합.
 
 _REFLEX_FACIAL: dict = {
     "Attack": "Angry", "Block": "Fear", "Dodge": "Surprised",
@@ -151,8 +117,15 @@ _REFLEX_FACIAL: dict = {
 
 _REFLEX_PROMPT = """\
 NPC '{agent_id}' detects a threat:
-- Target: {target_id}, Sense: {sense}, Distance: {dist:.1f}m, Danger: {danger:.2f}
+- Target: {target_id} (Affinity: {affinity_score} [{affinity_tag}])
+- Sense: {sense}, Distance: {dist:.1f}m, Danger: {danger:.2f}
 {extra_lines}
+
+Action selection guidance:
+- Hostile target (affinity <= -30): Attack if close, Flee if low HP, Block/Dodge under attack
+- Neutral target (-29 ~ 29): Scan to assess, SignalAllies for backup
+- Friendly target: Scan only
+
 Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
 Reply with ONLY the action name, e.g.: Attack"""
 
@@ -164,6 +137,7 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     """
     from .utils.llm_factory import get_llm
     from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
+    from .utils import db_manager
 
     agent_id = payload.agent_id
     perceptions = payload.perceptions
@@ -174,7 +148,26 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         ])
         return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
 
+    # 플레이어 적대 행동에 따른 호감도 감소.
+    # danger_score >= 0.5 인 perception(공격/심한 위협)을 일으킨 대상에게 -5씩 감점.
+    for p in perceptions:
+        if p.danger_score >= 0.5 and p.target_id:
+            # 캐시 prime — 미존재 시 DB에서 로드하거나 기본값(0)으로 생성
+            await db_manager.get_affinity(agent_id, p.target_id)
+            db_manager.update_affinity_sync(
+                source_id=agent_id,
+                target_id=p.target_id,
+                score_delta=-5,
+                interaction_summary=f"Hostile {p.sense_type} (danger={p.danger_score:.2f})"
+            )
+            logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
+
     top = max(perceptions, key=lambda p: p.danger_score)
+
+    # 가장 위협적인 대상의 현재 호감도 조회 (SLM 프롬프트와 폴백 로직에 사용)
+    top_relation = await db_manager.get_affinity(agent_id, top.target_id) if top.target_id else None
+    top_score = top_relation.affinity_score if top_relation else 0
+    top_tag = top_relation.reputation_tag if top_relation else "Neutral"
 
     extra_lines = ""
     if len(perceptions) > 1:
@@ -184,32 +177,37 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     prompt = _REFLEX_PROMPT.format(
         agent_id=agent_id,
         target_id=top.target_id,
+        affinity_score=top_score,
+        affinity_tag=top_tag,
         sense=top.sense_type,
         dist=top.distance,
         danger=top.danger_score,
         extra_lines=extra_lines,
     )
 
+    # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
     action_type = "Scan"
     try:
-        llm = get_llm(model_name="gemma4_slm", temperature=0.0, num_predict=10)
+        llm = get_llm(model_name="gemma4_slm", temperature=0.3, num_predict=10)
         raw = await asyncio.to_thread(llm.invoke, prompt)
-        text = (raw.content if hasattr(raw, "content") else str(raw)).strip().split()[0]
+        raw_text = (raw.content if hasattr(raw, "content") else str(raw)).strip()
+        tokens = raw_text.split()
+        text = tokens[0] if tokens else ""
 
         valid = {"Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"}
         if text.capitalize() in valid:
             action_type = text.capitalize()
-        else:
-            # 키워드 검색 폴백
-            text_l = text.lower()
+        elif text:
+            # 키워드 검색 폴백 (SLM이 잡담을 끼워넣은 경우)
+            text_l = raw_text.lower()
             for a in valid:
                 if a.lower() in text_l:
                     action_type = a
                     break
 
     except Exception as e:
-        logger.error(f"[SLM] 추론 실패, 위험도 기반 폴백 사용: {e}")
-        action_type = "Attack" if top.danger_score >= 0.85 else "Flee"
+        logger.error(f"[SLM] 추론 실패, 안전 폴백(Scan) 사용: {e}")
+        # action_type은 이미 "Scan"으로 초기화됨
 
     params: dict = {}
     if action_type == "Attack":
@@ -266,6 +264,8 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         player_location=prompt_payload.player_location,
     )
 
+    target_npc_from_payload = prompt_payload.target_npc_id or None
+
     initial_state: AgentState = AgentState(
         messages=[],
         vr_context=ges_prompt,
@@ -275,11 +275,11 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         current_speaker="",
         natural_context=None,
         raw_response=None,
-        target_npc=None,
+        target_npc=target_npc_from_payload,
         behavior_mode=None,
         facial_state=None,
         action_batch=None,
-        target_npcs=[],
+        target_npcs=[target_npc_from_payload] if target_npc_from_payload else [],
         msg_id=envelope.msg_id,
         timestamp=envelope.timestamp,
         has_error=False,
@@ -371,12 +371,24 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     def _fast_path_fallback(reason: str) -> str:
         if not candidates_raw:
             fallback_id = "OPTIMAL_0"
+            reason_str = "no_candidates"
         else:
-            fallback_id = max(candidates_raw, key=lambda c: c.get("score", 0)).get("id", candidates_raw[0]["id"])
-        logger.info(f"[LocationDecision] Fast-Path fallback ({reason}): {fallback_id}")
+            import random
+            sorted_candidates = sorted(candidates_raw, key=lambda c: c.get("score", 0), reverse=True)
+            top_n = sorted_candidates[:3]
+            roll = random.randint(1, 100)
+            
+            if roll > 40:  # 60% chance to act rationally
+                fallback_id = top_n[0].get("id", candidates_raw[0]["id"])
+                reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
+            else:          # 40% chance to panic
+                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", candidates_raw[0]["id"])
+                reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
+                
+        logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})")
         return json.dumps({
             "type": "location_decision_result",
-            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": f"fallback:{reason}"}
+            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": reason_str}
         })
 
     try:

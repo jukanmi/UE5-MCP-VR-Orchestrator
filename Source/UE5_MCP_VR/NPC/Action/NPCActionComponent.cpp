@@ -20,6 +20,7 @@
 #include "../SmartNPC.h"
 #include "../../Network/EnvelopeBuilder.h"
 #include "../NPCManager.h"
+#include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -642,7 +643,64 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Attack:       ExecuteAttackAction(TargetActor, EAttackType::Melee); break;
     case EAction::Block:        ExecuteBlock(TargetActor); break;
     case EAction::Dodge:        ExecuteDodgeAction(Direction.IsNearlyZero() ? FVector(100, 100, 0) : Direction); break;
-    case EAction::Flee:         ExecuteFlee(Location.IsNearlyZero() && TargetActor ? TargetActor->GetActorLocation() * -1 : Location); break;
+    case EAction::Flee:
+    {
+        auto DoFlee = [this, Location, TargetActor]() {
+            FVector FleeTarget = Location;
+            if (FleeTarget.IsNearlyZero())
+            {
+                // 위치 파라미터 없음 → EQS 전술 쿼리로 후퇴 위치 결정 시도.
+                TArray<FVector> EnemyLocs;
+                if (TargetActor)
+                {
+                    EnemyLocs.Add(TargetActor->GetActorLocation());
+                }
+                else if (ASmartNPCAIController* AICon = GetOwnerAIController())
+                {
+                    if (UBlackboardComponent* BB = AICon->GetBlackboardComponent())
+                    {
+                        const FVector LastKnown = BB->GetValueAsVector(ASmartNPCAIController::Key_TargetLocation);
+                        if (!LastKnown.IsNearlyZero()) EnemyLocs.Add(LastKnown);
+                    }
+                }
+
+                if (!EnemyLocs.IsEmpty() && TacticalQueryState == ETacticalQueryState::Idle)
+                {
+                    UE_LOG(LogTemp, Log, TEXT("[NPCAction] Flee → EQS 전술 쿼리로 후퇴 위치 결정 위임"));
+                    TryStartTacticalQueryForCombat(EnemyLocs);
+                    BaseEmotion(EFacialState::Fear);
+                    return;
+                }
+
+                AActor* Owner = GetOwner();
+                const FVector EnemyPos = !EnemyLocs.IsEmpty() ? EnemyLocs[0]
+                                       : (Owner ? Owner->GetActorLocation() + Owner->GetActorForwardVector() * 100.f : FVector::ZeroVector);
+                if (Owner && !EnemyPos.IsNearlyZero())
+                {
+                    const FVector AwayDir = (Owner->GetActorLocation() - EnemyPos).GetSafeNormal2D();
+                    FleeTarget = Owner->GetActorLocation() + AwayDir * 1500.f;
+                }
+            }
+            ExecuteFlee(FleeTarget);
+        };
+
+        // [인간화 2단계: 반사신경 실패 시 얼어붙기]
+        FDiceResult ReflexResult;
+        float Agility = StateComponent ? StateComponent->GetAttributes().BaseStats.Agility : 50.f;
+        if (!UDiceSystem::CheckReflex(Agility, 60, ReflexResult)) // 난이도 60
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Panic! 반사신경(%.1f) 부족으로 %.1f초간 얼어붙음!"), Agility, 1.5f);
+            BaseEmotion(EFacialState::Fear);
+            // 1.5초 후 DoFlee 실행
+            FTimerHandle TimerHandle;
+            GetWorld()->GetTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda(DoFlee), 1.5f, false);
+        }
+        else
+        {
+            DoFlee();
+        }
+        break;
+    }
     case EAction::SignalAllies: ExecuteSignalAllies(TargetID); break;
 
     // Social
@@ -751,20 +809,33 @@ void UNPCActionComponent::UpdateEQSParams()
     float SearchRadius = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
     BB->SetValueAsFloat(FName("EQS_SearchRadius"), SearchRadius);
 
-    // [2] Fear -> 엄폐 선호도, [3] Feared 상태이상 시 강제 최대화
-    float CoverWeight = Attr.Behavior.Fear * 0.02f;
-    if (Attr.HasStatusEffect(EStatusEffect::Feared)) CoverWeight = 5.0f;
+    // [2] Fear -> 엄폐 및 도망 선호도
+    // 인간화 4단계: 성격(Persona)에 따른 가중치 동적 변화
+    float CoverWeight = Attr.Behavior.Fear * 0.05f;
+    float DistanceWeight = Attr.Behavior.Fear * 0.1f; // 겁쟁이일수록 멀리 도망감
+    
+    // [3] Feared 상태이상 시 강제 최대화
+    if (Attr.HasStatusEffect(EStatusEffect::Feared))
+    {
+        CoverWeight = 5.0f;
+        DistanceWeight = 10.0f;
+    }
     BB->SetValueAsFloat(FName("EQS_CoverWeight"), CoverWeight);
+    BB->SetValueAsFloat(FName("EQS_DistanceWeight"), DistanceWeight);
 
-    // [4] Intelligence -> 노이즈 감소 (100에 가까울수록 0, 1에 가까울수록 Max 0.5)
+    // [4] Aggression -> 용감한 호위병 특성 (적에게 다가가거나 반격 위치 선호)
+    float AggressionWeight = Attr.Behavior.Aggression * 0.1f;
+    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), AggressionWeight);
+
+    // [5] Intelligence -> 노이즈 감소 (100에 가까울수록 0, 1에 가까울수록 Max 0.5)
     float Intel = FMath::Clamp(static_cast<float>(Attr.BaseStats.Intelligence), 1.f, 100.f);
     BB->SetValueAsFloat(FName("EQS_NoiseWeight"), (100.f - Intel) * 0.005f);
 
-    // [5] Combat.Range -> EQS 안전 거리 기준 (80%가 최적)
+    // [6] Combat.Range -> EQS 안전 거리 기준 (80%가 최적)
     BB->SetValueAsFloat(FName("EQS_SafeDistance"), Attr.Combat.Range * 0.8f);
 
-    UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, Noise:%.2f, SafeDist:%.0f"),
-        SearchRadius, CoverWeight, (100.f - Intel) * 0.005f, Attr.Combat.Range * 0.8f);
+    UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, DistWt:%.2f, AggWt:%.2f"),
+        SearchRadius, CoverWeight, DistanceWeight, AggressionWeight);
 }
 
 // [의도(Why)] 전술 상태(TacticalState)를 결합하여 EQS 에셋을 교체함으로써, 단순 목적지 접근뿐만 아니라 엄폐, 은신, 포위 기동 등의 입체적인 이동을 1개의 함수로 통합 처리합니다.
@@ -934,11 +1005,63 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
 
     // AllMatching: 복수 후보 전부 반환
     FEnvQueryRequest QueryRequest(QueryAsset, GetOwner());
+
+    // [Named Parameter 주입] 블랙보드 대신 C++에서 EQS 에셋으로 직접 값을 쏴줍니다.
+    if (StateComponent)
+    {
+        const FNPCAttributes& Attr = StateComponent->GetAttributes();
+        
+        float DistanceWeight = Attr.Behavior.Fear * 0.1f;
+        if (Attr.HasStatusEffect(EStatusEffect::Feared)) DistanceWeight = 10.0f;
+        float AggressionWeight = Attr.Behavior.Aggression * 0.1f;
+        float CoverWeight = Attr.Behavior.Fear * 0.05f;
+        if (Attr.HasStatusEffect(EStatusEffect::Feared)) CoverWeight = 5.0f;
+
+        QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"), DistanceWeight);
+        QueryRequest.SetFloatParam(TEXT("AggressionWeightParam"), AggressionWeight);
+        QueryRequest.SetFloatParam(TEXT("CoverWeightParam"), CoverWeight);
+    }
+
     QueryRequest.Execute(EEnvQueryRunMode::AllMatching,
         this, &UNPCActionComponent::OnTacticalCandidatesDone);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술 EQS 쿼리 시작 (적 %d명)"),
         *GetOwnerAgentID(), EnemyLocations.Num());
+
+    if (UWorld* World = GetWorld())
+    {
+        LastTacticalQueryTime = World->GetTimeSeconds();
+    }
+}
+
+void UNPCActionComponent::TryStartTacticalQueryForCombat(const TArray<FVector>& EnemyLocations)
+{
+    if (EnemyLocations.IsEmpty()) return;
+
+    // 이미 진행 중이면 스킵
+    if (TacticalQueryState != ETacticalQueryState::Idle)
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 전술쿼리 스킵: 이미 진행 중 (state=%d)"),
+            *GetOwnerAgentID(), static_cast<int32>(TacticalQueryState));
+        return;
+    }
+
+    // 쿨다운 체크
+    if (UWorld* World = GetWorld())
+    {
+        const float Now = World->GetTimeSeconds();
+        const float Remaining = TacticalQueryCooldown - (Now - LastTacticalQueryTime);
+        if (Remaining > 0.f)
+        {
+            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술쿼리 쿨다운: %.1fs 남음"),
+                *GetOwnerAgentID(), Remaining);
+            return;
+        }
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Perception 트리거 전술 쿼리 (쿨다운 통과)"),
+        *GetOwnerAgentID());
+    StartTacticalQuery(EnemyLocations);
 }
 
 void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> Result)
@@ -1052,6 +1175,9 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
 
     const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadStr);
 
+    // 후보 시각화 — Manager/서버 연결 여부와 무관하게 항상 실행
+    DrawEQSCandidates(Pruned, EQSDebugDuration);
+
     // ── LLMClient로 전송 ─────────────────────────────────────────────────────
     if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
     {
@@ -1061,9 +1187,6 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
             TacticalQueryState = ETacticalQueryState::WaitingLLM;
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - location_decision 전송 (후보 %d개)"),
                 *AgentID, Pruned.Num());
-                
-            // LLM 전송 성공 후 시각화 & 구조화 로그 출력
-            DrawEQSCandidates(Pruned, EQSDebugDuration);
 
             UE_LOG(LogTemp, Log, TEXT("=== [EQS Candidates] %s ==="), *AgentID);
             for (const FLocationCandidate& C : Pruned)

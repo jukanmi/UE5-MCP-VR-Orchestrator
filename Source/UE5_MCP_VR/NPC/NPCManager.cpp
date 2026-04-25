@@ -105,24 +105,49 @@ void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
         LLMClient->InitializeLLM();
     }
 
-    SLMClient = NewObject<USLMNetworkClient>(this);
-    if (SLMClient)
+    // 주기적 state_update 시작 — Python으로부터 affinity 변화를 받아 AffinityCache 갱신
+    if (UWorld* World = GetWorld())
     {
-        SLMClient->OnMessageReceived.AddDynamic(this, &UNPCManager::OnSLMMessageReceived);
-        SLMClient->InitializeSLM();
+        World->GetTimerManager().SetTimer(
+            StateUpdateTimerHandle,
+            FTimerDelegate::CreateUObject(this, &UNPCManager::TickStateUpdate),
+            StateUpdateInterval, true, StateUpdateInterval);
     }
 }
 
 void UNPCManager::Deinitialize()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StateUpdateTimerHandle);
+    }
+
     if (LLMClient) LLMClient->Disconnect();
-    if (SLMClient) SLMClient->Disconnect();
 
     NPCMap = nullptr;
     LLMClient = nullptr;
-    SLMClient = nullptr;
 
     Super::Deinitialize();
+}
+
+void UNPCManager::TickStateUpdate()
+{
+    if (!NPCMap || !LLMClient || !LLMClient->IsConnected()) return;
+
+    // 모든 등록된 NPC에 대해 state_update 전송
+    // 응답에 relations가 포함되면 OnLLMMessageReceived에서 AffinityCache로 갱신됨
+    for (const TPair<FString, ASmartNPC*>& Pair : NPCMap->GetActiveNPCs())
+    {
+        ASmartNPC* NPC = Pair.Value;
+        if (!IsValid(NPC)) continue;
+
+        FGameStateData StateData;
+        StateData.OwnerAgentID = Pair.Key;
+        StateData.OwnerLocation = NPC->GetActorLocation();
+        StateData.CurrentMode = ENPCBehaviorMode::Common;
+
+        LLMClient->SendStateUpdate(StateData);
+    }
 }
 
 void UNPCManager::RegisterNPC(const FString& AgentID, ASmartNPC* NPC)
@@ -183,28 +208,6 @@ void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
     }
 }
 
-void UNPCManager::SendEnvelopePromptToSLM(const FString& JsonData)
-{
-    if (SLMClient)
-    {
-        SLMClient->SendPrompt(JsonData);
-    }
-}
-
-void UNPCManager::OnSLMMessageReceived(const FString& JsonMessage)
-{
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] SLM 응답 수신 -> %s"), *JsonMessage);
-
-    if (NPCMap)
-    {
-        NPCMap->OnWebSocketMessageReceived(JsonMessage);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Cannot route SLM response; NPCMap is not ready."));
-    }
-}
-
 void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 {
     if (!NPCMap)
@@ -257,26 +260,6 @@ void UNPCManager::SendEventReport(const FString& AgentID, const FString& Combine
     {
         LLMClient->SendPrompt(Envelope);
         UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Event Report Sent for Agent: %s"), *AgentID);
-    }
-}
-
-void UNPCManager::SendReflexReport(const FString& AgentID, const FString& CombinedPayload)
-{
-    FString Envelope = FEnvelopeBuilder::BuildEmergencyReport(CombinedPayload);
-
-    if (SLMClient && SLMClient->IsConnected())
-    {
-        SLMClient->SendPrompt(Envelope);
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Reflex Report → SLM. Agent: %s"), *AgentID);
-    }
-    else
-    {
-        // SLM 미연결 시 LLM 폴백
-        if (LLMClient && LLMClient->IsConnected())
-        {
-            LLMClient->SendPrompt(Envelope);
-            UE_LOG(LogTemp, Warning, TEXT("[NPCManager] SLM 미연결 → LLM 폴백. Agent: %s"), *AgentID);
-        }
     }
 }
 
