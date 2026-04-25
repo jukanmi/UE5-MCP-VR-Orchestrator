@@ -68,6 +68,12 @@ public:
      */
     static FString BuildLocationDecisionRequest(const FString& PayloadJson);
 
+    /**
+     * state_update Envelope 생성. 주기적 NPC 상태 동기화 + Python의 cached relations 응답 트리거.
+     * @param PayloadJson - StateUpdatePayload를 직렬화한 JSON 문자열
+     */
+    static FString BuildStateUpdate(const FString& PayloadJson);
+
 private:
     // ─────────────────────────────────────────────────────────────────────
     // 내부 헬퍼

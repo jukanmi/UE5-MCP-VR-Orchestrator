@@ -84,6 +84,7 @@ public:
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void Tick(float DeltaSeconds) override;
 
     /**
      * [Offline Fallback] NPCManager가 WebSocket 연결 상태 변화 시 호출합니다.
@@ -91,11 +92,6 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SetBlackboardBool(const FString& KeyName, bool bValue);
-
-    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지)
-     *  NOTE: PolicyCacheComponent 삭제 후 현재 미호출.
-     *        향후 Emergency Cognition / Offline Fallback 로직에서 재활용 예정. */
-    virtual void ClearPhysicalState();
 
     // === Damage Hook (UE5 Actor Override) ===
 
@@ -136,4 +132,11 @@ public:
 
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
 	void Debug_Test_Combat_Attack();
+
+    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
+    void Debug_PrintAffinity();
+
+    /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")
+    bool bShowAffinityOnScreen = false;
 };

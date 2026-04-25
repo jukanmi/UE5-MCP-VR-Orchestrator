@@ -14,6 +14,8 @@
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -93,15 +95,6 @@ void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
         *AgentID);
 }
 
-
-void ASmartNPC::ClearPhysicalState()
-{
-    StopAnimMontage();
-    if (AController* C = GetController())
-    {
-        C->StopMovement();
-    }
-}
 
 void ASmartNPC::OnActionCompleted()
 {
@@ -228,4 +221,85 @@ bool ASmartNPC::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase
     const FString OtherID = ICharacterBase::Execute_GetEntityID(Other.GetObject());
     // AffinityHostileThreshold 이하면 적대 관계
     return StateComponent->GetAffinityMultiplier(OtherID) >= 1.0f;
+}
+
+void ASmartNPC::Debug_PrintAffinity()
+{
+    if (!StateComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Affinity] %s: StateComponent 없음"), *AgentID);
+        return;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("=== [Affinity] %s (Friendly>=%d, Hostile<=%d) ==="),
+        *AgentID, StateComponent->AffinityFriendlyThreshold, StateComponent->AffinityHostileThreshold);
+
+    if (StateComponent->AffinityCache.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  (캐시 비어있음 — 아직 state_update를 받지 못함)"));
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
+                FString::Printf(TEXT("[%s] Affinity: 캐시 없음"), *AgentID));
+        }
+        return;
+    }
+
+    for (const TPair<FString, int32>& Pair : StateComponent->AffinityCache)
+    {
+        const float Mult = StateComponent->GetAffinityMultiplier(Pair.Key);
+        FString Relation = TEXT("Neutral");
+        if (Pair.Value >= StateComponent->AffinityFriendlyThreshold) Relation = TEXT("Friendly");
+        else if (Pair.Value <= StateComponent->AffinityHostileThreshold) Relation = TEXT("Hostile");
+
+        UE_LOG(LogTemp, Warning, TEXT("  %s: score=%d (%s, multiplier=%.2f)"),
+            *Pair.Key, Pair.Value, *Relation, Mult);
+
+        if (GEngine)
+        {
+            FColor LineColor = FColor::White;
+            if (Relation == TEXT("Friendly")) LineColor = FColor::Green;
+            else if (Relation == TEXT("Hostile")) LineColor = FColor::Red;
+
+            GEngine->AddOnScreenDebugMessage(-1, 8.f, LineColor,
+                FString::Printf(TEXT("[%s→%s] %d (%s, mult=%.2f)"),
+                    *AgentID, *Pair.Key, Pair.Value, *Relation, Mult));
+        }
+    }
+}
+
+void ASmartNPC::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (!bShowAffinityOnScreen || !StateComponent) return;
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    // 머리 위 텍스트 오프셋
+    const FVector TextOffset(0.f, 0.f, 110.f);
+    const FVector BaseLoc = GetActorLocation() + TextOffset;
+
+    if (StateComponent->AffinityCache.Num() == 0)
+    {
+        DrawDebugString(World, BaseLoc,
+            FString::Printf(TEXT("[%s] Affinity: (none)"), *AgentID),
+            nullptr, FColor::Yellow, 0.f, true, 0.9f);
+        return;
+    }
+
+    int32 LineIdx = 0;
+    for (const TPair<FString, int32>& Pair : StateComponent->AffinityCache)
+    {
+        FColor LineColor = FColor::White;
+        if (Pair.Value >= StateComponent->AffinityFriendlyThreshold) LineColor = FColor::Green;
+        else if (Pair.Value <= StateComponent->AffinityHostileThreshold) LineColor = FColor::Red;
+
+        const FVector LineLoc = BaseLoc + FVector(0.f, 0.f, -15.f * LineIdx);
+        DrawDebugString(World, LineLoc,
+            FString::Printf(TEXT("%s: %d"), *Pair.Key, Pair.Value),
+            nullptr, LineColor, 0.f, true, 0.9f);
+        ++LineIdx;
+    }
 }

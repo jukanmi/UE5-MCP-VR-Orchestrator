@@ -39,9 +39,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
     bool bIsLie = false;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
-    bool bIsSleeping = false;
-
     // 언제 마지막으로 피격당했는지 기록 (TimeSeconds)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     float LastHitTime = 0.0f;
@@ -89,10 +86,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void RequestEventCognition(const FPerceptionData& Perception);
-
-    // DangerScore 이 이상이면 SLM(즉각 반사), 미만이면 LLM(전략 판단) 채널로 전송
-    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Cognition")
-    float SLMDangerThreshold = 0.7f;
 
     // --- Affinity (호감도) ---
     

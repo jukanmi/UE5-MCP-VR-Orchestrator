@@ -86,6 +86,7 @@ class PromptPayload(BaseModel):
     """
     player_id: str
     voice_transcript: str
+    target_npc_id: Optional[str] = None
     gestures: List[Dict[str, Any]] = Field(default_factory=list)
     player_location: Optional[Dict[str, float]] = None
     last_event: Optional[str] = None

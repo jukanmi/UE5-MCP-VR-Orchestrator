@@ -160,39 +160,20 @@ void UNPCStateComponent::FlushEventReport()
         return A.DangerScore > B.DangerScore;
     });
 
-    // 3. 고위험/저위험 데이터 교차 추출 (최대 4개)
+    // 3. 위험도 상위 4개만 추출 — LLM 컨텍스트는 가장 위험한 이벤트가 우선
     TArray<FPerceptionData> RefinedEvents;
-    int32 Count = LocalEventQueue.Num();
-
-    if (Count <= 4) {
-        RefinedEvents = LocalEventQueue;
-    } else {
-        RefinedEvents.Add(LocalEventQueue[0]);          // Highest
-        RefinedEvents.Add(LocalEventQueue[Count - 1]);  // Lowest
-        RefinedEvents.Add(LocalEventQueue[1]);          // 2nd Highest
-        RefinedEvents.Add(LocalEventQueue[Count - 2]);  // 2nd Lowest
-    }
-
-    // 4. 최대 위험도 계산 → SLM(반사)/LLM(전략) 분기 결정
-    float MaxDanger = 0.0f;
-    for (const FPerceptionData& P : RefinedEvents)
+    const int32 TopN = FMath::Min(4, LocalEventQueue.Num());
+    for (int32 i = 0; i < TopN; ++i)
     {
-        MaxDanger = FMath::Max(MaxDanger, P.DangerScore);
+        RefinedEvents.Add(LocalEventQueue[i]);
     }
 
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
-        if (MaxDanger >= SLMDangerThreshold)
-        {
-            // 즉각적인 위협 → SLM 반사 채널 (목표 500ms)
-            Manager->SendReflexReport(OwnerNPC->AgentID, Payload);
-        }
-        else
-        {
-            // 저위험 인지 이벤트 → LLM 전략 채널
-            Manager->SendEventReport(OwnerNPC->AgentID, Payload);
-        }
+        // 단일 LLM WebSocket으로 emergency_report 전송.
+        // Python 서버가 envelope 타입을 보고 내부에서 SLM Reflex/LLM 전략으로 자동 라우팅한다.
+        Manager->SendEventReport(OwnerNPC->AgentID, Payload);
     }
     LocalEventQueue.Empty();
 }

@@ -154,3 +154,8 @@ FString FEnvelopeBuilder::BuildLocationDecisionRequest(const FString& PayloadJso
 {
     return BuildEnvelope(EEnvelopeType::LocationDecision, PayloadJson);
 }
+
+FString FEnvelopeBuilder::BuildStateUpdate(const FString& PayloadJson)
+{
+    return BuildEnvelope(EEnvelopeType::StateUpdate, PayloadJson);
+}

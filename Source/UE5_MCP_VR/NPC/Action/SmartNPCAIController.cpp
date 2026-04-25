@@ -1,6 +1,7 @@
 #include "SmartNPCAIController.h"
 #include "NPCActionComponent.h"
 #include "../NPCStateComponent.h"
+#include "../Struct/NPCActionKeys.h"
 #include "../SmartNPC.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -103,6 +104,16 @@ void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
     {
         BB->SetValueAsBool(Key_HasAction, true);
         BB->SetValueAsEnum(Key_SubAction, (uint8)Action.ActionType);
+
+        // target_loc 파라미터가 있으면 Key_TargetLocation에 반영 — BB 쓰기를 컨트롤러 측으로 일원화
+        if (const FString* LocStr = Action.Parameters.Find(NPCActionKeys::Key_TargetLoc))
+        {
+            FVector Loc;
+            if (!LocStr->IsEmpty() && Loc.InitFromString(*LocStr))
+            {
+                BB->SetValueAsVector(Key_TargetLocation, Loc);
+            }
+        }
     }
 }
 
@@ -158,6 +169,15 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
 
                     StateComp->RequestEventCognition(Perception);
                 }
+
+                // Option B: Perception 기반 EQS 전술 쿼리 트리거 (쿨다운 내장)
+                // BT 루프와 독립적으로 실행 → Move 액션이 큐에 자동 enqueue됨
+                if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                {
+                    TArray<FVector> EnemyLocs;
+                    EnemyLocs.Add(Actor->GetActorLocation());
+                    ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                }
             }
         }
         else if (Stimulus.Type == HearingID)
@@ -208,6 +228,24 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     Perception.DangerScore = FinalDanger;
 
                     StateComp->RequestEventCognition(Perception);
+
+                    // 전투 관련 EventType(Attack/Damage/Hit) 또는 높은 원본 위험도면 EQS 전술 쿼리 트리거.
+                    // FinalDanger가 아닌 BaseDanger 사용 — 호감도 미캐싱 시 Multiplier가 0.5로 떨어져 Attack도 차단되는 문제 회피.
+                    const bool bIsCombatNoise =
+                        EventType.Contains(TEXT("Attack")) ||
+                        EventType.Contains(TEXT("Damage")) ||
+                        EventType.Contains(TEXT("Hit")) ||
+                        BaseDanger >= 0.5f;
+
+                    if (bIsCombatNoise)
+                    {
+                        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                        {
+                            TArray<FVector> EnemyLocs;
+                            EnemyLocs.Add(Stimulus.StimulusLocation);
+                            ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                        }
+                    }
                 }
             }
         }

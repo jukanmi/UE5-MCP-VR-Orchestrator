@@ -35,8 +35,7 @@ namespace
     bool TryParseEnumFromJson(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, TEnum& OutEnum)
     {
         FString EnumString;
-        if (JsonObj->TryGetStringField(FieldName, EnumString) || 
-            JsonObj->TryGetStringField(FieldName.ToLower(), EnumString))
+        if (JsonObj->TryGetStringField(FieldName, EnumString))
         {
             if (const UEnum* EnumPtr = StaticEnum<TEnum>())
             {
@@ -59,8 +58,7 @@ namespace
     void ExtractActionParameters(TSharedPtr<FJsonObject> ActionObj, TMap<FString, FString>& OutParameters)
     {
         const TSharedPtr<FJsonObject>* ParamsObj;
-        if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj) || 
-            ActionObj->TryGetObjectField(TEXT("parameters"), ParamsObj))
+        if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj))
         {
             for (const auto& ParamPair : (*ParamsObj)->Values)
             {
@@ -117,25 +115,13 @@ namespace
     }
 }
 
-bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
+bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest)
 {
-    TSharedPtr<FJsonObject> RootObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches"))) return false;
 
-    if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
-    {
-        return false;
-    }
+    TryParseBehaviorMode(Root, TEXT("Mode"), OutRequest.Mode);
 
-    // "ActionBatches" 속성으로 유효한 FModeActionRequest 포맷인지 판별
-    if (!RootObject->HasField(TEXT("ActionBatches"))) 
-    {
-        return false;
-    }
-
-    TryParseBehaviorMode(RootObject, TEXT("Mode"), OutRequest.Mode);
-
-    TSharedPtr<FJsonObject> BatchesObj = RootObject->GetObjectField(TEXT("ActionBatches"));
+    TSharedPtr<FJsonObject> BatchesObj = Root->GetObjectField(TEXT("ActionBatches"));
     if (BatchesObj.IsValid())
     {
         for (const auto& Pair : BatchesObj->Values)
@@ -147,8 +133,19 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
             }
         }
     }
-
     return true;
+}
+
+bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
+{
+    TSharedPtr<FJsonObject> RootObject;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+
+    if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
+    {
+        return false;
+    }
+    return ParseModeActionRequestFromObject(RootObject, OutRequest);
 }
 
 FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents)
@@ -183,12 +180,10 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
     return Output;
 }
 
-bool UMCPJsonUtils::ParseLocationDecisionResult(
-    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
+bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
+    const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
 {
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+    if (!Root.IsValid()) return false;
 
     FString TypeStr;
     if (!Root->TryGetStringField(TEXT("type"), TypeStr) || TypeStr != TEXT("location_decision_result"))
@@ -202,11 +197,19 @@ bool UMCPJsonUtils::ParseLocationDecisionResult(
         && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
 }
 
-bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations)
+bool UMCPJsonUtils::ParseLocationDecisionResult(
+    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
 {
     TSharedPtr<FJsonObject> Root;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
     if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+    return ParseLocationDecisionResultFromObject(Root, OutAgentId, OutChosenId, OutReason);
+}
+
+bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
+    const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations)
+{
+    if (!Root.IsValid()) return false;
 
     FString Status;
     if (!Root->TryGetStringField(TEXT("status"), Status) || Status != TEXT("cached")) return false;
@@ -229,4 +232,12 @@ bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId
     }
 
     return true;
+}
+
+bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations)
+{
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+    return ParseAffinityUpdateFromObject(Root, OutAgentId, OutRelations);
 }
