@@ -8,6 +8,7 @@
 #include "NPCManager.generated.h"
 
 class ASmartNPC;
+class FJsonObject;
 
 // NPC 관리를 담당하는 클래스
 UCLASS(BlueprintType)
@@ -28,19 +29,18 @@ public:
     const TMap<FString, ASmartNPC*>& GetActiveNPCs() const { return ActiveNPCs; }
 
     void DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch);
-    void ProcessStateUpdateQueue(int32 MaxNPCsPerTick);
 
     /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달 */
     void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason = TEXT(""));
+
+    /** 이미 파싱된 JSON에서 ModeActionRequest를 추출하여 NPC들에 분배. */
+    void DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root);
 
     void OnWebSocketMessageReceived(const FString& JsonMessage);
 
 private:
     UPROPERTY()
     TMap<FString, ASmartNPC*> ActiveNPCs;
-
-    UPROPERTY()
-    TArray<FString> StateUpdateQueue;
 };
 
 

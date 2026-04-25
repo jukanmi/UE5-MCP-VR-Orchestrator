@@ -13,6 +13,7 @@ namespace NPCActionKeys
 {
     // --- JSON Keys (JSON 파싱용 키) ---
     inline const FString Key_Text       = TEXT("text");
+    inline const FString Key_TargetID   = TEXT("target_id");   // Python Parameters 딕셔너리 canonical 키
 
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
@@ -25,9 +26,6 @@ namespace NPCActionKeys
     inline const FString Interact_LieDown   = TEXT("LieDown");
     inline const FString Interact_LieUp     = TEXT("LieUp");
     
-    // --- Common Values (일반 값) ---
-    inline const FString Agent_Broadcast    = TEXT("broadcast");
-
     // --- Noise Volume Config (소음 발생 배율 상수) ---
     inline const float Noise_Dialogue       = 1.0f;     // 일반 대화 소음
     inline const float Noise_Attack         = 1.5f;     // 공격 등 큰 소음

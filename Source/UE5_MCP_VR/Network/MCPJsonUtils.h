@@ -3,7 +3,10 @@
 #include "../NPC/Struct/NPCActionTypes.h"
 #include "../Core/GameStateData.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Templates/SharedPointer.h"
 #include "MCPJsonUtils.generated.h"
+
+class FJsonObject;
 
 /**
  * Utility class for parsing JSON from Cognitive Engine
@@ -18,6 +21,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     static bool ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest);
 
+    /** 이미 deserialize된 JSON 오브젝트로부터 ModeActionRequest 추출 (재파싱 방지) */
+    static bool ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest);
+
 
     // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
@@ -30,9 +36,15 @@ public:
     static bool ParseLocationDecisionResult(
         const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason);
 
+    static bool ParseLocationDecisionResultFromObject(
+        const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason);
+
     /** state_update 응답에서 relations 파싱.
      *  { "status": "cached", "agent_id": "...", "relations": [{"target_id":"...", "affinity_score":N, ...}] }
      *  @return true이면 OutAgentId와 OutRelations(TargetID→Score)에 값이 채워짐 */
     static bool ParseAffinityUpdate(
         const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations);
+
+    static bool ParseAffinityUpdateFromObject(
+        const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations);
 };

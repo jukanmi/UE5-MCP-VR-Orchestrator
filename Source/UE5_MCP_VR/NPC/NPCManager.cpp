@@ -4,6 +4,8 @@
 #include "../Network/MCPJsonUtils.h"
 #include "../Network/EnvelopeBuilder.h"
 #include "Action/NPCActionComponent.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
 
 
 // --- UNPCMap ---
@@ -36,48 +38,22 @@ void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& Cho
     }
 }
 
-void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
+void UNPCMap::DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root)
 {
-    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
-
-    // ── 사전 필터링: 서버의 단순 ACK / 에러 응답을 조용히 무시 ─────────────
-    // WHY: 서버는 emergency_report, state_update 등에 대해
-    //      {"status": "received", "msg_id": "..."} 형태의 ACK을 반환한다.
-    //      이 응답은 NPC에게 실행시킬 액션이 없으므로, ModeActionRequest
-    //      파서로 넘기기 전에 "ActionBatches" 필드 존재 여부로 걸러낸다.
+    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches")))
     {
-        TSharedPtr<FJsonObject> PreCheckObj;
-        TSharedRef<TJsonReader<>> PreCheckReader = TJsonReaderFactory<>::Create(JsonMessage);
-        if (!FJsonSerializer::Deserialize(PreCheckReader, PreCheckObj) || !PreCheckObj.IsValid())
-        {
-            UE_LOG(LogTemp, Error,
-                TEXT("[NPCMap] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
-                *JsonMessage);
-            return;
-        }
-
-        if (!PreCheckObj->HasField(TEXT("ActionBatches")))
-        {
-            // ActionBatches 없음 = ACK / 에러 / 메타 응답으로 간주하고 무시
-            FString StatusValue;
-            PreCheckObj->TryGetStringField(TEXT("status"), StatusValue);
-            UE_LOG(LogTemp, Verbose,
-                TEXT("[NPCMap] Non-action response received (status='%s'). Skipping dispatch."),
-                *StatusValue);
-            return;
-        }
+        FString StatusValue;
+        if (Root.IsValid()) Root->TryGetStringField(TEXT("status"), StatusValue);
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[NPCMap] Non-action response received (status='%s'). Skipping dispatch."),
+            *StatusValue);
+        return;
     }
 
-    // ── 실제 ModeActionRequest 파싱 ────────────────────────────────────────
     FModeActionRequest ParsedRequest;
-    const bool bIsParsedSuccessfully = UMCPJsonUtils::ParseModeActionRequest(JsonMessage, ParsedRequest);
-
-    if (!bIsParsedSuccessfully)
+    if (!UMCPJsonUtils::ParseModeActionRequestFromObject(Root, ParsedRequest))
     {
-        // ActionBatches 필드는 있지만 내부 포맷이 잘못된 경우
-        UE_LOG(LogTemp, Error,
-            TEXT("[NPCMap] Failed to Parse ModeActionRequest! ActionBatches field exists but format is invalid.\nRaw (first 500 chars): %.500s"),
-            *JsonMessage);
+        UE_LOG(LogTemp, Error, TEXT("[NPCMap] Failed to Parse ModeActionRequest from JSON object."));
         return;
     }
 
@@ -88,6 +64,23 @@ void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
     {
         DeliverToNPC(BatchPair.Key, BatchPair.Value);
     }
+}
+
+void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
+{
+    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
+
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonMessage);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+    {
+        UE_LOG(LogTemp, Error,
+            TEXT("[NPCMap] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
+            *JsonMessage);
+        return;
+    }
+
+    DeliverParsedActionBatches(Root);
 }
 
 // --- UNPCManager ---
@@ -216,11 +209,21 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         return;
     }
 
+    // 한 번만 deserialize → 모든 핸들러가 같은 FJsonObject를 공유.
+    TSharedPtr<FJsonObject> Root;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonMessage);
+    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+    {
+        UE_LOG(LogTemp, Error,
+            TEXT("[NPCManager] Malformed LLM JSON. Raw (first 200): %.200s"), *JsonMessage);
+        return;
+    }
+
     // state_update 응답 — relations(호감도) 데이터가 포함된 경우 AffinityCache 갱신
     {
         FString AgentID;
         TMap<FString, int32> Relations;
-        if (UMCPJsonUtils::ParseAffinityUpdate(JsonMessage, AgentID, Relations) && Relations.Num() > 0)
+        if (UMCPJsonUtils::ParseAffinityUpdateFromObject(Root, AgentID, Relations) && Relations.Num() > 0)
         {
             if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
             {
@@ -238,16 +241,16 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     }
 
     // location_decision_result 메시지는 전술 위치 파이프라인으로 별도 라우팅
-    FString AgentID;
-    FString ChosenCandidateId;
-    FString Reason;
-    if (UMCPJsonUtils::ParseLocationDecisionResult(JsonMessage, AgentID, ChosenCandidateId, Reason))
     {
-        NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason);
-        return;
+        FString AgentID, ChosenCandidateId, Reason;
+        if (UMCPJsonUtils::ParseLocationDecisionResultFromObject(Root, AgentID, ChosenCandidateId, Reason))
+        {
+            NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason);
+            return;
+        }
     }
 
-    NPCMap->OnWebSocketMessageReceived(JsonMessage);
+    NPCMap->DeliverParsedActionBatches(Root);
 }
 
 void UNPCManager::SendEventReport(const FString& AgentID, const FString& CombinedPayload)
