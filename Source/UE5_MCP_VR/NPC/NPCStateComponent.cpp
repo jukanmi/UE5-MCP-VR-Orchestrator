@@ -160,17 +160,12 @@ void UNPCStateComponent::FlushEventReport()
         return A.DangerScore > B.DangerScore;
     });
 
-    // 3. 고위험/저위험 데이터 교차 추출 (최대 4개)
+    // 3. 위험도 상위 4개만 추출 — LLM 컨텍스트는 가장 위험한 이벤트가 우선
     TArray<FPerceptionData> RefinedEvents;
-    int32 Count = LocalEventQueue.Num();
-
-    if (Count <= 4) {
-        RefinedEvents = LocalEventQueue;
-    } else {
-        RefinedEvents.Add(LocalEventQueue[0]);          // Highest
-        RefinedEvents.Add(LocalEventQueue[Count - 1]);  // Lowest
-        RefinedEvents.Add(LocalEventQueue[1]);          // 2nd Highest
-        RefinedEvents.Add(LocalEventQueue[Count - 2]);  // 2nd Lowest
+    const int32 TopN = FMath::Min(4, LocalEventQueue.Num());
+    for (int32 i = 0; i < TopN; ++i)
+    {
+        RefinedEvents.Add(LocalEventQueue[i]);
     }
 
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
