@@ -118,7 +118,6 @@ enum class EAction : uint8
     //Lifestyle
 	Sit           UMETA(DisplayName = "Sit"),
 	Sleep         UMETA(DisplayName = "Sleep"),
-	Clean         UMETA(DisplayName = "Clean"),
 	Read          UMETA(DisplayName = "Read"),
 	Pray          UMETA(DisplayName = "Pray"),
 	Dance         UMETA(DisplayName = "Dance"),

@@ -96,15 +96,6 @@ void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
 }
 
 
-void ASmartNPC::ClearPhysicalState()
-{
-    StopAnimMontage();
-    if (AController* C = GetController())
-    {
-        C->StopMovement();
-    }
-}
-
 void ASmartNPC::OnActionCompleted()
 {
     if (ActionComponent)

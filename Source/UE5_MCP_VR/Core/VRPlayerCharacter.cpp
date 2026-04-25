@@ -147,12 +147,6 @@ void AVRPlayerCharacter::Move(const FInputActionValue& Value)
         RemoveStateTag(TAG_State_Idle);
         AddStateTag(TAG_State_Action_Common_Move);
 	}
-	else
-	{
-		// 입력이 없을 경우 대기 상태 복구
-		RemoveStateTag(TAG_State_Action_Common_Move);
-		AddStateTag(TAG_State_Idle);
-	}
 }
 
 void AVRPlayerCharacter::Look(const FInputActionValue& Value)

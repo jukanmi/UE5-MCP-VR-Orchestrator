@@ -11,9 +11,7 @@
 
 void UWebSocketClient::Initialize(FString ServerURL)
 {
-    // TODO: [UE5] Python 서버 연결 시 보안을 위해 ServerURL에 "?auth_token={토큰}" 쿼리 파라미터를 추가하거나,
-    // FWebSocketsModule::Get().CreateWebSocket 호출 시 Header에 JWT를 포함시키도록 변경하세요.
-
+    // 인증은 MessageEnvelope에 포함된 auth_token으로 처리됨 — URL/헤더 JWT 주입 불필요.
     CachedServerURL = ServerURL;
 
     RetryCount = 0;

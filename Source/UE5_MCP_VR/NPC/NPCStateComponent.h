@@ -39,9 +39,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
     bool bIsLie = false;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|State")
-    bool bIsSleeping = false;
-
     // 언제 마지막으로 피격당했는지 기록 (TimeSeconds)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     float LastHitTime = 0.0f;

@@ -93,11 +93,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SetBlackboardBool(const FString& KeyName, bool bValue);
 
-    /** 물리 상태 초기화 (애니메이션 중지, 이동 정지)
-     *  NOTE: PolicyCacheComponent 삭제 후 현재 미호출.
-     *        향후 Emergency Cognition / Offline Fallback 로직에서 재활용 예정. */
-    virtual void ClearPhysicalState();
-
     // === Damage Hook (UE5 Actor Override) ===
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
