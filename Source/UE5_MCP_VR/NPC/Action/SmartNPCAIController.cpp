@@ -1,6 +1,7 @@
 #include "SmartNPCAIController.h"
 #include "NPCActionComponent.h"
 #include "../NPCStateComponent.h"
+#include "../Struct/NPCActionKeys.h"
 #include "../SmartNPC.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -103,6 +104,16 @@ void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
     {
         BB->SetValueAsBool(Key_HasAction, true);
         BB->SetValueAsEnum(Key_SubAction, (uint8)Action.ActionType);
+
+        // target_loc 파라미터가 있으면 Key_TargetLocation에 반영 — BB 쓰기를 컨트롤러 측으로 일원화
+        if (const FString* LocStr = Action.Parameters.Find(NPCActionKeys::Key_TargetLoc))
+        {
+            FVector Loc;
+            if (!LocStr->IsEmpty() && Loc.InitFromString(*LocStr))
+            {
+                BB->SetValueAsVector(Key_TargetLocation, Loc);
+            }
+        }
     }
 }
 

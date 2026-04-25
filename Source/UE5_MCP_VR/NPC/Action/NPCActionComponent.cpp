@@ -1,5 +1,4 @@
 #include "NPCActionComponent.h"
-#include "Engine/OverlapResult.h"
 #include "../NPCStateComponent.h"
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
@@ -87,19 +86,11 @@ namespace
             // Investigation
             case EAction::Investigate:
                 return FName("State.Action.Investigation.Investigate");
+            case EAction::Track:
+                return FName("State.Action.Investigation.Track");
 
             default:
                 return NAME_None;
-        }
-    }
-
-    void TryParseAndSetTargetLocation(UBlackboardComponent* BB, const FString& TargetLocStr)
-    {
-        if (TargetLocStr.IsEmpty()) return;
-        FVector Loc;
-        if (Loc.InitFromString(TargetLocStr))
-        {
-            BB->SetValueAsVector(ASmartNPCAIController::Key_TargetLocation, Loc);
         }
     }
 
@@ -138,35 +129,6 @@ namespace
         }
     }
 
-    void ScanItemsInRange(AActor* OwnerActor, float SearchRadius, TMap<FString, int32>& OutEntities)
-    {
-        if (!OwnerActor) return;
-        TArray<FOverlapResult> Overlaps;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(OwnerActor);
-        bool bHit = OwnerActor->GetWorld()->OverlapMultiByObjectType(
-            Overlaps,
-            OwnerActor->GetActorLocation(),
-            FQuat::Identity,
-            FCollisionObjectQueryParams(ECC_PhysicsBody),
-            FCollisionShape::MakeSphere(SearchRadius),
-            Params
-        );
-        if (bHit)
-        {
-            for (auto& Result : Overlaps)
-            {
-                if (AActor* HitActor = Result.GetActor())
-                {
-                    if (HitActor->GetClass()->ImplementsInterface(UItem::StaticClass()))
-                    {
-                        FString ItemID = IItem::Execute_GetItemID(HitActor);
-                        OutEntities.FindOrAdd(ItemID, 0)++;
-                    }
-                }
-            }
-        }
-    }
 }
 
 UNPCActionComponent::UNPCActionComponent()
@@ -188,6 +150,27 @@ void UNPCActionComponent::BeginPlay()
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Owner '%s' has no NPCStateComponent!"), *Owner->GetName());
         }
+
+        // AgentID 캐시 — SmartNPC 직접 의존을 피하기 위해 reflection으로 1회 조회.
+        if (ASmartNPC* NPC = Cast<ASmartNPC>(Owner))
+        {
+            CachedAgentID = NPC->AgentID;
+        }
+        else if (FProperty* Prop = Owner->GetClass()->FindPropertyByName(TEXT("AgentID")))
+        {
+            if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+            {
+                CachedAgentID = StrProp->GetPropertyValue_InContainer(Owner);
+            }
+        }
+        if (CachedAgentID.IsEmpty())
+        {
+            CachedAgentID = Owner->GetName();
+        }
+    }
+    else
+    {
+        CachedAgentID = TEXT("Unknown");
     }
 }
 
@@ -200,27 +183,6 @@ ASmartNPCAIController* UNPCActionComponent::GetOwnerAIController() const
         return Cast<ASmartNPCAIController>(OwnerPawn->GetController());
     }
     return nullptr;
-}
-
-FString UNPCActionComponent::GetOwnerAgentID() const
-{
-    // SmartNPC의 AgentID에 접근하기 위한 헬퍼
-    // 왜 직접 캐스트하는가: AgentID는 SmartNPC 고유의 식별자이므로
-    if (AActor* Owner = GetOwner())
-    {
-        // Reflection으로 AgentID 프로퍼티 접근 (SmartNPC에 직접 의존하지 않기 위해)
-        if (FProperty* Prop = Owner->GetClass()->FindPropertyByName(TEXT("AgentID")))
-        {
-            FString Result;
-            if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
-            {
-                Result = StrProp->GetPropertyValue_InContainer(Owner);
-                return Result;
-            }
-        }
-        return Owner->GetName();
-    }
-    return TEXT("Unknown");
 }
 
 float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
@@ -352,8 +314,14 @@ void UNPCActionComponent::StopAllActions()
     {
         AI->StopMovement();
     }
-    
-    // [FIX] 결합도를 낮추기 위해 직접 BlackBoard를 수정하지 않고 델리게이트 브로드캐스트
+
+    // Track 타이머 해제
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TrackTimer);
+    }
+    TrackedTarget.Reset();
+
     OnActionStoppedAll.Broadcast();
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Stopped All Actions."), *GetOwnerAgentID());
@@ -374,20 +342,8 @@ bool UNPCActionComponent::ProcessNextAction()
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
-        // [FIX] 결합도를 낮추기 위해 직접 BlackBoard를 수정하지 않고 델리게이트 브로드캐스트
+        // BB 쓰기는 SmartNPCAIController::HandleActionStarted 에서 일괄 처리 (Key_HasAction, Key_SubAction, Key_TargetLocation)
         OnActionStarted.Broadcast(CurrentAction);
-        
-        // target_loc 특수 처리는 여전히 남겨두지만 의존성이 낮아지면 이동 가능
-        if (ASmartNPCAIController* AI = GetOwnerAIController())
-        {
-            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-            {
-                if (CurrentAction.Parameters.Contains(NPCActionKeys::Key_TargetLoc))
-                {
-                    TryParseAndSetTargetLocation(BB, CurrentAction.Parameters[NPCActionKeys::Key_TargetLoc]);
-                }
-            }
-        }
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
         return true;
@@ -428,6 +384,13 @@ void UNPCActionComponent::AbortCurrentAction()
     RevertStateTagToIdle(GetOwner(), AbortedAction);
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
+
+    // Track 타이머 해제
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TrackTimer);
+    }
+    TrackedTarget.Reset();
 
     // 물리 상태 초기화 (애니메이션 중지, 이동 중지)
     if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
@@ -470,7 +433,13 @@ void UNPCActionComponent::BaseDialogue(const FString& DialogueText, const EFacia
 {
     BaseEmotion(Emotion);
     if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
-        UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Dialogue, OwnerCharacter, 0.0f, NPCActionKeys::NoiseTag_Dialogue);
+    {
+        if (UWorld* World = GetWorld())
+        {
+            UAISense_Hearing::ReportNoiseEvent(World, OwnerCharacter->GetActorLocation(),
+                NPCActionKeys::Noise_Dialogue, OwnerCharacter, 0.0f, NPCActionKeys::NoiseTag_Dialogue);
+        }
+    }
     OnNPCDialogue.Broadcast(GetOwnerAgentID(), DialogueText);
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s 대화: %s"), *GetOwnerAgentID(), *DialogueText);
 }
@@ -534,7 +503,15 @@ TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float SearchRa
 
     if (TargetEntityType == EEntityType::Item)
     {
-        ScanItemsInRange(OwnerCharacter, SearchRadius, DetectedEntities);
+        // ItemManager 등록부 기반 조회 — 충돌 채널(ECC_PhysicsBody) 가정 없이 등록된 아이템만 정확히 탐지
+        UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+        if (UItemManager* ItemMgr = GI ? GI->GetSubsystem<UItemManager>() : nullptr)
+        {
+            for (const FDroppedItemData& Item : ItemMgr->GetItemsInRange(OwnerCharacter->GetActorLocation(), SearchRadius))
+            {
+                DetectedEntities.FindOrAdd(Item.ItemTemplateID, 0)++;
+            }
+        }
     }
     else
     {
@@ -600,13 +577,12 @@ FVector UNPCActionComponent::ParseVectorParam(const FString& ParamStr) const
 
 void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetActor, const TMap<FString, FString>& Params)
 {
-    // [의도(Why)] 다양한 형태(위치, 텍스트, 다중 파라미터)의 JSON 인자를 BTTask 대신 컴포넌트 레벨에서 일괄 파싱 및 캐싱하여 각 세부 Execute 함수로 안전하게 전달합니다. 
-    FString TargetID = Params.FindRef(TEXT("TargetID"));
-    if (TargetID.IsEmpty()) TargetID = Params.FindRef(TEXT("ItemID")); // Fallback
+    // [의도(Why)] 다양한 형태(위치, 텍스트, 다중 파라미터)의 JSON 인자를 BTTask 대신 컴포넌트 레벨에서 일괄 파싱 및 캐싱하여 각 세부 Execute 함수로 안전하게 전달합니다.
+    // Parameters 딕셔너리 키는 Python 서버 snake_case 기준으로 단일화됨.
+    FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
 
-    // "Location" 키 우선, 전술 이동 큐 주입 시 사용하는 "TargetLoc" 키도 폴백으로 지원
-    FVector Location = ParseVectorParam(Params.FindRef(TEXT("Location")));
-    if (Location.IsZero()) Location = ParseVectorParam(Params.FindRef(TEXT("TargetLoc")));
+    // 위치: Python이 직접 보내는 경우는 없고, C++ 내부 주입(전술 쿼리 결과)만 존재 → Key_TargetLoc 단일 조회
+    FVector Location = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc));
     FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
     FString TextBody = Params.FindRef(NPCActionKeys::Key_Text);
 
@@ -717,6 +693,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     
     // Investigate
     case EAction::Investigate:  ExecuteInvestigate(Location); break;
+    case EAction::Track:        ExecuteTrack(TargetActor); break;
     case EAction::Scout:        ExecuteScout(StartLocation.IsNearlyZero() ? Location : StartLocation, EndLocation.IsNearlyZero() ? Location : EndLocation); break;
     
     // Lifestyle & Social (Emote)
@@ -793,86 +770,69 @@ void UNPCActionComponent::ExecuteIdle()
     BaseStopCurrentAction();
 }
 
+UNPCActionComponent::FEQSWeights UNPCActionComponent::ComputeEQSWeights() const
+{
+    FEQSWeights W;
+    if (!StateComponent) return W;
+
+    const FNPCAttributes& Attr = StateComponent->GetAttributes();
+
+    W.SearchRadius     = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
+    W.CoverWeight      = Attr.Behavior.Fear * 0.05f;
+    W.DistanceWeight   = Attr.Behavior.Fear * 0.1f;   // 겁쟁이일수록 멀리 도망감
+
+    if (Attr.HasStatusEffect(EStatusEffect::Feared))
+    {
+        W.CoverWeight    = 5.0f;
+        W.DistanceWeight = 10.0f;
+    }
+
+    W.AggressionWeight = Attr.Behavior.Aggression * 0.1f;
+
+    const float Intel  = FMath::Clamp(static_cast<float>(Attr.BaseStats.Intelligence), 1.f, 100.f);
+    W.NoiseWeight      = (100.f - Intel) * 0.005f;
+
+    W.SafeDistance     = Attr.Combat.Range * 0.8f;
+
+    return W;
+}
+
 // [Tactical EQS] NPC 스탯/상태를 블랙보드의 EQS 파라미터에 반영합니다.
 // ExecuteMove 호출 직전에 자동 실행되어, 타겟 반경/전술 가중치 등을 최신 스탯 기준으로 갱신합니다.
 void UNPCActionComponent::UpdateEQSParams()
 {
-    if (!StateComponent) return;
     ASmartNPCAIController* AICtrl = GetOwnerAIController();
-    if (!AICtrl) return;
+    if (!AICtrl || !StateComponent) return;
     UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
     if (!BB) return;
 
-    const FNPCAttributes& Attr = StateComponent->GetAttributes();
-
-    // [1] Perception -> 탐색 반경 (최대 3000 Clamp)
-    float SearchRadius = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
-    BB->SetValueAsFloat(FName("EQS_SearchRadius"), SearchRadius);
-
-    // [2] Fear -> 엄폐 및 도망 선호도
-    // 인간화 4단계: 성격(Persona)에 따른 가중치 동적 변화
-    float CoverWeight = Attr.Behavior.Fear * 0.05f;
-    float DistanceWeight = Attr.Behavior.Fear * 0.1f; // 겁쟁이일수록 멀리 도망감
-    
-    // [3] Feared 상태이상 시 강제 최대화
-    if (Attr.HasStatusEffect(EStatusEffect::Feared))
-    {
-        CoverWeight = 5.0f;
-        DistanceWeight = 10.0f;
-    }
-    BB->SetValueAsFloat(FName("EQS_CoverWeight"), CoverWeight);
-    BB->SetValueAsFloat(FName("EQS_DistanceWeight"), DistanceWeight);
-
-    // [4] Aggression -> 용감한 호위병 특성 (적에게 다가가거나 반격 위치 선호)
-    float AggressionWeight = Attr.Behavior.Aggression * 0.1f;
-    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), AggressionWeight);
-
-    // [5] Intelligence -> 노이즈 감소 (100에 가까울수록 0, 1에 가까울수록 Max 0.5)
-    float Intel = FMath::Clamp(static_cast<float>(Attr.BaseStats.Intelligence), 1.f, 100.f);
-    BB->SetValueAsFloat(FName("EQS_NoiseWeight"), (100.f - Intel) * 0.005f);
-
-    // [6] Combat.Range -> EQS 안전 거리 기준 (80%가 최적)
-    BB->SetValueAsFloat(FName("EQS_SafeDistance"), Attr.Combat.Range * 0.8f);
+    const FEQSWeights W = ComputeEQSWeights();
+    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     W.SearchRadius);
+    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      W.CoverWeight);
+    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   W.DistanceWeight);
+    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), W.AggressionWeight);
+    BB->SetValueAsFloat(FName("EQS_NoiseWeight"),      W.NoiseWeight);
+    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     W.SafeDistance);
 
     UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, DistWt:%.2f, AggWt:%.2f"),
-        SearchRadius, CoverWeight, DistanceWeight, AggressionWeight);
+        W.SearchRadius, W.CoverWeight, W.DistanceWeight, W.AggressionWeight);
 }
 
-// [의도(Why)] 전술 상태(TacticalState)를 결합하여 EQS 에셋을 교체함으로써, 단순 목적지 접근뿐만 아니라 엄폐, 은신, 포위 기동 등의 입체적인 이동을 1개의 함수로 통합 처리합니다.
+// [경로 A] LLM 지시 이동 — DefaultMoveQuery(SingleResult)로 목적지 인근 최적점 탐색.
+// 전술 재배치(Perception 트리거)는 TryStartTacticalQueryForCombat → TacticalPositionsQuery(AllMatching+LLM) 경로 사용.
 void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType, ETacticalMoveState TacticalState)
 {
-    // [의도(Why)] 안전 거리, 시야, 은폐 성향 등 현재 변경된 동적 스탯을 EQS 쿼리 직전에 밀어넣어 반영합니다.
     UpdateEQSParams();
 
-    UEnvQuery* SelectedQuery = nullptr;
-
-    // TacticalState에 따른 EQS 쿼리 선택
-    switch (TacticalState)
+    if (DefaultMoveQuery)
     {
-    case ETacticalMoveState::Cover:      SelectedQuery = CoverFinderQuery; break;
-    case ETacticalMoveState::Flanking:   SelectedQuery = FlankingQuery;    break;
-    case ETacticalMoveState::Retreat:    SelectedQuery = RetreatQuery;     break;
-    default:                             SelectedQuery = DefaultMoveQuery;  break;
-    }
-
-    // Default + 원거리 무기일 때 원거리 쿼리로 자동 전환
-    if (TacticalState == ETacticalMoveState::Default && StateComponent)
-    {
-        if (StateComponent->GetAttributes().Combat.Range > 500.f && RangedOptimalPositionQuery)
-        {
-            SelectedQuery = RangedOptimalPositionQuery;
-        }
-    }
-
-    if (SelectedQuery)
-    {
-        FEnvQueryRequest QueryRequest(SelectedQuery, GetOwner());
+        FEnvQueryRequest QueryRequest(DefaultMoveQuery, GetOwner());
         QueryRequest.Execute(EEnvQueryRunMode::SingleResult,
             this, &UNPCActionComponent::OnTacticalMoveCompleted);
-        return; // EQS 콜백에서 처리
+        return;
     }
 
-    // EQS 에셋 할당 없음 -> 기존 Fallback 직접 이동
+    // EQS 에셋 미할당 → 직접 이동 폴백
     const FVector MoveTarget = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
     BaseMove(MoveTarget, SpeedType);
 }
@@ -1009,17 +969,10 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
     // [Named Parameter 주입] 블랙보드 대신 C++에서 EQS 에셋으로 직접 값을 쏴줍니다.
     if (StateComponent)
     {
-        const FNPCAttributes& Attr = StateComponent->GetAttributes();
-        
-        float DistanceWeight = Attr.Behavior.Fear * 0.1f;
-        if (Attr.HasStatusEffect(EStatusEffect::Feared)) DistanceWeight = 10.0f;
-        float AggressionWeight = Attr.Behavior.Aggression * 0.1f;
-        float CoverWeight = Attr.Behavior.Fear * 0.05f;
-        if (Attr.HasStatusEffect(EStatusEffect::Feared)) CoverWeight = 5.0f;
-
-        QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"), DistanceWeight);
-        QueryRequest.SetFloatParam(TEXT("AggressionWeightParam"), AggressionWeight);
-        QueryRequest.SetFloatParam(TEXT("CoverWeightParam"), CoverWeight);
+        const FEQSWeights W = ComputeEQSWeights();
+        QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"),   W.DistanceWeight);
+        QueryRequest.SetFloatParam(TEXT("AggressionWeightParam"), W.AggressionWeight);
+        QueryRequest.SetFloatParam(TEXT("CoverWeightParam"),      W.CoverWeight);
     }
 
     QueryRequest.Execute(EEnvQueryRunMode::AllMatching,
@@ -1237,7 +1190,7 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
     // Move 액션을 큐에 주입 → ProcessNextAction()이 정상 처리
     FGameAction MoveAction;
     MoveAction.ActionType = EAction::Move;
-    MoveAction.Parameters.Add(TEXT("TargetLoc"), TacticalQueryResult.ToString());
+    MoveAction.Parameters.Add(NPCActionKeys::Key_TargetLoc, TacticalQueryResult.ToString());
     ActionQueue.Enqueue(MoveAction);
 
     TacticalQueryState = ETacticalQueryState::ResultReady;
@@ -1438,6 +1391,59 @@ void UNPCActionComponent::ExecuteInvestigate(FVector Location)
     ExecuteScan(Location, nullptr);
 }
 
+void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
+{
+    if (!TargetActor) return;
+
+    // 기존 추적 타이머 초기화 후 새 대상 설정
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TrackTimer);
+    }
+    TrackedTarget = TargetActor;
+
+    // 즉시 첫 이동 명령
+    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    {
+        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
+        {
+            AICon->MoveToActor(TargetActor, 150.f);
+        }
+    }
+
+    // 0.5초 간격으로 MoveToActor 재발행 (대상이 이동하는 경우 추적 유지)
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(
+            TrackTimer,
+            this, &UNPCActionComponent::UpdateTrackPosition,
+            0.5f, true
+        );
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 시작 → %s"), *GetOwnerAgentID(), *TargetActor->GetName());
+}
+
+void UNPCActionComponent::UpdateTrackPosition()
+{
+    AActor* Target = TrackedTarget.Get();
+    if (!IsValid(Target))
+    {
+        if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(TrackTimer);
+        TrackedTarget.Reset();
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 대상 소멸 — 추적 중단"), *GetOwnerAgentID());
+        return;
+    }
+
+    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    {
+        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
+        {
+            AICon->MoveToActor(Target, 150.f);
+        }
+    }
+}
+
 void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocation)
 {
     // TODO: BT Loop와 결합해 왕복 순찰로 발전
@@ -1477,7 +1483,7 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
         case EAction::Dance: BaseDance(StringParam); break;
         case EAction::Sing:  BaseSing(StringParam); break;
         case EAction::Emote: BaseEmote(StringParam); break;
-        // Clean 등 추가 확장이 필요하다면 여기에 분기를 추가합니다.
+        // 추가 Lifestyle 타입 확장이 필요하다면 여기에 분기를 추가합니다.
         default: break;
     }
 }

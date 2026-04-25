@@ -82,28 +82,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Debug", meta = (EditCondition = "bEQSDebugDraw", ClampMin = "1.0", ClampMax = "30.0"))
     float EQSDebugDuration = 8.f;
 
-    // 언리얼 에디터에서 상황별 EQS 에셋을 할당하세요.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* DefaultMoveQuery;    // 기본 이동 쿼리
+    // --- EQS 에셋 (2개로 한정) ---
+    // 이동 경로는 두 가지 정책으로 분리됩니다:
+    //   [A] ExecuteMove → DefaultMoveQuery (SingleResult) : LLM이 지시한 목적지로 이동
+    //   [B] TryStartTacticalQueryForCombat → TacticalPositionsQuery (AllMatching + LLM) : Perception 트리거 전술 재배치
 
+    // [A] LLM 지시 이동용 (SingleResult). 미할당 시 BaseMove 직접 호출로 폴백.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* CoverFinderQuery;    // 은폐 위치 탐색 쿼리
+    UEnvQuery* DefaultMoveQuery;
 
+    // [B] Perception 트리거 전술 재배치용 (AllMatching). 미할당 시 DefaultMoveQuery로 폴백.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* FlankingQuery;       // 측면 포위 탐색 쿼리
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* RetreatQuery;        // 후방 안전지대 탐색 쿼리
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* RangedOptimalPositionQuery; // 원거리 최적 포지션 쿼리
-
-    /** EQS+LLM 분업 파이프라인용: AllMatching 모드로 다수 후보 위치를 뽑는 쿼리.
-     *  WHY: 기존 SingleResult 쿼리는 EQS만으로 최선 위치를 고르지만,
-     *       여기서는 LLM이 최종 선택하도록 복수 후보가 필요하다.
-     *  미할당 시 DefaultMoveQuery로 폴백. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
-    UEnvQuery* TacticalPositionsQuery;     // 전술 위치 후보 다중 쿼리
+    UEnvQuery* TacticalPositionsQuery;
 
     // --- 전술 위치 결정 파이프라인 상태 (BTTask가 폴링) ---
 
@@ -216,6 +206,18 @@ protected:
     // [의도(Why)] 전술 이동(EQS) 시작 직전에 변동된 스탯을 파라미터에 미리 주입하여 가장 합리적인 위치를 도출하게 합니다.
     void UpdateEQSParams();
 
+    // EQS 전술 가중치 묶음. UpdateEQSParams / StartTacticalQuery 양쪽이 공유.
+    struct FEQSWeights
+    {
+        float SearchRadius = 1000.f;
+        float CoverWeight = 0.f;
+        float DistanceWeight = 0.f;
+        float AggressionWeight = 0.f;
+        float NoiseWeight = 0.f;
+        float SafeDistance = 0.f;
+    };
+    FEQSWeights ComputeEQSWeights() const;
+
     // --- 전술 위치 파이프라인 내부 ---
     TArray<FVector> CachedEnemyLocations; // StartTacticalQuery → OnTacticalCandidatesDone 전달용
 
@@ -230,7 +232,20 @@ protected:
 private:
     // Cached references
     ASmartNPCAIController* GetOwnerAIController() const;
-    FString GetOwnerAgentID() const;
+    const FString& GetOwnerAgentID() const { return CachedAgentID; }
+
+    /** BeginPlay에서 한 번 캐시한 AgentID. 매 호출마다 reflection 조회를 피하기 위함. */
+    FString CachedAgentID;
+
+    // --- Track 상태 ---
+    /** Track 중인 대상. 유효하지 않으면 트래킹 중단. */
+    TWeakObjectPtr<AActor> TrackedTarget;
+
+    /** 주기적 위치 갱신 타이머 핸들 */
+    FTimerHandle TrackTimer;
+
+    /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
+    void UpdateTrackPosition();
 public:
     // ============================================================================
     // [EAction 래퍼 함수 (Action Wrappers)]
@@ -354,7 +369,12 @@ public:
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteInvestigate(FVector Location);
-    
+
+    /** 대상 액터를 지속 추적. 방해 없으면 계속 따라다님.
+     *  TrackTimer(0.5s 주기)로 MoveToActor를 갱신하며 OnActionCompleted/StopAllActions 시 자동 해제. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteTrack(AActor* TargetActor);
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteScout(FVector StartLocation, FVector EndLocation);
 
