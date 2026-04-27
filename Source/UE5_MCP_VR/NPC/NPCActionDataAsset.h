@@ -33,4 +33,5 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
     TMap<FString, FActionMediaData> ActionMedias;
 
+
 };
