@@ -292,6 +292,39 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|EQS", meta = (ClampMin = "0.5", ClampMax = "30.0"))
     float TacticalQueryCooldown = 2.0f;
 
+    // === EQS / 전술 스코어링 튜닝 파라미터 ===
+    // UpdateEQSParams() 및 EvalSafe/Aggressive/OptimalScore()에서 사용
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float EQS_SearchRadiusBase = 1000.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float EQS_PerceptionRadiusScale = 20.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_SafeDistScale = 3.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_CoverBonus = 2.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_LOSPenalty = 1.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_LowHpFleeBonus = 1.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrDistScale = 3.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrLOSBonus = 2.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrCoverPenalty = 0.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrHpBonus = 1.f;
+
     /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
     float LastTacticalQueryTime = -1000.0f;
 

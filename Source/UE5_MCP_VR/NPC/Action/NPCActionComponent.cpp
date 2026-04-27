@@ -777,7 +777,7 @@ UNPCActionComponent::FEQSWeights UNPCActionComponent::ComputeEQSWeights() const
 
     const FNPCAttributes& Attr = StateComponent->GetAttributes();
 
-    W.SearchRadius     = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
+    W.SearchRadius     = FMath::Clamp(EQS_SearchRadiusBase + Attr.BaseStats.Perception * EQS_PerceptionRadiusScale, 500.f, 3000.f);
     W.CoverWeight      = Attr.Behavior.Fear * 0.05f;
     W.DistanceWeight   = Attr.Behavior.Fear * 0.1f;   // 겁쟁이일수록 멀리 도망감
 
@@ -897,10 +897,10 @@ namespace
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         // 적이 없으면 LOS 없음 → penalty 없음
         const bool bLOS   = (Cover < 0.5f);
-        float Score = FMath::Min(Dist / 1500.f, 1.f) * 3.f;  // 거리: 0~3
-        Score += Cover * 2.f;                                  // 엄폐: 0~2
-        Score += bLOS ? -1.f : 0.f;                           // LOS 노출 패널티
-        Score += (1.f - HpPct) * 1.5f;                        // HP 낮을수록 도주 보너스
+        float Score = FMath::Min(Dist / 1500.f, 1.f) * Score_SafeDistScale;
+        Score += Cover * Score_CoverBonus;
+        Score += bLOS ? -Score_LOSPenalty : 0.f;
+        Score += (1.f - HpPct) * Score_LowHpFleeBonus;
         return Score;
     }
 
@@ -910,10 +910,10 @@ namespace
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
-        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * 3.f; // 가까울수록 ↑
-        Score += bLOS ? 2.f : 0.f;                                    // LOS: 적 보여야 공격 가능
-        Score += Cover * -0.5f;                                        // 엄폐는 소폭 페널티
-        Score += HpPct * 1.f;                                          // HP 높을수록 공격 선호
+        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * Score_AggrDistScale;
+        Score += bLOS ? Score_AggrLOSBonus : 0.f;
+        Score += Cover * -Score_AggrCoverPenalty;
+        Score += HpPct * Score_AggrHpBonus;
         return Score;
     }
 
