@@ -891,29 +891,30 @@ namespace
     }
 
     /** Safe 스코어: 멀수록, 엄폐할수록, HP 낮을수록 가중치 */
-    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+        float DistScale, float CoverBonus, float LOSPenalty, float LowHpBonus)
     {
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
-        // 적이 없으면 LOS 없음 → penalty 없음
         const bool bLOS   = (Cover < 0.5f);
-        float Score = FMath::Min(Dist / 1500.f, 1.f) * Score_SafeDistScale;
-        Score += Cover * Score_CoverBonus;
-        Score += bLOS ? -Score_LOSPenalty : 0.f;
-        Score += (1.f - HpPct) * Score_LowHpFleeBonus;
+        float Score = FMath::Min(Dist / 1500.f, 1.f) * DistScale;
+        Score += Cover * CoverBonus;
+        Score += bLOS ? -LOSPenalty : 0.f;
+        Score += (1.f - HpPct) * LowHpBonus;
         return Score;
     }
 
     /** Aggressive 스코어: 가까울수록, LOS 있을수록 */
-    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+        float DistScale, float LOSBonus, float CoverPenalty, float HpBonus)
     {
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
-        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * Score_AggrDistScale;
-        Score += bLOS ? Score_AggrLOSBonus : 0.f;
-        Score += Cover * -Score_AggrCoverPenalty;
-        Score += HpPct * Score_AggrHpBonus;
+        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * DistScale;
+        Score += bLOS ? LOSBonus : 0.f;
+        Score += Cover * -CoverPenalty;
+        Score += HpPct * HpBonus;
         return Score;
     }
 
@@ -1040,8 +1041,10 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     {
         const FVector Loc = Result->GetItemAsLocation(i);
 
-        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
-        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
+        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+            Score_SafeDistScale, Score_CoverBonus, Score_LOSPenalty, Score_LowHpFleeBonus);
+        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+            Score_AggrDistScale, Score_AggrLOSBonus, Score_AggrCoverPenalty, Score_AggrHpBonus);
         const float OptScore   = EvalOptimalScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
 
         ELocationCategory BestCat;
