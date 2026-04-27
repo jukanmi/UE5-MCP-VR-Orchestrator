@@ -22,6 +22,7 @@
 """
 import re
 import json
+import unicodedata
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 
@@ -62,8 +63,9 @@ def _check_prompt_injection(text: str) -> tuple[bool, str]:
         - is_injected=True이면 위협 탐지됨
         - matched_pattern은 로깅용 (어떤 패턴에 걸렸는지)
     """
+    normalized = unicodedata.normalize("NFKC", text)
     for pattern in JAILBREAK_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
+        if re.search(pattern, normalized, re.IGNORECASE):
             return True, pattern
     return False, ""
 

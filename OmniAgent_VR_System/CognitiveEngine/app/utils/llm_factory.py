@@ -56,7 +56,9 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             base_url=OLLAMA_BASE_URL,
             num_ctx=2048,
             num_predict=num_predict,
-            num_thread=8
+            num_thread=8,
+            request_timeout=30.0,
+            keep_alive="5m",
         )
 
     elif model_name == "openai":

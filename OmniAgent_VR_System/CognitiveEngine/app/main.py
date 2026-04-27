@@ -37,6 +37,8 @@ app = FastAPI(lifespan=lifespan)
 
 _cached_world_state: Optional[dict] = None
 _failed_action_history: list = []
+_world_state_lock = asyncio.Lock()
+_action_history_lock = asyncio.Lock()
 
 
 @app.get("/")
@@ -79,10 +81,10 @@ async def _process_llm_message(raw_data: str) -> str:
             return await _handle_prompt(envelope)
 
         elif envelope.type == EEnvelopeType.STATE_UPDATE:
-            return _handle_state_update(envelope)
+            return await _handle_state_update(envelope)
 
         elif envelope.type == EEnvelopeType.ACTION_FAILED:
-            return _handle_action_failed(envelope)
+            return await _handle_action_failed(envelope)
             
         elif envelope.type == EEnvelopeType.EMERGENCY_REPORT:
             return await _handle_emergency_report(envelope)
@@ -266,11 +268,17 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
 
+    async with _world_state_lock:
+        world_snap = _cached_world_state
+    async with _action_history_lock:
+        history_snap = list(_failed_action_history)
+        _failed_action_history.clear()
+
     initial_state: AgentState = AgentState(
         messages=[],
         vr_context=ges_prompt,
-        cached_world_state=_cached_world_state,
-        failed_action_history=list(_failed_action_history),
+        cached_world_state=world_snap,
+        failed_action_history=history_snap,
         next="",
         current_speaker="",
         natural_context=None,
@@ -285,8 +293,6 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         has_error=False,
         error_msg=None,
     )
-
-    _failed_action_history.clear()
 
     logger.info("[Main] Graph 비동기 실행 시작...")
     try:
@@ -313,12 +319,13 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
 
 
-def _handle_state_update(envelope: MessageEnvelope) -> str:
+async def _handle_state_update(envelope: MessageEnvelope) -> str:
     global _cached_world_state
 
     try:
         state_payload = envelope.parse_state_update_payload()
-        _cached_world_state = state_payload.model_dump()
+        async with _world_state_lock:
+            _cached_world_state = state_payload.model_dump()
         logger.info(f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, "
                     f"threat_level={state_payload.threat_level}")
 
@@ -436,11 +443,12 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         return _fast_path_fallback("exception")
 
 
-def _handle_action_failed(envelope: MessageEnvelope) -> str:
+async def _handle_action_failed(envelope: MessageEnvelope) -> str:
     global _failed_action_history
 
     failed_event = build_failed_event(envelope)
-    _failed_action_history.append(failed_event)
+    async with _action_history_lock:
+        _failed_action_history.append(failed_event)
 
     logger.warning(
         f"[Main] 명령 실패 이력 기록. ref_msg_id={envelope.ref_msg_id}, "
