@@ -174,6 +174,12 @@ void UNPCStateComponent::FlushEventReport()
     }
 
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
+    if (Payload.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: Perception 직렬화 실패 — flush 건너뜀"), *OwnerNPC->AgentID);
+        LocalEventQueue.Empty();
+        return;
+    }
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
         // 단일 LLM WebSocket으로 emergency_report 전송.

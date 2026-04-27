@@ -285,6 +285,9 @@ public:
      *  결과 Move 액션은 ActionQueue에 자동 enqueue되어 BT가 자연스럽게 처리. */
     void TryStartTacticalQueryForCombat(const TArray<FVector>& EnemyLocations);
 
+    /** LLM 응답 파싱 실패 시 NPCManager가 호출 — WaitingLLM 상태를 Idle로 복구해 BT hang 방지. */
+    void AbortTacticalQuery();
+
     /** 전술 쿼리 재발동 최소 간격 (초). 연속 SIGHT/HEARING에 매번 쿼리하지 않도록 방지. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|EQS", meta = (ClampMin = "0.5", ClampMax = "30.0"))
     float TacticalQueryCooldown = 2.0f;

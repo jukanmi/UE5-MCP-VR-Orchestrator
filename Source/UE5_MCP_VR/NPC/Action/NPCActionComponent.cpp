@@ -1204,6 +1204,16 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
         TacticalQueryResult.X, TacticalQueryResult.Y, TacticalQueryResult.Z);
 }
 
+void UNPCActionComponent::AbortTacticalQuery()
+{
+    if (TacticalQueryState == ETacticalQueryState::WaitingLLM)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: TacticalQuery LLM 응답 파싱 실패 — WaitingLLM → Idle 복구"), *GetOwnerAgentID());
+        TacticalQueryState = ETacticalQueryState::Idle;
+        TacticalCandidateMap.Empty();
+    }
+}
+
 void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType)
 {
     if (!TargetActor) return;

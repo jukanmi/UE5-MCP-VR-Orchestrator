@@ -248,6 +248,24 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
             NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason);
             return;
         }
+
+        // type은 location_decision_result인데 payload 파싱 실패 → WaitingLLM 고착 방지
+        FString TypeStr;
+        if (Root->TryGetStringField(TEXT("type"), TypeStr) && TypeStr == TEXT("location_decision_result"))
+        {
+            FString AgentIDFallback;
+            const TSharedPtr<FJsonObject>* PayloadObj;
+            if (Root->TryGetObjectField(TEXT("payload"), PayloadObj))
+                (*PayloadObj)->TryGetStringField(TEXT("agent_id"), AgentIDFallback);
+
+            if (!AgentIDFallback.IsEmpty())
+            {
+                if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentIDFallback))
+                    if (UNPCActionComponent* AC = NPC->GetActionComponent())
+                        AC->AbortTacticalQuery();
+            }
+            return;
+        }
     }
 
     NPCMap->DeliverParsedActionBatches(Root);
