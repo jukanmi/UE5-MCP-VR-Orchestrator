@@ -91,7 +91,7 @@ void UNPCStateComponent::ApplyMovementSpeed()
 
 bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
 {
-    int32 PerceptionBonus = GetAttributes().BaseStats.Perception;
+    int32 PerceptionBonus = FMath::Clamp(GetAttributes().BaseStats.Perception, 0, 100);
     int32 Roll = UDiceSystem::RollD100();
     int32 Total = Roll + PerceptionBonus;
 

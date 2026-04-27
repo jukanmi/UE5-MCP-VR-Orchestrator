@@ -51,8 +51,6 @@ void ASmartNPC::BeginPlay()
     }
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-
-    // TODO: Register event listeners
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
