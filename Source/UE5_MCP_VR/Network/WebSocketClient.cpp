@@ -60,6 +60,8 @@ void UWebSocketClient::TryReconnect()
             ReconnectTimerHandle,
             [this]()
             {
+                if (WebSocket.IsValid() && WebSocket->IsConnected())
+                    WebSocket->Close();
                 WebSocket = FWebSocketsModule::Get().CreateWebSocket(CachedServerURL);
                 BindSocketEvents();
                 WebSocket->Connect();

@@ -26,6 +26,11 @@ EBTNodeResult::Type UBTTask_ExecuteSmartAction::ExecuteTask(UBehaviorTreeCompone
 	// Blackboard를 경유한 JSON 직렬화/역직렬화 오버헤드를 방지하고 컴포넌트의 CurrentAction을 직접 참조합니다.
     if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
     {
+        if (!ActionComp->bIsBusy)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[BTTask_Execute] %s: no prepared action — skipping"), *NPC->GetName());
+            return EBTNodeResult::Failed;
+        }
         const FGameAction& Action = ActionComp->GetCurrentAction();
         ActionComp->ExecuteInteraction(Action.ActionType, TargetActor, Action.Parameters);
     }

@@ -33,7 +33,12 @@ FNPCAttributes UNPCStateComponent::GetAttributes() const
 FNPCAttributes& UNPCStateComponent::GetMutableAttributes()
 {
     ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
-    check(OwnerNPC && "[NPCStateComponent] Owner is not ASmartNPC");
+    if (!OwnerNPC)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCStateComponent] Owner is not ASmartNPC — returning default attributes"));
+        static FNPCAttributes Fallback;
+        return Fallback;
+    }
     return OwnerNPC->NPCAttributes;
 }
 
