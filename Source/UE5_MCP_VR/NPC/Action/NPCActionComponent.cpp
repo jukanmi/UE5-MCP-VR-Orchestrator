@@ -1255,10 +1255,36 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
 {
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
-    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run);
-    BasePlayActionMedia(TEXT("Attack"));
-    if (ACharacter* C = Cast<ACharacter>(GetOwner()))
-        UAISense_Hearing::ReportNoiseEvent(GetWorld(), C->GetActorLocation(), NPCActionKeys::Noise_Attack, C, 0.f, NPCActionKeys::NoiseTag_Attack);
+
+    // 도착 후 몽타주 재생을 위해 델리게이트 바인딩 (중복 방지)
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
+    {
+        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
+        {
+            PFC->OnRequestFinished.RemoveAll(this);
+            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnAttackMoveCompleted);
+        }
+    }
+
+    PendingMoveMediaKey = TEXT("Attack");
+    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run, 150.f);
+
+    if (OwnerCharacter)
+        UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Attack);
+}
+
+void UNPCActionComponent::OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
+{
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
+        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
+            PFC->OnRequestFinished.RemoveAll(this);
+
+    if (Result.IsSuccess() && !PendingMoveMediaKey.IsEmpty())
+        BasePlayActionMedia(PendingMoveMediaKey);
+
+    PendingMoveMediaKey.Reset();
 }
 
 void UNPCActionComponent::ExecuteBlock(AActor* TargetActor)
@@ -1420,6 +1446,8 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
             0.5f, true
         );
     }
+
+    BasePlayActionMedia(NPCActionKeys::Media_Track);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 시작 → %s"), *GetOwnerAgentID(), *TargetActor->GetName());
 }

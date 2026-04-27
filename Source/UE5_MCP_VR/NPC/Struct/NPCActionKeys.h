@@ -25,6 +25,8 @@ namespace NPCActionKeys
     inline const FString Interact_SitUp     = TEXT("SitUp");
     inline const FString Interact_LieDown   = TEXT("LieDown");
     inline const FString Interact_LieUp     = TEXT("LieUp");
+    inline const FString Media_Track        = TEXT("Track");
+    inline const FString Media_Death        = TEXT("Death");
     
     // --- Noise Volume Config (소음 발생 배율 상수) ---
     inline const float Noise_Dialogue       = 1.0f;     // 일반 대화 소음

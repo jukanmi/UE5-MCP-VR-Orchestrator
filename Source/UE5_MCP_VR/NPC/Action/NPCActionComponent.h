@@ -7,6 +7,7 @@
 #include "../NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "EnvironmentQuery/EnvQueryTypes.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
@@ -290,6 +291,11 @@ public:
 
     /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
     float LastTacticalQueryTime = -1000.0f;
+
+    // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생)
+    FString PendingMoveMediaKey;
+
+    void OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
 
     /** NPCManager가 LLM 응답 수신 시 호출.
      *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */
