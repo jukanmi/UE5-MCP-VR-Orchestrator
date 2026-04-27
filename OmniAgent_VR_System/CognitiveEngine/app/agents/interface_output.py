@@ -40,12 +40,13 @@ from ..schemas.actions import (
 VALID_MOVE_STYLES = {"Walk", "Run", "Sprint", "Crouch", "Crawl"}
 
 
-def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str]:
+def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str, bool]:
     """
     raw_response에서 [Mode: X] [Facial: Y] 태그를 파싱하고 제거.
 
     Returns:
-        (behavior_mode, facial_state, cleaned_response)
+        (behavior_mode, facial_state, cleaned_response, parse_ok)
+        parse_ok=False이면 태그를 찾지 못해 기본값으로 fallback됨
     """
     mode = "Common"
     facial = "Neutral"
@@ -56,15 +57,20 @@ def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str]:
     VALID_MODES = {"Combat", "Social", "Task", "Investigation", "Lifestyle", "Common"}
     VALID_FACIALS = {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}
 
+    mode_ok = False
+    facial_ok = False
+
     if mode_match:
         parsed_mode = mode_match.group(1).capitalize()
         if parsed_mode in VALID_MODES:
             mode = parsed_mode
-            
+            mode_ok = True
+
     if facial_match:
         parsed_facial = facial_match.group(1).capitalize()
         if parsed_facial in VALID_FACIALS:
             facial = parsed_facial
+            facial_ok = True
 
     # 태그 라인 제거
     cleaned = re.sub(
@@ -72,7 +78,7 @@ def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str]:
         raw_response, flags=re.IGNORECASE
     ).strip()
 
-    return mode, facial, cleaned
+    return mode, facial, cleaned, (mode_ok and facial_ok)
 
 
 def interface_output_node(state: AgentState):
@@ -96,8 +102,11 @@ def interface_output_node(state: AgentState):
         }
 
     # 1단계: [Mode: X] [Facial: Y] 파싱 및 제거
-    behavior_mode, facial_state, clean_response = _parse_mode_and_facial(raw_response)
-    print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
+    behavior_mode, facial_state, clean_response, parse_ok = _parse_mode_and_facial(raw_response)
+    if not parse_ok:
+        print(f"[Interface Output] WARNING: Mode/Facial 태그 파싱 실패 — fallback 사용 (Mode={behavior_mode}, Facial={facial_state}): {raw_response[:80]!r}")
+    else:
+        print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
     action_batch = None

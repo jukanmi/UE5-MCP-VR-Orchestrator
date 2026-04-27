@@ -18,16 +18,34 @@ from .schemas.actions import ActionBatch, ModeActionRequest
 from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
+from .utils import llm_factory
 from .middleware import validate_auth_token, is_stale_packet, build_failed_event
 
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
+
+async def _check_ollama_model() -> None:
+    try:
+        import httpx
+        ollama_base = llm_factory.OLLAMA_BASE_URL
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
+            installed = [m["name"] for m in r.json().get("models", [])]
+            required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
+            if not any(required in m for m in installed):
+                logger.warning(f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능")
+            else:
+                logger.info(f"[Startup] Ollama 기본 모델 확인 완료: {required}")
+    except Exception as e:
+        logger.warning(f"[Startup] Ollama 모델 상태 확인 실패 (서버 미실행 가능): {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
     await db_manager.init_db()
     await db_manager.start_background_sync()
+    await _check_ollama_model()
     yield
     # --- Shutdown ---
     await db_manager.stop_background_sync()
