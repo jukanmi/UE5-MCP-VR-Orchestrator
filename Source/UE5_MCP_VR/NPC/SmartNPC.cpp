@@ -4,6 +4,7 @@
 #include "Struct/NPCActionKeys.h"
 #include "NPCStateComponent.h"
 #include "Action/NPCActionComponent.h"
+#include "NPCActionDataAsset.h"
 #include "NPCInventoryComponent.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -104,27 +105,95 @@ void ASmartNPC::OnActionCompleted()
     }
 }
 
-float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, 
+float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
     AController* EventInstigator, AActor* DamageCauser)
 {
+    if (bIsDead) return 0.f;
+
     float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-    
+
     if (StateComponent)
     {
         StateComponent->ApplyDamage(ActualDamage);
 
+        if (!StateComponent->GetAttributes().Resources.IsAlive())
+        {
+            HandleDeath();
+            return ActualDamage;
+        }
+
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
         FPerceptionData DamageEventPerc;
         DamageEventPerc.TargetID = DamageCauser ? DamageCauser->GetName() : TEXT("Unknown");
-        DamageEventPerc.SenseType = ESenseType::Hit; // 물리적 충격
+        DamageEventPerc.SenseType = ESenseType::Hit;
         DamageEventPerc.Location = DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation();
         DamageEventPerc.Distance = DamageCauser ? FVector::Dist(GetActorLocation(), DamageEventPerc.Location) : 0.0f;
-        DamageEventPerc.DangerScore = 1.0f; // 피격은 즉각적인 최대 위협으로 간주
-        
+        DamageEventPerc.DangerScore = 1.0f;
+
         StateComponent->RequestEventCognition(DamageEventPerc);
     }
 
     return ActualDamage;
+}
+
+void ASmartNPC::HandleDeath()
+{
+    if (bIsDead) return;
+    bIsDead = true;
+
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s 사망 처리 시작"), *AgentID);
+
+    // 1. 게임플레이 태그: 기존 상태 전부 제거 후 Dead 태그 부착
+    GameplayTags.Reset();
+    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Dead")));
+
+    // 2. 진행 중인 모든 액션 즉시 중지
+    if (ActionComponent)
+    {
+        ActionComponent->StopAllActions();
+    }
+
+    // 3. NPCMap에서 즉시 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            Manager->UnregisterNPC(AgentID);
+        }
+    }
+
+    // 4. AI 컨트롤러 해제 — BT 완전 중단
+    if (AController* C = GetController())
+    {
+        C->UnPossess();
+    }
+
+    // 5. 사망 몽타주 재생
+    if (ActionComponent && ActionComponent->ActionData)
+    {
+        if (FActionMediaData* M = ActionComponent->ActionData->ActionMedias.Find(NPCActionKeys::Media_Death))
+        {
+            if (M->Montage) PlayAnimMontage(M->Montage);
+        }
+    }
+
+    // 6. 사망 이벤트 브로드캐스트 — BP에서 VFX 등 추가 연결 가능
+    OnNPCDied.Broadcast(this);
+
+    // 7. 일정 시간 후 Actor 제거 (사망 애니메이션 재생 여유 시간)
+    constexpr float DestroyDelay = 3.f;
+    if (UWorld* World = GetWorld())
+    {
+        FTimerHandle DestroyTimer;
+        World->GetTimerManager().SetTimer(DestroyTimer, this, &ASmartNPC::DestroyAfterDeath, DestroyDelay, false);
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s NPCMap 퇴출 완료. %.1f초 후 Actor 제거."), *AgentID, DestroyDelay);
+}
+
+void ASmartNPC::DestroyAfterDeath()
+{
+    Destroy();
 }
 
 namespace

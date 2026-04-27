@@ -117,8 +117,8 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
 
     if (!Attrs.Resources.IsAlive())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] NPC is DEAD!"));
-        // TODO: Death Event Broadcast (Delegate 등)
+        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s HP 소진 — SmartNPC::HandleDeath 위임"),
+            *GetOwner()->GetName());
     }
 
     return EffectiveDamage;
