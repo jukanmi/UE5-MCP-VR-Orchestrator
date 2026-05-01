@@ -422,14 +422,10 @@ CognitiveEngine/
 **Helper Functions**:
 
 ```python
-from app.config.world_constants import (
-    get_all_constants,           # dict 반환
-    format_constants_for_prompt  # LLM 프롬프트용 문자열
-)
+from app.config.world_constants import get_all_constants
 
 # 사용 예시
 constants_dict = get_all_constants()
-prompt_text = format_constants_for_prompt()
 ```
 
 ### LLM Factory (`utils/llm_factory.py`)

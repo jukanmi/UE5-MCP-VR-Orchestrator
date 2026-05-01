@@ -50,30 +50,3 @@ def get_all_constants() -> dict:
         "WORLD_HEIGHT_LIMIT": WORLD_HEIGHT_LIMIT,
         "WORLD_BOUNDARY": WORLD_BOUNDARY,
     }
-
-
-def format_constants_for_prompt() -> str:
-    """
-    Formats all constants as a human-readable string for LLM prompts.
-    """
-    constants = get_all_constants()
-    lines = ["World Constants:"]
-    
-    # Group by category
-    lines.append("\n[Combat]")
-    lines.append(f"  CRITICAL_HIT_MULTIPLIER = {constants['CRITICAL_HIT_MULTIPLIER']}")
-    
-    lines.append("\n[Movement]")
-    lines.append(f"  MAX_SPEED = {constants['MAX_SPEED']} UU/s")
-    lines.append(f"  WALK_SPEED = {constants['WALK_SPEED']} UU/s")
-    lines.append(f"  RUN_SPEED = {constants['RUN_SPEED']} UU/s")
-    
-    lines.append("\n[Interaction]")
-    lines.append(f"  MAX_INTERACTION_DISTANCE = {constants['MAX_INTERACTION_DISTANCE']} UU")
-    lines.append(f"  PICKUP_DISTANCE = {constants['PICKUP_DISTANCE']} UU")
-    
-    lines.append("\n[World Limits]")
-    lines.append(f"  WORLD_HEIGHT_LIMIT = {constants['WORLD_HEIGHT_LIMIT']} UU")
-    lines.append(f"  WORLD_BOUNDARY = {constants['WORLD_BOUNDARY']} UU")
-    
-    return "\n".join(lines)
