@@ -7,14 +7,15 @@ import random
 import traceback
 import asyncio
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from pydantic import ValidationError
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse
+from pydantic import BaseModel, ValidationError
 from typing import Optional
 from contextlib import asynccontextmanager
 
 from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload, LocationDecisionPayload, EmergencyReportPayload
 from .schemas.vr_context import GesPrompt, GestureData
-from .schemas.actions import ActionBatch, ModeActionRequest
+from .schemas.actions import ActionBatch, ModeActionRequest, GameAction, EAction, NPCBehaviorMode, NPCFacialState
 from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
@@ -57,6 +58,7 @@ _cached_world_state: Optional[dict] = None
 _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
+_active_llm_ws: Optional[WebSocket] = None
 
 
 @app.get("/")
@@ -66,7 +68,9 @@ async def health_check():
 
 @app.websocket("/ws/llm")
 async def websocket_llm_endpoint(websocket: WebSocket):
+    global _active_llm_ws
     await websocket.accept()
+    _active_llm_ws = websocket
     logger.info("[Main] UE5 LLM 클라이언트 연결됨")
 
     try:
@@ -77,6 +81,8 @@ async def websocket_llm_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
+    finally:
+        _active_llm_ws = None
 
 async def _process_llm_message(raw_data: str) -> str:
     try:
@@ -459,6 +465,147 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
         return _fast_path_fallback("exception")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Debug Dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+import os
+import yaml
+
+_DEBUG_HTML_PATH = os.path.join(os.path.dirname(__file__), "debug.html")
+_PERSONAS_BASE = os.path.join(os.path.dirname(__file__), "agents", "personas")
+
+
+def _list_personas() -> list[dict]:
+    """등록된 모든 NPC 페르소나 YAML을 스캔하여 반환."""
+    results = []
+    for subdir in ("core", "generic"):
+        folder = os.path.join(_PERSONAS_BASE, subdir)
+        if not os.path.isdir(folder):
+            continue
+        for fname in sorted(os.listdir(folder)):
+            if not fname.endswith(".yaml"):
+                continue
+            fpath = os.path.join(folder, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                results.append({
+                    "npc_id": data.get("name", fname[:-5]),
+                    "file_path": fpath,
+                    "folder": subdir,
+                    "role": data.get("role", ""),
+                    "importance": data.get("importance", "normal"),
+                    "traits": data.get("traits", []),
+                })
+            except Exception:
+                pass
+    return results
+
+
+@app.get("/debug", response_class=HTMLResponse)
+async def debug_dashboard():
+    if os.path.exists(_DEBUG_HTML_PATH):
+        with open(_DEBUG_HTML_PATH, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>debug.html not found</h1>", status_code=404)
+
+
+@app.get("/api/affinity")
+async def api_get_affinity():
+    rows = await db_manager.get_all_affinity()
+    return {"rows": rows}
+
+
+class AffinitySetRequest(BaseModel):
+    source_id: str
+    target_id: str
+    score: int
+    note: str = "debug_override"
+
+@app.post("/api/affinity")
+async def api_set_affinity(req: AffinitySetRequest):
+    rel = await db_manager.set_affinity_direct(req.source_id, req.target_id, req.score, req.note)
+    return {"status": "ok", "source_id": rel.source_id, "target_id": rel.target_id,
+            "affinity_score": rel.affinity_score, "reputation_tag": rel.reputation_tag}
+
+
+@app.delete("/api/affinity")
+async def api_delete_affinity(source_id: str, target_id: str):
+    await db_manager.delete_affinity(source_id, target_id)
+    return {"status": "deleted"}
+
+
+@app.get("/api/npcs")
+async def api_get_npcs():
+    return {"npcs": _list_personas()}
+
+
+class ImportanceUpdateRequest(BaseModel):
+    importance: str  # "normal" | "high" | "core"
+
+@app.put("/api/npcs/{npc_id}/importance")
+async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
+    if req.importance not in ("normal", "high", "core"):
+        raise HTTPException(status_code=400, detail="importance must be normal, high, or core")
+
+    personas = _list_personas()
+    target = next((p for p in personas if p["npc_id"].lower() == npc_id.lower()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"NPC '{npc_id}' persona not found")
+
+    fpath = target["file_path"]
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        data["importance"] = req.importance
+        with open(fpath, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if req.importance == "core":
+        llm_model = "gemma4:26b"
+    elif req.importance == "high":
+        llm_model = "gemma4:12b"
+    else:
+        llm_model = "gemma4:e4b"
+    return {"status": "ok", "npc_id": npc_id, "importance": req.importance, "llm_model": llm_model}
+
+
+class NpcCommandRequest(BaseModel):
+    action_type: str
+    mode: str = "Common"
+    facial: str = "Neutral"
+    params: dict = {}
+
+@app.post("/api/npc/{npc_id}/command")
+async def api_npc_command(npc_id: str, req: NpcCommandRequest):
+    if not _active_llm_ws:
+        raise HTTPException(status_code=503, detail="UE5 연결 없음 (WebSocket disconnected)")
+    try:
+        batch = ActionBatch(
+            AgentID=npc_id,
+            Mode=req.mode,
+            Actions=[GameAction(
+                ActionType=req.action_type,
+                FacialState=req.facial,
+                Parameters={k: str(v) for k, v in req.params.items()}
+            )]
+        )
+        wrapper = ModeActionRequest(Mode=req.mode, ActionBatches={npc_id: batch})
+        await _active_llm_ws.send_text(wrapper.model_dump_json())
+        logger.info(f"[Debug] NPC 명령 전송: {npc_id} → {req.action_type}")
+        return {"status": "ok", "npc_id": npc_id, "action": req.action_type}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/ws/status")
+async def api_ws_status():
+    return {"connected": _active_llm_ws is not None}
 
 
 async def _handle_action_failed(envelope: MessageEnvelope) -> str:

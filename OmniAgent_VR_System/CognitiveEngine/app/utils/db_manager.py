@@ -141,6 +141,77 @@ def get_relations_from_cache(source_id: str) -> list:
         if src == source_id
     ]
 
+async def set_affinity_direct(source_id: str, target_id: str, score: int, interaction_summary: str = "debug_override") -> NPCRelation:
+    """호감도를 절대값으로 직접 설정 (디버그 대시보드용). 캐시와 DB 동시 갱신."""
+    score = max(-100, min(100, score))
+    if score <= -30:
+        tag = "Hostile"
+    elif score >= 30:
+        tag = "Friendly"
+    else:
+        tag = "Neutral"
+
+    relation = NPCRelation(
+        source_id=source_id,
+        target_id=target_id,
+        affinity_score=score,
+        reputation_tag=tag,
+        last_interaction=interaction_summary,
+        is_dirty=False,
+    )
+    _affinity_cache[(source_id, target_id)] = relation
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source_id, target_id)
+                DO UPDATE SET
+                    affinity_score=excluded.affinity_score,
+                    reputation_tag=excluded.reputation_tag,
+                    last_interaction=excluded.last_interaction,
+                    updated_at=CURRENT_TIMESTAMP
+            """, (source_id, target_id, score, tag, interaction_summary))
+            await db.commit()
+    except Exception as e:
+        logger.error(f"[DBManager] set_affinity_direct 실패: {e}")
+
+    return relation
+
+
+async def delete_affinity(source_id: str, target_id: str) -> None:
+    """호감도 레코드 삭제 (캐시 + DB)."""
+    _affinity_cache.pop((source_id, target_id), None)
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "DELETE FROM npc_relations WHERE source_id=? AND target_id=?",
+                (source_id, target_id)
+            )
+            await db.commit()
+    except Exception as e:
+        logger.error(f"[DBManager] delete_affinity 실패: {e}")
+
+
+async def get_all_affinity() -> list[dict]:
+    """DB에 저장된 모든 호감도 레코드를 반환 (디버그 대시보드용)."""
+    # 먼저 캐시의 dirty 항목을 플러시
+    await _flush_dirty_cache()
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT source_id, target_id, affinity_score, reputation_tag, last_interaction, updated_at "
+                "FROM npc_relations ORDER BY updated_at DESC"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"[DBManager] get_all_affinity 실패: {e}")
+        return []
+
+
 async def _background_sync_loop():
     """주기적으로 변경사항을 DB에 쓰는 타이머 루프"""
     while not _is_shutting_down:

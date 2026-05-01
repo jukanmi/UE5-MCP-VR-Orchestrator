@@ -236,7 +236,12 @@ def dialogue_node(state: AgentState):
     # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
     importance = persona.get('importance', 'normal')
     
-    model_name = "gemma4" if importance in ("high", "core") else "qwen"
+    if importance == "core":
+        model_name = "gemma4"
+    elif importance == "high":
+        model_name = "gemma4_mid"
+    else:
+        model_name = "gemma4_slm"
     print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
     
     try:
