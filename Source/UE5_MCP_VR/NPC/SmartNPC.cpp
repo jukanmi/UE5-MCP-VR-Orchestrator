@@ -143,7 +143,7 @@ void ASmartNPC::HandleDeath()
 
     // 1. 게임플레이 태그: 기존 상태 전부 제거 후 Dead 태그 부착
     GameplayTags.Reset();
-    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Dead")));
+    AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Condition.Dead")));
 
     // 2. 진행 중인 모든 액션 즉시 중지
     if (ActionComponent)
