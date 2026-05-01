@@ -45,6 +45,20 @@ protected:
     UFUNCTION()
     void HandleAllActionsStopped();
 
+    /** 시야 유지 중 주기적 Cognition 재보고 */
+    UFUNCTION()
+    void OnPerceptionTick();
+
+    /** 현재 시야 안에 있는 대상 (소실 시 null) */
+    TWeakObjectPtr<AActor> CurrentSightTarget;
+
+    /** 주기적 Perception 재보고 타이머 */
+    FTimerHandle PerceptionTickTimer;
+
+    /** Perception Tick 간격 (초) */
+    UPROPERTY(EditDefaultsOnly, Category = "AI|Perception")
+    float PerceptionTickInterval = 9.0f;
+
 public:
 	// --- Blackboard Keys ---
 	// Target Location Vector (e.g. for MoveTo)

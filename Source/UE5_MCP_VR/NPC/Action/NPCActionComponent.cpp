@@ -278,10 +278,18 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         }
         else
         {
+            // 동일 액션 타입이 큐 끝에 이미 있으면 추가하지 않음 — 이벤트 폭증 시 같은 액션 반복 큐잉 방지
+            if (Action.ActionType == LastQueuedActionType)
+            {
+                UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 중복 액션 스킵: %s"),
+                    *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+                continue;
+            }
             // [의도(Why)] 일반 물리적 액션은 이전 행동이 끝나길 기다렸다가 순차적으로 실행(Queue)되도록 보장합니다.
             ActionQueue.Enqueue(Action);
+            LastQueuedActionType = Action.ActionType;
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
-            *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+                *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
         }
     }
 
@@ -305,6 +313,7 @@ void UNPCActionComponent::StopAllActions()
 {
     ActionQueue.Empty();
     bIsBusy = false;
+    LastQueuedActionType = EAction::Idle;
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
@@ -822,19 +831,42 @@ void UNPCActionComponent::UpdateEQSParams()
 // 전술 재배치(Perception 트리거)는 TryStartTacticalQueryForCombat → TacticalPositionsQuery(AllMatching+LLM) 경로 사용.
 void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType, ETacticalMoveState TacticalState)
 {
-    UpdateEQSParams();
+    // target_loc이 명시된 경우 EQS 없이 직접 이동 (디버그 명령, 전술 쿼리 결과 주입 등)
+    if (!TargetLocation.IsNearlyZero())
+    {
+        BaseMove(TargetLocation, SpeedType);
+        return;
+    }
 
+    // TargetActor가 있으면 해당 위치로 직접 이동
+    if (TargetActor)
+    {
+        BaseMove(TargetActor->GetActorLocation(), SpeedType);
+        return;
+    }
+
+    // 목적지 미지정 → EQS로 최적 위치 탐색
+    UpdateEQSParams();
     if (DefaultMoveQuery)
     {
         FEnvQueryRequest QueryRequest(DefaultMoveQuery, GetOwner());
+
+        // TacticalPositionsQuery와 동일하게 스탯 기반 가중치를 Named Parameter로 직접 주입.
+        // UpdateEQSParams()의 BB 쓰기만으로는 EQS 에셋이 값을 읽지 못함.
+        if (StateComponent)
+        {
+            const FEQSWeights W = ComputeEQSWeights();
+            QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"), W.DistanceWeight);
+            QueryRequest.SetFloatParam(TEXT("CoverWeightParam"),    W.CoverWeight);
+            QueryRequest.SetFloatParam(TEXT("SafeDistance"),        W.SafeDistance);
+        }
+
         QueryRequest.Execute(EEnvQueryRunMode::SingleResult,
             this, &UNPCActionComponent::OnTacticalMoveCompleted);
         return;
     }
 
-    // EQS 에셋 미할당 → 직접 이동 폴백
-    const FVector MoveTarget = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
-    BaseMove(MoveTarget, SpeedType);
+    UE_LOG(LogTemp, Warning, TEXT("[NPCAction] ExecuteMove: 목적지 없음 (target_loc/TargetActor/EQS 모두 없음)"));
 }
 
 // EQS 쿼리 콜백: 결과 좌표로 실제 이동 명령을 수행합니다.

@@ -108,7 +108,10 @@ public:
 
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
-    
+
+    // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
+    EAction LastQueuedActionType = EAction::Idle;
+
     // 현재 진행 중인 액션 캐싱 (BTTask 등에서 참조)
     FGameAction CurrentAction;
 

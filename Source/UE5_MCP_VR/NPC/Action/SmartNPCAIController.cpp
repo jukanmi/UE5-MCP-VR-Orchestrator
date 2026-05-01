@@ -102,7 +102,10 @@ void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
 {
     if (UBlackboardComponent* BB = GetBlackboardComponent())
     {
-        BB->SetValueAsBool(Key_HasAction, true);
+        // 이미 true이면 재설정하지 않음 — BB Decorator가 동일 값 쓰기에도 abort를 발동해
+        // BTTask_ExecuteSmartAction이 시퀀스 중간에 잘려나가는 문제 방지
+        if (!BB->GetValueAsBool(Key_HasAction))
+            BB->SetValueAsBool(Key_HasAction, true);
         BB->SetValueAsEnum(Key_SubAction, (uint8)Action.ActionType);
 
         // target_loc 파라미터가 있으면 Key_TargetLocation에 반영 — BB 쓰기를 컨트롤러 측으로 일원화
@@ -177,6 +180,21 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     TArray<FVector> EnemyLocs;
                     EnemyLocs.Add(Actor->GetActorLocation());
                     ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                }
+            }
+
+            // 시야 대상이 바뀌었거나 타이머가 없을 때만 (재)시작
+            if (CurrentSightTarget != Actor)
+            {
+                CurrentSightTarget = Actor;
+                if (UWorld* W = GetWorld())
+                {
+                    W->GetTimerManager().SetTimer(
+                        PerceptionTickTimer,
+                        this, &ASmartNPCAIController::OnPerceptionTick,
+                        PerceptionTickInterval,
+                        true  // 반복
+                    );
                 }
             }
         }
@@ -259,5 +277,45 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
         }
+
+        // 소실된 대상이 주기적 감시 대상이면 타이머 해제
+        if (CurrentSightTarget == Actor)
+        {
+            if (UWorld* W = GetWorld())
+                W->GetTimerManager().ClearTimer(PerceptionTickTimer);
+            CurrentSightTarget.Reset();
+        }
     }
+}
+
+void ASmartNPCAIController::OnPerceptionTick()
+{
+    AActor* Target = CurrentSightTarget.Get();
+    if (!Target)
+    {
+        if (UWorld* W = GetWorld()) W->GetTimerManager().ClearTimer(PerceptionTickTimer);
+        return;
+    }
+
+    ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn());
+    if (!OwnerNPC) return;
+
+    UNPCStateComponent* StateComp = OwnerNPC->StateComponent;
+    if (!StateComp) return;
+
+    const FString TargetID = Target->GetName();
+    constexpr float SightBaseDanger = 0.6f;
+    float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
+
+    FPerceptionData Perception;
+    Perception.TargetID = TargetID;
+    Perception.SenseType = ESenseType::Sight;
+    Perception.Location = Target->GetActorLocation();
+    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Target->GetActorLocation());
+    Perception.DangerScore = SightBaseDanger * Multiplier;
+
+    UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] PerceptionTick: %s dist=%.0f danger=%.2f"),
+        *TargetID, Perception.Distance, Perception.DangerScore);
+
+    StateComp->RequestEventCognition(Perception);
 }
