@@ -328,6 +328,25 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
     float Score_AggrHpBonus = 1.f;
 
+    // --- Optimal 스코어 튜닝 ---
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptIdealDist = 800.f;   // 이 거리가 최고점
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptDistRange = 800.f;   // IdealDist ± Range 를 벗어나면 0점
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptCoverBonus = 1.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptLOSBonus = 1.f;
+
+    /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출. */
+    UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "30.0"))
+    float TacticalLLMTimeout = 8.0f;
+
+    FTimerHandle TacticalLLMTimeoutTimer;
+
     /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
     float LastTacticalQueryTime = -1000.0f;
 

@@ -22,6 +22,8 @@ const FName ASmartNPCAIController::Key_FacialState(TEXT("FacialState"));
 
 ASmartNPCAIController::ASmartNPCAIController()
 {
+    PerceptionTickInterval = 9.0f;
+
     // Initialize AI Perception
     PerceptionComp = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("AIPerceptionComponent"));
     SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
