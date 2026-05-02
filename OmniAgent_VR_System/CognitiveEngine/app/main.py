@@ -31,6 +31,9 @@ async def _check_ollama_model() -> None:
         ollama_base = llm_factory.OLLAMA_BASE_URL
         async with httpx.AsyncClient() as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
+            if r.status_code != 200 or not r.text.strip():
+                logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
+                return
             installed = [m["name"] for m in r.json().get("models", [])]
             required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
             if not any(required in m for m in installed):
@@ -569,7 +572,7 @@ async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
     if req.importance == "core":
         llm_model = "gemma4:26b"
     elif req.importance == "high":
-        llm_model = "gemma4:12b"
+        llm_model = "qwen3:8b"
     else:
         llm_model = "gemma4:e4b"
     return {"status": "ok", "npc_id": npc_id, "importance": req.importance, "llm_model": llm_model}

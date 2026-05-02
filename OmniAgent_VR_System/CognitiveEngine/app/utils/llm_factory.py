@@ -14,7 +14,7 @@ load_dotenv()
 MODELS = {
     # Ollama 로컬 모델 — Gemma 4
     "gemma4":     "gemma4:26b",   # 메인 LLM (대화/추론)
-    "gemma4_mid": "gemma4:12b",   # 중간 품질 (high NPC용 — e4b보다 낫고 26b보다 빠름)
+    "mid":        "qwen3:8b",     # 중간 품질 (high NPC용 — e4b보다 낫고 26b보다 빠름)
     "gemma4_slm": "gemma4:e4b",   # 경량 구조화 모델 (JSON 추출 등)
     "gemma4_31b": "gemma4:31b",   # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",   # 초경량 (지연 민감 구간)
@@ -47,7 +47,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 
     model_name = model_name.lower()
 
-    OLLAMA_MODELS = {"gemma4", "gemma4_mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen", "qwen_slm", "llama"}
+    OLLAMA_MODELS = {"gemma4", "mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen", "qwen_slm", "llama"}
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")

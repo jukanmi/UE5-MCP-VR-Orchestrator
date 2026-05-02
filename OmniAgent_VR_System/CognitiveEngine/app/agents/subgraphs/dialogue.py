@@ -39,7 +39,7 @@ from ..state import AgentState
 from ...utils import db_manager
 
 
-PERSONAS_BASE_PATH = "app/agents/personas"
+PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
 
 
 # System Prompt for free-form response generation
@@ -239,7 +239,7 @@ def dialogue_node(state: AgentState):
     if importance == "core":
         model_name = "gemma4"
     elif importance == "high":
-        model_name = "gemma4_mid"
+        model_name = "mid"
     else:
         model_name = "gemma4_slm"
     print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
