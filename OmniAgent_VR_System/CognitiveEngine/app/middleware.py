@@ -83,8 +83,13 @@ def is_stale_packet(packet_timestamp: float, threshold_seconds: float = 2.0) -> 
         True  = 오래된 패킷 (드랍 대상)
         False = 유효한 패킷 (처리 가능)
     """
-    current_time = time.time()
-    age_seconds = current_time - packet_timestamp
+    from datetime import datetime, timezone
+    server_now = datetime.now(timezone.utc).timestamp()
+    age_seconds = server_now - packet_timestamp
+
+    if age_seconds < 0:
+        # NTP 역조정 또는 패킷 타임스탬프가 서버보다 미래인 경우 — 드랍하지 않음
+        return False
 
     if age_seconds > threshold_seconds:
         logger.warning(
@@ -121,18 +126,20 @@ def build_failed_event(envelope: MessageEnvelope) -> Dict[str, Any]:
     except Exception as parse_error:
         logger.error(f"[Middleware] action_failed payload 파싱 실패: {parse_error}")
         # 파싱 실패 시에도 기본 정보는 기록하여 이력을 유지한다
+        from datetime import datetime, timezone
         return {
             "ref_msg_id": envelope.ref_msg_id,
             "failed_action_type": "Unknown",
             "reason": f"Payload 파싱 오류: {parse_error}",
             "executor_npc_id": "Unknown",
-            "recorded_at": time.time(),
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    from datetime import datetime, timezone
     return {
         "ref_msg_id": envelope.ref_msg_id,
         "failed_action_type": failed_payload.failed_action_type,
         "reason": failed_payload.reason,
         "executor_npc_id": failed_payload.executor_npc_id,
-        "recorded_at": time.time(),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
     }

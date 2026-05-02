@@ -24,6 +24,7 @@ EBTNodeResult::Type UBTTask_PrepareNextAction::ExecuteTask(UBehaviorTreeComponen
 	// 이미 진행 중인 액션이 있으면 방어 처리
 	if (ActionComp->bIsBusy)
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("[BTTask_Prepare] %s: bIsBusy=true — 이전 액션 진행 중"), *NPC->GetName());
 		return EBTNodeResult::Failed;
 	}
 

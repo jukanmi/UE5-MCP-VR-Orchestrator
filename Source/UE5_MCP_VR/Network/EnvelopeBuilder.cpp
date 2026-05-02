@@ -83,6 +83,7 @@ FString FEnvelopeBuilder::BuildEnvelope(
     // WHY FJsonObject: 문자열 직접 조립은 이스케이프 오류 위험이 있으므로
     //     UE5의 공식 JSON API를 사용하여 안전하게 직렬화한다.
     TSharedRef<FJsonObject> EnvelopeJson = MakeShared<FJsonObject>();
+    EnvelopeJson->SetNumberField(TEXT("protocol_version"), 1);
     EnvelopeJson->SetStringField(TEXT("msg_id"),     MsgId);
     EnvelopeJson->SetStringField(TEXT("auth_token"), AuthToken);
     EnvelopeJson->SetNumberField(TEXT("timestamp"),  UnixTimestamp);

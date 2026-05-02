@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>NPC Debug Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+  h1 { font-size: 1.4rem; font-weight: 700; color: #7dd3fc; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 24px; }
+  .section { background: #1e2330; border: 1px solid #2d3748; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .section-title { font-size: 1rem; font-weight: 600; color: #94a3b8; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 0.7rem; background: #1d4ed8; color: #bfdbfe; padding: 2px 8px; border-radius: 99px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; padding: 8px 10px; color: #64748b; border-bottom: 1px solid #2d3748; font-weight: 500; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1a2035; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #252c3d; }
+  input[type=number], input[type=text] { background: #111827; border: 1px solid #374151; color: #e2e8f0; border-radius: 6px; padding: 4px 8px; width: 100%; font-size: 0.85rem; }
+  input[type=number] { width: 80px; }
+  select { background: #111827; border: 1px solid #374151; color: #e2e8f0; border-radius: 6px; padding: 4px 8px; font-size: 0.85rem; }
+  button { cursor: pointer; border: none; border-radius: 6px; padding: 5px 12px; font-size: 0.8rem; font-weight: 600; transition: opacity 0.15s; }
+  button:hover { opacity: 0.8; }
+  .btn-save  { background: #1d4ed8; color: #fff; }
+  .btn-del   { background: #7f1d1d; color: #fca5a5; }
+  .btn-add   { background: #064e3b; color: #6ee7b7; }
+  .tag-hostile { color: #f87171; font-weight: 600; }
+  .tag-friendly { color: #4ade80; font-weight: 600; }
+  .tag-neutral  { color: #94a3b8; }
+  .add-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: flex-end; }
+  .add-row label { font-size: 0.75rem; color: #64748b; display: flex; flex-direction: column; gap: 4px; }
+  .add-row input { width: 130px; }
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar { height: 6px; border-radius: 3px; min-width: 4px; max-width: 80px; }
+  .toast { position: fixed; top: 20px; right: 20px; background: #1d4ed8; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 0.85rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+  .imp-normal { color: #94a3b8; }
+  .imp-high   { color: #fbbf24; font-weight: 600; }
+  .imp-core   { color: #f472b6; font-weight: 600; }
+  .llm-badge  { font-size: 0.7rem; color: #64748b; margin-left: 6px; }
+  .empty-hint { color: #4b5563; font-size: 0.8rem; padding: 16px 0; text-align: center; }
+  #refreshBtn { float: right; margin-top: -2px; background: #1e293b; color: #94a3b8; border: 1px solid #374151; }
+</style>
+</head>
+<body>
+
+<h1>NPC Debug Dashboard</h1>
+<p class="subtitle">http://127.0.0.1:8000/debug — 로컬 전용 디버그 도구</p>
+
+<!-- ─── 호감도 섹션 ─────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    호감도 조작 (Affinity)
+    <span class="badge" id="affinityCount">—</span>
+    <button id="refreshBtn" onclick="loadAffinity()">↻ 새로고침</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th><th>Target</th><th>Score</th><th>Tag</th><th>Last Interaction</th><th>Updated</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="affinityBody">
+      <tr><td colspan="7" class="empty-hint">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+
+  <div class="add-row">
+    <label>Source ID<input type="text" id="newSrc" placeholder="NPC_A"></label>
+    <label>Target ID<input type="text" id="newTgt" placeholder="Player"></label>
+    <label>Score (-100~100)<input type="number" id="newScore" value="0" min="-100" max="100"></label>
+    <label>Note (선택)<input type="text" id="newNote" placeholder="debug_override"></label>
+    <button class="btn-add" onclick="addAffinity()">+ 추가 / 업데이트</button>
+  </div>
+</div>
+
+<!-- ─── 중요 NPC 섹션 ──────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    중요 NPC 관리 (Important NPCs)
+    <span class="badge" id="npcCount">—</span>
+  </div>
+  <p style="font-size:0.78rem;color:#4b5563;margin-bottom:12px;">
+    Importance를 <b style="color:#fbbf24">high</b> 또는 <b style="color:#f472b6">core</b>로 설정하면 해당 NPC는 <code>gemma4:26b</code> 모델을 사용합니다.
+    <b style="color:#94a3b8">normal</b>은 <code>qwen (8b)</code>입니다.
+  </p>
+  <table>
+    <thead>
+      <tr><th>NPC ID</th><th>Role</th><th>Folder</th><th>Traits</th><th>Importance</th><th>LLM 모델</th><th></th></tr>
+    </thead>
+    <tbody id="npcBody">
+      <tr><td colspan="7" class="empty-hint">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ─── NPC 명령 섹션 ───────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    NPC 명령 (Debug Command)
+    <span id="wsStatus" style="font-size:0.7rem;padding:2px 8px;border-radius:99px;background:#7f1d1d;color:#fca5a5">UE5 연결 확인 중...</span>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <label style="font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      NPC ID
+      <input type="text" id="cmdNpc" placeholder="elera" style="width:120px">
+    </label>
+    <label style="font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      Action
+      <select id="cmdAction">
+        <optgroup label="Common">
+          <option>Idle</option><option>Move</option><option>Follow</option>
+          <option>Wait</option><option>Dialogue</option><option>TurnTo</option>
+          <option>Stop</option><option>Scan</option><option>UseItem</option>
+          <option>Equip</option><option>Unequip</option>
+        </optgroup>
+        <optgroup label="Combat">
+          <option>Attack</option><option>Block</option><option>Dodge</option>
+          <option>Flee</option><option>SignalAllies</option>
+        </optgroup>
+        <optgroup label="Social">
+          <option>Trade</option><option>Emote</option><option>GiveItem</option>
+          <option>Comfort</option><option>HandObject</option>
+        </optgroup>
+        <optgroup label="Task">
+          <option>PickUp</option><option>Drop</option><option>Craft</option><option>Repair</option>
+        </optgroup>
+        <optgroup label="Investigation">
+          <option>Investigate</option><option>Track</option><option>Scout</option>
+        </optgroup>
+        <optgroup label="Lifestyle">
+          <option>Sit</option><option>Sleep</option><option>Read</option>
+          <option>Pray</option><option>Dance</option><option>Sing</option>
+        </optgroup>
+      </select>
+    </label>
+    <label style="font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      Mode
+      <select id="cmdMode">
+        <option>Common</option><option>Combat</option><option>Social</option>
+        <option>Task</option><option>Investigation</option><option>Lifestyle</option>
+      </select>
+    </label>
+    <label style="font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      Facial
+      <select id="cmdFacial">
+        <option>Neutral</option><option>Happy</option><option>Sad</option>
+        <option>Angry</option><option>Fear</option><option>Surprised</option>
+        <option>Disgusted</option><option>Tired</option><option>Pain</option>
+      </select>
+    </label>
+  </div>
+  <div id="paramsWrap" style="margin-bottom:12px"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn-add" onclick="addParam()">+ 파라미터 추가</button>
+    <button class="btn-save" onclick="sendCommand()">▶ 명령 전송</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+
+function showToast(msg, ok=true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#1d4ed8' : '#7f1d1d';
+  t.style.opacity = '1';
+  setTimeout(() => t.style.opacity = '0', 2500);
+}
+
+function scoreColor(s) {
+  if (s <= -30) return '#f87171';
+  if (s >= 30)  return '#4ade80';
+  return '#94a3b8';
+}
+
+function scoreBarStyle(s) {
+  const pct = (s + 100) / 200;
+  const w = Math.round(pct * 80);
+  const col = s <= -30 ? '#f87171' : s >= 30 ? '#4ade80' : '#64748b';
+  return `width:${w}px;background:${col}`;
+}
+
+function tagClass(tag) {
+  if (tag === 'Hostile') return 'tag-hostile';
+  if (tag === 'Friendly') return 'tag-friendly';
+  return 'tag-neutral';
+}
+
+function impClass(imp) {
+  if (imp === 'high') return 'imp-high';
+  if (imp === 'core') return 'imp-core';
+  return 'imp-normal';
+}
+
+function llmLabel(imp) {
+  if (imp === 'core') return 'gemma4:26b';
+  if (imp === 'high') return 'qwen3:8b';
+  return 'gemma4:e4b';
+}
+
+// ── Affinity ──────────────────────────────────────────────
+
+async function loadAffinity() {
+  const res = await fetch(`${API}/api/affinity`);
+  const data = await res.json();
+  const rows = data.rows || [];
+  document.getElementById('affinityCount').textContent = rows.length;
+  const tbody = document.getElementById('affinityBody');
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-hint">아직 호감도 데이터가 없습니다.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => `
+    <tr id="row-${r.source_id}-${r.target_id}">
+      <td>${r.source_id}</td>
+      <td>${r.target_id}</td>
+      <td>
+        <div class="score-bar-wrap">
+          <input type="number" value="${r.affinity_score}" min="-100" max="100"
+            id="score-${r.source_id}-${r.target_id}" style="width:70px">
+          <div class="score-bar" style="${scoreBarStyle(r.affinity_score)}" id="bar-${r.source_id}-${r.target_id}"></div>
+        </div>
+      </td>
+      <td><span class="${tagClass(r.reputation_tag)}">${r.reputation_tag}</span></td>
+      <td style="color:#4b5563;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.last_interaction||''}">${r.last_interaction||'—'}</td>
+      <td style="color:#4b5563;font-size:0.75rem">${(r.updated_at||'').slice(0,16)}</td>
+      <td style="white-space:nowrap;display:flex;gap:6px">
+        <button class="btn-save" onclick="saveRow('${r.source_id}','${r.target_id}')">저장</button>
+        <button class="btn-del"  onclick="deleteRow('${r.source_id}','${r.target_id}')">삭제</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function saveRow(src, tgt) {
+  const scoreEl = document.getElementById(`score-${src}-${tgt}`);
+  const score = parseInt(scoreEl.value, 10);
+  const res = await fetch(`${API}/api/affinity`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({source_id: src, target_id: tgt, score, note: 'debug_manual'})
+  });
+  if (res.ok) {
+    showToast(`${src}→${tgt} 호감도 ${score}로 설정됨`);
+    loadAffinity();
+  } else {
+    showToast('저장 실패', false);
+  }
+}
+
+async function deleteRow(src, tgt) {
+  if (!confirm(`${src}→${tgt} 호감도 레코드를 삭제합니까?`)) return;
+  const res = await fetch(`${API}/api/affinity?source_id=${encodeURIComponent(src)}&target_id=${encodeURIComponent(tgt)}`, {method:'DELETE'});
+  if (res.ok) {
+    showToast(`${src}→${tgt} 삭제됨`);
+    loadAffinity();
+  } else {
+    showToast('삭제 실패', false);
+  }
+}
+
+async function addAffinity() {
+  const src   = document.getElementById('newSrc').value.trim();
+  const tgt   = document.getElementById('newTgt').value.trim();
+  const score = parseInt(document.getElementById('newScore').value, 10);
+  const note  = document.getElementById('newNote').value.trim() || 'debug_override';
+  if (!src || !tgt) { showToast('Source/Target 을 입력하세요', false); return; }
+  const res = await fetch(`${API}/api/affinity`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({source_id: src, target_id: tgt, score, note})
+  });
+  if (res.ok) {
+    showToast(`${src}→${tgt} 호감도 ${score} 설정됨`);
+    document.getElementById('newSrc').value = '';
+    document.getElementById('newTgt').value = '';
+    document.getElementById('newScore').value = '0';
+    document.getElementById('newNote').value = '';
+    loadAffinity();
+  } else {
+    showToast('추가 실패', false);
+  }
+}
+
+// ── Important NPCs ────────────────────────────────────────
+
+async function loadNPCs() {
+  const res = await fetch(`${API}/api/npcs`);
+  const data = await res.json();
+  const npcs = data.npcs || [];
+  document.getElementById('npcCount').textContent = npcs.length;
+  const tbody = document.getElementById('npcBody');
+
+  if (npcs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-hint">등록된 페르소나가 없습니다.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = npcs.map(n => `
+    <tr>
+      <td><b>${n.npc_id}</b></td>
+      <td style="color:#64748b">${n.role}</td>
+      <td style="color:#4b5563;font-size:0.75rem">${n.folder}</td>
+      <td style="color:#4b5563;font-size:0.75rem">${(n.traits||[]).join(', ')}</td>
+      <td>
+        <select id="imp-${n.npc_id}" onchange="updateImpBadge('${n.npc_id}')">
+          <option value="normal" ${n.importance==='normal'?'selected':''}>normal</option>
+          <option value="high"   ${n.importance==='high'?'selected':''}>high</option>
+          <option value="core"   ${n.importance==='core'?'selected':''}>core</option>
+        </select>
+      </td>
+      <td>
+        <span class="${impClass(n.importance)} llm-badge" id="llm-${n.npc_id}">${llmLabel(n.importance)}</span>
+      </td>
+      <td>
+        <button class="btn-save" onclick="saveImportance('${n.npc_id}')">저장</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function updateImpBadge(npcId) {
+  const sel = document.getElementById(`imp-${npcId}`);
+  const badge = document.getElementById(`llm-${npcId}`);
+  badge.textContent = llmLabel(sel.value);
+  badge.className = `${impClass(sel.value)} llm-badge`;
+}
+
+async function saveImportance(npcId) {
+  const imp = document.getElementById(`imp-${npcId}`).value;
+  const res = await fetch(`${API}/api/npcs/${encodeURIComponent(npcId)}/importance`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({importance: imp})
+  });
+  if (res.ok) {
+    const d = await res.json();
+    showToast(`${npcId}: importance=${imp} → ${d.llm_model}`);
+  } else {
+    showToast('저장 실패', false);
+  }
+}
+
+// ── NPC Command ──────────────────────────────────────────
+
+let paramCount = 0;
+
+function addParam() {
+  const id = paramCount++;
+  const wrap = document.getElementById('paramsWrap');
+  const row = document.createElement('div');
+  row.id = `param-${id}`;
+  row.style = 'display:flex;gap:8px;margin-bottom:6px;align-items:center';
+  row.innerHTML = `
+    <input type="text" placeholder="key (예: target_id)" id="pk-${id}" style="width:160px">
+    <input type="text" placeholder="value (예: BP_Player_C_0)" id="pv-${id}" style="width:200px">
+    <button class="btn-del" onclick="document.getElementById('param-${id}').remove()" style="padding:4px 8px">✕</button>
+  `;
+  wrap.appendChild(row);
+}
+
+async function sendCommand() {
+  const npcId = document.getElementById('cmdNpc').value.trim();
+  if (!npcId) { showToast('NPC ID를 입력하세요', false); return; }
+
+  const params = {};
+  document.querySelectorAll('[id^="pk-"]').forEach(el => {
+    const idx = el.id.split('-')[1];
+    const k = el.value.trim();
+    const v = document.getElementById(`pv-${idx}`).value.trim();
+    if (k) params[k] = v;
+  });
+
+  const body = {
+    action_type: document.getElementById('cmdAction').value,
+    mode: document.getElementById('cmdMode').value,
+    facial: document.getElementById('cmdFacial').value,
+    params
+  };
+
+  const res = await fetch(`${API}/api/npc/${encodeURIComponent(npcId)}/command`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const d = await res.json();
+  if (res.ok) {
+    showToast(`${npcId} → ${body.action_type} 전송 완료`);
+  } else {
+    showToast(d.detail || '전송 실패', false);
+  }
+}
+
+async function checkWsStatus() {
+  const el = document.getElementById('wsStatus');
+  try {
+    const res = await fetch(`${API}/api/ws/status`);
+    const d = await res.json();
+    if (d.connected) {
+      el.textContent = 'UE5 연결됨';
+      el.style.background = '#064e3b'; el.style.color = '#6ee7b7';
+    } else {
+      el.textContent = 'UE5 미연결';
+      el.style.background = '#7f1d1d'; el.style.color = '#fca5a5';
+    }
+  } catch {
+    el.textContent = '서버 오프라인';
+    el.style.background = '#451a03'; el.style.color = '#fed7aa';
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────
+loadAffinity();
+loadNPCs();
+checkWsStatus();
+setInterval(checkWsStatus, 5000);
+</script>
+</body>
+</html>

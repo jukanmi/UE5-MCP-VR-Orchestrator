@@ -14,6 +14,8 @@ class UAIPerceptionStimuliSourceComponent;
 class UBehaviorTree;
 struct FActionBatch;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
+
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPC
 {
@@ -93,6 +95,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SetBlackboardBool(const FString& KeyName, bool bValue);
 
+    // === Death ===
+
+    /** 사망 여부. true이면 NPC맵에서 퇴출 완료 + 모든 액션 중지 상태. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|State")
+    bool bIsDead = false;
+
+    /** 사망 시 브로드캐스트. BP에서 사망 애니메이션·VFX 연결용. */
+    UPROPERTY(BlueprintAssignable, Category = "MCP|State")
+    FOnNPCDied OnNPCDied;
+
     // === Damage Hook (UE5 Actor Override) ===
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -123,6 +135,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI|Queue")
     void OnActionCompleted();
 
+
+    /** HP가 0 이하로 떨어졌을 때 호출. 액션 중지 → NPCMap 퇴출 → AI 해제 → 일정 시간 후 Actor 제거. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|State")
+    void HandleDeath();
+
+private:
+    void DestroyAfterDeath();
+
+public:
 
     UFUNCTION(CallInEditor, Category = "MCP|Debug")
 	void Debug_Test_Social_Dialogue();

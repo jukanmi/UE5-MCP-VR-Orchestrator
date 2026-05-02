@@ -160,12 +160,3 @@ def retrieve_context(agent_id: str, query: str, k: int = 3) -> str:
     except Exception as e:
         print(f"[RAG] Error retrieving context for {agent_id}: {e}")
         return ""
-
-
-def clear_cache(agent_id: str = None):
-    """Clear vectorstore cache."""
-    global _vectorstore_cache
-    if agent_id:
-        _vectorstore_cache.pop(agent_id.lower(), None)
-    else:
-        _vectorstore_cache.clear()

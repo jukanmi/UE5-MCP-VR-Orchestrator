@@ -33,7 +33,12 @@ FNPCAttributes UNPCStateComponent::GetAttributes() const
 FNPCAttributes& UNPCStateComponent::GetMutableAttributes()
 {
     ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
-    check(OwnerNPC && "[NPCStateComponent] Owner is not ASmartNPC");
+    if (!OwnerNPC)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCStateComponent] Owner is not ASmartNPC — returning default attributes"));
+        static FNPCAttributes Fallback;
+        return Fallback;
+    }
     return OwnerNPC->NPCAttributes;
 }
 
@@ -86,7 +91,7 @@ void UNPCStateComponent::ApplyMovementSpeed()
 
 bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
 {
-    int32 PerceptionBonus = GetAttributes().BaseStats.Perception;
+    int32 PerceptionBonus = FMath::Clamp(GetAttributes().BaseStats.Perception, 0, 100);
     int32 Roll = UDiceSystem::RollD100();
     int32 Total = Roll + PerceptionBonus;
 
@@ -117,8 +122,8 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
 
     if (!Attrs.Resources.IsAlive())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] NPC is DEAD!"));
-        // TODO: Death Event Broadcast (Delegate 등)
+        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s HP 소진 — SmartNPC::HandleDeath 위임"),
+            *GetOwner()->GetName());
     }
 
     return EffectiveDamage;
@@ -169,6 +174,12 @@ void UNPCStateComponent::FlushEventReport()
     }
 
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
+    if (Payload.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: Perception 직렬화 실패 — flush 건너뜀"), *OwnerNPC->AgentID);
+        LocalEventQueue.Empty();
+        return;
+    }
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
         // 단일 LLM WebSocket으로 emergency_report 전송.

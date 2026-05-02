@@ -7,6 +7,7 @@
 #include "../NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "EnvironmentQuery/EnvQueryTypes.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
@@ -107,7 +108,10 @@ public:
 
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
-    
+
+    // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
+    EAction LastQueuedActionType = EAction::Idle;
+
     // 현재 진행 중인 액션 캐싱 (BTTask 등에서 참조)
     FGameAction CurrentAction;
 
@@ -284,12 +288,72 @@ public:
      *  결과 Move 액션은 ActionQueue에 자동 enqueue되어 BT가 자연스럽게 처리. */
     void TryStartTacticalQueryForCombat(const TArray<FVector>& EnemyLocations);
 
+    /** LLM 응답 파싱 실패 시 NPCManager가 호출 — WaitingLLM 상태를 Idle로 복구해 BT hang 방지. */
+    void AbortTacticalQuery();
+
     /** 전술 쿼리 재발동 최소 간격 (초). 연속 SIGHT/HEARING에 매번 쿼리하지 않도록 방지. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|EQS", meta = (ClampMin = "0.5", ClampMax = "30.0"))
     float TacticalQueryCooldown = 2.0f;
 
+    // === EQS / 전술 스코어링 튜닝 파라미터 ===
+    // UpdateEQSParams() 및 EvalSafe/Aggressive/OptimalScore()에서 사용
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float EQS_SearchRadiusBase = 1000.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float EQS_PerceptionRadiusScale = 20.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_SafeDistScale = 3.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_CoverBonus = 2.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_LOSPenalty = 1.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_LowHpFleeBonus = 1.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrDistScale = 3.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrLOSBonus = 2.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrCoverPenalty = 0.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_AggrHpBonus = 1.f;
+
+    // --- Optimal 스코어 튜닝 ---
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptIdealDist = 800.f;   // 이 거리가 최고점
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptDistRange = 800.f;   // IdealDist ± Range 를 벗어나면 0점
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptCoverBonus = 1.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
+    float Score_OptLOSBonus = 1.f;
+
+    /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출. */
+    UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "30.0"))
+    float TacticalLLMTimeout = 8.0f;
+
+    FTimerHandle TacticalLLMTimeoutTimer;
+
     /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
     float LastTacticalQueryTime = -1000.0f;
+
+    // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생)
+    FString PendingMoveMediaKey;
+
+    void OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
 
     /** NPCManager가 LLM 응답 수신 시 호출.
      *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */

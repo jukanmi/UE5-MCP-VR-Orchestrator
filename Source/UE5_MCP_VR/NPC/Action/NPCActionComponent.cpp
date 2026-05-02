@@ -278,10 +278,18 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         }
         else
         {
+            // 동일 액션 타입이 큐 끝에 이미 있으면 추가하지 않음 — 이벤트 폭증 시 같은 액션 반복 큐잉 방지
+            if (Action.ActionType == LastQueuedActionType)
+            {
+                UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 중복 액션 스킵: %s"),
+                    *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+                continue;
+            }
             // [의도(Why)] 일반 물리적 액션은 이전 행동이 끝나길 기다렸다가 순차적으로 실행(Queue)되도록 보장합니다.
             ActionQueue.Enqueue(Action);
+            LastQueuedActionType = Action.ActionType;
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
-            *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+                *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
         }
     }
 
@@ -305,6 +313,7 @@ void UNPCActionComponent::StopAllActions()
 {
     ActionQueue.Empty();
     bIsBusy = false;
+    LastQueuedActionType = EAction::Idle;
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
@@ -777,7 +786,7 @@ UNPCActionComponent::FEQSWeights UNPCActionComponent::ComputeEQSWeights() const
 
     const FNPCAttributes& Attr = StateComponent->GetAttributes();
 
-    W.SearchRadius     = FMath::Clamp(1000.f + Attr.BaseStats.Perception * 20.f, 500.f, 3000.f);
+    W.SearchRadius     = FMath::Clamp(EQS_SearchRadiusBase + Attr.BaseStats.Perception * EQS_PerceptionRadiusScale, 500.f, 3000.f);
     W.CoverWeight      = Attr.Behavior.Fear * 0.05f;
     W.DistanceWeight   = Attr.Behavior.Fear * 0.1f;   // 겁쟁이일수록 멀리 도망감
 
@@ -822,19 +831,43 @@ void UNPCActionComponent::UpdateEQSParams()
 // 전술 재배치(Perception 트리거)는 TryStartTacticalQueryForCombat → TacticalPositionsQuery(AllMatching+LLM) 경로 사용.
 void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActor, EMoveType SpeedType, ETacticalMoveState TacticalState)
 {
-    UpdateEQSParams();
+    // target_loc이 명시된 경우 EQS 없이 직접 이동 (디버그 명령, 전술 쿼리 결과 주입 등)
+    if (!TargetLocation.IsNearlyZero())
+    {
+        BaseMove(TargetLocation, SpeedType);
+        return;
+    }
 
+    // TargetActor가 있으면 해당 위치로 직접 이동
+    if (TargetActor)
+    {
+        BaseMove(TargetActor->GetActorLocation(), SpeedType);
+        return;
+    }
+
+    // 목적지 미지정 → EQS로 최적 위치 탐색
+    UpdateEQSParams();
     if (DefaultMoveQuery)
     {
         FEnvQueryRequest QueryRequest(DefaultMoveQuery, GetOwner());
+
+        // TacticalPositionsQuery와 동일하게 스탯 기반 가중치를 Named Parameter로 직접 주입.
+        // UpdateEQSParams()의 BB 쓰기만으로는 EQS 에셋이 값을 읽지 못함.
+        if (StateComponent)
+        {
+            const FEQSWeights W = ComputeEQSWeights();
+            QueryRequest.SetFloatParam(TEXT("SearchRadius"),        W.SearchRadius);
+            QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"), W.DistanceWeight);
+            QueryRequest.SetFloatParam(TEXT("CoverWeightParam"),    W.CoverWeight);
+            QueryRequest.SetFloatParam(TEXT("SafeDistance"),        W.SafeDistance);
+        }
+
         QueryRequest.Execute(EEnvQueryRunMode::SingleResult,
             this, &UNPCActionComponent::OnTacticalMoveCompleted);
         return;
     }
 
-    // EQS 에셋 미할당 → 직접 이동 폴백
-    const FVector MoveTarget = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
-    BaseMove(MoveTarget, SpeedType);
+    UE_LOG(LogTemp, Warning, TEXT("[NPCAction] ExecuteMove: 목적지 없음 (target_loc/TargetActor/EQS 모두 없음)"));
 }
 
 // EQS 쿼리 콜백: 결과 좌표로 실제 이동 명령을 수행합니다.
@@ -891,42 +924,42 @@ namespace
     }
 
     /** Safe 스코어: 멀수록, 엄폐할수록, HP 낮을수록 가중치 */
-    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+        float DistScale, float CoverBonus, float LOSPenalty, float LowHpBonus)
     {
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
-        // 적이 없으면 LOS 없음 → penalty 없음
         const bool bLOS   = (Cover < 0.5f);
-        float Score = FMath::Min(Dist / 1500.f, 1.f) * 3.f;  // 거리: 0~3
-        Score += Cover * 2.f;                                  // 엄폐: 0~2
-        Score += bLOS ? -1.f : 0.f;                           // LOS 노출 패널티
-        Score += (1.f - HpPct) * 1.5f;                        // HP 낮을수록 도주 보너스
+        float Score = FMath::Min(Dist / 1500.f, 1.f) * DistScale;
+        Score += Cover * CoverBonus;
+        Score += bLOS ? -LOSPenalty : 0.f;
+        Score += (1.f - HpPct) * LowHpBonus;
         return Score;
     }
 
     /** Aggressive 스코어: 가까울수록, LOS 있을수록 */
-    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct)
+    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+        float DistScale, float LOSBonus, float CoverPenalty, float HpBonus)
     {
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
-        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * 3.f; // 가까울수록 ↑
-        Score += bLOS ? 2.f : 0.f;                                    // LOS: 적 보여야 공격 가능
-        Score += Cover * -0.5f;                                        // 엄폐는 소폭 페널티
-        Score += HpPct * 1.f;                                          // HP 높을수록 공격 선호
+        float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * DistScale;
+        Score += bLOS ? LOSBonus : 0.f;
+        Score += Cover * -CoverPenalty;
+        Score += HpPct * HpBonus;
         return Score;
     }
 
     /** Optimal 스코어: 중간 거리 + LOS + 적당한 엄폐 */
-    float EvalOptimalScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float)
+    float EvalOptimalScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float,
+        float IdealDist, float DistRange, float CoverBonus, float LOSBonus)
     {
         const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
         const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
-        // 600~1000 구간 선호 (정규화 곡선 대신 단순 선형 피크)
-        const float IdealDist = 800.f;
-        const float DistScore = FMath::Max(0.f, 2.f - FMath::Abs(Dist - IdealDist) / 800.f);
-        return DistScore + Cover * 1.f + (bLOS ? 1.f : 0.f);
+        const float DistScore = FMath::Max(0.f, 2.f - FMath::Abs(Dist - IdealDist) / FMath::Max(DistRange, 1.f));
+        return DistScore + Cover * CoverBonus + (bLOS ? LOSBonus : 0.f);
     }
 
     FString CategoryToString(ELocationCategory Cat)
@@ -970,6 +1003,7 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
     if (StateComponent)
     {
         const FEQSWeights W = ComputeEQSWeights();
+        QueryRequest.SetFloatParam(TEXT("SearchRadius"),          W.SearchRadius);
         QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"),   W.DistanceWeight);
         QueryRequest.SetFloatParam(TEXT("AggressionWeightParam"), W.AggressionWeight);
         QueryRequest.SetFloatParam(TEXT("CoverWeightParam"),      W.CoverWeight);
@@ -1021,8 +1055,18 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
 {
     if (!Result || !Result->IsSuccessful() || Result->Items.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전술 EQS 결과 없음 → Failed"));
-        TacticalQueryState = ETacticalQueryState::Failed;
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전술 EQS 결과 없음 → 직접 이동 폴백"));
+        TacticalQueryState = ETacticalQueryState::Idle;
+
+        // 폴백: 적 방향으로 직접 Move 액션 enqueue
+        if (!CachedEnemyLocations.IsEmpty())
+        {
+            FGameAction MoveAction;
+            MoveAction.ActionType = EAction::Move;
+            MoveAction.Parameters.Add(NPCActionKeys::Key_TargetLoc, CachedEnemyLocations[0].ToString());
+            ActionQueue.Enqueue(MoveAction);
+            LastQueuedActionType = EAction::Move;
+        }
         return;
     }
 
@@ -1033,6 +1077,15 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
         : 0.5f;
 
     // ── 스코어링 ─────────────────────────────────────────────────────────────
+    // Fear/Aggression 스탯을 스코어 배율로 반영 (0~100 → 0.5~1.5 범위)
+    float FearMult = 1.f, AggrMult = 1.f;
+    if (StateComponent)
+    {
+        const FBehavioralTraits& B = StateComponent->GetAttributes().Behavior;
+        FearMult = FMath::Clamp(0.5f + B.Fear * 0.01f, 0.5f, 1.5f);
+        AggrMult = FMath::Clamp(0.5f + B.Aggression * 0.01f, 0.5f, 1.5f);
+    }
+
     TArray<FLocationCandidate> AllCandidates;
     AllCandidates.Reserve(Result->Items.Num());
 
@@ -1040,9 +1093,16 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     {
         const FVector Loc = Result->GetItemAsLocation(i);
 
-        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
-        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
-        const float OptScore   = EvalOptimalScore(Loc, CachedEnemyLocations, World, Owner, HpPct);
+        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+            Score_SafeDistScale * FearMult, Score_CoverBonus * FearMult, Score_LOSPenalty, Score_LowHpFleeBonus * FearMult);
+        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+            Score_AggrDistScale * AggrMult, Score_AggrLOSBonus * AggrMult, Score_AggrCoverPenalty, Score_AggrHpBonus * AggrMult);
+        const float OptScore   = EvalOptimalScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+            Score_OptIdealDist, Score_OptDistRange, Score_OptCoverBonus, Score_OptLOSBonus);
+
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[EQS Score] Loc=(%.0f,%.0f,%.0f) Safe=%.2f(x%.1f) Aggr=%.2f(x%.1f) Opt=%.2f"),
+            Loc.X, Loc.Y, Loc.Z, SafeScore, FearMult, AggrScore, AggrMult, OptScore);
 
         ELocationCategory BestCat;
         float BestScore;
@@ -1141,6 +1201,14 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - location_decision 전송 (후보 %d개)"),
                 *AgentID, Pruned.Num());
 
+            // LLM 무응답 시 자동 복구 타이머
+            if (UWorld* W = GetWorld())
+            {
+                W->GetTimerManager().SetTimer(TacticalLLMTimeoutTimer,
+                    [this]() { AbortTacticalQuery(); },
+                    TacticalLLMTimeout, false);
+            }
+
             UE_LOG(LogTemp, Log, TEXT("=== [EQS Candidates] %s ==="), *AgentID);
             for (const FLocationCandidate& C : Pruned)
             {
@@ -1164,6 +1232,10 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
 
 void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason)
 {
+    // LLM 응답이 정상 도착했으므로 타임아웃 타이머 해제
+    if (UWorld* W = GetWorld())
+        W->GetTimerManager().ClearTimer(TacticalLLMTimeoutTimer);
+
     const FVector* Found = TacticalCandidateMap.Find(ChosenCandidateId);
     if (!Found)
     {
@@ -1202,6 +1274,21 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
         TEXT("[EQS RESULT] AgentID=%s | ChosenID=%s | X=%.1f Y=%.1f Z=%.1f"),
         *GetOwnerAgentID(), *ChosenCandidateId,
         TacticalQueryResult.X, TacticalQueryResult.Y, TacticalQueryResult.Z);
+}
+
+void UNPCActionComponent::AbortTacticalQuery()
+{
+    if (UWorld* W = GetWorld())
+        W->GetTimerManager().ClearTimer(TacticalLLMTimeoutTimer);
+
+    if (TacticalQueryState != ETacticalQueryState::Idle)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[NPCAction] %s: TacticalQuery 강제 중단 (state=%d) → Idle 복구"),
+            *GetOwnerAgentID(), static_cast<int32>(TacticalQueryState));
+        TacticalQueryState = ETacticalQueryState::Idle;
+        TacticalCandidateMap.Empty();
+    }
 }
 
 void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType)
@@ -1255,10 +1342,36 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
 {
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
-    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run);
-    BasePlayActionMedia(TEXT("Attack"));
-    if (ACharacter* C = Cast<ACharacter>(GetOwner()))
-        UAISense_Hearing::ReportNoiseEvent(GetWorld(), C->GetActorLocation(), NPCActionKeys::Noise_Attack, C, 0.f, NPCActionKeys::NoiseTag_Attack);
+
+    // 도착 후 몽타주 재생을 위해 델리게이트 바인딩 (중복 방지)
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
+    {
+        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
+        {
+            PFC->OnRequestFinished.RemoveAll(this);
+            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnAttackMoveCompleted);
+        }
+    }
+
+    PendingMoveMediaKey = TEXT("Attack");
+    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run, 150.f);
+
+    if (OwnerCharacter)
+        UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Attack);
+}
+
+void UNPCActionComponent::OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
+{
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
+        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
+            PFC->OnRequestFinished.RemoveAll(this);
+
+    if (Result.IsSuccess() && !PendingMoveMediaKey.IsEmpty())
+        BasePlayActionMedia(PendingMoveMediaKey);
+
+    PendingMoveMediaKey.Reset();
 }
 
 void UNPCActionComponent::ExecuteBlock(AActor* TargetActor)
@@ -1420,6 +1533,8 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
             0.5f, true
         );
     }
+
+    BasePlayActionMedia(NPCActionKeys::Media_Track);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 시작 → %s"), *GetOwnerAgentID(), *TargetActor->GetName());
 }

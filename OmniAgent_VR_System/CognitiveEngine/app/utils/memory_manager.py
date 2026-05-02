@@ -220,9 +220,3 @@ def get_conversation_context(agent_id: str, k: int = 5) -> str:
     """NPC의 최근 대화 컨텍스트 문자열 반환."""
     memory = get_memory(agent_id)
     return memory.get_context_string(k)
-
-
-def clear_memory_cache():
-    """메모리 캐시 전체 초기화 (테스트용)."""
-    global _memory_cache
-    _memory_cache.clear()

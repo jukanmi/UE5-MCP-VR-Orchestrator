@@ -155,6 +155,7 @@ class MessageEnvelope(BaseModel):
       type       : 메시지 목적 분류 (EEnvelopeType).
       payload    : 실제 데이터. type에 따라 구조가 다름.
     """
+    protocol_version: int = 1
     msg_id: str
     ref_msg_id: Optional[str] = None  # action_failed가 아니면 None 가능
     auth_token: str
