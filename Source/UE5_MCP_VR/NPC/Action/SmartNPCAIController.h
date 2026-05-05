@@ -7,20 +7,27 @@
 #include "Perception/AISenseConfig_Hearing.h"
 #include "SmartNPCAIController.generated.h"
 
+class UMCPStateTreeAIComponent;
+
 /**
  * AI Controller for SmartNPC.
- * Manages Blackboard interaction and runs the Behavior Tree.
+ * StateTree 단일 실행 + Blackboard(Perception 키 공유) + AIPerception(Sight/Hearing).
  */
 UCLASS()
 class UE5_MCP_VR_API ASmartNPCAIController : public AAIController
 {
 	GENERATED_BODY()
-	
+
 public:
 	ASmartNPCAIController();
 
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
+
+    /** StateTree AI Component. SmartNPC.StateTreeAsset을 OnPossess에서 주입. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+    UMCPStateTreeAIComponent* StateTreeAI;
 
     /** AI Perception Component for vision/hearing */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")

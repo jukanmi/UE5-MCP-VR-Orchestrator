@@ -3,9 +3,10 @@
 #include "../NPCStateComponent.h"
 #include "../Struct/NPCActionKeys.h"
 #include "../SmartNPC.h"
-#include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "BehaviorTree/BehaviorTreeComponent.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "MCPStateTreeAIComponent.h"
+#include "StateTree.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 
@@ -23,6 +24,14 @@ const FName ASmartNPCAIController::Key_FacialState(TEXT("FacialState"));
 ASmartNPCAIController::ASmartNPCAIController()
 {
     PerceptionTickInterval = 9.0f;
+
+    // StateTree AI Component (SmartNPC.StateTreeAsset 설정 시 자동 실행)
+    StateTreeAI = CreateDefaultSubobject<UMCPStateTreeAIComponent>(TEXT("StateTreeAI"));
+    if (StateTreeAI)
+    {
+        // OnPossess에서 에셋 주입 후 수동으로 StartLogic — BeginPlay 자동 시작 비활성.
+        StateTreeAI->SetStartLogicAutomatically(false);
+    }
 
     // Initialize AI Perception
     PerceptionComp = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("AIPerceptionComponent"));
@@ -62,7 +71,7 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
 
 	if (ASmartNPC* NPC = Cast<ASmartNPC>(InPawn))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] Possessed NPC: %s"), *NPC->AgentID);
+		UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] Possessed NPC: %s"), *NPC->AgentID);
 		
 		// --- Apply NPC-specific Vision Config ---
 		if (PerceptionComp && SightConfig)
@@ -86,9 +95,31 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
 				*NPC->AgentID, NPC->SightRadius, NPC->HearingRange);
 		}
 
-		if (NPC->BehaviorTreeAsset && NPC->BehaviorTreeAsset->BlackboardAsset)
+		// --- Blackboard 초기화 ---
+		// Perception 콜백과 ST Tasks가 BB를 통해 TargetActor 등을 공유.
+		if (NPC->BlackboardAsset)
 		{
-			RunBehaviorTree(NPC->BehaviorTreeAsset);
+			UBlackboardComponent* BBComp = nullptr;
+			UseBlackboard(NPC->BlackboardAsset, BBComp);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] %s: BlackboardAsset 미할당 — Perception 키 공유 불가"), *NPC->AgentID);
+		}
+
+		// --- StateTree 실행 ---
+		if (NPC->StateTreeAsset && StateTreeAI)
+		{
+			// 핵심: StateTreeRef는 protected라 서브클래스 setter로 주입.
+			// StartLogic() 전에 반드시 호출.
+			StateTreeAI->SetStateTreeAsset(NPC->StateTreeAsset);
+			StateTreeAI->StartLogic();
+			UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] %s: StateTree logic started (asset=%s)"),
+				*NPC->AgentID, *NPC->StateTreeAsset->GetName());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[SmartNPCAIController] %s: StateTreeAsset 미할당 — AI 로직 실행 안됨"), *NPC->AgentID);
 		}
 
         // --- Bind ActionComponent Delegates ---
@@ -98,6 +129,16 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
             ActionComp->OnActionStoppedAll.AddDynamic(this, &ASmartNPCAIController::HandleAllActionsStopped);
         }
 	}
+}
+
+void ASmartNPCAIController::OnUnPossess()
+{
+    // StateTree는 자체 정리하지만 명시적으로 멈추기. (사망/파괴 시 Tick 안전)
+    if (StateTreeAI)
+    {
+        StateTreeAI->StopLogic(TEXT("UnPossess"));
+    }
+    Super::OnUnPossess();
 }
 
 void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
@@ -147,7 +188,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
         if (Stimulus.Type == SightID)
         {
             const FString TargetID = Actor->GetName();
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *TargetID);
+            UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *TargetID);
 
             // 1. Blackboard 업데이트 (BehaviorTree용 즉각 반응)
             Blackboard->SetValueAsObject(Key_TargetActor, Actor);
@@ -176,12 +217,21 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                 }
 
                 // Option B: Perception 기반 EQS 전술 쿼리 트리거 (쿨다운 내장)
-                // BT 루프와 독립적으로 실행 → Move 액션이 큐에 자동 enqueue됨
+                // 적대적 위협도(Multiplier=1.0, FinalDanger>=0.5)일 때만 발동 — 중립 감지 시 전투 포지셔닝 방지
                 if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                 {
-                    TArray<FVector> EnemyLocs;
-                    EnemyLocs.Add(Actor->GetActorLocation());
-                    ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                    if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
+                    {
+                        constexpr float CombatDangerThreshold = 0.5f;
+                        float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
+                        constexpr float SightBaseDanger = 0.6f;
+                        if (SightBaseDanger * Multiplier >= CombatDangerThreshold)
+                        {
+                            TArray<FVector> EnemyLocs;
+                            EnemyLocs.Add(Actor->GetActorLocation());
+                            ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                        }
+                    }
                 }
             }
 
@@ -223,7 +273,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             }
 
             FString SourceName = Actor ? Actor->GetName() : TEXT("Unknown");
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] HEARING: Detected %s Noise from %s at %s"), 
+            UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] HEARING: Detected %s Noise from %s at %s"),
                 *EventType, *SourceName, *Stimulus.StimulusLocation.ToString());
             
             // Heard something! 
@@ -276,7 +326,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
         AActor* CurrentTarget = Cast<AActor>(Blackboard->GetValueAsObject(Key_TargetActor));
         if (CurrentTarget == Actor)
         {
-            UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
+            UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
         }
 
