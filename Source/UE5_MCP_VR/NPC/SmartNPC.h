@@ -11,7 +11,8 @@ class UNPCActionComponent;
 class UNPCInventoryComponent;
 class UAIPerceptionComponent;
 class UAIPerceptionStimuliSourceComponent;
-class UBehaviorTree;
+class UStateTree;
+class UBlackboardData;
 struct FActionBatch;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
@@ -58,9 +59,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     FString AgentID;
 
-    /** 이 NPC가 사용할 Behavior Tree */
+    /** 이 NPC가 사용할 StateTree 에셋 (StateTreeAISchema). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
-    UBehaviorTree* BehaviorTreeAsset;
+    UStateTree* StateTreeAsset;
+
+    /** Blackboard 데이터 (Perception → TargetActor 등 공유 키 정의). BB_NPC.uasset 그대로 재사용. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
+    UBlackboardData* BlackboardAsset;
 
     // === Vision & Hearing Config (AIController에 적용됨) ===
 
@@ -144,15 +149,6 @@ private:
     void DestroyAfterDeath();
 
 public:
-
-    UFUNCTION(CallInEditor, Category = "MCP|Debug")
-	void Debug_Test_Social_Dialogue();
-
-    UFUNCTION(CallInEditor, Category = "MCP|Debug")
-	void Debug_Test_Common_Move();
-
-    UFUNCTION(CallInEditor, Category = "MCP|Debug")
-	void Debug_Test_Combat_Attack();
 
     UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
     void Debug_PrintAffinity();

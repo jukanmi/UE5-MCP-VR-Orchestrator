@@ -244,7 +244,7 @@ struct FCharacterAttributesBase
     FMovementStats Movement;
 
     // Active Status Effects (상태이상)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (Bitmask, BitmaskEnum = "EStatusEffect"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (Bitmask, BitmaskEnum = "/Script/UE5_MCP_VR.EStatusEffect"))
     uint8 StatusEffects = 0;
 
     // Level & Experience
