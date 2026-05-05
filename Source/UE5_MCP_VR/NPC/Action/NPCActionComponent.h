@@ -119,10 +119,16 @@ public:
     const FGameAction& GetCurrentAction() const { return CurrentAction; }
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
+    ENPCBehaviorMode CurrentBehaviorMode = ENPCBehaviorMode::Common;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsBusy = false;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
+    bool HasPendingActions() const { return !ActionQueue.IsEmpty(); }
 
     // --- Public API: Batch & Queue ---
 
@@ -217,7 +223,6 @@ protected:
         float CoverWeight = 0.f;
         float DistanceWeight = 0.f;
         float AggressionWeight = 0.f;
-        float NoiseWeight = 0.f;
         float SafeDistance = 0.f;
     };
     FEQSWeights ComputeEQSWeights() const;
