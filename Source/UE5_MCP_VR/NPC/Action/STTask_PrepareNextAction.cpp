@@ -56,16 +56,33 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
         return EStateTreeRunStatus::Succeeded;
     }
 
-    // 큐 비어있음 — BB에 TargetActor가 있으면 모드 무관하게 EQS+LLM 위치 결정 파이프라인 발동.
-    // Combat: 적 위치 기반 전술 스코어링. Common/Social: TargetActor를 컨텍스트로 최적 위치 선택.
+    // 큐 비어있음 — BB에 TargetActor가 있으면 모드에 따라 자율 행동 주입.
+    // Move: EQS는 Perception 이벤트에서만 발동. 여기서는 Attack/Follow 직접 주입.
     ASmartNPCAIController& AICon = Context.GetExternalData(AIControllerHandle);
     if (UBlackboardComponent* BB = AICon.GetBlackboardComponent())
     {
         if (AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor)))
         {
-            TArray<FVector> ContextLocs;
-            ContextLocs.Add(TargetActor->GetActorLocation());
-            ActionComp->TryStartTacticalQueryForCombat(ContextLocs);
+            if (ActionComp->CurrentBehaviorMode == ENPCBehaviorMode::Combat)
+            {
+                // Combat: Attack 직접 주입 (ExecuteAttackAction이 이동+공격 일괄 처리)
+                FGameAction AutoAction;
+                AutoAction.ActionType = EAction::Attack;
+                AutoAction.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+                ActionComp->ActionQueue.Enqueue(AutoAction);
+            }
+            else
+            {
+                // 비전투: Track 사용 — TrackTimer(0.5s 주기)가 MoveToActor를 지속 갱신하므로
+                // 이미 같은 대상을 추적 중이면 재주입 생략 (Follow 완료→재시작 루프 방지)
+                if (!ActionComp->IsTrackingTarget(TargetActor))
+                {
+                    FGameAction AutoAction;
+                    AutoAction.ActionType = EAction::Track;
+                    AutoAction.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+                    ActionComp->ActionQueue.Enqueue(AutoAction);
+                }
+            }
         }
     }
 

@@ -343,15 +343,22 @@ bool UNPCActionComponent::ProcessNextAction()
     if (ActionQueue.Dequeue(CurrentAction))
     {
         bIsBusy = true;
-        
+
+        // Track 이외 명령이 오면 추적 즉시 해제 — 새 명령이 추적을 덮어쓰는 게 자연스러운 동작
+        if (CurrentAction.ActionType != EAction::Track && TrackedTarget.IsValid())
+        {
+            if (UWorld* World = GetWorld())
+                World->GetTimerManager().ClearTimer(TrackTimer);
+            TrackedTarget.Reset();
+        }
+
         if (StateComponent) StateComponent->SetCurrentActionType(CurrentAction.ActionType);
-        
+
         TransitionStateTag(GetOwner(), CurrentAction.ActionType);
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
-        // BB 쓰기는 SmartNPCAIController::HandleActionStarted 에서 일괄 처리 (Key_HasAction, Key_SubAction, Key_TargetLocation)
         OnActionStarted.Broadcast(CurrentAction);
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));

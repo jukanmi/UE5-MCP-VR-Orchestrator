@@ -18,7 +18,7 @@ struct FStateTreeTransitionResult;
  * ============================================================================
  * BTTask_PrepareNextAction의 StateTree 이식.
  * - ActionQueue에 액션이 있으면 Dequeue → ProcessNextAction → Succeeded
- * - 큐가 비었으면 (전투 중이라면) TacticalQuery 트리거 후 Failed
+ * - 큐가 비었으면 BB의 TargetActor 유무에 따라 Attack/Track 자율 주입 후 Running
  * - InstanceData는 후속 Task가 바인딩할 Output을 노출 (HasAction / SubAction / TargetLocation)
  *
  * 같은 State 안에 ExecuteSmartAction과 함께 두지 말 것 — 별도 State로 분리해야 함.
