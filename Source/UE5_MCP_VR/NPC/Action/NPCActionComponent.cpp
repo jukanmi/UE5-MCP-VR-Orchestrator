@@ -1020,6 +1020,14 @@ void UNPCActionComponent::TryStartTacticalQueryForCombat(const TArray<FVector>& 
 {
     if (EnemyLocations.IsEmpty()) return;
 
+    // 이동 중에는 쿼리 금지 — 도중에 목적지가 바뀌면 우왕좌왕하는 문제 방지
+    if (bIsBusy && CurrentAction.ActionType == EAction::Move)
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 전술쿼리 스킵: 이동 중"),
+            *GetOwnerAgentID());
+        return;
+    }
+
     // 이미 진행 중이면 스킵
     if (TacticalQueryState != ETacticalQueryState::Idle)
     {
