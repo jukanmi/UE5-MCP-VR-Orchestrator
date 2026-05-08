@@ -297,7 +297,7 @@ void AVRPlayerCharacter::PerformAttack()
 	if (bHit && HitResult.GetActor())
 	{
 		AActor* HitActor = HitResult.GetActor();
-		UE_LOG(LogTemp, Log, TEXT("Player Attack Hit: %s"), *HitActor->GetName());
+		UE_LOG(LogTemp, Verbose, TEXT("Player Attack Hit: %s"), *HitActor->GetName());
 
 		// Apply Damage
 		FPointDamageEvent DamageEvent;

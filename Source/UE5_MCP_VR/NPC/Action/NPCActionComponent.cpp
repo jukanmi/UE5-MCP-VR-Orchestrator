@@ -203,35 +203,27 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 
 void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
 {
-    if (ASmartNPCAIController* AI = GetOwnerAIController())
+    // 한 줄 요약 (Mode + 액션 타입 리스트). 상세는 Verbose.
+    FString ActionList;
+    for (int32 i = 0; i < Batch.Actions.Num(); ++i)
     {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-        {
-            BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Batch.Mode);
-            // [상세 로그] 서버로부터 수신된 리액션 덤프
-            UE_LOG(LogTemp, Warning, TEXT("=================================================="));
-            UE_LOG(LogTemp, Warning, TEXT("[ACTION RECEIVED] NPC: %s | Mode: %s"), 
-                *GetOwnerAgentID(), *UEnum::GetValueAsString(Batch.Mode));
-            
-            for (int32 i = 0; i < Batch.Actions.Num(); ++i)
-            {
-                const FGameAction& Action = Batch.Actions[i];
-                FString ParamStr;
-                for (auto& Pair : Action.Parameters)
-                {
-                    ParamStr += FString::Printf(TEXT("%s=%s, "), *Pair.Key, *Pair.Value);
-                }
-                
-                UE_LOG(LogTemp, Warning, TEXT("  Action[%d]: %s (Facial: %s)"), 
-                    i, *UEnum::GetValueAsString(Action.ActionType), *UEnum::GetValueAsString(Action.FacialState));
-                if (!ParamStr.IsEmpty())
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("    - Params: %s"), *ParamStr);
-                }
-            }
-            UE_LOG(LogTemp, Warning, TEXT("=================================================="));
+        if (i > 0) ActionList += TEXT(",");
+        ActionList += UEnum::GetValueAsString(Batch.Actions[i].ActionType);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s recv Mode=%s Actions=[%s]"),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(Batch.Mode), *ActionList);
 
+    for (int32 i = 0; i < Batch.Actions.Num(); ++i)
+    {
+        const FGameAction& Action = Batch.Actions[i];
+        FString ParamStr;
+        for (auto& Pair : Action.Parameters)
+        {
+            ParamStr += FString::Printf(TEXT("%s=%s, "), *Pair.Key, *Pair.Value);
         }
+        UE_LOG(LogTemp, Verbose, TEXT("  [%d] %s (Facial: %s) %s"),
+            i, *UEnum::GetValueAsString(Action.ActionType),
+            *UEnum::GetValueAsString(Action.FacialState), *ParamStr);
     }
 
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
@@ -288,23 +280,11 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
             // [의도(Why)] 일반 물리적 액션은 이전 행동이 끝나길 기다렸다가 순차적으로 실행(Queue)되도록 보장합니다.
             ActionQueue.Enqueue(Action);
             LastQueuedActionType = Action.ActionType;
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
+            UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
                 *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
         }
     }
 
-    // Queue 처리 시작
-    // Queue 처리 시작을 BT에게 위임 (HasAction 플래그 세팅)
-    if (!ActionQueue.IsEmpty())
-    {
-        if (ASmartNPCAIController* AI = GetOwnerAIController())
-        {
-            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-            {
-                BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
-            }
-        }
-    }
 }
 
 // === Action Queue System ===
@@ -343,15 +323,22 @@ bool UNPCActionComponent::ProcessNextAction()
     if (ActionQueue.Dequeue(CurrentAction))
     {
         bIsBusy = true;
-        
+
+        // Track 이외 명령이 오면 추적 즉시 해제 — 새 명령이 추적을 덮어쓰는 게 자연스러운 동작
+        if (CurrentAction.ActionType != EAction::Track && TrackedTarget.IsValid())
+        {
+            if (UWorld* World = GetWorld())
+                World->GetTimerManager().ClearTimer(TrackTimer);
+            TrackedTarget.Reset();
+        }
+
         if (StateComponent) StateComponent->SetCurrentActionType(CurrentAction.ActionType);
-        
+
         TransitionStateTag(GetOwner(), CurrentAction.ActionType);
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
-        // BB 쓰기는 SmartNPCAIController::HandleActionStarted 에서 일괄 처리 (Key_HasAction, Key_SubAction, Key_TargetLocation)
         OnActionStarted.Broadcast(CurrentAction);
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
@@ -373,14 +360,6 @@ void UNPCActionComponent::OnActionCompleted()
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
-    // 다음 큐 항목 처리는 BTTask_PrepareNextAction이 주도함
-    if (ASmartNPCAIController* AI = GetOwnerAIController())
-    {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-        {
-            BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, !ActionQueue.IsEmpty());
-        }
-    }
 }
 
 void UNPCActionComponent::AbortCurrentAction()
@@ -579,7 +558,9 @@ void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 FVector UNPCActionComponent::ParseVectorParam(const FString& ParamStr) const
 {
     FVector Result = FVector::ZeroVector;
-    if (!ParamStr.IsEmpty() && ParamStr.StartsWith(TEXT("(")) && ParamStr.EndsWith(TEXT(")")))
+    // FVector::ToString() → "X=1.0 Y=2.0 Z=3.0", Python → "(X=1,Y=2,Z=3)" 두 형식 모두 허용.
+    // InitFromString은 FParse::Value로 X/Y/Z 키를 찾으므로 괄호 유무 무관하게 동작.
+    if (!ParamStr.IsEmpty())
         Result.InitFromString(ParamStr);
     return Result;
 }
@@ -717,8 +698,8 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
         break;
 
     case EAction::Wait:
-        // BT Task가 ExecuteInteraction 직후 OnActionCompleted를 호출하므로 여기선 아무것도 하지 않음
-        // duration 기반 실제 대기가 필요하다면 BTTask_ExecuteSmartAction을 LatentTask로 전환해야 함
+        // ST Task가 ExecuteInteraction 직후 OnActionCompleted를 호출하므로 여기선 아무것도 하지 않음
+        // duration 기반 실제 대기가 필요하다면 STTask_ExecuteSmartAction을 비동기 모델로 전환해야 함
         break;
 
     default:
@@ -798,9 +779,6 @@ UNPCActionComponent::FEQSWeights UNPCActionComponent::ComputeEQSWeights() const
 
     W.AggressionWeight = Attr.Behavior.Aggression * 0.1f;
 
-    const float Intel  = FMath::Clamp(static_cast<float>(Attr.BaseStats.Intelligence), 1.f, 100.f);
-    W.NoiseWeight      = (100.f - Intel) * 0.005f;
-
     W.SafeDistance     = Attr.Combat.Range * 0.8f;
 
     return W;
@@ -820,7 +798,6 @@ void UNPCActionComponent::UpdateEQSParams()
     BB->SetValueAsFloat(FName("EQS_CoverWeight"),      W.CoverWeight);
     BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   W.DistanceWeight);
     BB->SetValueAsFloat(FName("EQS_AggressionWeight"), W.AggressionWeight);
-    BB->SetValueAsFloat(FName("EQS_NoiseWeight"),      W.NoiseWeight);
     BB->SetValueAsFloat(FName("EQS_SafeDistance"),     W.SafeDistance);
 
     UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, DistWt:%.2f, AggWt:%.2f"),
@@ -845,29 +822,26 @@ void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActo
         return;
     }
 
-    // 목적지 미지정 → EQS로 최적 위치 탐색
-    UpdateEQSParams();
-    if (DefaultMoveQuery)
+    // 목적지 미지정 → EQS AllMatching + Python location_decision 파이프라인으로 위치 결정.
+    // BB의 TargetActor를 컨텍스트로 사용 (없으면 빈 배열 — EQS가 주변 최적 위치 탐색).
+    if (TacticalQueryState != ETacticalQueryState::Idle)
     {
-        FEnvQueryRequest QueryRequest(DefaultMoveQuery, GetOwner());
-
-        // TacticalPositionsQuery와 동일하게 스탯 기반 가중치를 Named Parameter로 직접 주입.
-        // UpdateEQSParams()의 BB 쓰기만으로는 EQS 에셋이 값을 읽지 못함.
-        if (StateComponent)
-        {
-            const FEQSWeights W = ComputeEQSWeights();
-            QueryRequest.SetFloatParam(TEXT("SearchRadius"),        W.SearchRadius);
-            QueryRequest.SetFloatParam(TEXT("DistanceWeightParam"), W.DistanceWeight);
-            QueryRequest.SetFloatParam(TEXT("CoverWeightParam"),    W.CoverWeight);
-            QueryRequest.SetFloatParam(TEXT("SafeDistance"),        W.SafeDistance);
-        }
-
-        QueryRequest.Execute(EEnvQueryRunMode::SingleResult,
-            this, &UNPCActionComponent::OnTacticalMoveCompleted);
+        UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] ExecuteMove: 이미 EQS 파이프라인 진행 중 — 스킵"));
         return;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[NPCAction] ExecuteMove: 목적지 없음 (target_loc/TargetActor/EQS 모두 없음)"));
+    TArray<FVector> ContextLocs;
+    if (ASmartNPCAIController* AICon = GetOwnerAIController())
+    {
+        if (UBlackboardComponent* BB = AICon->GetBlackboardComponent())
+        {
+            if (AActor* Target = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor)))
+                ContextLocs.Add(Target->GetActorLocation());
+        }
+    }
+
+    StartTacticalQuery(ContextLocs);
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] ExecuteMove: target_loc 없음 → EQS+LLM 파이프라인 시작"));
 }
 
 // EQS 쿼리 콜백: 결과 좌표로 실제 이동 명령을 수행합니다.
@@ -1012,7 +986,7 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
     QueryRequest.Execute(EEnvQueryRunMode::AllMatching,
         this, &UNPCActionComponent::OnTacticalCandidatesDone);
 
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술 EQS 쿼리 시작 (적 %d명)"),
+    UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 전술 EQS 쿼리 시작 (적 %d명)"),
         *GetOwnerAgentID(), EnemyLocations.Num());
 
     if (UWorld* World = GetWorld())
@@ -1024,6 +998,14 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
 void UNPCActionComponent::TryStartTacticalQueryForCombat(const TArray<FVector>& EnemyLocations)
 {
     if (EnemyLocations.IsEmpty()) return;
+
+    // 이동 중에는 쿼리 금지 — 도중에 목적지가 바뀌면 우왕좌왕하는 문제 방지
+    if (bIsBusy && CurrentAction.ActionType == EAction::Move)
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 전술쿼리 스킵: 이동 중"),
+            *GetOwnerAgentID());
+        return;
+    }
 
     // 이미 진행 중이면 스킵
     if (TacticalQueryState != ETacticalQueryState::Idle)
@@ -1039,14 +1021,10 @@ void UNPCActionComponent::TryStartTacticalQueryForCombat(const TArray<FVector>& 
         const float Now = World->GetTimeSeconds();
         const float Remaining = TacticalQueryCooldown - (Now - LastTacticalQueryTime);
         if (Remaining > 0.f)
-        {
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - 전술쿼리 쿨다운: %.1fs 남음"),
-                *GetOwnerAgentID(), Remaining);
             return;
-        }
     }
 
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - Perception 트리거 전술 쿼리 (쿨다운 통과)"),
+    UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - Perception 트리거 전술 쿼리 (쿨다운 통과)"),
         *GetOwnerAgentID());
     StartTacticalQuery(EnemyLocations);
 }
@@ -1055,7 +1033,10 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
 {
     if (!Result || !Result->IsSuccessful() || Result->Items.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전술 EQS 결과 없음 → 직접 이동 폴백"));
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: EQS 결과 없음 (Result=%s, Items=%d) → 폴백. TacticalPositionsQuery 에셋 할당 및 NavMesh 커버리지 확인 필요."),
+            *GetOwnerAgentID(),
+            Result ? (Result->IsSuccessful() ? TEXT("Success") : TEXT("Failed")) : TEXT("Null"),
+            Result ? Result->Items.Num() : -1);
         TacticalQueryState = ETacticalQueryState::Idle;
 
         // 폴백: 적 방향으로 직접 Move 액션 enqueue
@@ -1121,7 +1102,8 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
         AllCandidates.Add(Cand);
     }
 
-    // ── 카테고리별 Top-3 추리기 ───────────────────────────────────────────────
+    // ── 카테고리별 Top-1 추리기 ───────────────────────────────────────────────
+    // 카테고리당 최고 점수 1개만 Python에 전송 — Safe/Aggressive/Optimal 각 1개, 최대 3개.
     TMap<ELocationCategory, TArray<FLocationCandidate*>> ByCategory;
     for (FLocationCandidate& C : AllCandidates)
         ByCategory.FindOrAdd(C.Category).Add(&C);
@@ -1130,12 +1112,10 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     for (auto& KV : ByCategory)
     {
         KV.Value.Sort([](const FLocationCandidate& A, const FLocationCandidate& B){ return A.Score > B.Score; });
-        const int32 TopN = FMath::Min(3, KV.Value.Num());
-        int32 Idx = 0;
-        for (int32 k = 0; k < TopN; ++k)
+        if (KV.Value.Num() > 0)
         {
-            FLocationCandidate C = *KV.Value[k];
-            C.CandidateId = FString::Printf(TEXT("%s_%d"), *CategoryToString(C.Category), Idx++);
+            FLocationCandidate C = *KV.Value[0];
+            C.CandidateId = CategoryToString(C.Category); // "SAFE" / "AGGRESSIVE" / "OPTIMAL"
             Pruned.Add(C);
         }
     }
@@ -1265,7 +1245,8 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
     MoveAction.Parameters.Add(NPCActionKeys::Key_TargetLoc, TacticalQueryResult.ToString());
     ActionQueue.Enqueue(MoveAction);
 
-    TacticalQueryState = ETacticalQueryState::ResultReady;
+    // 큐 적재 완료 → 즉시 Idle로 복귀. ResultReady로 두면 다음 EQS 요청이 영구 스킵됨.
+    TacticalQueryState = ETacticalQueryState::Idle;
     
     DrawEQSChosenLocation(TacticalQueryResult, ChosenCandidateId, Reason, EQSDebugDuration);
 
@@ -1533,8 +1514,6 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
             0.5f, true
         );
     }
-
-    BasePlayActionMedia(NPCActionKeys::Media_Track);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 시작 → %s"), *GetOwnerAgentID(), *TargetActor->GetName());
 }

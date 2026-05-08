@@ -372,18 +372,17 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
 
 
 _LOCATION_DECISION_PROMPT = """\
-NPC '{agent_id}' must choose a tactical position.
+Choose one tactical position for NPC '{agent_id}'.
 Situation: {context}
 
 Candidates:
 {candidate_lines}
 
-Rules:
-- SAFE positions: prefer when HP is low or outnumbered
-- OPTIMAL positions: balanced engagement range and cover
-- AGGRESSIVE positions: prefer when HP is high and enemy is isolated
+- Low HP or outnumbered → SAFE
+- Balanced HP and cover → OPTIMAL
+- High HP, enemy isolated → AGGRESSIVE
 
-Reply with ONLY the candidate ID (e.g. SAFE_0). Nothing else."""
+Reply with exactly one word from the candidates above (e.g. SAFE). No explanation."""
 
 
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
@@ -446,9 +445,14 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             candidate_lines=candidate_lines,
         )
 
-        llm = get_llm(model_name="gemma4_e2b", temperature=0.0, num_predict=20)
+        llm = get_llm(model_name="gemma4_slm", temperature=0.0, num_predict=20)
         raw = await asyncio.to_thread(llm.invoke, prompt)
-        text = (raw.content if hasattr(raw, "content") else str(raw)).strip().split()[0].upper()
+        raw_text = (raw.content if hasattr(raw, "content") else str(raw)).strip()
+        tokens = raw_text.split()
+        if not tokens:
+            logger.warning(f"[LocationDecision] LLM 빈 응답 → Fast-Path")
+            return _fast_path_fallback("empty_llm_response")
+        text = tokens[0].upper()
 
         # 유효한 ID인지 검증 (대소문자 무시)
         chosen_id = next((vid for vid in valid_ids if vid.upper() == text), None)

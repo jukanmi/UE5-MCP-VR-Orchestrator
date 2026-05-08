@@ -1,6 +1,6 @@
 #include "NPCStateComponent.h"
 #include "Action/SmartNPCAIController.h"
-#include "BehaviorTree/BlackboardComponent.h"
+#include "Action/NPCActionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "../Utils/DiceSystem.h"
@@ -49,15 +49,6 @@ void UNPCStateComponent::SetFacialExpression(EFacialState NewExpression)
     if (CurrentFacialState == NewExpression) return;
 
     CurrentFacialState = NewExpression;
-
-    if (ASmartNPCAIController* AI = GetOwnerAIController())
-    {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-        {
-            BB->SetValueAsEnum(ASmartNPCAIController::Key_FacialState, (uint8)CurrentFacialState);
-        }
-    }
-
     UE_LOG(LogTemp, Verbose, TEXT("[NPCState] Facial Expression Updated: %d"), (int32)CurrentFacialState);
 }
 
@@ -180,6 +171,17 @@ void UNPCStateComponent::FlushEventReport()
         LocalEventQueue.Empty();
         return;
     }
+    // location_decision 응답 대기 중에는 Event Report 전송 금지.
+    // 같은 LLM WebSocket으로 두 요청이 겹치면 location_decision_result가 타임아웃으로 유실됨.
+    if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+    {
+        if (ActionComp->TacticalQueryState == ETacticalQueryState::WaitingLLM)
+        {
+            UE_LOG(LogTemp, Verbose, TEXT("[NPCState] %s: Event Report 지연 — location_decision 응답 대기 중"), *OwnerNPC->AgentID);
+            return; // LocalEventQueue 유지 → 다음 FlushEventReport 호출 시 재시도
+        }
+    }
+
     if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
     {
         // 단일 LLM WebSocket으로 emergency_report 전송.

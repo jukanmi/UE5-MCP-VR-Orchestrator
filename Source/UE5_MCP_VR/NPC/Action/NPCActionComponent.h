@@ -11,7 +11,7 @@
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
-// WHY: BTTask가 async 패턴(InProgress → Tick → Succeeded)으로 폴링하기 위한 상태 머신.
+// WHY: STTask_PrepareNextAction이 Tick에서 폴링하기 위한 상태 머신.
 UENUM()
 enum class ETacticalQueryState : uint8
 {
@@ -96,7 +96,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* TacticalPositionsQuery;
 
-    // --- 전술 위치 결정 파이프라인 상태 (BTTask가 폴링) ---
+    // --- 전술 위치 결정 파이프라인 상태 (STTask가 폴링) ---
 
     ETacticalQueryState TacticalQueryState = ETacticalQueryState::Idle;
 
@@ -112,17 +112,24 @@ public:
     // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
     EAction LastQueuedActionType = EAction::Idle;
 
-    // 현재 진행 중인 액션 캐싱 (BTTask 등에서 참조)
+    // 현재 진행 중인 액션 캐싱 (STTask 등에서 참조)
     FGameAction CurrentAction;
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
     const FGameAction& GetCurrentAction() const { return CurrentAction; }
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
+    ENPCBehaviorMode CurrentBehaviorMode = ENPCBehaviorMode::Common;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsBusy = false;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
+    bool HasPendingActions() const { return !ActionQueue.IsEmpty(); }
+    bool IsTrackingTarget(const AActor* Target) const { return TrackedTarget.Get() == Target; }
 
     // --- Public API: Batch & Queue ---
 
@@ -217,7 +224,6 @@ protected:
         float CoverWeight = 0.f;
         float DistanceWeight = 0.f;
         float AggressionWeight = 0.f;
-        float NoiseWeight = 0.f;
         float SafeDistance = 0.f;
     };
     FEQSWeights ComputeEQSWeights() const;
@@ -279,7 +285,7 @@ public:
     // [전술 위치 결정 파이프라인 API]
     // ============================================================================
 
-    /** BTTask_PrepareNextAction이 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
+    /** Perception 이벤트에서 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
      *  @param EnemyLocations  현재 인지된 적 위치 목록 (스코어링에 사용)
      *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
     void StartTacticalQuery(const TArray<FVector>& EnemyLocations);
@@ -336,10 +342,10 @@ public:
     float Score_OptDistRange = 800.f;   // IdealDist ± Range 를 벗어나면 0점
 
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
-    float Score_OptCoverBonus = 1.f;
+    float Score_OptCoverBonus = 2.5f;
 
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
-    float Score_OptLOSBonus = 1.f;
+    float Score_OptLOSBonus = 2.f;
 
     /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출. */
     UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "30.0"))

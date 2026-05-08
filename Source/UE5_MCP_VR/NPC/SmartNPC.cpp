@@ -20,7 +20,10 @@
 
 ASmartNPC::ASmartNPC()
 {
+    // Tick은 디버그 머리 위 호감도 표시(bShowAffinityOnScreen=true) 시에만 사용.
+    // BeginPlay에서 플래그 보고 SetActorTickEnabled로 토글하므로 기본은 꺼둠.
     PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
     AgentID = TEXT("UnknownAgent");
     AIControllerClass = ASmartNPCAIController::StaticClass();
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
@@ -35,6 +38,21 @@ ASmartNPC::ASmartNPC()
         StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
         StimuliSource->RegisterForSense(TSubclassOf<UAISense_Hearing>());
         StimuliSource->RegisterWithPerceptionSystem();
+    }
+
+    // --- AI NPC 회전 설정 ---
+    // 기본 Character는 컨트롤러 Yaw를 따라 회전(bUseControllerRotationYaw=true)하고
+    // 이동 방향을 향하지 않아(bOrientRotationToMovement=false) MoveTo 시 옆걸음/뒷걸음 발생.
+    // AI는 컨트롤러 회전 무시 + 이동 방향으로 자동 회전.
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationYaw   = false;
+    bUseControllerRotationRoll  = false;
+
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->bOrientRotationToMovement = true;
+        CMC->RotationRate = FRotator(0.f, 540.f, 0.f); // Yaw 540°/s — 부드럽고 빠른 선회
+        CMC->bUseControllerDesiredRotation = false;
     }
 }
 
@@ -51,6 +69,9 @@ void ASmartNPC::BeginPlay()
     }
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
+
+    // 디버그 표시 활성화된 NPC만 Tick 켜기 (대부분 NPC는 Tick 비용 0)
+    SetActorTickEnabled(bShowAffinityOnScreen);
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -194,71 +215,6 @@ void ASmartNPC::DestroyAfterDeath()
     Destroy();
 }
 
-namespace
-{
-    void DispatchDebugJson(ASmartNPC* NPCInstance, const FString& Mode, const FString& ActionsJson)
-    {
-        if (!NPCInstance) return;
-
-        FString MockJson = FString::Printf(TEXT(R"({
-    "Mode": "%s",
-    "ActionBatches": {
-        "%s": {
-            "AgentID": "%s",
-            "Mode": "%s",
-            "Actions": [
-                %s
-            ]
-        }
-    }
-})"), *Mode, *NPCInstance->AgentID, *NPCInstance->AgentID, *Mode, *ActionsJson);
-
-        UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] DispatchDebugJson: Sending to NPCManager\n%s"), *MockJson);
-
-        if (UGameInstance* GameInst = NPCInstance->GetGameInstance())
-        {
-            if (UNPCManager* NPCManager = GameInst->GetSubsystem<UNPCManager>())
-            {
-                NPCManager->OnWebSocketMessageReceived(MockJson);
-            }
-        }
-    }
-}
-
-void ASmartNPC::Debug_Test_Social_Dialogue()
-{
-    FString ActionsJson = TEXT(R"({
-                    "ActionType": "Dialogue",
-                    "FacialState": "Neutral",
-                    "Parameters": {
-                        "TargetID": "Player",
-                        "text": "Hello! This is a debug test."
-                    }
-                })");
-    DispatchDebugJson(this, TEXT("Social"), ActionsJson);
-}
-
-void ASmartNPC::Debug_Test_Common_Move()
-{
-    FString ActionsJson = TEXT(R"({
-                    "ActionType": "Move",
-                    "Parameters": {
-                        "TargetID": "Player"
-                    }
-                })");
-    DispatchDebugJson(this, TEXT("Common"), ActionsJson);
-}
-
-void ASmartNPC::Debug_Test_Combat_Attack()
-{
-    FString ActionsJson = TEXT(R"({
-                    "ActionType": "Attack",
-                    "Parameters": {
-                        "TargetID": "Player"
-                    }
-                })");
-    DispatchDebugJson(this, TEXT("Combat"), ActionsJson);
-}
 
 void ASmartNPC::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
 {
