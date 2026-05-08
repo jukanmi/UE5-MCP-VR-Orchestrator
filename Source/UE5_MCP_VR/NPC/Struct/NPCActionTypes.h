@@ -24,7 +24,7 @@ enum class EFacialState : uint8
 	Pain            UMETA(DisplayName = "Pain")
 };
 
-/** ENPCBehaviorMode: 최상위 행동 카테고리 (BT 서브트리 분기 기준) */
+/** ENPCBehaviorMode: 최상위 행동 카테고리 (STTask 자율 행동 분기 기준) */
 UENUM(BlueprintType)
 enum class ENPCBehaviorMode : uint8
 {

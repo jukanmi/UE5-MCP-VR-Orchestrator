@@ -11,7 +11,7 @@
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
-// WHY: BTTask가 async 패턴(InProgress → Tick → Succeeded)으로 폴링하기 위한 상태 머신.
+// WHY: STTask_PrepareNextAction이 Tick에서 폴링하기 위한 상태 머신.
 UENUM()
 enum class ETacticalQueryState : uint8
 {
@@ -96,7 +96,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* TacticalPositionsQuery;
 
-    // --- 전술 위치 결정 파이프라인 상태 (BTTask가 폴링) ---
+    // --- 전술 위치 결정 파이프라인 상태 (STTask가 폴링) ---
 
     ETacticalQueryState TacticalQueryState = ETacticalQueryState::Idle;
 
@@ -112,7 +112,7 @@ public:
     // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
     EAction LastQueuedActionType = EAction::Idle;
 
-    // 현재 진행 중인 액션 캐싱 (BTTask 등에서 참조)
+    // 현재 진행 중인 액션 캐싱 (STTask 등에서 참조)
     FGameAction CurrentAction;
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
@@ -285,7 +285,7 @@ public:
     // [전술 위치 결정 파이프라인 API]
     // ============================================================================
 
-    /** BTTask_PrepareNextAction이 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
+    /** Perception 이벤트에서 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
      *  @param EnemyLocations  현재 인지된 적 위치 목록 (스코어링에 사용)
      *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
     void StartTacticalQuery(const TArray<FVector>& EnemyLocations);

@@ -74,19 +74,4 @@ public:
     // Target Actor Object (e.g. for interacting/attacking)
 	static const FName Key_TargetActor;
 
-	// --- New Orchestra Blackboard Keys ---
-	/** High-level behavior mode (ENPCBehaviorMode) */
-	static const FName Key_BehaviorMode;
-
-	/** Indicates if there is a pending action in the queue (bool) */
-	static const FName Key_HasAction;
-
-	/** Specific action enum value (EAction) */
-	static const FName Key_SubAction;
-
-	/** JSON Parameters for the action */
-	static const FName Key_Parameters;
-
-	/** Facial expression state (EFacialState) */
-	static const FName Key_FacialState;
 };

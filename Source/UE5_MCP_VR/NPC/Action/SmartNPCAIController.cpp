@@ -1,7 +1,6 @@
 #include "SmartNPCAIController.h"
 #include "NPCActionComponent.h"
 #include "../NPCStateComponent.h"
-#include "../Struct/NPCActionKeys.h"
 #include "../SmartNPC.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
@@ -15,11 +14,6 @@ const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
 
 const FName ASmartNPCAIController::Key_TargetActor(TEXT("TargetActor"));
 
-const FName ASmartNPCAIController::Key_BehaviorMode(TEXT("BehaviorMode"));
-const FName ASmartNPCAIController::Key_HasAction(TEXT("HasAction"));
-const FName ASmartNPCAIController::Key_SubAction(TEXT("SubAction"));
-const FName ASmartNPCAIController::Key_Parameters(TEXT("Parameters"));
-const FName ASmartNPCAIController::Key_FacialState(TEXT("FacialState"));
 
 ASmartNPCAIController::ASmartNPCAIController()
 {
@@ -141,36 +135,16 @@ void ASmartNPCAIController::OnUnPossess()
     Super::OnUnPossess();
 }
 
-void ASmartNPCAIController::HandleActionStarted(const FGameAction& Action)
+void ASmartNPCAIController::HandleActionStarted(const FGameAction& /*Action*/)
 {
-    if (UBlackboardComponent* BB = GetBlackboardComponent())
-    {
-        // 이미 true이면 재설정하지 않음 — BB Decorator가 동일 값 쓰기에도 abort를 발동해
-        // BTTask_ExecuteSmartAction이 시퀀스 중간에 잘려나가는 문제 방지
-        if (!BB->GetValueAsBool(Key_HasAction))
-            BB->SetValueAsBool(Key_HasAction, true);
-        BB->SetValueAsEnum(Key_SubAction, (uint8)Action.ActionType);
-
-        // target_loc 파라미터가 있으면 Key_TargetLocation에 반영 — BB 쓰기를 컨트롤러 측으로 일원화
-        if (const FString* LocStr = Action.Parameters.Find(NPCActionKeys::Key_TargetLoc))
-        {
-            FVector Loc;
-            if (!LocStr->IsEmpty() && Loc.InitFromString(*LocStr))
-            {
-                BB->SetValueAsVector(Key_TargetLocation, Loc);
-            }
-        }
-    }
 }
 
 void ASmartNPCAIController::HandleAllActionsStopped()
 {
+    // Key_TargetActor 해제 — STTask_PrepareNextAction의 자율 행동 주입 중단
     if (UBlackboardComponent* BB = GetBlackboardComponent())
     {
-        BB->SetValueAsEnum(Key_SubAction, (uint8)EAction::Idle);
-        BB->ClearValue(Key_TargetLocation);
         BB->ClearValue(Key_TargetActor);
-        BB->SetValueAsBool(Key_HasAction, false);
     }
 }
 

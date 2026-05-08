@@ -203,35 +203,27 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 
 void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
 {
-    if (ASmartNPCAIController* AI = GetOwnerAIController())
+    // 한 줄 요약 (Mode + 액션 타입 리스트). 상세는 Verbose.
+    FString ActionList;
+    for (int32 i = 0; i < Batch.Actions.Num(); ++i)
     {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
+        if (i > 0) ActionList += TEXT(",");
+        ActionList += UEnum::GetValueAsString(Batch.Actions[i].ActionType);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s recv Mode=%s Actions=[%s]"),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(Batch.Mode), *ActionList);
+
+    for (int32 i = 0; i < Batch.Actions.Num(); ++i)
+    {
+        const FGameAction& Action = Batch.Actions[i];
+        FString ParamStr;
+        for (auto& Pair : Action.Parameters)
         {
-            BB->SetValueAsEnum(ASmartNPCAIController::Key_BehaviorMode, (uint8)Batch.Mode);
-
-            // 한 줄 요약 (Mode + 액션 타입 리스트). 상세는 Verbose.
-            FString ActionList;
-            for (int32 i = 0; i < Batch.Actions.Num(); ++i)
-            {
-                if (i > 0) ActionList += TEXT(",");
-                ActionList += UEnum::GetValueAsString(Batch.Actions[i].ActionType);
-            }
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s recv Mode=%s Actions=[%s]"),
-                *GetOwnerAgentID(), *UEnum::GetValueAsString(Batch.Mode), *ActionList);
-
-            for (int32 i = 0; i < Batch.Actions.Num(); ++i)
-            {
-                const FGameAction& Action = Batch.Actions[i];
-                FString ParamStr;
-                for (auto& Pair : Action.Parameters)
-                {
-                    ParamStr += FString::Printf(TEXT("%s=%s, "), *Pair.Key, *Pair.Value);
-                }
-                UE_LOG(LogTemp, Verbose, TEXT("  [%d] %s (Facial: %s) %s"),
-                    i, *UEnum::GetValueAsString(Action.ActionType),
-                    *UEnum::GetValueAsString(Action.FacialState), *ParamStr);
-            }
+            ParamStr += FString::Printf(TEXT("%s=%s, "), *Pair.Key, *Pair.Value);
         }
+        UE_LOG(LogTemp, Verbose, TEXT("  [%d] %s (Facial: %s) %s"),
+            i, *UEnum::GetValueAsString(Action.ActionType),
+            *UEnum::GetValueAsString(Action.FacialState), *ParamStr);
     }
 
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
@@ -293,18 +285,6 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         }
     }
 
-    // Queue 처리 시작
-    // Queue 처리 시작을 BT에게 위임 (HasAction 플래그 세팅)
-    if (!ActionQueue.IsEmpty())
-    {
-        if (ASmartNPCAIController* AI = GetOwnerAIController())
-        {
-            if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-            {
-                BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, true);
-            }
-        }
-    }
 }
 
 // === Action Queue System ===
@@ -380,14 +360,6 @@ void UNPCActionComponent::OnActionCompleted()
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
 
-    // 다음 큐 항목 처리는 STTask_PrepareNextAction이 주도함
-    if (ASmartNPCAIController* AI = GetOwnerAIController())
-    {
-        if (UBlackboardComponent* BB = AI->GetBlackboardComponent())
-        {
-            BB->SetValueAsBool(ASmartNPCAIController::Key_HasAction, !ActionQueue.IsEmpty());
-        }
-    }
 }
 
 void UNPCActionComponent::AbortCurrentAction()
