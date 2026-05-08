@@ -341,10 +341,10 @@ public:
     float Score_OptDistRange = 800.f;   // IdealDist ± Range 를 벗어나면 0점
 
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
-    float Score_OptCoverBonus = 1.f;
+    float Score_OptCoverBonus = 2.5f;
 
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
-    float Score_OptLOSBonus = 1.f;
+    float Score_OptLOSBonus = 2.f;
 
     /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출. */
     UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "30.0"))
