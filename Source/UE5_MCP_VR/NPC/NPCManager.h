@@ -94,6 +94,9 @@ private:
 
     FTimerHandle StateUpdateTimerHandle;
 
+    /** state_update 응답 대기 중인 AgentID 집합 — 응답 전 재전송 차단용 */
+    TSet<FString> PendingStateUpdateAgents;
+
     /** 모든 등록된 NPC에 대해 state_update를 Python으로 전송 (Python 응답에 relations 포함 → AffinityCache 갱신). */
     void TickStateUpdate();
 

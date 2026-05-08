@@ -127,18 +127,25 @@ void UNPCManager::TickStateUpdate()
 {
     if (!NPCMap || !LLMClient || !LLMClient->IsConnected()) return;
 
-    // 모든 등록된 NPC에 대해 state_update 전송
-    // 응답에 relations가 포함되면 OnLLMMessageReceived에서 AffinityCache로 갱신됨
+    // 이전 응답이 아직 안 온 NPC는 재전송 건너뜀 — 응답 적체로 인한 연속 갱신 방지
     for (const TPair<FString, ASmartNPC*>& Pair : NPCMap->GetActiveNPCs())
     {
         ASmartNPC* NPC = Pair.Value;
         if (!IsValid(NPC)) continue;
 
+        const FString& AgentID = Pair.Key;
+        if (PendingStateUpdateAgents.Contains(AgentID))
+        {
+            UE_LOG(LogTemp, Verbose, TEXT("[NPCManager] %s state_update 스킵 — 응답 대기 중"), *AgentID);
+            continue;
+        }
+
         FGameStateData StateData;
-        StateData.OwnerAgentID = Pair.Key;
+        StateData.OwnerAgentID = AgentID;
         StateData.OwnerLocation = NPC->GetActorLocation();
         StateData.CurrentMode = ENPCBehaviorMode::Common;
 
+        PendingStateUpdateAgents.Add(AgentID);
         LLMClient->SendStateUpdate(StateData);
     }
 }
@@ -225,15 +232,21 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         TMap<FString, int32> Relations;
         if (UMCPJsonUtils::ParseAffinityUpdateFromObject(Root, AgentID, Relations) && Relations.Num() > 0)
         {
+            PendingStateUpdateAgents.Remove(AgentID);
+
             if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
             {
                 if (UNPCStateComponent* StateComp = NPC->GetStateComponent())
                 {
+                    int32 ChangedCount = 0;
                     for (const auto& Pair : Relations)
                     {
-                        StateComp->UpdateAffinity(Pair.Key, Pair.Value);
+                        if (StateComp->AffinityCache.FindRef(Pair.Key) != Pair.Value)
+                        {
+                            StateComp->UpdateAffinity(Pair.Key, Pair.Value);
+                            ++ChangedCount;
+                        }
                     }
-                    UE_LOG(LogTemp, Log, TEXT("[NPCManager] %s AffinityCache 갱신: %d건"), *AgentID, Relations.Num());
                 }
             }
             return;
