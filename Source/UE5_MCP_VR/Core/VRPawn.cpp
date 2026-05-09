@@ -8,12 +8,14 @@
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
 #include "NativeGameplayTags.h"
+#include "VRPlayerCharacter.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
+#include "IMotionController.h"
 #include "../NPC/SmartNPC.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 
@@ -36,12 +38,12 @@ AVRPawn::AVRPawn()
     // 왼손 모션컨트롤러
     MotionControllerLeft = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerLeft"));
     MotionControllerLeft->SetupAttachment(VROrigin);
-    MotionControllerLeft->MotionSource = FXRMotionControllerBase::LeftHandSourceId;
+    MotionControllerLeft->MotionSource = IMotionController::LeftHandSourceId;
 
     // 오른손 모션컨트롤러
     MotionControllerRight = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerRight"));
     MotionControllerRight->SetupAttachment(VROrigin);
-    MotionControllerRight->MotionSource = FXRMotionControllerBase::RightHandSourceId;
+    MotionControllerRight->MotionSource = IMotionController::RightHandSourceId;
 
     // 손 메시
     LeftHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LeftHandMesh"));
@@ -85,7 +87,8 @@ void AVRPawn::BeginPlay()
     Super::BeginPlay();
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
-    UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Floor);
+    // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
+    UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Stage);
 
     // Enhanced Input IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
