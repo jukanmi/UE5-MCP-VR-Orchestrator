@@ -62,6 +62,10 @@ checkpoints.db
 #models
 **/models/*
 
+# TTS voice 파일·체크포인트 (자동 다운로드/생성)
+OmniAgent_VR_System/TTSService/voices/
+OmniAgent_VR_System/TTSService/checkpoints_v2/
+
 
 # Jupyter Notebooks (if used for testing)
 .ipynb_checkpoints/
@@ -110,3 +114,21 @@ docs/
 CLAUDE.md
 # Added by code-review-graph
 .code-review-graph/
+
+# ==============================================================================
+# OCULUS / META TOOLS (37MB ovr-platform-util.exe 등)
+# ==============================================================================
+Content/Oculus/
+
+# ==============================================================================
+# EDITOR PER-USER SETTINGS (머신/사용자별)
+# ==============================================================================
+Config/DefaultEditorPerProjectUserSettings.ini
+
+# ==============================================================================
+# PYTHON CACHE / VENV
+# ==============================================================================
+__pycache__/
+*.pyc
+.venv/
+venv/

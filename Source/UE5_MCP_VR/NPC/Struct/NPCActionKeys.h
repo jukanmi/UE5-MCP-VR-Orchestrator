@@ -18,6 +18,22 @@ namespace NPCActionKeys
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
 
+    // --- NpcAudioResponse Keys (Python → UE5, TTS 통합 계획서 §3) ---
+    inline const FString Audio_Type             = TEXT("type");
+    inline const FString Audio_TypeValue        = TEXT("npc_audio_response");
+    inline const FString Audio_RequestId        = TEXT("request_id");
+    inline const FString Audio_NpcId            = TEXT("npc_id");
+    inline const FString Audio_DialogueText     = TEXT("dialogue_text");
+    inline const FString Audio_Stream           = TEXT("audio_stream");
+    inline const FString Audio_StreamMode       = TEXT("mode");
+    inline const FString Audio_StreamUrl        = TEXT("url");
+    inline const FString Audio_SampleRate       = TEXT("sample_rate");
+    inline const FString Audio_Channels         = TEXT("channels");
+    inline const FString Audio_AnimMetadata     = TEXT("animation_metadata");
+    inline const FString Audio_Emotion          = TEXT("emotion");
+    inline const FString Audio_Gesture          = TEXT("gesture");
+    inline const FString Audio_LookAtPlayer     = TEXT("look_at_player");
+
 
     // NPCActionComponent에서 애니메이션 몽타주를 재생하기 위해 데이터 에셋과 매핑되는 고유 키워드들입니다.
     // 기존 String 기반 통신에서 발생하던 결합도를 낮추고 오직 몽타주 매핑 용도로 역할을 제한하였습니다.

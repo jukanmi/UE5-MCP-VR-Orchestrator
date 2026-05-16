@@ -20,5 +20,22 @@ langchain-community
 faiss-cpu
 # sentence-transformers 5.x 는 torchcodec 을 강제 import → Windows 에서 FFmpeg DLL 누락으로 import 실패.
 sentence-transformers<5.0,>=3.0
-# transformers 4.x 핀 — 5.x 의 isin_mps_friendly 제거 영향 회피.
+
+# TTS (M2/M3) — OpenVoice v2 (MeloTTS base + Tone Color Converter)
+# OpenVoice 가 MeloTTS 출력에 화자 음색을 입혀 NPC 별 고유 음성 생성.
+# License: MIT (상업 OK). transformers 4.x 필요.
+#
+# 설치 절차 (.venv 가정):
+#   # torch (Blackwell GPU): cu128 인덱스 필수
+#   uv pip install --python .venv/Scripts/python.exe torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+#   # MeloTTS (PyPI 빌드 깨짐 → GitHub 직접, --no-deps)
+#   uv pip install --python .venv/Scripts/python.exe --no-deps git+https://github.com/myshell-ai/MeloTTS.git
+#   uv pip install --python .venv/Scripts/python.exe cn2an pykakasi jamo g2p_en g2pkk anyascii unidecode pypinyin jieba eng_to_ipa cached_path mecab-python3 unidic-lite gruut tn num2words fugashi
+#   # OpenVoice (GitHub, --no-deps)
+#   uv pip install --python .venv/Scripts/python.exe --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+#   uv pip install --python .venv/Scripts/python.exe pydub wavmark faster-whisper whisper-timestamped
+#
+# 첫 기동 시 checkpoints_v2 (~수백MB) 자동 다운로드 → OmniAgent_VR_System/TTSService/checkpoints_v2/
 transformers<5.0,>=4.46
+torchaudio
+# (melo / openvoice 본체와 텍스트 전처리는 requirements.txt 자동 설치 불가 — 위 절차 따라 수동 설치)
