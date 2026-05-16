@@ -30,8 +30,9 @@ public:
 
     void DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch);
 
-    /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달 */
-    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason = TEXT(""));
+    /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달.
+     *  RequestGen 은 EQS 요청 세대 번호 — 0 이면 stale 검사 우회(레거시 호환). */
+    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason = TEXT(""), uint32 RequestGen = 0);
 
     /** 이미 파싱된 JSON에서 ModeActionRequest를 추출하여 NPC들에 분배. */
     void DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root);

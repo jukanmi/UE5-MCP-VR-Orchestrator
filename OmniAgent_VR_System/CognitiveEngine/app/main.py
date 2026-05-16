@@ -16,6 +16,8 @@ from contextlib import asynccontextmanager
 from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload, LocationDecisionPayload, EmergencyReportPayload
 from .schemas.vr_context import GesPrompt, GestureData
 from .schemas.actions import ActionBatch, ModeActionRequest, GameAction, EAction, NPCBehaviorMode, NPCFacialState
+from .schemas.npc_audio import NpcAudioResponse, AudioStreamInfo, AnimationMetadata
+from .clients import tts_client
 from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
@@ -28,8 +30,10 @@ logger.setLevel(logging.INFO)
 async def _check_ollama_model() -> None:
     try:
         import httpx
-        ollama_base = llm_factory.OLLAMA_BASE_URL
-        async with httpx.AsyncClient() as client:
+        # 끝 슬래시 방어 — 환경변수 OLLAMA_BASE_URL 이 "http://.../" 로 끝나면
+        # `{base}/api/tags` 가 `//api/tags` 가 되어 Ollama 가 307 redirect 반환.
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
             if r.status_code != 200 or not r.text.strip():
                 logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
@@ -99,7 +103,10 @@ async def _process_llm_message(raw_data: str) -> str:
             return json.dumps({"error": "Unauthorized", "msg_id": envelope.msg_id})
 
         # ── Step 3: Stale 패킷 감지 ───────────────────────────────────
-        if is_stale_packet(envelope.timestamp, threshold_seconds=2.0):
+        # 임계값 10초: SLM (gemma e4b) thinking 호출이 cold-start 6초 + warm 2.2초.
+        # 같은 이벤트루프에서 location_decision 처리 중이면 후속 패킷이 큐 대기로 자연스럽게
+        # 2~5초 묵혀짐 → 임계값 2초는 정상 패킷도 드랍. (2026-05-16 직접 측정)
+        if is_stale_packet(envelope.timestamp, threshold_seconds=10.0):
             logger.warning(f"[Main] Stale 패킷 드랍. msg_id={envelope.msg_id}")
             return json.dumps({"status": "dropped", "reason": "stale_packet", "msg_id": envelope.msg_id})
 
@@ -332,6 +339,27 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
     final_action: Optional[ActionBatch] = result.get("action_batch")
 
+    # ── TTS 트리거 (M1 스텁) ─────────────────────────────────────────────
+    # WHY: TTS 통합 계획서 M1 — LLM 출력 스키마 변경 없이 prompt 처리 후
+    #      더미 dialogue_text 로 TTS 호출 → UE5 로 NpcAudioResponse 푸시.
+    #      메인 ActionBatch 응답과 분리해 fire-and-forget 으로 보낸다.
+    # TTS 대상 NPC 결정 — 우선순위:
+    #   1) LLM 이 산출한 ActionBatch.AgentID (실제 발화 주체)
+    #   2) ChatWidget 이 보낸 target_npc_id (플레이어가 바라본 NPC)
+    # 둘 다 없으면 누구에게 발화시킬지 모름 → dispatch skip.
+    # (UE5 NPCMap 상태를 Python 이 모르므로 임의 폴백 금지)
+    npc_id_for_audio = (
+        final_action.AgentID if final_action else target_npc_from_payload
+    )
+    if npc_id_for_audio:
+        asyncio.create_task(_dispatch_npc_audio(
+            npc_id=npc_id_for_audio,
+            dialogue_text="M1 스텁 테스트 발화입니다.",
+            emotion="neutral",
+        ))
+    else:
+        logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
+
     if final_action:
         logger.info(f"[Main] ActionBatch 생성 완료: agent_id={final_action.AgentID}")
         wrapper = ModeActionRequest(
@@ -343,6 +371,45 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
         fallback = ModeActionRequest(Mode="Common", ActionBatches={})
         return fallback.model_dump_json()
+
+
+async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> None:
+    """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
+
+    실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
+    """
+    # voice_id 매핑 — M1 스텁은 NPC_ID 그대로 사용. M2에서 DataTable 도입.
+    voice_id = f"voice_{npc_id.lower()}"
+    try:
+        info = await tts_client.synthesize(
+            text=dialogue_text,
+            voice_id=voice_id,
+            emotion=emotion,
+        )
+    except tts_client.TTSError as e:
+        logger.warning(f"[Main][TTS] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+        info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+
+    if _active_llm_ws is None:
+        logger.info("[Main][TTS] 활성 UE5 WS 없음 — NpcAudioResponse 송신 생략")
+        return
+
+    response = NpcAudioResponse(
+        request_id=info["request_id"],
+        npc_id=npc_id,
+        dialogue_text=dialogue_text,
+        audio_stream=AudioStreamInfo(
+            url=info["ws_url"],
+            sample_rate=info.get("sample_rate", 16000),
+            channels=info.get("channels", 1),
+        ),
+        animation_metadata=AnimationMetadata(emotion=emotion),
+    )
+    try:
+        await _active_llm_ws.send_text(response.model_dump_json())
+        logger.info(f"[Main][TTS] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
+    except Exception as e:
+        logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
 
 
 
@@ -372,17 +439,22 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
 
 
 _LOCATION_DECISION_PROMPT = """\
-Choose one tactical position for NPC '{agent_id}'.
+Task: choose one tactical position name.
+
+Example 1:
+Situation: HP:30% Enemies:3
+Candidates: SAFE, OPTIMAL, AGGRESSIVE
+Answer: SAFE
+
+Example 2:
+Situation: HP:90% Enemies:1
+Candidates: SAFE, OPTIMAL, AGGRESSIVE
+Answer: AGGRESSIVE
+
+Example 3:
 Situation: {context}
-
-Candidates:
-{candidate_lines}
-
-- Low HP or outnumbered → SAFE
-- Balanced HP and cover → OPTIMAL
-- High HP, enemy isolated → AGGRESSIVE
-
-Reply with exactly one word from the candidates above (e.g. SAFE). No explanation."""
+Candidates: {candidate_ids}
+Answer:"""
 
 
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
@@ -400,6 +472,8 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
     agent_id = payload_raw.get("agent_id", "unknown")
     candidates_raw = payload_raw.get("candidates", [])
+    # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
+    request_gen = int(payload_raw.get("request_gen", 0))
 
     def _fast_path_fallback(reason: str) -> str:
         if not candidates_raw:
@@ -410,18 +484,18 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             sorted_candidates = sorted(candidates_raw, key=lambda c: c.get("score", 0), reverse=True)
             top_n = sorted_candidates[:3]
             roll = random.randint(1, 100)
-            
+
             if roll > 40:  # 60% chance to act rationally
                 fallback_id = top_n[0].get("id", candidates_raw[0]["id"])
                 reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
             else:          # 40% chance to panic
                 fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", candidates_raw[0]["id"])
                 reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
-                
+
         logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})")
         return json.dumps({
             "type": "location_decision_result",
-            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": reason_str}
+            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": reason_str, "request_gen": request_gen}
         })
 
     try:
@@ -433,24 +507,37 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 
         valid_ids = {c.id for c in payload.candidates}
 
-        # 후보 목록 텍스트 구성
-        candidate_lines = "\n".join(
-            f"  {c.id} | {c.category} | dist={c.dist_to_enemy:.0f} cover={c.cover_rating:.2f} height={c.height_delta:+.0f} score={c.score:.2f}"
-            for c in payload.candidates
-        )
-
+        # Few-shot raw 프롬프트 — gemma e4b thinking 우회.
+        # 직접 측정 (2026-05-16): chat template thinking ~2200ms/289토큰 → raw few-shot ~400ms/4토큰.
+        candidate_ids = ", ".join(c.id for c in payload.candidates)
         prompt = _LOCATION_DECISION_PROMPT.format(
-            agent_id=payload.agent_id,
             context=payload.context_summary,
-            candidate_lines=candidate_lines,
+            candidate_ids=candidate_ids,
         )
 
-        llm = get_llm(model_name="gemma4_slm", temperature=0.0, num_predict=20)
-        raw = await asyncio.to_thread(llm.invoke, prompt)
-        raw_text = (raw.content if hasattr(raw, "content") else str(raw)).strip()
+        # Ollama 직접 호출 — raw=true 로 chat template (thinking 동반) 우회.
+        # langchain ChatOllama 는 raw 옵션 지원이 약해 httpx 로 직접 호출.
+        import httpx, time as _t
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
+        body = {
+            "model": model_id,
+            "prompt": prompt,
+            "stream": False,
+            "raw": True,
+            "keep_alive": "5m",
+            "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
+        }
+        _llm_start = _t.perf_counter()
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(f"{ollama_base}/api/generate", json=body)
+        _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
+        raw_text = (resp.json().get("response") or "").strip()
+        logger.info(f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})")
+
         tokens = raw_text.split()
         if not tokens:
-            logger.warning(f"[LocationDecision] LLM 빈 응답 → Fast-Path")
+            logger.warning(f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path")
             return _fast_path_fallback("empty_llm_response")
         text = tokens[0].upper()
 
@@ -466,7 +553,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 
         return json.dumps({
             "type": "location_decision_result",
-            "payload": {"agent_id": payload.agent_id, "chosen_id": chosen_id, "reason": reason}
+            "payload": {"agent_id": payload.agent_id, "chosen_id": chosen_id, "reason": reason, "request_gen": request_gen}
         })
 
     except Exception as e:

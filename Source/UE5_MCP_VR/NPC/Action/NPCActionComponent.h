@@ -106,6 +106,10 @@ public:
     /** LLM이 응답한 chosen_id로 위치를 역조회하기 위한 맵 */
     TMap<FString, FVector> TacticalCandidateMap;
 
+    /** EQS 요청 세대 카운터 — Start/Abort 마다 증가. 응답이 일치할 때만 처리해 stale 응답 차단.
+     *  (ID 가 SAFE/OPTIMAL/AGGRESSIVE 고정이라 신/구 응답 구분이 안 되는 문제 해결) */
+    uint32 TacticalQueryGeneration = 0;
+
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
 
@@ -347,9 +351,11 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|Tuning")
     float Score_OptLOSBonus = 2.f;
 
-    /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출. */
-    UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "30.0"))
-    float TacticalLLMTimeout = 8.0f;
+    /** LLM 응답 대기 최대 시간 (초). 초과 시 AbortTacticalQuery 자동 호출.
+     *  주의: gemma e4b thinking 모델은 num_predict=300 시 5~15초 걸림.
+     *  너무 짧게 잡으면 매번 Abort 되어 결과가 영구히 적용 안 됨. */
+    UPROPERTY(EditAnywhere, Category = "NPC|Action|EQS", meta = (ClampMin = "2.0", ClampMax = "60.0"))
+    float TacticalLLMTimeout = 20.0f;
 
     FTimerHandle TacticalLLMTimeoutTimer;
 
@@ -362,8 +368,12 @@ public:
     void OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
 
     /** NPCManager가 LLM 응답 수신 시 호출.
-     *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환. */
-    void NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason = TEXT(""));
+     *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환.
+     *  RequestGen 이 현재 TacticalQueryGeneration 과 다르면 stale 응답으로 간주하고 무시. */
+    void NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason = TEXT(""), uint32 RequestGen = 0);
+
+    /** 현재 EQS 요청 세대 번호 (Python 으로 보내고 그대로 echo 받음) */
+    uint32 GetTacticalQueryGeneration() const { return TacticalQueryGeneration; }
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteFollow(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk);
