@@ -24,16 +24,23 @@ from .utils import db_manager
 from .utils import llm_factory
 from .middleware import validate_auth_token, is_stale_packet, build_failed_event
 
+# 핸들러 없는 logger 는 INFO 레벨 메시지가 콘솔에 출력되지 않는다 (Python 기본 lastResort
+# 핸들러는 WARNING 이상만 처리). uvicorn 도 자기 logger 만 설정하므로 명시적으로 잡아준다.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+)
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
 
 async def _check_ollama_model() -> None:
     try:
-        import httpx
+        import httpx, time as _t
         # 끝 슬래시 방어 — 환경변수 OLLAMA_BASE_URL 이 "http://.../" 로 끝나면
         # `{base}/api/tags` 가 `//api/tags` 가 되어 Ollama 가 307 redirect 반환.
         ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
             if r.status_code != 200 or not r.text.strip():
                 logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
@@ -42,8 +49,19 @@ async def _check_ollama_model() -> None:
             required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
             if not any(required in m for m in installed):
                 logger.warning(f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능")
-            else:
-                logger.info(f"[Startup] Ollama 기본 모델 확인 완료: {required}")
+                return
+            logger.info(f"[Startup] Ollama 기본 모델 확인 완료: {required}")
+
+            # Pre-warm — 첫 location_decision 호출이 cold-start 4~6초 걸려 매번
+            # stale 처리되는 문제 해소. dummy raw 호출로 모델을 메모리에 로드.
+            slm_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
+            _t0 = _t.perf_counter()
+            warm = await client.post(f"{ollama_base}/api/generate", json={
+                "model": slm_id, "prompt": "warmup", "stream": False, "raw": True,
+                "keep_alive": "5m", "options": {"num_predict": 1},
+            })
+            _dt = (_t.perf_counter() - _t0) * 1000.0
+            logger.info(f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}")
     except Exception as e:
         logger.warning(f"[Startup] Ollama 모델 상태 확인 실패 (서버 미실행 가능): {e}")
 

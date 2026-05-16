@@ -1282,6 +1282,13 @@ void UNPCActionComponent::AbortTacticalQuery()
         TacticalQueryState = ETacticalQueryState::Idle;
         TacticalCandidateMap.Empty();
         ++TacticalQueryGeneration; // 중단된 요청의 응답이 늦게 와도 stale 로 무시
+
+        // Abort 시점에도 쿨다운 시작 — 응답 안 와도 새 EQS 가 곧바로 재시작되는
+        // 무한 abort 루프 방지 (hearing 빈도가 LLM 응답보다 빠를 때).
+        if (UWorld* World = GetWorld())
+        {
+            LastTacticalQueryTime = World->GetTimeSeconds();
+        }
     }
 }
 

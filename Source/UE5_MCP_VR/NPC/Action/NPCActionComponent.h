@@ -302,8 +302,11 @@ public:
     void AbortTacticalQuery();
 
     /** 전술 쿼리 재발동 최소 간격 (초). 연속 SIGHT/HEARING에 매번 쿼리하지 않도록 방지. */
+    /** EQS 재요청 쿨다운(초). Start 또는 Abort 시점부터 카운트.
+     *  주의: gemma e4b cold-start 가 ~6초이므로 그 이하로 줄이면 응답 도착 전에
+     *  새 hearing 트리거가 곧바로 EQS 를 재시작 → 매번 stale 로 처리되는 루프 발생. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|EQS", meta = (ClampMin = "0.5", ClampMax = "30.0"))
-    float TacticalQueryCooldown = 2.0f;
+    float TacticalQueryCooldown = 6.0f;
 
     // === EQS / 전술 스코어링 튜닝 파라미터 ===
     // UpdateEQSParams() 및 EvalSafe/Aggressive/OptimalScore()에서 사용
