@@ -1,6 +1,7 @@
 #include "NPCManager.h"
 #include "SmartNPC.h"
 #include "NPCStateComponent.h"
+#include "NPCAudioStreamComponent.h"
 #include "../Network/MCPJsonUtils.h"
 #include "../Network/EnvelopeBuilder.h"
 #include "Action/NPCActionComponent.h"
@@ -24,7 +25,7 @@ void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& Act
 }
 
 
-void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason)
+void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason, uint32 RequestGen)
 {
     ASmartNPC* NPC = GetValidNPC(AgentID);
     if (!NPC)
@@ -34,7 +35,7 @@ void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& Cho
     }
     if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
     {
-        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId, Reason);
+        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId, Reason, RequestGen);
     }
 }
 
@@ -253,12 +254,52 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
+    // npc_audio_response — TTS 통합 계획서 §3. 액션 배치와 분리된 별도 메시지.
+    {
+        FString NpcId, WsUrl, DialogueText, Emotion;
+        int32 SampleRate = 16000;
+        int32 Channels = 1;
+        if (UMCPJsonUtils::ParseNpcAudioResponseFromObject(
+                Root, NpcId, WsUrl, SampleRate, Channels, DialogueText, Emotion))
+        {
+            if (ASmartNPC* NPC = NPCMap->GetValidNPC(NpcId))
+            {
+                if (UNPCAudioStreamComponent* AudioComp = NPC->FindComponentByClass<UNPCAudioStreamComponent>())
+                {
+                    if (!WsUrl.IsEmpty())
+                    {
+                        AudioComp->PlayFromUrl(WsUrl, SampleRate, Channels);
+                    }
+                    else
+                    {
+                        UE_LOG(LogTemp, Warning,
+                            TEXT("[NPCManager] npc_audio_response 수신했으나 ws_url 비어 있음 (TTS 실패 fallback). npc=%s text=%.60s"),
+                            *NpcId, *DialogueText);
+                    }
+                }
+                else
+                {
+                    UE_LOG(LogTemp, Warning,
+                        TEXT("[NPCManager] npc_audio_response 수신했으나 NPC '%s' 에 UNPCAudioStreamComponent 가 첨부되어 있지 않음"),
+                        *NpcId);
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[NPCManager] npc_audio_response 의 NPC '%s' 를 NPCMap 에서 찾을 수 없음"), *NpcId);
+            }
+            return;
+        }
+    }
+
     // location_decision_result 메시지는 전술 위치 파이프라인으로 별도 라우팅
     {
         FString AgentID, ChosenCandidateId, Reason;
-        if (UMCPJsonUtils::ParseLocationDecisionResultFromObject(Root, AgentID, ChosenCandidateId, Reason))
+        int32 RequestGen = 0;
+        if (UMCPJsonUtils::ParseLocationDecisionResultFromObject(Root, AgentID, ChosenCandidateId, Reason, RequestGen))
         {
-            NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason);
+            NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason, static_cast<uint32>(RequestGen));
             return;
         }
 

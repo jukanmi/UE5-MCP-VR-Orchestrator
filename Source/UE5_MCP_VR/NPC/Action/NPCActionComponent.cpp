@@ -958,6 +958,7 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
 
     CachedEnemyLocations = EnemyLocations;
     TacticalCandidateMap.Empty();
+    ++TacticalQueryGeneration; // 새 요청 시작 — 이전 generation 의 응답은 stale 로 무시됨
 
     UEnvQuery* QueryAsset = TacticalPositionsQuery ? TacticalPositionsQuery : DefaultMoveQuery;
     if (!QueryAsset)
@@ -1161,6 +1162,8 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     Payload->SetStringField(TEXT("agent_id"),        AgentID);
     Payload->SetStringField(TEXT("context_summary"), ContextSummary);
     Payload->SetArrayField(TEXT("candidates"),       CandidateArray);
+    // Python 은 이 값을 그대로 응답에 echo. UE5 는 응답 처리 시 현재 generation 과 비교해 stale 차단.
+    Payload->SetNumberField(TEXT("request_gen"),     static_cast<double>(TacticalQueryGeneration));
 
     FString PayloadStr;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
@@ -1210,8 +1213,17 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     }
 }
 
-void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason)
+void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandidateId, const FString& Reason, uint32 RequestGen)
 {
+    // Stale 응답 차단 — Start/Abort 사이에 도착한 옛 generation 응답은 무시
+    if (RequestGen != 0 && RequestGen != TacticalQueryGeneration)
+    {
+        UE_LOG(LogTemp, Log,
+            TEXT("[NPCAction] %s: stale location_decision 무시 (recv_gen=%u current_gen=%u id=%s)"),
+            *GetOwnerAgentID(), RequestGen, TacticalQueryGeneration, *ChosenCandidateId);
+        return;
+    }
+
     // LLM 응답이 정상 도착했으므로 타임아웃 타이머 해제
     if (UWorld* W = GetWorld())
         W->GetTimerManager().ClearTimer(TacticalLLMTimeoutTimer);
@@ -1265,10 +1277,11 @@ void UNPCActionComponent::AbortTacticalQuery()
     if (TacticalQueryState != ETacticalQueryState::Idle)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[NPCAction] %s: TacticalQuery 강제 중단 (state=%d) → Idle 복구"),
-            *GetOwnerAgentID(), static_cast<int32>(TacticalQueryState));
+            TEXT("[NPCAction] %s: TacticalQuery 강제 중단 (state=%d gen=%u) → Idle 복구"),
+            *GetOwnerAgentID(), static_cast<int32>(TacticalQueryState), TacticalQueryGeneration);
         TacticalQueryState = ETacticalQueryState::Idle;
         TacticalCandidateMap.Empty();
+        ++TacticalQueryGeneration; // 중단된 요청의 응답이 늦게 와도 stale 로 무시
     }
 }
 
