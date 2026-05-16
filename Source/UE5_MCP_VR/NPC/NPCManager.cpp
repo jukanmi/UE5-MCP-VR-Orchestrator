@@ -253,6 +253,63 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
+    // npc_audio_response — TTS 통합 계획서 §3. 액션 배치와 분리된 별도 메시지.
+    {
+        FString NpcId, WsUrl, DialogueText, Emotion;
+        int32 SampleRate = 16000;
+        int32 Channels = 1;
+        if (UMCPJsonUtils::ParseNpcAudioResponseFromObject(
+                Root, NpcId, WsUrl, SampleRate, Channels, DialogueText, Emotion))
+        {
+            if (ASmartNPC* NPC = NPCMap->GetValidNPC(NpcId))
+            {
+                if (UNPCAudioStreamComponent* AudioComp = NPC->FindComponentByClass<UNPCAudioStreamComponent>())
+                {
+                    if (!WsUrl.IsEmpty())
+                    {
+                        // PlayFromUrl 을 LLM WebSocket OnMessage 콜백 안에서 직접 호출하면,
+                        // 그 안의 새 TTS WebSocket Connect() 가 IWebSocketsManager 의 tick listener
+                        // array 를 broadcast 도중 mutate → ensure ("Array has changed during ranged-for")
+                        // 다음 게임 틱으로 지연해서 broadcast 루프가 안전하게 끝난 뒤 연결한다.
+                        if (UWorld* World = GetWorld())
+                        {
+                            TWeakObjectPtr<UNPCAudioStreamComponent> WeakAudio(AudioComp);
+                            FString LocalWsUrl = WsUrl;
+                            int32 LocalSampleRate = SampleRate;
+                            int32 LocalChannels = Channels;
+                            World->GetTimerManager().SetTimerForNextTick(
+                                [WeakAudio, LocalWsUrl, LocalSampleRate, LocalChannels]()
+                                {
+                                    if (UNPCAudioStreamComponent* Comp = WeakAudio.Get())
+                                    {
+                                        Comp->PlayFromUrl(LocalWsUrl, LocalSampleRate, LocalChannels);
+                                    }
+                                });
+                        }
+                    }
+                    else
+                    {
+                        UE_LOG(LogTemp, Warning,
+                            TEXT("[NPCManager] npc_audio_response 수신했으나 ws_url 비어 있음 (TTS 실패 fallback). npc=%s text=%.60s"),
+                            *NpcId, *DialogueText);
+                    }
+                }
+                else
+                {
+                    UE_LOG(LogTemp, Warning,
+                        TEXT("[NPCManager] npc_audio_response 수신했으나 NPC '%s' 에 UNPCAudioStreamComponent 가 첨부되어 있지 않음"),
+                        *NpcId);
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[NPCManager] npc_audio_response 의 NPC '%s' 를 NPCMap 에서 찾을 수 없음"), *NpcId);
+            }
+            return;
+        }
+    }
+
     // location_decision_result 메시지는 전술 위치 파이프라인으로 별도 라우팅
     {
         FString AgentID, ChosenCandidateId, Reason;

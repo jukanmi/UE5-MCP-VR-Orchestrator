@@ -153,12 +153,24 @@ void UNPCAudioStreamComponent::HandleMessage(const FString& Message)
     }
     else if (MsgType == TEXT("completed"))
     {
-        // 마지막 청크 재생이 끝날 때까지 컴포넌트는 살려두고 WS 만 닫는다.
-        if (WebSocket.IsValid() && WebSocket->IsConnected())
+        // WebSocket->Close() / Stop() 를 OnMessage 콜백 안에서 직접 부르면
+        // WebSocket 모듈의 리스너 broadcast 루프가 도중에 array 변경 → ensure 발생
+        // ("Array has changed during ranged-for iteration!"). 다음 게임 틱으로 지연.
+        if (UWorld* World = GetWorld())
         {
-            WebSocket->Close();
+            TWeakObjectPtr<UNPCAudioStreamComponent> WeakSelf(this);
+            World->GetTimerManager().SetTimerForNextTick([WeakSelf]()
+            {
+                if (UNPCAudioStreamComponent* Self = WeakSelf.Get())
+                {
+                    if (Self->WebSocket.IsValid() && Self->WebSocket->IsConnected())
+                    {
+                        Self->WebSocket->Close();
+                    }
+                    Self->OnAudioCompleted.Broadcast();
+                }
+            });
         }
-        OnAudioCompleted.Broadcast();
     }
     else if (MsgType == TEXT("error"))
     {
@@ -166,7 +178,18 @@ void UNPCAudioStreamComponent::HandleMessage(const FString& Message)
         Root->TryGetStringField(TEXT("code"), Code);
         Root->TryGetStringField(TEXT("message"), Reason);
         UE_LOG(LogTemp, Warning, TEXT("[NPCAudio] 서버 에러: %s (%s)"), *Code, *Reason);
-        Stop();
+        // Stop() 도 같은 이유로 지연 — OnMessage broadcast 루프 안에서 delegate 를 Clear 하면 안 됨.
+        if (UWorld* World = GetWorld())
+        {
+            TWeakObjectPtr<UNPCAudioStreamComponent> WeakSelf(this);
+            World->GetTimerManager().SetTimerForNextTick([WeakSelf]()
+            {
+                if (UNPCAudioStreamComponent* Self = WeakSelf.Get())
+                {
+                    Self->Stop();
+                }
+            });
+        }
     }
 }
 
