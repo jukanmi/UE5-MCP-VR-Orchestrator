@@ -62,6 +62,10 @@ checkpoints.db
 #models
 **/models/*
 
+# TTS voice 파일·체크포인트 (자동 다운로드/생성)
+OmniAgent_VR_System/TTSService/voices/
+OmniAgent_VR_System/TTSService/checkpoints_v2/
+
 
 # Jupyter Notebooks (if used for testing)
 .ipynb_checkpoints/
