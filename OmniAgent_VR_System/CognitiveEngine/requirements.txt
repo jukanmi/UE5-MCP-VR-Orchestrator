@@ -18,3 +18,14 @@ langchain-ollama
 langchain-community
 faiss-cpu
 sentence-transformers
+
+# TTS (M2) — VibeVoice-Realtime-0.5B (microsoft/VibeVoice-Realtime-0.5B)
+# torch 는 CUDA 가속을 위해 별도 인덱스에서 설치 권장.
+# GPU 아키텍처별 인덱스 선택:
+#   - Blackwell (RTX 50xx, sm_120):  --index-url https://download.pytorch.org/whl/cu128  (PyTorch 2.7+)
+#   - Ada/Ampere (RTX 30/40, ~sm_90): --index-url https://download.pytorch.org/whl/cu124
+# 예 (Blackwell):
+#   uv pip install --python .venv/Scripts/python.exe torch --index-url https://download.pytorch.org/whl/cu128
+transformers>=4.45
+soundfile
+accelerate

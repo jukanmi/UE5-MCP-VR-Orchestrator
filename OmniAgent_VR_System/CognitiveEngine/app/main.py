@@ -357,24 +357,30 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
     final_action: Optional[ActionBatch] = result.get("action_batch")
 
-    # ── TTS 트리거 (M1 스텁) ─────────────────────────────────────────────
-    # WHY: TTS 통합 계획서 M1 — LLM 출력 스키마 변경 없이 prompt 처리 후
-    #      더미 dialogue_text 로 TTS 호출 → UE5 로 NpcAudioResponse 푸시.
-    #      메인 ActionBatch 응답과 분리해 fire-and-forget 으로 보낸다.
-    # TTS 대상 NPC 결정 — 우선순위:
-    #   1) LLM 이 산출한 ActionBatch.AgentID (실제 발화 주체)
-    #   2) ChatWidget 이 보낸 target_npc_id (플레이어가 바라본 NPC)
-    # 둘 다 없으면 누구에게 발화시킬지 모름 → dispatch skip.
-    # (UE5 NPCMap 상태를 Python 이 모르므로 임의 폴백 금지)
+    # ── TTS 트리거 (M2) ──────────────────────────────────────────────────
+    # WHY: TTS 통합 계획서 M2 — LLM 이 ActionBatch 에 Dialogue 액션을 넣으면
+    #      그 Parameters["text"] 를 dialogue_text 로 VibeVoice 합성 요청.
+    #      Dialogue 액션 없으면 발화 안 함 (LLM 의도 존중 — 무관한 NPC 가 떠들지 않게).
     npc_id_for_audio = (
         final_action.AgentID if final_action else target_npc_from_payload
     )
-    if npc_id_for_audio:
+    dialogue_text_for_audio: Optional[str] = None
+    if final_action and final_action.Actions:
+        for act in final_action.Actions:
+            if act.ActionType == "Dialogue":
+                # NPCActionKeys::Key_Text == "text"
+                dialogue_text_for_audio = act.Parameters.get("text") or None
+                if dialogue_text_for_audio:
+                    break
+
+    if npc_id_for_audio and dialogue_text_for_audio:
         asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
-            dialogue_text="M1 스텁 테스트 발화입니다.",
-            emotion="neutral",
+            dialogue_text=dialogue_text_for_audio,
+            emotion="neutral",  # M2 무시. M3 에서 ActionBatch.FacialState 매핑 검토.
         ))
+    elif npc_id_for_audio:
+        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
     else:
         logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
 
@@ -396,12 +402,12 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> 
 
     실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
     """
-    # voice_id 매핑 — M1 스텁은 NPC_ID 그대로 사용. M2에서 DataTable 도입.
-    voice_id = f"voice_{npc_id.lower()}"
+    # M2: voice_id 자리에 npc_id 를 그대로 전달.
+    # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
     try:
         info = await tts_client.synthesize(
             text=dialogue_text,
-            voice_id=voice_id,
+            voice_id=npc_id,
             emotion=emotion,
         )
     except tts_client.TTSError as e:
