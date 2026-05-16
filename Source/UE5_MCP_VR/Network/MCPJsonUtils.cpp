@@ -4,6 +4,7 @@
 #include "Dom/JsonValue.h"
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
+#include "../NPC/Struct/NPCActionKeys.h"
 
 namespace
 {
@@ -181,8 +182,9 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
 }
 
 bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
-    const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
+    const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen)
 {
+    OutRequestGen = 0;
     if (!Root.IsValid()) return false;
 
     FString TypeStr;
@@ -192,18 +194,19 @@ bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
     const TSharedPtr<FJsonObject>* PayloadObj;
     if (!Root->TryGetObjectField(TEXT("payload"), PayloadObj)) return false;
 
-    (*PayloadObj)->TryGetStringField(TEXT("reason"), OutReason);  // optional
+    (*PayloadObj)->TryGetStringField(TEXT("reason"), OutReason);     // optional
+    (*PayloadObj)->TryGetNumberField(TEXT("request_gen"), OutRequestGen); // optional — 미포함 시 0 유지(stale 검사 우회)
     return (*PayloadObj)->TryGetStringField(TEXT("agent_id"), OutAgentId)
         && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
 }
 
 bool UMCPJsonUtils::ParseLocationDecisionResult(
-    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason)
+    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen)
 {
     TSharedPtr<FJsonObject> Root;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
     if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
-    return ParseLocationDecisionResultFromObject(Root, OutAgentId, OutChosenId, OutReason);
+    return ParseLocationDecisionResultFromObject(Root, OutAgentId, OutChosenId, OutReason, OutRequestGen);
 }
 
 bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
@@ -240,4 +243,44 @@ bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
     if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
     return ParseAffinityUpdateFromObject(Root, OutAgentId, OutRelations);
+}
+
+bool UMCPJsonUtils::ParseNpcAudioResponseFromObject(
+    const TSharedPtr<FJsonObject>& Root,
+    FString& OutNpcId,
+    FString& OutWsUrl,
+    int32& OutSampleRate,
+    int32& OutChannels,
+    FString& OutDialogueText,
+    FString& OutEmotion)
+{
+    if (!Root.IsValid()) return false;
+
+    FString TypeStr;
+    if (!Root->TryGetStringField(NPCActionKeys::Audio_Type, TypeStr)) return false;
+    if (TypeStr != NPCActionKeys::Audio_TypeValue) return false;
+
+    Root->TryGetStringField(NPCActionKeys::Audio_NpcId, OutNpcId);
+    Root->TryGetStringField(NPCActionKeys::Audio_DialogueText, OutDialogueText);
+
+    OutSampleRate = 16000;
+    OutChannels = 1;
+    OutEmotion = TEXT("neutral");
+    OutWsUrl.Reset();
+
+    const TSharedPtr<FJsonObject>* StreamObj = nullptr;
+    if (Root->TryGetObjectField(NPCActionKeys::Audio_Stream, StreamObj) && StreamObj && StreamObj->IsValid())
+    {
+        (*StreamObj)->TryGetStringField(NPCActionKeys::Audio_StreamUrl, OutWsUrl);
+        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_SampleRate, OutSampleRate);
+        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_Channels, OutChannels);
+    }
+
+    const TSharedPtr<FJsonObject>* AnimObj = nullptr;
+    if (Root->TryGetObjectField(NPCActionKeys::Audio_AnimMetadata, AnimObj) && AnimObj && AnimObj->IsValid())
+    {
+        (*AnimObj)->TryGetStringField(NPCActionKeys::Audio_Emotion, OutEmotion);
+    }
+
+    return !OutNpcId.IsEmpty();
 }

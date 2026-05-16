@@ -30,14 +30,15 @@ public:
     static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents);
 
     /** location_decision_result 메시지 파싱.
-     *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "..." } }
+     *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "...", "request_gen": N } }
+     *  request_gen 미포함 시 OutRequestGen=0 — stale 검사를 건너뜀(레거시 호환).
      *  @return true이면 OutAgentId / OutChosenId에 값이 채워짐 */
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     static bool ParseLocationDecisionResult(
-        const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason);
+        const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen);
 
     static bool ParseLocationDecisionResultFromObject(
-        const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason);
+        const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen);
 
     /** state_update 응답에서 relations 파싱.
      *  { "status": "cached", "agent_id": "...", "relations": [{"target_id":"...", "affinity_score":N, ...}] }
@@ -47,4 +48,16 @@ public:
 
     static bool ParseAffinityUpdateFromObject(
         const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations);
+
+    /** npc_audio_response 메시지 파싱 (TTS 통합 계획서 §3).
+     *  성공 시 OutNpcId/OutWsUrl/OutSampleRate/OutChannels/OutDialogue/OutEmotion 채움.
+     *  type 이 "npc_audio_response" 가 아니면 false 반환 (조용히 패스). */
+    static bool ParseNpcAudioResponseFromObject(
+        const TSharedPtr<FJsonObject>& Root,
+        FString& OutNpcId,
+        FString& OutWsUrl,
+        int32& OutSampleRate,
+        int32& OutChannels,
+        FString& OutDialogueText,
+        FString& OutEmotion);
 };

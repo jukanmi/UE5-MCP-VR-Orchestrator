@@ -11,10 +11,14 @@ uvicorn
 pydantic>=2.0
 python-dotenv
 websockets
+aiosqlite
 PyYAML
 langchain-openai
 langchain-google-genai
 langchain-ollama
 langchain-community
 faiss-cpu
-sentence-transformers
+# sentence-transformers 5.x 는 torchcodec 을 강제 import → Windows 에서 FFmpeg DLL 누락으로 import 실패.
+sentence-transformers<5.0,>=3.0
+# transformers 4.x 핀 — 5.x 의 isin_mps_friendly 제거 영향 회피.
+transformers<5.0,>=4.46
