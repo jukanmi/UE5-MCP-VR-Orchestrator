@@ -1,0 +1,16 @@
+# NPC AgentID → VibeVoice voice 매핑.
+# WHY: TTS 통합 계획서 M2 — npc_id 기반 일관된 voice 부여.
+#      M3 단계에서 DataTable 또는 DB 로 이관 검토.
+#
+# voice 키는 microsoft/VibeVoice-Realtime-0.5B 가 받는 voice 이름.
+# 모델 로드 후 supported voice 목록을 startup 로그에 출력 — 거기서 골라 갱신할 것.
+#
+# 미매핑 NPC 는 default voice 사용.
+
+default: en-Alice_woman
+
+npcs:
+  Skadi: en-Alice_woman
+  # 추후 NPC 추가 예시:
+  # Guard_01: en-Carter_man
+  # Merchant: en-Frank_man
