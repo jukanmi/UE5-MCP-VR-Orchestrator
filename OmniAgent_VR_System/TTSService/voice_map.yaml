@@ -1,16 +1,16 @@
-# NPC AgentID → Coqui XTTS-v2 speaker 매핑.
-# speaker 값 = XTTS-v2 내장 speaker 이름. startup 로그의 "사용 가능 speaker 일부" 참고.
-# 같은 speaker 가 17개 언어 발화 가능 (영어/한국어 모두 OK).
+# NPC AgentID → OpenVoice reference WAV 파일명 매핑.
+# value = voices/<value>.wav 의 stem.
+#   - 파일이 없으면 첫 사용 시 MeloTTS KR base 로 자동 생성 (음색은 base 와 동일).
+#   - 진짜 차별화는 클린 reference WAV(6~10초, 잡음 없음)를 voices/<value>.wav 에 두면 자동 적용.
 #
-# 여성 예: Claribel Dervla, Daisy Studious, Gracie Wise, Tammie Ema, Alison Dietlinde, Ana Florence
-# 남성 예: Aaron Dreschner, Damien Black, Filip Traverse, Andrew Chipper
-#
-# 미매핑 NPC 는 default speaker 사용.
+# 보통 NPC 이름과 동일하게 두면 충분. 한 reference WAV 를 여러 NPC 가 공유하고 싶으면 같은 값으로 매핑.
+# 미매핑 NPC 는 default 사용.
 
-default: Claribel Dervla
+default: Skadi
 
 npcs:
-  Skadi: Claribel Dervla
+  Skadi: Skadi
   # 추후 NPC 추가 예시:
-  # Guard_01:  Damien Black
-  # Merchant:  Aaron Dreschner
+  # Guard_01:  Guard_01      # voices/Guard_01.wav (남성 클린 녹음)
+  # Merchant:  Merchant      # voices/Merchant.wav
+  # Guard_02:  Guard_01      # Guard_01 과 같은 목소리 재사용
