@@ -9,12 +9,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "NativeGameplayTags.h"
+#include "PlayerGameplayTags.h"
 #include "VRPlayerCharacter.generated.h"
-
-UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Idle)
-UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Action_Common_Move)
-UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Action_Combat_Attack)
-UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_State_Condition_Dead)
 
 UCLASS()
 class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerBase

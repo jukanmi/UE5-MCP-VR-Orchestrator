@@ -8,7 +8,6 @@
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
 #include "NativeGameplayTags.h"
-#include "VRPlayerCharacter.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
@@ -182,12 +181,21 @@ void AVRPawn::OnSnapTurn(const FInputActionValue& Value)
 
 void AVRPawn::SyncCapsuleToHMD()
 {
-    if (!VRCamera) return;
+    // 표준 VR 패턴: HMD가 트래킹 공간 안에서 이동한 만큼 액터(캡슐)를 따라 이동시키되,
+    // VROrigin을 같은 양만큼 반대로 보정하여 HMD의 월드 위치는 그대로 유지한다.
+    // 이 보정이 없으면 매 Tick마다 HMD 오프셋이 누적되어 캐릭터가 표류한다.
+    if (!VRCamera || !VROrigin) return;
 
-    // HMD 위치의 XY만 캡슐에 반영 — Z는 캡슐 반높이 기준 유지
-    FVector HMDWorld = VRCamera->GetComponentLocation();
-    FVector CapsuleBase(HMDWorld.X, HMDWorld.Y, GetActorLocation().Z);
-    SetActorLocation(CapsuleBase, false, nullptr, ETeleportType::TeleportPhysics);
+    const FVector CamRelative = VRCamera->GetRelativeLocation();
+    const FVector HMDLocalXY(CamRelative.X, CamRelative.Y, 0.f);
+    if (HMDLocalXY.IsNearlyZero()) return;
+
+    // 액터 회전을 적용해 월드 오프셋으로 변환 후 캡슐 이동
+    const FVector WorldOffset = GetActorRotation().RotateVector(HMDLocalXY);
+    AddActorWorldOffset(WorldOffset, false, nullptr, ETeleportType::TeleportPhysics);
+
+    // VROrigin을 로컬에서 반대로 빼서 HMD 월드 위치가 변하지 않도록 상쇄
+    VROrigin->AddRelativeLocation(-HMDLocalXY);
 }
 
 // ============================================================================
@@ -354,6 +362,18 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
         HandleDeath();
     }
     return Actual;
+}
+
+// ============================================================================
+// 체크포인트
+// ============================================================================
+
+void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
+{
+    CheckpointLocation = Location;
+    CheckpointRotation = Rotation;
+    CheckpointHP       = CurrentStats.Resources.Health;
+    bHasCheckpoint     = true;
 }
 
 // ============================================================================

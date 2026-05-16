@@ -2,12 +2,6 @@
 
 
 #include "VRPlayerCharacter.h"
-#include "NativeGameplayTags.h"
-
-UE_DEFINE_GAMEPLAY_TAG(TAG_State_Idle, "State.Idle")
-UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Common_Move, "State.Action.Common.Move")
-UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Combat_Attack, "State.Action.Combat.Attack")
-UE_DEFINE_GAMEPLAY_TAG(TAG_State_Condition_Dead, "State.Condition.Dead")
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"

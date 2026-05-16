@@ -1,4 +1,5 @@
 #include "Checkpoint.h"
+#include "VRPawn.h"
 #include "VRPlayerCharacter.h"
 
 ACheckpoint::ACheckpoint()
@@ -21,8 +22,13 @@ void ACheckpoint::OnPlayerEntered(UPrimitiveComponent* OverlappedComp, AActor* O
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 	bool bFromSweep, const FHitResult& SweepResult)
 {
-	AVRPlayerCharacter* Player = Cast<AVRPlayerCharacter>(OtherActor);
-	if (!Player) return;
-
-	Player->SaveCheckpoint(GetActorLocation(), GetActorRotation());
+	if (AVRPawn* VRPlayer = Cast<AVRPawn>(OtherActor))
+	{
+		VRPlayer->SaveCheckpoint(GetActorLocation(), GetActorRotation());
+		return;
+	}
+	if (AVRPlayerCharacter* Player = Cast<AVRPlayerCharacter>(OtherActor))
+	{
+		Player->SaveCheckpoint(GetActorLocation(), GetActorRotation());
+	}
 }

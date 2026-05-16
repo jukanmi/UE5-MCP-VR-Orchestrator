@@ -9,12 +9,15 @@
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "NativeGameplayTags.h"
+#include "PlayerGameplayTags.h"
 #include "VRPawn.generated.h"
 
 class UCameraComponent;
 class UMotionControllerComponent;
 class UWidgetComponent;
 class UWidgetInteractionComponent;
+class UAnimMontage;
+class USkeletalMeshComponent;
 
 /**
  * Meta Quest 3S 전용 VR 폰.
@@ -189,6 +192,9 @@ public:
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
                              AController* EventInstigator, AActor* DamageCauser) override;
+
+    /** 체크포인트 액터가 호출 — 현재 위치/HP를 저장 */
+    void SaveCheckpoint(const FVector& Location, const FRotator& Rotation);
 
 private:
     // --- 입력 핸들러 ---
