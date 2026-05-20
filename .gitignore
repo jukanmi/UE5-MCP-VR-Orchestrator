@@ -1,9 +1,4 @@
 # ==============================================================================
-# CLAUDE CODE — 로컬 설정·스킬·워크트리는 추적 안 함
-# ==============================================================================
-.claude/
-
-# ==============================================================================
 # UNREAL ENGINE 5 CORE IGNORES
 # ==============================================================================
 # Build & Intermediate files (Auto-generated)
@@ -62,9 +57,16 @@ checkpoints.db
 #models
 **/models/*
 
-# TTS voice 파일·체크포인트 (자동 다운로드/생성)
+# TTS voice 파일·체크포인트 (자동 다운로드/생성, 모델 바이너리 대용량)
 OmniAgent_VR_System/TTSService/voices/
 OmniAgent_VR_System/TTSService/checkpoints_v2/
+OmniAgent_VR_System/TTSService/base_voices/
+OmniAgent_VR_System/TTSService/**/*.wav
+OmniAgent_VR_System/TTSService/**/*.mp3
+OmniAgent_VR_System/TTSService/**/*.flac
+OmniAgent_VR_System/TTSService/**/*.pth
+OmniAgent_VR_System/TTSService/**/*.onnx
+OmniAgent_VR_System/TTSService/**/*.ckpt
 
 
 # Jupyter Notebooks (if used for testing)
