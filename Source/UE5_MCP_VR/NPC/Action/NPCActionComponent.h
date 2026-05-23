@@ -133,7 +133,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
     bool HasPendingActions() const { return !ActionQueue.IsEmpty(); }
-    bool IsTrackingTarget(const AActor* Target) const { return TrackedTarget.Get() == Target; }
 
     // --- Public API: Batch & Queue ---
 

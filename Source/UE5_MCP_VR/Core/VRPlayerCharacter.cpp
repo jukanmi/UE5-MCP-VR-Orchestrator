@@ -35,16 +35,6 @@ AVRPlayerCharacter::AVRPlayerCharacter()
 void AVRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	if (ChatWidgetClass)
-	{
-		ChatWidgetInstance = CreateWidget<UChatWidget>(GetWorld(), ChatWidgetClass);
-		if (ChatWidgetInstance)
-		{
-			ChatWidgetInstance->AddToViewport();
-			ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-		}
-	}
 
     // 기본 대기 태그 부여
     AddStateTag(TAG_State_Idle);
@@ -78,11 +68,6 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	// Set up Enhanced Input
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		if (ToggleChatAction)
-		{
-			EnhancedInputComponent->BindAction(ToggleChatAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::ToggleChat);
-		}
-
 		// Move
 		if (MoveAction)
 		{
@@ -156,45 +141,8 @@ void AVRPlayerCharacter::Look(const FInputActionValue& Value)
 	}
 }
 
-void AVRPlayerCharacter::ToggleChat()
-{
-	if (!ChatWidgetInstance) return;
-
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
-
-	if (ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
-	{
-		// Close
-		ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-		PC->bShowMouseCursor = false;
-		PC->SetInputMode(FInputModeGameOnly());
-	}
-	else
-	{
-		// Open
-		ChatWidgetInstance->SetVisibility(ESlateVisibility::Visible);
-		PC->bShowMouseCursor = true;
-		
-		FInputModeGameAndUI InputMode;
-		InputMode.SetWidgetToFocus(ChatWidgetInstance->GetCachedWidget());
-        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-
-		PC->SetInputMode(InputMode);
-	}
-}
-
 void AVRPlayerCharacter::DetectNearbyNPC()
 {
-	// 이미 대화 중이면 닫기
-	if (ChatWidgetInstance && ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
-	{
-		ChatWidgetInstance->CurrentTargetNPCID = TEXT("");
-		CurrentTargetID = TEXT("");
-		ToggleChat();
-		return;
-	}
-
 	// SimpleSphere Trace or Overlap
 	FVector Start = GetActorLocation();
 	float Radius = 500.0f; 
@@ -234,20 +182,7 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 
 	if (bHit && FoundNPCID != "")
 	{
-		CurrentTargetID = FoundNPCID;
-		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s. 대화를 시작합니다."), *CurrentTargetID);
-		
-		// Update UI with target
-		if (ChatWidgetInstance)
-		{
-			ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetID;
-			
-			// UI 강제 열기
-			if (ChatWidgetInstance->GetVisibility() != ESlateVisibility::Visible)
-			{
-				ToggleChat(); // ToggleChat에서 마우스 모드 전환까지 처리해줌
-			}
-		}
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s"), *FoundNPCID);
 	}
 	else
 	{
@@ -441,12 +376,6 @@ void AVRPlayerCharacter::HandleDeath()
         DisableInput(PC);
         PC->bShowMouseCursor = false;
         PC->SetInputMode(FInputModeGameOnly());
-    }
-
-    // 채팅창 닫기
-    if (ChatWidgetInstance && ChatWidgetInstance->GetVisibility() == ESlateVisibility::Visible)
-    {
-        ChatWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
     }
 
     // 충돌/메시 비활성화

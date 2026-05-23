@@ -30,23 +30,3 @@ PICKUP_DISTANCE = 150.0
 # ============================================================================
 WORLD_HEIGHT_LIMIT = 10000.0  # Maximum Z coordinate
 WORLD_BOUNDARY = 50000.0  # XY boundary
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-def get_all_constants() -> dict:
-    """
-    Returns all world constants as a dictionary.
-    Useful for injecting into LLM prompts.
-    """
-    return {
-        "CRITICAL_HIT_MULTIPLIER": CRITICAL_HIT_MULTIPLIER,
-        "MAX_SPEED": MAX_SPEED,
-        "WALK_SPEED": WALK_SPEED,
-        "RUN_SPEED": RUN_SPEED,
-        "CROUCH_SPEED": CROUCH_SPEED,
-        "MAX_INTERACTION_DISTANCE": MAX_INTERACTION_DISTANCE,
-        "PICKUP_DISTANCE": PICKUP_DISTANCE,
-        "WORLD_HEIGHT_LIMIT": WORLD_HEIGHT_LIMIT,
-        "WORLD_BOUNDARY": WORLD_BOUNDARY,
-    }

@@ -419,15 +419,6 @@ CognitiveEngine/
 - **NPC Behavior**: NPC AI (`MAX_AGGRESSION`, `DETECTION_RANGE`)
 - **World Limits**: 월드 경계 (`WORLD_HEIGHT_LIMIT`, `WORLD_BOUNDARY`)
 
-**Helper Functions**:
-
-```python
-from app.config.world_constants import get_all_constants
-
-# 사용 예시
-constants_dict = get_all_constants()
-```
-
 ### LLM Factory (`utils/llm_factory.py`)
 
 **지원 Provider**:

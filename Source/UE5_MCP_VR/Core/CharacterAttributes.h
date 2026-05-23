@@ -259,17 +259,6 @@ struct FCharacterAttributesBase
 
     FCharacterAttributesBase() {}
 
-    // Helper: Apply Status Effect
-    void AddStatusEffect(EStatusEffect Effect)
-    {
-        StatusEffects |= static_cast<uint8>(Effect);
-    }
-
-    void RemoveStatusEffect(EStatusEffect Effect)
-    {
-        StatusEffects &= ~static_cast<uint8>(Effect);
-    }
-
     bool HasStatusEffect(EStatusEffect Effect) const
     {
         return (StatusEffects & static_cast<uint8>(Effect)) != 0;

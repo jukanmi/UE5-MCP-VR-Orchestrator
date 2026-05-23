@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "../Core/Entity.h"          // IPlayerEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
-#include "../UI/ChatWidget.h"
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -74,23 +73,9 @@ public:
 	// Override TakeDamage to apply to Resources.Health
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
-	// --- UI ---
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
-	TSubclassOf<UChatWidget> ChatWidgetClass;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-	UChatWidget* ChatWidgetInstance;
-
-	// Input Actions
-	void ToggleChat();
-
 	/** MappingContext */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputMappingContext* DefaultMappingContext;
-
-	/** Toggle Chat Action */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputAction* ToggleChatAction;
 
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -104,7 +89,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
 
-	/** Interact Input Action (대화 시작 등) */
+	/** Interact Input Action (대화 대상 NPC 지정) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* InteractAction;
 
@@ -136,7 +121,6 @@ public:
 	
 	// --- Interaction ---
 	void DetectNearbyNPC();
-	FString CurrentTargetID;
 
 	// --- Death / Respawn ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
