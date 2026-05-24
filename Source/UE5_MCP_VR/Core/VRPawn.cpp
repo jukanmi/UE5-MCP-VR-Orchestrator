@@ -1,8 +1,6 @@
 #include "VRPawn.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
-#include "Components/WidgetComponent.h"
-#include "Components/WidgetInteractionComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
@@ -34,15 +32,28 @@ AVRPawn::AVRPawn()
     VRCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("VRCamera"));
     VRCamera->SetupAttachment(VROrigin);
 
-    // 왼손 모션컨트롤러
+    // 왼손 모션컨트롤러 — Grip 포즈 (손 메시 부착용)
     MotionControllerLeft = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerLeft"));
     MotionControllerLeft->SetupAttachment(VROrigin);
     MotionControllerLeft->MotionSource = IMotionController::LeftHandSourceId;
 
-    // 오른손 모션컨트롤러
+    // 왼손 Aim 포즈 — 조준·포인터·UI 인터랙션용. 현재 사용처는 없지만 미리
+    // 책정해두어 후속 기능에서 바로 쓸 수 있게 한다.
+    MotionControllerLeftAim = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerLeftAim"));
+    MotionControllerLeftAim->SetupAttachment(VROrigin);
+    MotionControllerLeftAim->MotionSource = FName("LeftAim");
+
+    // 오른손 모션컨트롤러 — Grip 포즈 (손 메시 부착용)
     MotionControllerRight = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerRight"));
     MotionControllerRight->SetupAttachment(VROrigin);
     MotionControllerRight->MotionSource = IMotionController::RightHandSourceId;
+
+    // 오른손 Aim 포즈 — 조준·발사용. OpenXR이 컨트롤러별로 별도 제공하는 포즈로
+    // 자연스러운 조준 축과 정렬되어 있다. Grip 포즈와는 ~30° 기울어져 있어
+    // 라인트레이스에는 반드시 Aim을 써야 한다.
+    MotionControllerRightAim = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerRightAim"));
+    MotionControllerRightAim->SetupAttachment(VROrigin);
+    MotionControllerRightAim->MotionSource = FName("RightAim");
 
     // 손 메시
     LeftHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LeftHandMesh"));
@@ -50,20 +61,6 @@ AVRPawn::AVRPawn()
 
     RightHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RightHandMesh"));
     RightHandMesh->SetupAttachment(MotionControllerRight);
-
-    // 손목 위젯 — 왼손 모션컨트롤러에 부착
-    WristWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("WristWidget"));
-    WristWidgetComp->SetupAttachment(MotionControllerLeft);
-    WristWidgetComp->SetRelativeLocation(FVector(0.f, -5.f, 10.f));
-    WristWidgetComp->SetRelativeRotation(FRotator(-90.f, 180.f, 0.f));
-    WristWidgetComp->SetDrawSize(FVector2D(400.f, 300.f));
-    WristWidgetComp->SetWorldScale3D(FVector(0.05f));
-    WristWidgetComp->SetVisibility(false);
-
-    // 위젯 인터랙터 — 오른손에서 UI 레이 발사
-    WidgetInteractor = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("WidgetInteractor"));
-    WidgetInteractor->SetupAttachment(MotionControllerRight);
-    WidgetInteractor->InteractionDistance = 300.f;
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -75,6 +72,13 @@ AVRPawn::AVRPawn()
     bUseControllerRotationPitch = false;
     bUseControllerRotationRoll  = false;
     GetCharacterMovement()->bOrientRotationToMovement = false;
+
+    // 동적 캡슐 리사이즈의 상한·역보정 기준이 될 기본 절반 높이 캐싱
+    if (UCapsuleComponent* Cap = GetCapsuleComponent())
+    {
+        BaseCapsuleHalfHeight = Cap->GetUnscaledCapsuleHalfHeight();
+        InterpedCapsuleHalfHeight = BaseCapsuleHalfHeight;
+    }
 }
 
 // ============================================================================
@@ -89,6 +93,16 @@ void AVRPawn::BeginPlay()
     // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
     UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Stage);
 
+    // VROrigin은 캡슐 루트(= 바닥 +절반높이)에 붙어 있다. Stage 트래킹은 HMD
+    // 높이를 "바닥" 기준으로 보고하므로, VROrigin을 캡슐 절반 높이만큼 내려
+    // 트래킹 공간 원점을 실제 바닥에 맞춘다. 이를 빼지 않으면 카메라가
+    // 캡슐 절반 높이(기본 88cm)만큼 떠 보인다.
+    if (VROrigin)
+    {
+        const float HalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+        VROrigin->SetRelativeLocation(FVector(0.f, 0.f, -HalfHeight));
+    }
+
     // Enhanced Input IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
@@ -100,15 +114,15 @@ void AVRPawn::BeginPlay()
         }
     }
 
-    // 손목 위젯에 ChatWidget 클래스 등록
-    if (ChatWidgetClass && WristWidgetComp)
-    {
-        WristWidgetComp->SetWidgetClass(ChatWidgetClass);
-        ChatWidgetInstance = Cast<UChatWidget>(WristWidgetComp->GetUserWidgetObject());
-    }
-
     RefreshStats();
     AddStateTag(TAG_State_Idle);
+
+    // 초기 자세는 Standing 으로 가정하고 태그만 미리 부여. 캘리브레이션이 끝나면
+    // UpdatePosture()가 실시간 Z 비율로 다시 확정한다.
+    AddStateTag(TAG_State_Posture_Standing);
+
+    // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
+    StartCalibration();
 }
 
 // ============================================================================
@@ -119,6 +133,152 @@ void AVRPawn::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     SyncCapsuleToHMD();
+    UpdatePosture();
+    UpdateDynamicCapsule(DeltaTime);
+}
+
+// ============================================================================
+// 자세 시스템 — 캘리브레이션 / 자세 판정 / 동적 캡슐
+// ============================================================================
+
+void AVRPawn::StartCalibration()
+{
+    // 진행 중 타이머가 있으면 정리
+    GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
+    GetWorldTimerManager().ClearTimer(CalibrationFinishTimer);
+
+    bCalibrated = false;
+    CalibrationAccum = 0.f;
+    CalibrationSampleCount = 0;
+
+    // 100ms 간격으로 HMD Z 샘플링
+    GetWorldTimerManager().SetTimer(
+        CalibrationSampleTimer, this, &AVRPawn::SampleCalibration, 0.1f, true);
+
+    // CalibrationDuration 후 평균 확정
+    GetWorldTimerManager().SetTimer(
+        CalibrationFinishTimer, this, &AVRPawn::FinishCalibration,
+        CalibrationDuration, false);
+}
+
+void AVRPawn::SampleCalibration()
+{
+    const float Z = GetCurrentHMDHeight();
+    if (Z > 30.f) // HMD 트래킹이 안 잡힌 0 근처 값 제외
+    {
+        CalibrationAccum += Z;
+        ++CalibrationSampleCount;
+    }
+}
+
+void AVRPawn::FinishCalibration()
+{
+    GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
+
+    if (CalibrationSampleCount > 0)
+    {
+        CalibratedStandingHeight = CalibrationAccum / CalibrationSampleCount;
+        bCalibrated = true;
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] Calibrated standing height = %.1f cm (samples=%d)"),
+               CalibratedStandingHeight, CalibrationSampleCount);
+    }
+    else
+    {
+        // HMD 트래킹이 전혀 없는 경우(에디터 미연결 등) — 표준값 사용
+        CalibratedStandingHeight = 170.f;
+        bCalibrated = true;
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Calibration fallback to %.1f cm (no valid samples)"),
+               CalibratedStandingHeight);
+    }
+}
+
+float AVRPawn::GetCurrentHMDHeight() const
+{
+    if (!VRCamera) return 0.f;
+
+    // 캡슐 발 기준 절대 높이 = 카메라 월드 Z - 액터 월드 Z + 캡슐 절반 높이.
+    // 액터 피벗이 캡슐 정중앙이므로, 발은 액터Z - HalfHeight 에 있다.
+    return VRCamera->GetComponentLocation().Z - GetActorLocation().Z + InterpedCapsuleHalfHeight;
+}
+
+void AVRPawn::UpdatePosture()
+{
+    if (!bCalibrated || CalibratedStandingHeight <= KINDA_SMALL_NUMBER) return;
+
+    const float Ratio = GetCurrentHMDHeight() / CalibratedStandingHeight;
+
+    // 슈미트 트리거 패턴 — 진입/복귀 임계값을 분리해 데드존 확보
+    switch (CurrentPosture)
+    {
+    case EVRPosture::Standing:
+        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching);
+        break;
+    case EVRPosture::Crouching:
+        if (Ratio > StandingRatioUp)       TransitionTo(EVRPosture::Standing);
+        else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone);
+        break;
+    case EVRPosture::Prone:
+        if (Ratio > ProneRatioUp) TransitionTo(EVRPosture::Crouching);
+        break;
+    }
+}
+
+void AVRPawn::TransitionTo(EVRPosture NewPosture)
+{
+    if (NewPosture == CurrentPosture) return;
+
+    // 이전 자세 태그 회수
+    switch (CurrentPosture)
+    {
+    case EVRPosture::Standing:  RemoveStateTag(TAG_State_Posture_Standing);  break;
+    case EVRPosture::Crouching: RemoveStateTag(TAG_State_Posture_Crouching); break;
+    case EVRPosture::Prone:     RemoveStateTag(TAG_State_Posture_Prone);     break;
+    }
+
+    CurrentPosture = NewPosture;
+
+    // 새 자세 태그 부여
+    switch (CurrentPosture)
+    {
+    case EVRPosture::Standing:  AddStateTag(TAG_State_Posture_Standing);  break;
+    case EVRPosture::Crouching: AddStateTag(TAG_State_Posture_Crouching); break;
+    case EVRPosture::Prone:     AddStateTag(TAG_State_Posture_Prone);     break;
+    }
+
+    // 이동속도 재적용 (ApplyMovementSpeed가 CurrentPosture를 참조)
+    ApplyMovementSpeed();
+
+    UE_LOG(LogTemp, Verbose, TEXT("[VRPawn] Posture -> %s"),
+           *UEnum::GetValueAsString(CurrentPosture));
+
+    OnPostureChanged.Broadcast(CurrentPosture);
+}
+
+void AVRPawn::UpdateDynamicCapsule(float DeltaTime)
+{
+    if (!bCalibrated) return;
+
+    UCapsuleComponent* Cap = GetCapsuleComponent();
+    if (!Cap || !VROrigin) return;
+
+    // 타겟 절반 높이 = HMD가 바닥에서 얼마나 떠 있는지의 절반.
+    // HMD가 머리 꼭대기보다 약간 아래(눈높이)인 점은 사용자별 편차로 묻고 비율로 흡수.
+    const float TargetHalfHeight = FMath::Clamp(
+        GetCurrentHMDHeight() * 0.5f, MinCapsuleHalfHeight, BaseCapsuleHalfHeight);
+
+    // VInterp 스무딩 — 프레임 드랍·콜리전 업데이트 비동기로 인한 jitter 방지
+    InterpedCapsuleHalfHeight = FMath::FInterpTo(
+        InterpedCapsuleHalfHeight, TargetHalfHeight, DeltaTime, HeightInterpSpeed);
+
+    // 캡슐 적용 — sweep=true 로 천장 침투 방지
+    Cap->SetCapsuleHalfHeight(InterpedCapsuleHalfHeight, true);
+
+    // Rising Floor 역보정 — CMC가 캡슐 바닥을 바닥에 붙이므로 ActorZ = InterpedHalfHeight.
+    // 카메라 월드 Z 가 HMD가 보고하는 바닥 기준 절대 높이와 일치하려면
+    // VROrigin Z = -InterpedHalfHeight 이어야 한다. 즉 BeginPlay의 -BaseHalfHeight
+    // 식을 동적값으로 확장한 형태.
+    const FVector OriginLoc = VROrigin->GetRelativeLocation();
+    VROrigin->SetRelativeLocation(FVector(OriginLoc.X, OriginLoc.Y, -InterpedCapsuleHalfHeight));
 }
 
 // ============================================================================
@@ -135,8 +295,6 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_SnapTurn)      EIC->BindAction(IA_SnapTurn,      ETriggerEvent::Triggered, this, &AVRPawn::OnSnapTurn);
         if (IA_Attack)        EIC->BindAction(IA_Attack,        ETriggerEvent::Started,   this, &AVRPawn::OnAttack);
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
-        if (IA_ToggleWristUI) EIC->BindAction(IA_ToggleWristUI, ETriggerEvent::Started,   this, &AVRPawn::OnToggleWristUI);
-        if (IA_TriggerRight)  EIC->BindAction(IA_TriggerRight,  ETriggerEvent::Triggered, this, &AVRPawn::OnTriggerRight);
     }
 }
 
@@ -168,8 +326,19 @@ void AVRPawn::OnSnapTurn(const FInputActionValue& Value)
     float AxisX = Value.Get<FVector2D>().X;
     if (FMath::Abs(AxisX) < 0.5f) return;  // 데드존
 
-    float TurnDelta = (AxisX > 0.f) ? SnapTurnAngle : -SnapTurnAngle;
+    const float TurnDelta = (AxisX > 0.f) ? SnapTurnAngle : -SnapTurnAngle;
+
+    // HMD 월드 위치를 피벗으로 회전한다. 액터 피벗 기준으로 그냥 돌리면 HMD가
+    // 피벗에서 떨어진 거리만큼 호를 그리며 측면으로 밀려난다 → 회전 전후 HMD
+    // 월드 XY를 측정해 그 차이만큼 액터를 역보정, 제자리 회전으로 만든다.
+    const FVector PivotBefore = VRCamera ? VRCamera->GetComponentLocation() : GetActorLocation();
     AddActorWorldRotation(FRotator(0.f, TurnDelta, 0.f));
+    if (VRCamera)
+    {
+        const FVector PivotAfter = VRCamera->GetComponentLocation();
+        AddActorWorldOffset(FVector(PivotBefore.X - PivotAfter.X,
+                                    PivotBefore.Y - PivotAfter.Y, 0.f));
+    }
 
     // 쿨다운 — 연속 회전 방지
     bSnapTurnCooling = true;
@@ -181,21 +350,28 @@ void AVRPawn::OnSnapTurn(const FInputActionValue& Value)
 
 void AVRPawn::SyncCapsuleToHMD()
 {
-    // 표준 VR 패턴: HMD가 트래킹 공간 안에서 이동한 만큼 액터(캡슐)를 따라 이동시키되,
-    // VROrigin을 같은 양만큼 반대로 보정하여 HMD의 월드 위치는 그대로 유지한다.
-    // 이 보정이 없으면 매 Tick마다 HMD 오프셋이 누적되어 캐릭터가 표류한다.
+    // 표준 VR 패턴: 캡슐(액터)을 HMD의 월드 XY 위치 아래로 따라가게 하되,
+    // 같은 양을 VROrigin에서 빼서 HMD의 월드 위치는 그대로 유지한다.
+    //
+    // WHY 월드 위치 차이 기반: 카메라·캡슐의 실제 월드 좌표 차이만큼만 이동시키면
+    // 그 차이가 매 프레임 0으로 수렴한다. 과거 구현은 HMD의 절대 트래킹 좌표
+    // (VRCamera 상대 위치)를 매 프레임 VROrigin에 누적시켜, VROrigin이 액터
+    // 피벗에서 점점 표류 → 스냅턴 회전 시 그 누적 오프셋이 큰 호를 그리며
+    // 텔레포트되는 버그가 있었다.
     if (!VRCamera || !VROrigin) return;
 
-    const FVector CamRelative = VRCamera->GetRelativeLocation();
-    const FVector HMDLocalXY(CamRelative.X, CamRelative.Y, 0.f);
-    if (HMDLocalXY.IsNearlyZero()) return;
+    const FVector CapsuleWorld = GetActorLocation();
+    const FVector CameraWorld  = VRCamera->GetComponentLocation();
+    const FVector OffsetXY(CameraWorld.X - CapsuleWorld.X,
+                           CameraWorld.Y - CapsuleWorld.Y, 0.f);
+    if (OffsetXY.IsNearlyZero()) return;
 
-    // 액터 회전을 적용해 월드 오프셋으로 변환 후 캡슐 이동
-    const FVector WorldOffset = GetActorRotation().RotateVector(HMDLocalXY);
-    AddActorWorldOffset(WorldOffset, false, nullptr, ETeleportType::TeleportPhysics);
-
-    // VROrigin을 로컬에서 반대로 빼서 HMD 월드 위치가 변하지 않도록 상쇄
-    VROrigin->AddRelativeLocation(-HMDLocalXY);
+    // 캡슐을 HMD 아래로 이동 (sweep: 벽 통과 방지). 실제 이동량만큼만 VROrigin을
+    // 역보정해 — 벽에 막혀 캡슐이 덜 움직였으면 카메라도 그만큼만 따라간다.
+    const FVector Before = GetActorLocation();
+    AddActorWorldOffset(OffsetXY, true);
+    const FVector Applied = GetActorLocation() - Before;
+    VROrigin->AddWorldOffset(-Applied);
 }
 
 // ============================================================================
@@ -210,9 +386,10 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
     // 공격 소음 발생 (NPC 청각 감지용)
     UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.f, this, 0.f, NPCActionKeys::NoiseTag_Attack);
 
-    // 오른손 컨트롤러 Forward 방향 라인트레이스
-    FVector Start     = MotionControllerRight->GetComponentLocation();
-    FVector End       = Start + MotionControllerRight->GetForwardVector() * AttackRange;
+    // 오른손 Aim 포즈 기준 라인트레이스 — Grip 포즈는 축이 ~30° 위로 기울어
+    // 있어 조준이 빗나간다. OpenXR Aim 포즈는 자연 조준 축과 정렬되어 있다.
+    FVector Start     = MotionControllerRightAim->GetComponentLocation();
+    FVector End       = Start + MotionControllerRightAim->GetForwardVector() * AttackRange;
 
     FHitResult Hit;
     FCollisionQueryParams Params;
@@ -266,14 +443,6 @@ void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 
 void AVRPawn::DetectNearbyNPC()
 {
-    // 손목 위젯이 열려있으면 닫기
-    if (WristWidgetComp && WristWidgetComp->IsVisible())
-    {
-        WristWidgetComp->SetVisibility(false);
-        CurrentTargetNPCID = TEXT("");
-        return;
-    }
-
     TArray<FOverlapResult> Overlaps;
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
@@ -296,10 +465,8 @@ void AVRPawn::DetectNearbyNPC()
 
     if (!FoundID.IsEmpty())
     {
+        // 발화 대상 NPC 지정. (이후 음성 입력 단계에서 사용)
         CurrentTargetNPCID = FoundID;
-        if (ChatWidgetInstance)
-            ChatWidgetInstance->CurrentTargetNPCID = CurrentTargetNPCID;
-        WristWidgetComp->SetVisibility(true);
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] NPC 발견: %s"), *FoundID);
     }
     else
@@ -309,38 +476,30 @@ void AVRPawn::DetectNearbyNPC()
 }
 
 // ============================================================================
-// UI
-// ============================================================================
-
-void AVRPawn::OnToggleWristUI(const FInputActionValue& /*Value*/)
-{
-    if (WristWidgetComp)
-        WristWidgetComp->SetVisibility(!WristWidgetComp->IsVisible());
-}
-
-void AVRPawn::OnTriggerRight(const FInputActionValue& Value)
-{
-    // 위젯 인터랙터가 UI를 가리키고 있으면 트리거를 클릭으로 전달
-    if (WidgetInteractor && WidgetInteractor->IsOverInteractableWidget())
-    {
-        if (Value.Get<float>() > 0.5f)
-            WidgetInteractor->PressPointerKey(EKeys::LeftMouseButton);
-        else
-            WidgetInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
-    }
-}
-
-// ============================================================================
 // 스탯
 // ============================================================================
 
 void AVRPawn::ApplyMovementSpeed()
 {
-    if (UCharacterMovementComponent* MC = GetCharacterMovement())
+    UCharacterMovementComponent* MC = GetCharacterMovement();
+    if (!MC) return;
+
+    const float Base = CurrentStats.Movement.WalkSpeed;
+
+    // 자세별 속도 클램프 — Standing 100% / Crouching = CrouchSpeed / Prone = 20%
+    switch (CurrentPosture)
     {
-        MC->MaxWalkSpeed          = CurrentStats.Movement.WalkSpeed;
-        MC->MaxWalkSpeedCrouched  = CurrentStats.Movement.CrouchSpeed;
+    case EVRPosture::Standing:
+        MC->MaxWalkSpeed = Base;
+        break;
+    case EVRPosture::Crouching:
+        MC->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed;
+        break;
+    case EVRPosture::Prone:
+        MC->MaxWalkSpeed = Base * 0.2f;
+        break;
     }
+    MC->MaxWalkSpeedCrouched = CurrentStats.Movement.CrouchSpeed;
 }
 
 void AVRPawn::RefreshStats()
@@ -387,7 +546,6 @@ void AVRPawn::HandleDeath()
 
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     GetMesh()->SetVisibility(false);
-    if (WristWidgetComp) WristWidgetComp->SetVisibility(false);
 
     GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AVRPawn::Respawn, RespawnDelay, false);
 }
