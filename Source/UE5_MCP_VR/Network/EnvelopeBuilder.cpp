@@ -5,45 +5,7 @@
 #include "Json.h"
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
-#include "Misc/ConfigCacheIni.h"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WHY 정적 변수로 토큰을 캐시:
-//   Config 파일 I/O는 비용이 있으므로, 서버 시작 시 1회만 읽고
-//   이후에는 메모리의 캐시된 값을 사용한다.
-// ─────────────────────────────────────────────────────────────────────────────
-static FString CachedAuthToken;
-static bool    bAuthTokenLoaded = false;
-
-
-FString FEnvelopeBuilder::LoadAuthToken()
-{
-    // 이미 로드했으면 캐시 반환
-    if (bAuthTokenLoaded)
-    {
-        return CachedAuthToken;
-    }
-
-    // Config/DefaultGame.ini의 [OmniAgent] 섹션에서 AuthToken을 읽는다.
-    // WHY INI 파일: 소스코드 하드코딩을 방지하고, 환경별(Dev/Prod) 토큰을 분리 관리한다.
-    GConfig->GetString(
-        TEXT("OmniAgent"),      // 섹션명
-        TEXT("AuthToken"),      // 키명
-        CachedAuthToken,
-        GGameIni                // DefaultGame.ini
-    );
-
-    if (CachedAuthToken.IsEmpty())
-    {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnvelopeBuilder] Config/DefaultGame.ini에 [OmniAgent] AuthToken이 설정되지 않았습니다. "
-                 "Python 서버의 .env WS_AUTH_TOKEN과 일치하는 값을 추가하세요."));
-        CachedAuthToken = TEXT(""); // 빈 문자열 → Python에서 인증 거부됨
-    }
-
-    bAuthTokenLoaded = true;
-    return CachedAuthToken;
-}
+#include "OmniAgentConfig.h"
 
 
 FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
@@ -77,7 +39,7 @@ FString FEnvelopeBuilder::BuildEnvelope(
     const double UnixTimestamp = (Now - Epoch).GetTotalSeconds();
 
     // auth_token: Config에서 로드
-    const FString AuthToken = LoadAuthToken();
+    const FString AuthToken = FOmniAgentConfig::LoadAuthToken();
 
     // ── JSON 오브젝트 조립 ─────────────────────────────────────────────
     // WHY FJsonObject: 문자열 직접 조립은 이스케이프 오류 위험이 있으므로

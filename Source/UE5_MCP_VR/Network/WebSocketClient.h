@@ -1,9 +1,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "WebSocketsModule.h" 
+#include "WebSocketsModule.h"
 #include "IWebSocket.h"
 #include "EnvelopeBuilder.h"
+#include "OmniAgentConfig.h"
 #include "WebSocketClient.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWebSocketMessage, const FString&, Message);
@@ -112,14 +113,11 @@ class UE5_MCP_VR_API ULLMNetworkClient : public UNetworkClientBase
 public:
     void InitializeLLM()
     {
-        Super::Initialize(LLMWebSocketURL);
+        // 서버 주소는 Config/DefaultGame.ini [OmniAgent] 에서 읽는다(하드코딩 금지).
+        Super::Initialize(FOmniAgentConfig::GetLLMWebSocketURL());
     }
 
     // LLM 전용 추가 기능이 필요하다면 여기에 작성
     void SendStateUpdate(const struct FGameStateData& StateData);
-
-private:
-    UPROPERTY(EditAnywhere, Category = "MCP|Network")
-    FString LLMWebSocketURL = TEXT("ws://127.0.0.1:8000/ws/llm");
 };
 

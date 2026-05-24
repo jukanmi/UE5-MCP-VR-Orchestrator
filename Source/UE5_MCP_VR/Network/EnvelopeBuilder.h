@@ -96,7 +96,4 @@ private:
         const FString&  PayloadJson,
         const FString&  RefMsgId = TEXT("")
     );
-
-    /** Config/DefaultGame.ini [OmniAgent] AuthToken 값을 1회 로드하여 반환. */
-    static FString LoadAuthToken();
 };

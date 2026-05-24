@@ -13,6 +13,7 @@
 #include "Misc/Base64.h"
 
 #include "Struct/NPCActionKeys.h"
+#include "../Network/OmniAgentConfig.h"
 
 UNPCAudioStreamComponent::UNPCAudioStreamComponent()
 {
@@ -26,6 +27,11 @@ void UNPCAudioStreamComponent::PlayFromUrl(const FString& WsUrl, int32 SampleRat
         UE_LOG(LogTemp, Warning, TEXT("[NPCAudio] PlayFromUrl 호출인데 URL 비어 있음 — TTS 실패 fallback 으로 추정"));
         return;
     }
+
+    // TTS 서버는 host 없는 경로(/ws/tts/stream/{id})만 보낸다. 여기에 [OmniAgent]
+    // ServerHost+TTSPort 를 붙여 완전한 ws:// URL 로 만든다.
+    // WHY: Quest 입장에서 127.0.0.1 은 자기 자신 — host 진실은 .ini 한 곳뿐.
+    const FString ResolvedUrl = FOmniAgentConfig::RewriteTTSUrl(WsUrl);
 
     // 진행 중인 스트림이 있으면 정리
     Stop();
@@ -63,9 +69,9 @@ void UNPCAudioStreamComponent::PlayFromUrl(const FString& WsUrl, int32 SampleRat
     }
 
     PlayRequestedAt = FPlatformTime::Seconds();
-    UE_LOG(LogTemp, Log, TEXT("[NPCAudio][T0] PlayFromUrl 호출 url=%s sr=%d ch=%d"), *WsUrl, ExpectedSampleRate, ExpectedChannels);
+    UE_LOG(LogTemp, Log, TEXT("[NPCAudio][T0] PlayFromUrl 호출 url=%s sr=%d ch=%d"), *ResolvedUrl, ExpectedSampleRate, ExpectedChannels);
 
-    WebSocket = FWebSocketsModule::Get().CreateWebSocket(WsUrl);
+    WebSocket = FWebSocketsModule::Get().CreateWebSocket(ResolvedUrl);
     WebSocket->OnConnected().AddUObject(this, &UNPCAudioStreamComponent::HandleConnected);
     WebSocket->OnMessage().AddUObject(this, &UNPCAudioStreamComponent::HandleMessage);
     WebSocket->OnClosed().AddUObject(this, &UNPCAudioStreamComponent::HandleClosed);
