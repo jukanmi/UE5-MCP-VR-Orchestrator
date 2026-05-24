@@ -24,11 +24,14 @@ python -m uvicorn OmniAgent_VR_System.TTSService.server:app --host 127.0.0.1 --p
    ```json
    {
      "request_id": "tts_xxxxxx",
-     "ws_url": "ws://127.0.0.1:8001/ws/tts/stream/tts_xxxxxx",
+     "ws_url": "/ws/tts/stream/tts_xxxxxx",
      "sample_rate": 16000,
      "channels": 1
    }
    ```
+   > `ws_url`은 **host 없는 경로**만 반환한다. UE5 측이 `Config/DefaultGame.ini`
+   > `[OmniAgent] ServerHost`·`TTSPort`를 앞에 붙여 완전한 URL을 만든다.
+   > 수동 테스트 시에는 `ws://127.0.0.1:8001` 을 직접 붙여 연결할 것.
 
 2. `ws_url`에 WebSocket 연결 → `audio_chunk` 메시지가 순차적으로 도착, 마지막에 `completed`.
 

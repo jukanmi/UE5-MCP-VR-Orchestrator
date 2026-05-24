@@ -340,9 +340,14 @@ app = FastAPI(title="TTSService-OpenVoice", version="0.6.0", lifespan=lifespan)
 async def synthesize(req: SynthesizeRequest) -> SynthesizeResponse:
     request_id = f"tts_{uuid.uuid4().hex[:12]}"
     _pending[request_id] = req
+    # ws_url 은 host 없는 경로만 반환한다. UE5(NPCAudioStreamComponent)가 수신 후
+    # Config/DefaultGame.ini [OmniAgent] ServerHost+TTSPort 를 앞에 붙여 완전한
+    # ws:// URL 로 만든다.
+    # WHY: 서버는 자기 주소를 알 필요가 없다 — Quest 입장에서 127.0.0.1 은 자기
+    #      자신이므로 서버가 host 를 advertise 할 수 없다. host 진실은 .ini 한 곳뿐.
     return SynthesizeResponse(
         request_id=request_id,
-        ws_url=f"ws://127.0.0.1:8001/ws/tts/stream/{request_id}",
+        ws_url=f"/ws/tts/stream/{request_id}",
         sample_rate=req.sample_rate,
     )
 
