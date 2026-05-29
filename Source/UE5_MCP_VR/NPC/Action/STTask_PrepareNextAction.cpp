@@ -61,7 +61,7 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
     //   LLM 이 명시한 액션이 없으면 NPC 는 Idle 유지한다. (사용자 결정)
     //   Combat 모드는 그대로 Attack 자동 주입 — 적 시야 진입 시 즉시 반응이 필요.
     ASmartNPCAIController& AICon = Context.GetExternalData(AIControllerHandle);
-    if (ActionComp->CurrentBehaviorMode == ENPCBehaviorMode::Combat)
+    if (ActionComp->GetBehaviorMode() == ENPCBehaviorMode::Combat)
     {
         if (UBlackboardComponent* BB = AICon.GetBlackboardComponent())
         {
@@ -103,7 +103,7 @@ void FSTEvaluator_NPCState::Tick(FStateTreeExecutionContext& Context, const floa
         if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
         {
             InstanceData.bHasAction = ActionComp->HasPendingActions() || ActionComp->bIsBusy;
-            InstanceData.BehaviorMode = ActionComp->CurrentBehaviorMode;
+            InstanceData.BehaviorMode = ActionComp->GetBehaviorMode();
         }
     }
 }

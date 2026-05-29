@@ -188,6 +188,12 @@ ASmartNPCAIController* UNPCActionComponent::GetOwnerAIController() const
     return nullptr;
 }
 
+// BehaviorMode 소유는 NPCStateComponent. read 위임.
+ENPCBehaviorMode UNPCActionComponent::GetBehaviorMode() const
+{
+    return StateComponent ? StateComponent->GetBehaviorMode() : ENPCBehaviorMode::Common;
+}
+
 float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
 {
     if (!StateComponent) return 200.f;
@@ -228,6 +234,9 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
             i, *UEnum::GetValueAsString(Action.ActionType),
             *UEnum::GetValueAsString(Action.FacialState), *ParamStr);
     }
+
+    // BehaviorMode(Common/Combat) 갱신 — StateComponent가 단일 소유. STTask Combat 분기가 이 값을 읽는다.
+    if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
 
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
     bIsDialogueActive = false;
@@ -309,8 +318,6 @@ void UNPCActionComponent::StopAllActions()
     ClearActiveActionState();
     LastQueuedActionType = EAction::Idle;
 
-    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
-
     ResetAllStateTagsToIdle(GetOwner());
 
     if (ASmartNPCAIController* AI = GetOwnerAIController())
@@ -346,8 +353,7 @@ bool UNPCActionComponent::ProcessNextAction()
             TrackedTarget.Reset();
         }
 
-        if (StateComponent) StateComponent->SetCurrentActionType(CurrentAction.ActionType);
-
+        // 현재 액션 단일 소스 = CurrentAction. GameplayTags(State.Action.*)는 파생 미러.
         TransitionStateTag(GetOwner(), CurrentAction.ActionType);
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
@@ -368,15 +374,13 @@ void UNPCActionComponent::OnActionCompleted()
 
     ClearActiveActionState();
 
-    EAction CompletedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
-    FString CompletedActionStr = UEnum::GetValueAsString(CompletedAction);
+    // 완료된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
+    const EAction CompletedAction = CurrentAction.ActionType;
 
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."), *GetOwnerAgentID(), *CompletedActionStr);
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
 
     RevertStateTagToIdle(GetOwner(), CompletedAction);
-
-    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
-
 }
 
 void UNPCActionComponent::AbortCurrentAction()
@@ -387,11 +391,8 @@ void UNPCActionComponent::AbortCurrentAction()
     // 비동기 대기/워치독 해제 — Abort 후 콜백이 늦게 와도 OnActionCompleted 가드가 막는다.
     ClearActiveActionState();
 
-    EAction AbortedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
-
-    RevertStateTagToIdle(GetOwner(), AbortedAction);
-
-    if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
+    // 중단된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
+    RevertStateTagToIdle(GetOwner(), CurrentAction.ActionType);
 
     // Track 타이머 해제
     if (UWorld* World = GetWorld())

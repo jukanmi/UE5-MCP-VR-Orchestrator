@@ -27,9 +27,11 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Facial")
     EFacialState CurrentFacialState = EFacialState::Neutral;
 
-    // --- Current Action Tracking ---
+    // --- Behavior Mode (행동 모드: Common/Combat) ---
+    // [소유권] BehaviorMode 의 단일 소유자. ExecuteActionBatch(Batch.Mode)가 갱신하고
+    // StateTree(STTask)가 GetBehaviorMode()로 읽는다. ActionComponent는 read 위임만.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
-    EAction CurrentActionType = EAction::Idle;
+    ENPCBehaviorMode CurrentBehaviorMode = ENPCBehaviorMode::Common;
 
 public:
     // --- Posture State ---
@@ -53,17 +55,16 @@ public:
         return CurrentFacialState;
     }
 
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    void SetCurrentActionType(EAction NewActionType)
-    { 
-        CurrentActionType = NewActionType;
+    UFUNCTION(BlueprintCallable, Category = "NPC|State")
+    void SetBehaviorMode(ENPCBehaviorMode NewMode)
+    {
+        CurrentBehaviorMode = NewMode;
     }
 
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    EAction GetCurrentActionType() const
-    { 
-        return CurrentActionType;
+    UFUNCTION(BlueprintCallable, Category = "NPC|State")
+    ENPCBehaviorMode GetBehaviorMode() const
+    {
+        return CurrentBehaviorMode;
     }
 
     // --- Public API ---

@@ -124,8 +124,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
     const FGameAction& GetCurrentAction() const { return CurrentAction; }
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
-    ENPCBehaviorMode CurrentBehaviorMode = ENPCBehaviorMode::Common;
+    // BehaviorMode 소유는 NPCStateComponent. 여기선 read 위임만 제공(STTask 등 호출 편의).
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Queue")
+    ENPCBehaviorMode GetBehaviorMode() const;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsBusy = false;

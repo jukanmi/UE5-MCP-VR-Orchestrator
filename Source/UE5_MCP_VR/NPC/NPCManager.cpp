@@ -144,7 +144,10 @@ void UNPCManager::TickStateUpdate()
         FGameStateData StateData;
         StateData.OwnerAgentID = AgentID;
         StateData.OwnerLocation = NPC->GetActorLocation();
-        StateData.CurrentMode = ENPCBehaviorMode::Common;
+        // BehaviorMode 단일 소유 = NPCStateComponent. 하드코딩 대신 실제 상태 반영.
+        StateData.CurrentMode = NPC->GetStateComponent()
+            ? NPC->GetStateComponent()->GetBehaviorMode()
+            : ENPCBehaviorMode::Common;
 
         PendingStateUpdateAgents.Add(AgentID);
         LLMClient->SendStateUpdate(StateData);
