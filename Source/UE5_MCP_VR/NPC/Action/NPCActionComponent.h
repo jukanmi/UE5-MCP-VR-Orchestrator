@@ -39,6 +39,7 @@ class ASmartNPCAIController;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
+class UAnimMontage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
@@ -128,6 +129,19 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsBusy = false;
 
+    /** 현재 액션이 비동기 완료(이동 도착/몽타주 종료)를 기다리는 중인지 여부.
+     *  ExecuteInteraction이 매 진입 시 false로 리셋하고, BaseMove/BasePlayActionMedia가 콜백을
+     *  걸면 true로 설정. switch 종료 후 false면 즉시 OnActionCompleted를 호출(즉시형 액션). */
+    bool bActionAwaitingAsync = false;
+
+    /** 비동기 완료 신호가 끝내 오지 않는 액션(도달 불가 MoveTo, 몽타주 누락 등) 대비 워치독.
+     *  ExecuteInteraction 진입 시 타이머 시작, OnActionCompleted/Abort 시 해제.
+     *  초과하면 강제로 OnActionCompleted를 호출해 큐가 영구 정지하는 것을 막는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue", meta = (ClampMin = "1.0", ClampMax = "120.0"))
+    float MaxActionDuration = 15.f;
+
+    FTimerHandle ActionWatchdogTimer;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
 
@@ -214,8 +228,9 @@ protected:
     void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
 
+    /** 몽타주를 재생했으면 true 반환(완료는 몽타주 종료 콜백이 처리). 재생할 몽타주가 없으면 false(즉시형). */
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BasePlayActionMedia(const FString& AssetID);
+    bool BasePlayActionMedia(const FString& AssetID);
 
     // [의도(Why)] 전술 이동(EQS) 시작 직전에 변동된 스탯을 파라미터에 미리 주입하여 가장 합리적인 위치를 도출하게 합니다.
     void UpdateEQSParams();
@@ -364,10 +379,19 @@ public:
     /** 마지막 전술 쿼리 시작 시각 (TimeSeconds). 쿨다운 체크용. */
     float LastTacticalQueryTime = -1000.0f;
 
-    // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생)
+    // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생). 비어있으면 도착 즉시 완료.
     FString PendingMoveMediaKey;
 
-    void OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
+    /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
+     *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
+     *  없으면 즉시 OnActionCompleted. 도착 실패 시에도 OnActionCompleted로 큐를 푼다. */
+    void OnMoveActionCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
+
+    /** BasePlayActionMedia가 건 몽타주 종료 콜백(Montage_SetEndDelegate). OnActionCompleted 호출. */
+    void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    /** MaxActionDuration 초과 시 강제 완료(워치독). */
+    void HandleActionWatchdog();
 
     /** NPCManager가 LLM 응답 수신 시 호출.
      *  ChosenCandidateId → TacticalCandidateMap 역조회 → ResultReady 상태로 전환.

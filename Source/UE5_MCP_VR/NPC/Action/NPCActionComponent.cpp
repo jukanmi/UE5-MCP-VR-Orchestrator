@@ -7,6 +7,9 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "AIController.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -293,6 +296,8 @@ void UNPCActionComponent::StopAllActions()
 {
     ActionQueue.Empty();
     bIsBusy = false;
+    bActionAwaitingAsync = false;
+    PendingMoveMediaKey.Reset();
     LastQueuedActionType = EAction::Idle;
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
@@ -304,10 +309,11 @@ void UNPCActionComponent::StopAllActions()
         AI->StopMovement();
     }
 
-    // Track 타이머 해제
+    // Track 타이머 + 워치독 해제
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(TrackTimer);
+        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
     }
     TrackedTarget.Reset();
 
@@ -349,8 +355,18 @@ bool UNPCActionComponent::ProcessNextAction()
 
 void UNPCActionComponent::OnActionCompleted()
 {
+    // 이미 완료 처리됨 — 비동기 콜백과 워치독이 경합해도 한 번만 완료시킨다.
+    if (!bIsBusy) return;
+
     bIsBusy = false;
-    
+    bActionAwaitingAsync = false;
+
+    // 워치독 해제
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
+    }
+
     EAction CompletedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
     FString CompletedActionStr = UEnum::GetValueAsString(CompletedAction);
 
@@ -366,7 +382,16 @@ void UNPCActionComponent::AbortCurrentAction()
 {
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: ABORTING Action"), *GetOwnerAgentID());
-    
+
+    // 비동기 대기/워치독 해제 — Abort 후 콜백이 늦게 와도 OnActionCompleted 가드가 막는다.
+    bIsBusy = false;
+    bActionAwaitingAsync = false;
+    PendingMoveMediaKey.Reset();
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
+    }
+
     EAction AbortedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
 
     RevertStateTagToIdle(GetOwner(), AbortedAction);
@@ -408,6 +433,14 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
 
     if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
     {
+        // 도착(또는 실패/취소) 시 OnMoveActionCompleted가 액션 완료를 처리하도록 바인딩.
+        // 이동 액션은 비동기 — bIsBusy를 도착까지 유지해 큐가 다음 액션으로 넘어가지 않게 한다.
+        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+        {
+            PFC->OnRequestFinished.RemoveAll(this);
+            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
+        }
+        bActionAwaitingAsync = true;
         AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
     }
 }
@@ -522,13 +555,15 @@ void UNPCActionComponent::BaseSendEventToActor(AActor* TargetActor, const FStrin
 }
 
 
-void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
+bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 {
     if (!ActionData)
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] ActionData Asset 설정 누락!"));
-        return;
+        return false;
     }
+
+    bool bPlayedMontage = false;
 
     if (FActionMediaData* MediaData = ActionData->ActionMedias.Find(AssetID))
     {
@@ -536,8 +571,23 @@ void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
         {
             if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
             {
-                OwnerCharacter->PlayAnimMontage(MediaData->Montage);
-                UE_LOG(LogTemp, Log, TEXT("[NPCAction] DataAsset 몽타주 재생: %s"), *MediaData->Montage->GetName());
+                const float Length = OwnerCharacter->PlayAnimMontage(MediaData->Montage);
+                if (Length > 0.f)
+                {
+                    // 몽타주 종료 시 OnMontageActionEnded → OnActionCompleted. 재생 동안 bIsBusy 유지.
+                    if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
+                    {
+                        if (UAnimInstance* AnimInst = Mesh->GetAnimInstance())
+                        {
+                            FOnMontageEnded EndDel;
+                            EndDel.BindUObject(this, &UNPCActionComponent::OnMontageActionEnded);
+                            AnimInst->Montage_SetEndDelegate(EndDel, MediaData->Montage);
+                            bActionAwaitingAsync = true;
+                            bPlayedMontage = true;
+                        }
+                    }
+                    UE_LOG(LogTemp, Log, TEXT("[NPCAction] DataAsset 몽타주 재생: %s"), *MediaData->Montage->GetName());
+                }
             }
         }
         if (MediaData->Sound)
@@ -550,6 +600,8 @@ void UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지정한 마스터 에셋 미디어를 찾을 수 없음: %s"), *AssetID);
     }
+
+    return bPlayedMontage;
 }
 
 // ----------------------------------------------------------------------------
@@ -567,6 +619,17 @@ FVector UNPCActionComponent::ParseVectorParam(const FString& ParamStr) const
 
 void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetActor, const TMap<FString, FString>& Params)
 {
+    // [비동기 완료 모델] 기본은 즉시형. BaseMove/BasePlayActionMedia가 콜백을 걸면 true가 되어
+    // switch 종료 후 즉시 완료를 건너뛴다(콜백이 나중에 OnActionCompleted 호출).
+    bActionAwaitingAsync = false;
+
+    // 완료 신호가 끝내 오지 않는 경우(도달 불가 MoveTo, 몽타주 누락 등) 대비 워치독 시작.
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(ActionWatchdogTimer, this,
+            &UNPCActionComponent::HandleActionWatchdog, MaxActionDuration, false);
+    }
+
     // [의도(Why)] 다양한 형태(위치, 텍스트, 다중 파라미터)의 JSON 인자를 BTTask 대신 컴포넌트 레벨에서 일괄 파싱 및 캐싱하여 각 세부 Execute 함수로 안전하게 전달합니다.
     // Parameters 딕셔너리 키는 Python 서버 snake_case 기준으로 단일화됨.
     FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
@@ -698,14 +761,21 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
         break;
 
     case EAction::Wait:
-        // ST Task가 ExecuteInteraction 직후 OnActionCompleted를 호출하므로 여기선 아무것도 하지 않음
-        // duration 기반 실제 대기가 필요하다면 STTask_ExecuteSmartAction을 비동기 모델로 전환해야 함
+        // 즉시형으로 처리(아래 tail에서 OnActionCompleted). duration 기반 실제 대기가 필요하면
+        // 여기서 타이머를 걸고 bActionAwaitingAsync=true 후 만료 콜백에서 OnActionCompleted 호출하면 된다.
         break;
 
     default:
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 지원되지 않는 ActionType이 ExecuteInteraction으로 유입됨: %s"),
             *UEnum::GetValueAsString(ActionType));
         break;
+    }
+
+    // 비동기 콜백을 걸지 않은 즉시형 액션(Dialogue/Emotion/Equip/Wait 등)은 여기서 바로 완료.
+    // BaseMove/BasePlayActionMedia를 탄 액션은 bActionAwaitingAsync=true → 콜백이 완료를 처리한다.
+    if (!bActionAwaitingAsync)
+    {
+        OnActionCompleted();
     }
 }
 
@@ -1344,35 +1414,53 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
 
-    // 도착 후 몽타주 재생을 위해 델리게이트 바인딩 (중복 방지)
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
-    {
-        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
-        {
-            PFC->OnRequestFinished.RemoveAll(this);
-            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnAttackMoveCompleted);
-        }
-    }
-
+    // 도착 후 "Attack" 몽타주 재생 — BaseMove가 OnMoveActionCompleted를 바인딩하고,
+    // 콜백에서 PendingMoveMediaKey가 있으면 몽타주를 재생한다.
     PendingMoveMediaKey = TEXT("Attack");
     BaseMove(TargetActor->GetActorLocation(), EMoveType::Run, 150.f);
 
-    if (OwnerCharacter)
+    if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Attack);
 }
 
-void UNPCActionComponent::OnAttackMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
+// 이동 완료 공통 콜백: 도착 후 PendingMoveMediaKey가 있으면 몽타주 재생(완료는 몽타주 종료가 처리),
+// 없거나 몽타주가 없으면 즉시 완료. 실패/취소(Aborted)에도 완료시켜 큐를 풀어준다.
+void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
 {
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (AAIController* AIC = OwnerCharacter ? Cast<AAIController>(OwnerCharacter->GetController()) : nullptr)
-        if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
-            PFC->OnRequestFinished.RemoveAll(this);
+    // 콜백 중복 방지 — 바인딩 해제
+    if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
+        if (AAIController* AIC = Cast<AAIController>(OwnerCharacter->GetController()))
+            if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
+                PFC->OnRequestFinished.RemoveAll(this);
 
     if (Result.IsSuccess() && !PendingMoveMediaKey.IsEmpty())
-        BasePlayActionMedia(PendingMoveMediaKey);
+    {
+        const FString MediaKey = PendingMoveMediaKey;
+        PendingMoveMediaKey.Reset();
+        // 몽타주가 재생되면 종료 콜백이 OnActionCompleted를 호출. 없으면 여기서 즉시 완료.
+        if (!BasePlayActionMedia(MediaKey))
+        {
+            OnActionCompleted();
+        }
+        return;
+    }
 
     PendingMoveMediaKey.Reset();
+    OnActionCompleted();
+}
+
+void UNPCActionComponent::OnMontageActionEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
+{
+    // 몽타주 종료(정상/중단 모두) → 액션 완료. 가드가 중복/경합을 막는다.
+    OnActionCompleted();
+}
+
+void UNPCActionComponent::HandleActionWatchdog()
+{
+    UE_LOG(LogTemp, Warning,
+        TEXT("[NPCAction] %s: 액션 '%s' 완료 신호 미수신 — %.1f초 워치독 만료로 강제 완료"),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType), MaxActionDuration);
+    OnActionCompleted();
 }
 
 void UNPCActionComponent::ExecuteBlock(AActor* TargetActor)
