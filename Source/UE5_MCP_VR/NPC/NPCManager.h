@@ -76,6 +76,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEnvelopePromptToLLM(const FString& JsonData);
 
+    /** 플레이어 발화를 대상 NPC로 전송 (단순 대화).
+     *  PromptPayload(snake_case) 조립 → BuildPrompt → SendEnvelopePromptToLLM.
+     *  응답은 기존 ActionBatch(Dialogue) 경로로 NPC가 처리(TTS 포함). */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
+    void SendPlayerDialogue(const FString& PlayerID, const FString& TargetNpcId, const FString& Text);
+
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendStateToMCP(const FGameStateData& StateData);
 

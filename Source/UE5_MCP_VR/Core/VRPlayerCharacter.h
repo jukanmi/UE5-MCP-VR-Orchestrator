@@ -122,6 +122,15 @@ public:
 	// --- Interaction ---
 	void DetectNearbyNPC();
 
+	// --- Dialogue ---
+	/** DetectNearbyNPC가 마지막으로 찾은 대화 대상 AgentID. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dialogue")
+	FString CurrentDialogueTarget;
+
+	/** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
+	UFUNCTION(Exec)
+	void SendNPCDialogue(const FString& Text);
+
 	// --- Death / Respawn ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
 	float RespawnDelay = 5.0f;

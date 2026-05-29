@@ -8,6 +8,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../NPC/SmartNPC.h"
+#include "../NPC/NPCManager.h"
+#include "Engine/GameInstance.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
@@ -181,6 +183,8 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 		}
 	}
 
+	CurrentDialogueTarget = FoundNPCID;
+
 	if (bHit && FoundNPCID != "")
 	{
 		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s"), *FoundNPCID);
@@ -188,6 +192,29 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 	else
 	{
 		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 주변에 대화할 NPC가 없습니다."));
+	}
+}
+
+void AVRPlayerCharacter::SendNPCDialogue(const FString& Text)
+{
+	// 대상 미지정 시 1회 재탐지
+	if (CurrentDialogueTarget.IsEmpty())
+	{
+		DetectNearbyNPC();
+	}
+	if (CurrentDialogueTarget.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] SendNPCDialogue 실패 — 대상 NPC 없음"));
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+		{
+			// player_id = actor 이름 — affinity DB 키(예: BP_Player_C_0)와 일치
+			Manager->SendPlayerDialogue(GetName(), CurrentDialogueTarget, Text);
+		}
 	}
 }
 

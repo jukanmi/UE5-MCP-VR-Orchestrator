@@ -15,6 +15,8 @@
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
 #include "../NPC/SmartNPC.h"
+#include "../NPC/NPCManager.h"
+#include "Engine/GameInstance.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 
 // ============================================================================
@@ -464,15 +466,37 @@ void AVRPawn::DetectNearbyNPC()
         }
     }
 
+    CurrentTargetNPCID = FoundID;
+
     if (!FoundID.IsEmpty())
     {
-        // 발화 대상 NPC 지정. (이후 음성 입력 단계에서 사용)
-        CurrentTargetNPCID = FoundID;
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] NPC 발견: %s"), *FoundID);
     }
     else
     {
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] 주변 NPC 없음"));
+    }
+}
+
+void AVRPawn::SendNPCDialogue(const FString& Text)
+{
+    if (CurrentTargetNPCID.IsEmpty())
+    {
+        DetectNearbyNPC();
+    }
+    if (CurrentTargetNPCID.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SendNPCDialogue 실패 — 대상 NPC 없음"));
+        return;
+    }
+
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            // player_id = actor 이름 — affinity DB 키와 일치
+            Manager->SendPlayerDialogue(GetName(), CurrentTargetNPCID, Text);
+        }
     }
 }
 

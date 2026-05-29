@@ -291,6 +291,10 @@ private:
     UPROPERTY(BlueprintReadWrite, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
     FString CurrentTargetNPCID;
 
+    /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
+    UFUNCTION(Exec)
+    void SendNPCDialogue(const FString& Text);
+
     // --- 전투 ---
     UFUNCTION()
     void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);

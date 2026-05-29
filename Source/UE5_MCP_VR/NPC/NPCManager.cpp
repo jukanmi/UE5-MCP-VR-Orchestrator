@@ -7,6 +7,7 @@
 #include "Action/NPCActionComponent.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
+#include "Engine/Engine.h"
 
 
 // --- UNPCMap ---
@@ -204,6 +205,35 @@ void UNPCManager::SendEnvelopePromptToLLM(const FString& JsonData)
     }
 }
 
+void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& TargetNpcId, const FString& Text)
+{
+    if (Text.IsEmpty() || TargetNpcId.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] SendPlayerDialogue 스킵 — Text/TargetNpcId 비어있음 (target=%s)"), *TargetNpcId);
+        return;
+    }
+    if (!LLMClient || !LLMClient->IsConnected())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] SendPlayerDialogue 스킵 — LLM 서버 미연결"));
+        return;
+    }
+
+    // PromptPayload 조립 — payload 키는 snake_case (CLAUDE.md §1)
+    const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("player_id"), PlayerID);
+    Payload->SetStringField(TEXT("voice_transcript"), Text);
+    Payload->SetStringField(TEXT("target_npc_id"), TargetNpcId);
+
+    FString PayloadStr;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
+    FJsonSerializer::Serialize(Payload, Writer);
+
+    const FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadStr);
+    SendEnvelopePromptToLLM(Envelope);
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
+}
+
 void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
 {
     if (LLMClient)
@@ -362,4 +392,13 @@ void UNPCManager::SendEventReport(const FString& AgentID, const FString& Combine
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)
 {
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);
+
+    // ChatWidget 부재 시 응답 가시화 — 화면 자막(검증/디버그용)
+#if !UE_BUILD_SHIPPING
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Cyan,
+            FString::Printf(TEXT("%s: %s"), *AgentID, *DialogueText));
+    }
+#endif
 }
