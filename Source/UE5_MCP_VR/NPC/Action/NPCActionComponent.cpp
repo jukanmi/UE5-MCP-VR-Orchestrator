@@ -292,12 +292,21 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
 
 // === Action Queue System ===
 
-void UNPCActionComponent::StopAllActions()
+void UNPCActionComponent::ClearActiveActionState()
 {
-    ActionQueue.Empty();
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
+    }
+}
+
+void UNPCActionComponent::StopAllActions()
+{
+    ActionQueue.Empty();
+    ClearActiveActionState();
     LastQueuedActionType = EAction::Idle;
 
     if (StateComponent) StateComponent->SetCurrentActionType(EAction::Idle);
@@ -309,11 +318,10 @@ void UNPCActionComponent::StopAllActions()
         AI->StopMovement();
     }
 
-    // Track 타이머 + 워치독 해제
+    // Track 타이머 해제 (워치독은 ClearActiveActionState가 처리)
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(TrackTimer);
-        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
     }
     TrackedTarget.Reset();
 
@@ -358,14 +366,7 @@ void UNPCActionComponent::OnActionCompleted()
     // 이미 완료 처리됨 — 비동기 콜백과 워치독이 경합해도 한 번만 완료시킨다.
     if (!bIsBusy) return;
 
-    bIsBusy = false;
-    bActionAwaitingAsync = false;
-
-    // 워치독 해제
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
-    }
+    ClearActiveActionState();
 
     EAction CompletedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
     FString CompletedActionStr = UEnum::GetValueAsString(CompletedAction);
@@ -384,13 +385,7 @@ void UNPCActionComponent::AbortCurrentAction()
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: ABORTING Action"), *GetOwnerAgentID());
 
     // 비동기 대기/워치독 해제 — Abort 후 콜백이 늦게 와도 OnActionCompleted 가드가 막는다.
-    bIsBusy = false;
-    bActionAwaitingAsync = false;
-    PendingMoveMediaKey.Reset();
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
-    }
+    ClearActiveActionState();
 
     EAction AbortedAction = StateComponent ? StateComponent->GetCurrentActionType() : EAction::Idle;
 
@@ -914,24 +909,6 @@ void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActo
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] ExecuteMove: target_loc 없음 → EQS+LLM 파이프라인 시작"));
 }
 
-// EQS 쿼리 콜백: 결과 좌표로 실제 이동 명령을 수행합니다.
-void UNPCActionComponent::OnTacticalMoveCompleted(TSharedPtr<FEnvQueryResult> Result)
-{
-    if (!Result || !Result->IsSuccessful())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] EQS 쿼리 실패 - Fallback 없음. 이동 취소."));
-        return;
-    }
-    FVector BestLocation = Result->GetItemAsLocation(0);
-    BaseMove(BestLocation, EMoveType::Run);
-    
-    // [추가] 시각화 & 구조화 로그
-    DrawEQSChosenLocation(BestLocation, TEXT("SingleResult"));
-    UE_LOG(LogTemp, Log,
-        TEXT("[EQS RESULT] AgentID=%s | Mode=SingleResult | X=%.1f Y=%.1f Z=%.1f"),
-        *GetOwnerAgentID(), BestLocation.X, BestLocation.Y, BestLocation.Z);
-}
-
 // ============================================================================
 // [전술 위치 결정 파이프라인] EQS AllMatching → 스코어링 → LLM 전송
 // ============================================================================
@@ -1347,14 +1324,16 @@ void UNPCActionComponent::AbortTacticalQuery()
     if (TacticalQueryState != ETacticalQueryState::Idle)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[NPCAction] %s: TacticalQuery 강제 중단 (state=%d gen=%u) → Idle 복구"),
+            TEXT("[NPCAction] %s: TacticalQuery 중단 (state=%d gen=%u) → Idle 복구 (채널 비움)"),
             *GetOwnerAgentID(), static_cast<int32>(TacticalQueryState), TacticalQueryGeneration);
-        TacticalQueryState = ETacticalQueryState::Idle;
-        TacticalCandidateMap.Empty();
-        ++TacticalQueryGeneration; // 중단된 요청의 응답이 늦게 와도 stale 로 무시
 
-        // Abort 시점에도 쿨다운 시작 — 응답 안 와도 새 EQS 가 곧바로 재시작되는
-        // 무한 abort 루프 방지 (hearing 빈도가 LLM 응답보다 빠를 때).
+        // 상태만 Idle로 풀어 EventReport 채널을 다시 열어준다.
+        // gen 증가·CandidateMap 비우기는 하지 않는다 — 늦게 도착하는 같은 gen 응답을
+        // NotifyLocationDecisionReady가 여전히 해석할 수 있게 둔다(타임아웃≠무효).
+        // 무효화는 다음 StartTacticalQuery의 ++gen이 책임진다(새 쿼리만 이전 응답을 stale 처리).
+        TacticalQueryState = ETacticalQueryState::Idle;
+
+        // 응답 안 와도 새 EQS 가 곧바로 재시작되는 무한 루프 방지(hearing 빈도 > LLM 응답).
         if (UWorld* World = GetWorld())
         {
             LastTacticalQueryTime = World->GetTimeSeconds();

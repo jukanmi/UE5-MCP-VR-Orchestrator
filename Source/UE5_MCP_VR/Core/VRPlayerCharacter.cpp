@@ -2,6 +2,7 @@
 
 
 #include "VRPlayerCharacter.h"
+#include "GameplayTagUtils.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
@@ -336,18 +337,12 @@ void AVRPlayerCharacter::GetOwnedGameplayTags(FGameplayTagContainer& TagContaine
 
 void AVRPlayerCharacter::AddStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid())
-    {
-        GameplayTags.AddTag(Tag);
-    }
+    GameplayTagUtils::AddState(GameplayTags, Tag);
 }
 
 void AVRPlayerCharacter::RemoveStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
-    {
-        GameplayTags.RemoveTag(Tag);
-    }
+    GameplayTagUtils::RemoveState(GameplayTags, Tag);
 }
 
 void AVRPlayerCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)

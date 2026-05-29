@@ -85,11 +85,12 @@ public:
     float EQSDebugDuration = 8.f;
 
     // --- EQS 에셋 (2개로 한정) ---
-    // 이동 경로는 두 가지 정책으로 분리됩니다:
-    //   [A] ExecuteMove → DefaultMoveQuery (SingleResult) : LLM이 지시한 목적지로 이동
-    //   [B] TryStartTacticalQueryForCombat → TacticalPositionsQuery (AllMatching + LLM) : Perception 트리거 전술 재배치
+    // 전술 재배치는 단일 경로로 통합됨:
+    //   TryStartTacticalQueryForCombat / ExecuteMove(목적지 미지정) → StartTacticalQuery
+    //     → TacticalPositionsQuery (AllMatching) + Python location_decision
+    //   ExecuteMove(목적지 지정) → BaseMove 직접 호출 (EQS 미사용)
 
-    // [A] LLM 지시 이동용 (SingleResult). 미할당 시 BaseMove 직접 호출로 폴백.
+    // TacticalPositionsQuery 미할당 시 AllMatching 폴백으로 사용 (StartTacticalQuery, .cpp 참조).
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* DefaultMoveQuery;
 
@@ -172,6 +173,11 @@ protected:
     // --- Internal Helpers ---
     void UpdateActionState(const FGameAction& Action);
     void DispatchActions(const TArray<FGameAction>& Actions);
+
+    /** 진행 중 액션의 공통 런타임 상태 리셋(bIsBusy/비동기대기/PendingMedia/워치독).
+     *  OnActionCompleted/AbortCurrentAction/StopAllActions가 공유. 태그 revert·큐 비우기 등
+     *  각 함수 고유 로직은 호출부에 둔다. */
+    void ClearActiveActionState();
 
     // Movement Speed 변환 (EMoveType → float)
     float ParseMoveSpeed(const EMoveType& Type) const;
@@ -295,9 +301,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk,
                      ETacticalMoveState TacticalState = ETacticalMoveState::Default);
-
-    // EQS 실행 완료 시 호출되는 콜백 (SingleResult - 기존 ExecuteMove 용)
-    void OnTacticalMoveCompleted(TSharedPtr<struct FEnvQueryResult> Result);
 
     // ============================================================================
     // [전술 위치 결정 파이프라인 API]

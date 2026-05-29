@@ -14,6 +14,14 @@ const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
 
 const FName ASmartNPCAIController::Key_TargetActor(TEXT("TargetActor"));
 
+namespace
+{
+    // 시각 발각 기본 위협도(직접 목격). 최종 danger = SightBaseDanger × 호감도배율.
+    constexpr float SightBaseDanger = 0.6f;
+    // 이 이상이면 EQS 전술 쿼리 발동(적대 판정). 중립(배율 0.5→0.3)은 미발동.
+    constexpr float CombatDangerThreshold = 0.5f;
+}
+
 
 ASmartNPCAIController::ASmartNPCAIController()
 {
@@ -171,14 +179,11 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             // 2. FPerceptionData 조립 후 EventCognition으로 넘김
             if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn()))
             {
-                if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
+                UNPCStateComponent* StateComp = OwnerNPC->StateComponent;
+                if (StateComp)
                 {
-                    // 시각 위협도 기본값 (직접 발각)
-                    constexpr float SightBaseDanger = 0.6f;
-
-                    // 호감도 기반 최종 위협도 (Friend: 0.0, Neutral: 0.3, Enemy: 0.6)
-                    float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
-                    float FinalDanger = SightBaseDanger * Multiplier;
+                    // 호감도 기반 최종 위협도 1회 계산 — RequestEventCognition + EQS 게이트 공유.
+                    const float FinalDanger = StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID);
 
                     FPerceptionData Perception;
                     Perception.TargetID = TargetID;
@@ -188,18 +193,12 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     Perception.DangerScore = FinalDanger;
 
                     StateComp->RequestEventCognition(Perception);
-                }
 
-                // Option B: Perception 기반 EQS 전술 쿼리 트리거 (쿨다운 내장)
-                // 적대적 위협도(Multiplier=1.0, FinalDanger>=0.5)일 때만 발동 — 중립 감지 시 전투 포지셔닝 방지
-                if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
-                {
-                    if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
+                    // Option B: 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 EQS 전술 쿼리.
+                    // 중립(배율 0.5→danger 0.3) 감지 시 전투 포지셔닝 방지. (쿨다운 내장)
+                    if (FinalDanger >= CombatDangerThreshold)
                     {
-                        constexpr float CombatDangerThreshold = 0.5f;
-                        float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
-                        constexpr float SightBaseDanger = 0.6f;
-                        if (SightBaseDanger * Multiplier >= CombatDangerThreshold)
+                        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                         {
                             TArray<FVector> EnemyLocs;
                             EnemyLocs.Add(Actor->GetActorLocation());
@@ -259,9 +258,8 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             {
                 if (UNPCStateComponent* StateComp = OwnerNPC->StateComponent)
                 {
-                    // StateComponent에 캐싱된 대상과의 호감도 기반 배율 (Friend: 0.0, Neutral: 0.5, Enemy: 1.0)
-                    float Multiplier = StateComp->GetAffinityMultiplier(SourceName);
-                    float FinalDanger = BaseDanger * Multiplier;
+                    // 호감도 기반 위협도 (Friend: 0.0, Neutral: 0.5×, Enemy: 1.0×)
+                    const float FinalDanger = StateComp->ComputePerceptionDanger(BaseDanger, SourceName);
 
                     // 3. FPerceptionData 조립 후 EventCognition으로 넘김
                     FPerceptionData Perception;
@@ -330,15 +328,13 @@ void ASmartNPCAIController::OnPerceptionTick()
     if (!StateComp) return;
 
     const FString TargetID = Target->GetName();
-    constexpr float SightBaseDanger = 0.6f;
-    float Multiplier = StateComp->GetAffinityMultiplier(TargetID);
 
     FPerceptionData Perception;
     Perception.TargetID = TargetID;
     Perception.SenseType = ESenseType::Sight;
     Perception.Location = Target->GetActorLocation();
     Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Target->GetActorLocation());
-    Perception.DangerScore = SightBaseDanger * Multiplier;
+    Perception.DangerScore = StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID);
 
     UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] PerceptionTick: %s dist=%.0f danger=%.2f"),
         *TargetID, Perception.Distance, Perception.DangerScore);

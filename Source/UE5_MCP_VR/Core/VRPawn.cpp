@@ -1,4 +1,5 @@
 #include "VRPawn.h"
+#include "GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -584,10 +585,10 @@ void AVRPawn::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
 
 void AVRPawn::AddStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid()) GameplayTags.AddTag(Tag);
+    GameplayTagUtils::AddState(GameplayTags, Tag);
 }
 
 void AVRPawn::RemoveStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid()) GameplayTags.RemoveTag(Tag);
+    GameplayTagUtils::RemoveState(GameplayTags, Tag);
 }

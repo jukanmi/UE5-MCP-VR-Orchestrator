@@ -1,4 +1,5 @@
 #include "SmartNPC.h"
+#include "../Core/GameplayTagUtils.h"
 #include "NPCManager.h"
 #include "Action/SmartNPCAIController.h"
 #include "Struct/NPCActionKeys.h"
@@ -223,18 +224,12 @@ void ASmartNPC::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const
 
 void ASmartNPC::AddStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid())
-    {
-        GameplayTags.AddTag(Tag);
-    }
+    GameplayTagUtils::AddState(GameplayTags, Tag);
 }
 
 void ASmartNPC::RemoveStateTag(FGameplayTag Tag)
 {
-    if (Tag.IsValid() && GameplayTags.HasTagExact(Tag))
-    {
-        GameplayTags.RemoveTag(Tag);
-    }
+    GameplayTagUtils::RemoveState(GameplayTags, Tag);
 }
 
 bool ASmartNPC::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const

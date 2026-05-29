@@ -111,6 +111,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
     float GetAffinityMultiplier(const FString& TargetID) const;
 
+    /** Perception danger 단일 계산 진입점 = BaseDanger × 호감도배율.
+     *  컨트롤러의 Sight/Hearing/PerceptionTick 모두 이 함수로 위협도 산출 (중복 계산 제거). */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
+    float ComputePerceptionDanger(float BaseDanger, const FString& TargetID) const
+    {
+        return BaseDanger * GetAffinityMultiplier(TargetID);
+    }
+
 protected:
     virtual void BeginPlay() override;
 
