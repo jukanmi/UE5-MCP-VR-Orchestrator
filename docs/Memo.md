@@ -9,6 +9,10 @@
 브랜치: `feature/MetaQuest3S-VR`
 목표: PC 전용 플레이어 + NPC AI + ChatWidget을 Quest 3S 스탠드얼론 + 음성 TTS 로 동작시키기
 
+### 🆕 다음 설계 작업
+- [ ] **ASR(음성→텍스트) 입력** — 단순 대화의 발화 입력을 디버그 exec(`SendNPCDialogue`)에서 실제 마이크/Whisper 스트리밍으로 교체. send 진입점(`UNPCManager::SendPlayerDialogue`) 재사용.
+- [ ] **대화 UI(ChatWidget) 부활** — 현재 응답은 화면 자막(AddOnScreenDebugMessage)뿐. WorldSpace ChatWidget 또는 자막 위젯으로 정식화.
+
 ### 🔥 지금 다음 액션 (사용자 직접, UE Editor)
 
 #### Quest 빌드 — 케이블 도착 후 재개 (보류 중, 2026-05-16)
@@ -133,6 +137,9 @@
 
 ## Done
 
+- [x] LLM 단순 대화 경로 — `UNPCManager::SendPlayerDialogue`(snake_case PromptPayload→BuildPrompt), VRPlayerCharacter/VRPawn `SendNPCDialogue` exec, HandleNPCDialogue 화면 자막. Python 파이프라인 기완비라 UE5 입력측만 연결 (커밋 50add82) — 2026-05-30
+- [x] NPC 상태 소유권 단일화 + BehaviorMode orphan 버그 수정 — CurrentBehaviorMode 미저장으로 Combat 자동 Attack 죽어있던 것 수정(ExecuteActionBatch가 Batch.Mode 저장), BehaviorMode를 NPCStateComponent 소유로 이동, CurrentActionType 3중 표현 제거(ActionComp 단일 소스) (커밋 bc16134) — 2026-05-30
+- [x] NPC 액션 파이프라인 비동기 완료 모델 + 중복제거 리팩토링 — 동기 완료를 bIsBusy 폴링 비동기로 전환(이동/몽타주 콜백), danger 단일화·EQS gen·GameplayTagUtils·ClearActiveActionState (커밋 0428585·95fc71d) — 2026-05-30
 - [x] VR 자세 시스템 Phase 1-3 C++ 구현 — PlayerGameplayTags Posture 태그 3종, EVRPosture·FOnVRPostureChanged, 캘리브레이션(2초 샘플링), 슈미트 트리거 히스테리시스, 동적 캡슐+Rising Floor 역보정, VInterp 스무딩, 자세별 이동속도 — 2026-05-23
 - [x] 메시 폴더 구조 개편 — X_Bot → Content/Core/Mesh/NPC/, 손 메시 → Content/Core/Mesh/Player/ — 2026-05-25
 - [x] TTS M2 완료 — Dialogue.FacialState → TTS emotion 매핑까지 연결, 감정별 voice ref/speed 가 실제 합성에 반영 — 2026-05-19
