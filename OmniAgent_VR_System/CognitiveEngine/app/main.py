@@ -389,12 +389,18 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
                 if dialogue_text_for_audio:
                     break
 
-    if npc_id_for_audio and dialogue_text_for_audio:
+    # 문장부호/공백만 있는 대사(예: "...")는 MeloTTS 가 엉뚱한 음("다" 등)으로
+    # 합성하므로 TTS 스킵. isalnum 은 한글 포함 유니코드 글자 판정.
+    has_speech = bool(dialogue_text_for_audio) and any(c.isalnum() for c in dialogue_text_for_audio)
+
+    if npc_id_for_audio and has_speech:
         asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
             emotion=dialogue_emotion,
         ))
+    elif npc_id_for_audio and dialogue_text_for_audio:
+        logger.info(f"[Main][TTS] {npc_id_for_audio} 대사가 글자 없음('{dialogue_text_for_audio}') → TTS 생략")
     elif npc_id_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
     else:
