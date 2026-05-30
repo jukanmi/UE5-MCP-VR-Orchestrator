@@ -757,6 +757,9 @@ async def api_debug_prompt(req: DebugPromptRequest):
     import time as _t
     env = MessageEnvelope(
         msg_id=str(uuid.uuid4()),
+        # auth_token 은 WS 수신 루프에서만 검증됨. 디버그는 _handle_prompt 직접 호출이라
+        # 검증을 거치지 않지만 pydantic 필수 필드라 env 값(없으면 더미)으로 채운다.
+        auth_token=os.environ.get("WS_AUTH_TOKEN", "debug"),
         timestamp=_t.time(),
         type=EEnvelopeType.PROMPT,
         payload={
