@@ -260,20 +260,32 @@ def _load_target_se_sync(voice_id: str) -> object:
     cached = _state.target_se_cache.get(voice_id)
     if cached is not None:
         return cached
-    from openvoice import se_extractor
+    import torch
 
     ref_wav = _find_reference_wav(voice_id)
     if ref_wav is None:
         ref_wav = _gen_reference_wav_from_melo_sync(voice_id)
 
+    # 디스크 SE 캐시 — 매 부팅 재추출 방지. ref WAV 가 캐시보다 새 것일 때만 재추출.
+    se_cache = VOICES_DIR / "_processed" / f"{voice_id}.se.pth"
+    if se_cache.exists() and se_cache.stat().st_mtime >= ref_wav.stat().st_mtime:
+        target_se = torch.load(str(se_cache), map_location=DEVICE)
+        _state.target_se_cache[voice_id] = target_se
+        logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
+        return target_se
+
+    from openvoice import se_extractor
+
     conv = _load_converter_sync()
-    logger.info(f"[TTS] target SE 추출: {voice_id} ← {ref_wav.name}")
+    logger.info(f"[TTS] target SE 추출(신규/변경): {voice_id} ← {ref_wav.name}")
     t0 = time.perf_counter()
     target_se, _audio_name = se_extractor.get_se(
         str(ref_wav), conv, vad=True, target_dir=str(VOICES_DIR / "_processed")
     )
+    se_cache.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(target_se, str(se_cache))
     _state.target_se_cache[voice_id] = target_se
-    logger.info(f"[TTS] target SE 캐시 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")
+    logger.info(f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")
     return target_se
 
 
