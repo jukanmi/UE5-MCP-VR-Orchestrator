@@ -729,6 +729,37 @@ async def api_ws_status():
     return {"connected": _active_llm_ws is not None}
 
 
+class DebugPromptRequest(BaseModel):
+    npc_id: str
+    text: str
+    player_id: str = "Debug_Player"
+
+
+@app.post("/api/debug/prompt")
+async def api_debug_prompt(req: DebugPromptRequest):
+    """디버그: UE 없이 콘솔/웹에서 NPC 에게 직접 말 걸기.
+    PROMPT envelope 를 만들어 그래프 실행 → ActionBatch(JSON) 반환.
+    TTS dispatch 도 _handle_prompt 내부에서 함께 동작(활성 UE WS 있으면 음성 푸시)."""
+    import uuid
+    import time as _t
+    env = MessageEnvelope(
+        msg_id=str(uuid.uuid4()),
+        timestamp=_t.time(),
+        type=EEnvelopeType.PROMPT,
+        payload={
+            "player_id": req.player_id,
+            "voice_transcript": req.text,
+            "target_npc_id": req.npc_id,
+        },
+    )
+    try:
+        result_json = await _handle_prompt(env)
+        return json.loads(result_json)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[Debug] prompt 처리 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def _handle_action_failed(envelope: MessageEnvelope) -> str:
     global _failed_action_history
 
