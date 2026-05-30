@@ -121,6 +121,7 @@ def interface_output_node(state: AgentState):
         print("[Interface Output] 액션 없음, 전체 텍스트를 Dialogue로 처리")
         action_batch = _create_empty_batch(npc_id)
         action_batch.Actions[0].Parameters["text"] = clean_response[:200]
+        action_batch.Actions[0].FacialState = facial_state  # 태그값 유지(중립 강제 X)
 
     return {
         "action_batch": action_batch,
@@ -143,8 +144,14 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
     # 1. 대사 추출 ("quotes" → Dialogue 액션)
     speech_matches = re.findall(r'"([^"]+)"', raw_response)
     if speech_matches:
+        # FacialState 소스 우선순위:
+        #   ① [Facial: X] 태그(facial_state) — 프롬프트가 강제, 9종 검증됨(1순위)
+        #   ② 괄호 톤워드 (furiously) — 태그가 Neutral/누락일 때만 폴백
+        # WHY: 태그가 더 신뢰. 자유 톤워드(coldly/menacingly 등)는 매핑 실패해
+        #      Neutral 로 죽으므로, 검증된 태그를 우선해 감정 음색을 살린다.
         emotion_matches = re.findall(r'\(([^)]+)\)', raw_response)
-        emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
+        paren_emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
+        emotion = facial_state if facial_state != "Neutral" else paren_emotion
 
         actions.append(GameAction(
             ActionType="Dialogue",
@@ -159,14 +166,14 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
         if parsed:
             actions.append(parsed)
 
-    # 3. 아무 액션도 없으면 전체를 Dialogue로 처리
+    # 3. 아무 액션도 없으면 전체를 Dialogue로 처리 — FacialState 는 태그값 유지
     if not actions:
         clean_text = re.sub(r'[*()]', '', raw_response).strip()
         if clean_text:
             actions.append(GameAction(
                 ActionType="Dialogue",
-                FacialState="Neutral",
-                Parameters={"text": clean_text[:200], "emotion": "Neutral"},
+                FacialState=facial_state,
+                Parameters={"text": clean_text[:200], "emotion": facial_state},
             ))
 
     return ActionBatch(
