@@ -1,28 +1,27 @@
 """
 File: OmniAgent_VR_System/ASRService/server.py
-Role: ASR(Automatic Speech Recognition) 서비스 — 스텁(echo) 단계.
+Role: ASR(Automatic Speech Recognition) 서비스 — faster-whisper 실인식 (M2).
 
 WHY:
-  - 채팅 위젯 제거 후 플레이어 텍스트 입력 수단이 없음.
-  - faster-whisper 통합 전에 UE5 클라이언트·프로토콜·CognitiveEngine 연동 경로를
-    먼저 깔아두기 위한 더미 서비스.
+  - 채팅 위젯 제거 후 플레이어 텍스트 입력 수단이 없음 → 마이크 음성을 텍스트로.
+  - UE5 VoiceInputComponent 가 push-to-talk 로 PCM 을 스트리밍 → 본 서비스가 인식 →
+    final transcript 회신 → UE5 가 SendPlayerDialogue 로 CognitiveEngine 에 전달.
 
-PROTOCOL (M1 스텁):
+PROTOCOL:
   - WS endpoint: ws://127.0.0.1:8002/ws/asr/stream
-  - 클라이언트가 먼저 JSON 으로 start 메시지 송신:
+  - 클라이언트 start(JSON):
         { "type": "start", "request_id": "...", "target_npc_id": "Skadi",
-          "player_id": "Player_1", "sample_rate": 16000, "language": "KR" }
-  - 이후 binary 프레임으로 pcm_s16le 16kHz mono 청크 전송 (TTS audio_chunk 와 대칭).
-  - 클라이언트가 JSON 으로 end 메시지 송신:
-        { "type": "end" }
-  - 서버는 수신 종료 후 final transcript 반환:
+          "player_id": "Player_1", "sample_rate": 48000, "language": "KR" }
+  - 이후 binary 프레임으로 pcm_s16le mono 청크 (네이티브 레이트, sample_rate 에 명시).
+  - 클라이언트 end(JSON): { "type": "end" }
+  - 서버 final(JSON):
         { "type": "final", "request_id": "...", "target_npc_id": "Skadi",
-          "transcript": "[ASR stub] 1.23s 받음", "duration_ms": 1234 }
-  - (M2) partial 결과는 청크 처리하며 중간 송신 예정.
+          "transcript": "<인식 결과>", "duration_ms": 1234, "language": "KR" }
 
-M2 계획:
-  - faster-whisper 통합 — 동일 protocol 유지, transcript 가 실제 인식 결과.
-  - REST forward 옵션: server 측에서 직접 CognitiveEngine /api/debug/prompt 로 전달.
+설계 결정(§0):
+  - 모델: large-v3 / device=cuda / compute=float16 (한국어 품질 우선).
+  - 리샘플: UE 는 네이티브 레이트로 보내고, 여기서 soxr 로 16kHz 변환(whisper 입력 규격).
+  - partial(중간 결과)은 미구현 — end 시 final 단발. (M3 후보)
 """
 from __future__ import annotations
 
@@ -33,6 +32,10 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
+
+import numpy as np
+import soxr
+from faster_whisper import WhisperModel
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,17 +49,43 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-TARGET_SAMPLE_RATE = 16000
-BYTES_PER_SAMPLE = 2  # pcm_s16le
+TARGET_SAMPLE_RATE = 16000   # whisper 입력 규격
+BYTES_PER_SAMPLE = 2         # pcm_s16le
+
+# ── faster-whisper 설정 (§0 결정) ────────────────────────────────────────────
+WHISPER_MODEL_SIZE = "large-v3"
+WHISPER_DEVICE = "cuda"
+WHISPER_COMPUTE = "float16"
+
+# UE5 language 힌트 → whisper 언어 코드. 미지정/미매핑은 None(자동 감지).
+LANG_MAP = {"KR": "ko", "KO": "ko", "EN": "en", "US": "en", "JP": "ja", "JA": "ja"}
+
+_model: Optional[WhisperModel] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("[ASR] 스텁 서비스 기동 — Whisper 미로드, 더미 echo 만 응답")
+    global _model
+    logger.info(
+        f"[ASR] faster-whisper 로드 시작 — {WHISPER_MODEL_SIZE} "
+        f"({WHISPER_DEVICE}/{WHISPER_COMPUTE}) … (최초엔 모델 다운로드로 수십초 소요)"
+    )
+    t0 = time.perf_counter()
+    _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
+    logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter()-t0):.1f}s)")
+    # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거
+    try:
+        warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)
+        segs, _ = _model.transcribe(warm, language="ko")
+        list(segs)
+        logger.info("[ASR] 프리워밍 완료")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ASR] 프리워밍 실패(무시): {e}")
     yield
+    _model = None
 
 
-app = FastAPI(title="ASRService-Stub", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ASRService", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,16 +97,39 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "service": "asr-stub", "version": "0.1.0"}
+    return {
+        "status": "ok" if _model is not None else "loading",
+        "service": "asr-faster-whisper",
+        "model": WHISPER_MODEL_SIZE,
+        "device": WHISPER_DEVICE,
+        "version": "0.2.0",
+    }
+
+
+def _transcribe(pcm_bytes: bytes, sample_rate: int, language: Optional[str]) -> str:
+    """동기 인식 — asyncio.to_thread 로 호출(이벤트 루프 비차단)."""
+    if _model is None or len(pcm_bytes) < BYTES_PER_SAMPLE * 2:
+        return ""
+
+    # s16le → float32 [-1,1]
+    audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    # 네이티브 레이트 → 16kHz (whisper 규격)
+    if sample_rate != TARGET_SAMPLE_RATE:
+        audio = soxr.resample(audio, sample_rate, TARGET_SAMPLE_RATE)
+
+    lang = LANG_MAP.get((language or "").upper())
+    segments, _info = _model.transcribe(
+        audio,
+        language=lang,
+        vad_filter=True,           # 무음/잡음 구간 제거
+        beam_size=5,
+        condition_on_previous_text=False,
+    )
+    return "".join(seg.text for seg in segments).strip()
 
 
 @app.websocket("/ws/asr/stream")
 async def ws_stream(websocket: WebSocket) -> None:
-    """ASR 스트리밍 WS — 더미 echo 단계.
-
-    프로토콜은 docstring 참조. 본 스텁은 audio 청크 자체는 디코딩하지 않고
-    수신 바이트 수와 청크 수만 추적해 final transcript 에 반환한다.
-    """
     await websocket.accept()
     request_id = f"asr_{uuid.uuid4().hex[:12]}"
     target_npc_id: Optional[str] = None
@@ -86,13 +138,12 @@ async def ws_stream(websocket: WebSocket) -> None:
     language: Optional[str] = None
 
     started_at: Optional[float] = None
-    total_bytes = 0
+    audio_buf = bytearray()
     chunk_count = 0
 
     try:
         while True:
             msg = await websocket.receive()
-            # FastAPI WebSocket.receive() — text/bytes/close 구분
             if "text" in msg and msg["text"] is not None:
                 try:
                     data = json.loads(msg["text"])
@@ -111,28 +162,33 @@ async def ws_stream(websocket: WebSocket) -> None:
                     sample_rate = int(data.get("sample_rate") or TARGET_SAMPLE_RATE)
                     language = data.get("language")
                     started_at = time.perf_counter()
+                    audio_buf = bytearray()
+                    chunk_count = 0
                     logger.info(
                         f"[ASR] start request_id={request_id} target={target_npc_id} "
                         f"sr={sample_rate} lang={language}"
                     )
-                    await websocket.send_json({
-                        "type": "ready", "request_id": request_id,
-                    })
+                    await websocket.send_json({"type": "ready", "request_id": request_id})
+
                 elif mtype == "end":
-                    elapsed_ms = int(((time.perf_counter() - started_at) * 1000) if started_at else 0)
+                    total_bytes = len(audio_buf)
                     duration_audio_ms = int(total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000)
-                    stub_text = f"[ASR stub] 청크 {chunk_count}개 · 오디오 {duration_audio_ms}ms · 수신 {total_bytes}B"
+                    t_rec = time.perf_counter()
+                    transcript = await asyncio.to_thread(
+                        _transcribe, bytes(audio_buf), sample_rate, language
+                    )
+                    infer_ms = int((time.perf_counter() - t_rec) * 1000)
                     logger.info(
-                        f"[ASR] end request_id={request_id} "
-                        f"bytes={total_bytes} chunks={chunk_count} audio_ms={duration_audio_ms} "
-                        f"elapsed_ms={elapsed_ms}"
+                        f"[ASR] end request_id={request_id} chunks={chunk_count} "
+                        f"audio_ms={duration_audio_ms} infer_ms={infer_ms} "
+                        f"transcript=\"{transcript}\""
                     )
                     await websocket.send_json({
                         "type": "final",
                         "request_id": request_id,
                         "target_npc_id": target_npc_id,
                         "player_id": player_id,
-                        "transcript": stub_text,
+                        "transcript": transcript,
                         "duration_ms": duration_audio_ms,
                         "language": language or "KR",
                     })
@@ -142,17 +198,18 @@ async def ws_stream(websocket: WebSocket) -> None:
                         "type": "error", "request_id": request_id,
                         "code": "UNKNOWN_TYPE", "message": str(mtype),
                     })
+
             elif "bytes" in msg and msg["bytes"] is not None:
-                # pcm 청크 — 스텁은 카운트만
-                chunk = msg["bytes"]
-                total_bytes += len(chunk)
+                audio_buf += msg["bytes"]
                 chunk_count += 1
+
             elif msg.get("type") == "websocket.disconnect":
                 logger.info(f"[ASR] 클라이언트 연결 종료 request_id={request_id}")
                 break
+
     except WebSocketDisconnect:
         logger.info(f"[ASR] WebSocketDisconnect request_id={request_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.exception(f"[ASR] 스트림 처리 실패: {e}")
         try:
             await websocket.send_json({
@@ -169,7 +226,7 @@ async def ws_stream(websocket: WebSocket) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 보조 REST — 디버깅용 단발 transcript 주입 (UE5 마이크 통합 전 폴백)
+# 보조 REST — 오디오 없이 임의 transcript 주입 (디버그·폴백 통로)
 # ─────────────────────────────────────────────────────────────────────────────
 class StubTranscribeRequest(BaseModel):
     text: str
@@ -179,7 +236,6 @@ class StubTranscribeRequest(BaseModel):
 
 @app.post("/api/asr/stub_transcribe")
 async def api_stub_transcribe(req: StubTranscribeRequest) -> dict:
-    """오디오 없이 임의 transcript 를 final 형식으로 반환. CognitiveEngine 폴백 통로."""
     return {
         "type": "final",
         "request_id": f"asr_{uuid.uuid4().hex[:12]}",
