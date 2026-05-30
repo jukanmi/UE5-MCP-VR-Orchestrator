@@ -15,19 +15,16 @@
 
 ### 🔥 지금 다음 액션 (사용자 직접, UE Editor)
 
-#### Quest 빌드 — 케이블 도착 후 재개 (보류 중, 2026-05-16)
-**현재 상태**: VR 코드(Phase 1·2)는 Develop에 머지 완료. 실기 빌드·사이드로딩만 남음. USB-C 케이블 도착하면 아래 순서대로.
+#### Quest 스탠드얼론 빌드 — 보류 (현재 PCVR Link 로 개발/데모, 2026-05-30 결정)
+**결정**: 현재 Quest Link(케이블 PCVR 스트리밍)로 개발·테스트 중 — 게임은 PC에서 돌고 Quest는 디스플레이. 이 모드에선 **APK·사이드로딩·IP 외부화 전부 불필요**(서버도 PC라 127.0.0.1 OK). 아래 스탠드얼론(언테더드) 항목은 **최종 타겟을 Quest 단독 구동으로 확정할 때만** 진행. 그땐 모바일 성능 최적화 숙제도 동반.
 
-- [X] Project Settings → Platforms → Android SDK
-  - NDK 경로(r25c) / SDK 경로(API 32·34 설치) / JDK 17 경로 — 머신별 설정이라 .ini 미포함
-  - "Accept SDK License" 클릭
-- [X] Project Settings → Platforms → Android → Distribution Signing
-  - Debug keystore 자동 생성 OK / Release 는 별도 keystore 준비
-- [X] (선택) `MetaXR` 플러그인 설치 — 가상 키보드·핸드 포즈 등 Meta 전용 기능 사용 시
-- [ ] `Project → Package → Android (ASTC)` 빌드 → APK 생성
-- [X] Quest 개발자 모드 활성화 (Meta 계정 / Oculus 앱)
-- [ ] ADB 또는 Meta Quest Developer Hub 로 APK 설치: `adb install <APK경로>` (**케이블 필수**)
-- [ ] LLM/TTS 서버 IP 하드코딩 제거 → `DefaultGame.ini` [OmniAgent] 섹션 (현재 모두 127.0.0.1 — Quest 에선 PC IP 필요)
+- [X] Project Settings → Platforms → Android SDK (NDK r25c / API 32·34 / JDK 17 — 머신별, .ini 미포함)
+- [X] Android Distribution Signing (Debug keystore 자동 / Release 별도)
+- [X] (선택) `MetaXR` 플러그인 설치
+- [X] Quest 개발자 모드 활성화
+- [ ] (스탠드얼론 확정 시) `Project → Package → Android (ASTC)` 빌드 → APK
+- [ ] (스탠드얼론 확정 시) `adb install <APK>` 사이드로딩
+- [ ] (스탠드얼론 확정 시) LLM/TTS 서버 IP 외부화 → `DefaultGame.ini` [OmniAgent] (현재 127.0.0.1 — Quest 단독은 PC IP 필요)
 
 #### TTS 잔여
 - [ ] 지연 측정 수치 기록 — T0(PlayFromUrl) → T1(WS Connected) → T2(첫 청크) → Play() 실측치, 목표 < 600ms
@@ -116,6 +113,7 @@
 
 ## Done
 
+- [x] VR 풀바디 FBIK 아바타 완성 — 손 추적(Effector 메시공간 변환·그립축 보정), 머리 축보정, 팔꿈치 치킨윙 교정(Bone Settings Preferred Angle), 아바타 키비율 스케일, 시야-머리 정렬(CameraHeightOffset -30), 스냅턴→부드러운 연속회전, LogIKMetrics 진단. 별도 손메시 제거. (커밋 9fed5aa·93af755·bea791d) — 2026-05-30
 - [x] VR 자세 시스템 Phase 4-5 에디터 — BP_VRPawn 메시(X_Bot) 부착·Anim Class=ABP_VRPawn, ABP_VRPawn(ThreadSafe·Standing/Crouching/Prone SM), CR_VRPawn_FBIK(Root=Hips, Head·양손 Effector, Spine·Neck Exclude) AnimGraph 연결 — 2026-05-30
 - [x] LLM 단순 대화 경로 — `UNPCManager::SendPlayerDialogue`(snake_case PromptPayload→BuildPrompt), VRPlayerCharacter/VRPawn `SendNPCDialogue` exec, HandleNPCDialogue 화면 자막. Python 파이프라인 기완비라 UE5 입력측만 연결 (커밋 50add82) — 2026-05-30
 - [x] NPC 상태 소유권 단일화 + BehaviorMode orphan 버그 수정 — CurrentBehaviorMode 미저장으로 Combat 자동 Attack 죽어있던 것 수정(ExecuteActionBatch가 Batch.Mode 저장), BehaviorMode를 NPCStateComponent 소유로 이동, CurrentActionType 3중 표현 제거(ActionComp 단일 소스) (커밋 bc16134) — 2026-05-30
@@ -145,6 +143,8 @@
 
 ## Handoff Notes
 
+- **VR PCVR(Link) 결론 (2026-05-30)**: 현재 Quest Link(케이블 PCVR)로 개발 — 게임은 PC 실행, Quest는 디스플레이. **APK/사이드로딩/IP외부화 불필요**(서버도 PC, 127.0.0.1 OK). 타이틀바 `OpenXR Oculus`+Link 가 PCVR 증거. **How to apply**: 스탠드얼론(Quest 단독 언테더드)을 최종 타겟으로 확정하기 전엔 Memo "Quest 스탠드얼론 빌드" 항목 손대지 말 것. 확정 시 APK + IP외부화 + 모바일 성능 최적화 동반. VR 아바타 IK 자체는 완성·머지됨.
+- **VR FBIK 튜닝값 (2026-05-30)**: X_Bot 기준 C++ 기본값 박힘 — `LeftHandGripOffset(180,0,90)`, `RightHandGripOffset(0,0,-90)`, `HeadEffectorOffset(0,-90,90)`, `CameraHeightOffset=-30`, `AvatarReferenceHeight=170`. **Why C++ 기본값**: CLAUDE.md §9(에디터 수작업 최소화) — 바이너리 uasset 대신 소스에 명시해 버전관리·인수인계. **How to apply**: 다른 스켈레톤 쓰면 이 값들 재튜닝 필요. `LogIKMetrics` exec 로 이펙터 Transform 덤프 → CR 변수 Default 에 박아 프리뷰에서 PIE 로딩 없이 튜닝(이번 워크플로우). 팔꿈치는 CR_VRPawn_FBIK Bone Settings Preferred Angle.
 - **Quest 빌드 보류 (2026-05-16)**: USB-C 케이블 미보유로 실기 사이드로딩 불가. **현재 코드는 다 준비됨** — VR Phase 1·2 (OpenXR·VRPawn·BP_VRPawn·Android 패키지 설정·OBB 통합·Vulkan·arm64) 모두 Develop 머지 완료. 케이블 도착 즉시 위 "Quest 빌드" 체크리스트 실행하면 됨. **잊지 말 것**: ① 케이블 도착 알림 / ② Android SDK 머신 설정은 .ini에 없으니 새로 셋업 필요 / ③ Quest 와 PC 같은 Wi-Fi 확인.
 
 - **gemma thinking 우회 패턴 (2026-05-16)**: gemma3/4 instruct 모델은 chat template 안에 thinking(reasoning) 토큰 생성이 강제됨. langchain `ChatOllama.invoke` 로 호출하면 항상 chat template 적용 → 단답 prompt 도 200+ thinking 토큰. **해결**: `httpx` 로 Ollama `/api/generate` 직접 호출 + `raw=true` (chat template 우회) + few-shot prompt (Answer: 까지 채워주면 모델은 다음 한 단어만 생성). **측정 비교**: 기존 2200ms/289토큰 → 새 400ms/4토큰. **How to apply**: ① `num_predict` 작게(10) + `stop=["\n"]` 로 안전 마진. ② raw 모드는 instruction 튜닝 효과 약화 — 단답형/분류 작업에만 사용, 자유 대화는 chat template 유지. ③ keep_alive="5m" 로 모델 메모리 유지(cold-start 회피). ④ `request_timeout` 20초로 cold-start 6초 마진.
