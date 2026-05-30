@@ -85,13 +85,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
     UMotionControllerComponent* MotionControllerRightAim;
 
-    /** 왼손 메시 (글로브·손 스켈레탈) */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
-    USkeletalMeshComponent* LeftHandMesh;
-
-    /** 오른손 메시 */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
-    USkeletalMeshComponent* RightHandMesh;
+    // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
+    // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
@@ -210,6 +205,35 @@ public:
     /** 현재 HMD가 바닥(=캡슐 발) 기준으로 얼마나 높이 있는지(cm). */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VR|Posture")
     float GetCurrentHMDHeight() const;
+
+    // ============================================================================
+    // FBIK Effector — Control Rig 입력용. 모두 몸체 메시(GetMesh()) 컴포넌트 공간.
+    // Control Rig가 컴포넌트 공간에서 풀므로, AnimBP는 이 값을 Target 핀에 직결만 하면 됨.
+    // (World→Component 변환·축 정렬을 여기서 일원화 — 블루프린트 invert/multiply 불필요)
+    // ============================================================================
+
+    /** 손 그립 축 보정 — 컨트롤러 그립 포즈 축과 메시 손 본 축이 달라서 생기는
+     *  손목 회전 오차를 상쇄. 손 로컬 공간에 적용되므로 손이 움직여도 유지됨.
+     *  에디터 Details 에서 라이브 튜닝(리빌드 불필요). 좌우 미러라 값이 다름. */
+    // X_Bot 손 본 기준 튜닝값. FRotator(Pitch, Yaw, Roll).
+    // Left  = Roll 90, Pitch 180, Yaw 0  /  Right = Roll -90, Pitch 0, Yaw 0
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    FRotator LeftHandGripOffset = FRotator(180.f, 0.f, 90.f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    FRotator RightHandGripOffset = FRotator(0.f, 0.f, -90.f);
+
+    /** HMD(VRCamera)를 몸체 메시 공간으로 변환한 Head Effector Transform. */
+    UFUNCTION(BlueprintPure, Category = "VR|IK")
+    FTransform GetHeadEffectorCS() const;
+
+    /** 왼손 컨트롤러를 몸체 메시 공간으로 변환한 Left Hand Effector Transform. */
+    UFUNCTION(BlueprintPure, Category = "VR|IK")
+    FTransform GetLeftHandEffectorCS() const;
+
+    /** 오른손 컨트롤러를 몸체 메시 공간으로 변환한 Right Hand Effector Transform. */
+    UFUNCTION(BlueprintPure, Category = "VR|IK")
+    FTransform GetRightHandEffectorCS() const;
 
     // ============================================================================
     // IPlayerBase / IEntity 구현

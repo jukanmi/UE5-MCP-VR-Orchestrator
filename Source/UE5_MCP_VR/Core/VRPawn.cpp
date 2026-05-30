@@ -58,12 +58,8 @@ AVRPawn::AVRPawn()
     MotionControllerRightAim->SetupAttachment(VROrigin);
     MotionControllerRightAim->MotionSource = FName("RightAim");
 
-    // 손 메시
-    LeftHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LeftHandMesh"));
-    LeftHandMesh->SetupAttachment(MotionControllerLeft);
-
-    RightHandMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RightHandMesh"));
-    RightHandMesh->SetupAttachment(MotionControllerRight);
+    // 손 메시 제거됨 — 풀바디 FBIK(ABP_VRPawn) 손이 컨트롤러를 향해 역산되므로
+    // 별도 손 메시는 중복. 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -202,6 +198,35 @@ float AVRPawn::GetCurrentHMDHeight() const
     // 캡슐 발 기준 절대 높이 = 카메라 월드 Z - 액터 월드 Z + 캡슐 절반 높이.
     // 액터 피벗이 캡슐 정중앙이므로, 발은 액터Z - HalfHeight 에 있다.
     return VRCamera->GetComponentLocation().Z - GetActorLocation().Z + InterpedCapsuleHalfHeight;
+}
+
+// ----------------------------------------------------------------------------
+// FBIK Effector — 컴포넌트(메시) 공간 변환
+// 컨트롤러/HMD는 VROrigin 프레임, 메시는 캡슐 프레임이라 서로 다른 World 위치에 있다.
+// Control Rig는 메시 컴포넌트 공간에서 풀므로, 각 World Transform 을 메시 World 기준
+// 상대 변환(GetRelativeTransform)으로 바꿔 넘긴다. 머리·양손 모두 동일 기준(메시).
+// ----------------------------------------------------------------------------
+FTransform AVRPawn::GetHeadEffectorCS() const
+{
+    if (!VRCamera || !GetMesh()) return FTransform::Identity;
+    return VRCamera->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+}
+
+FTransform AVRPawn::GetLeftHandEffectorCS() const
+{
+    if (!MotionControllerLeft || !GetMesh()) return FTransform::Identity;
+    FTransform T = MotionControllerLeft->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    // 그립 축 보정을 손 로컬 공간에 적용(우측 곱) — 손이 회전해도 보정이 따라감.
+    T.SetRotation(T.GetRotation() * LeftHandGripOffset.Quaternion());
+    return T;
+}
+
+FTransform AVRPawn::GetRightHandEffectorCS() const
+{
+    if (!MotionControllerRight || !GetMesh()) return FTransform::Identity;
+    FTransform T = MotionControllerRight->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    T.SetRotation(T.GetRotation() * RightHandGripOffset.Quaternion());
+    return T;
 }
 
 void AVRPawn::UpdatePosture()
