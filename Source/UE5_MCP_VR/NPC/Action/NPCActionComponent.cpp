@@ -629,6 +629,9 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     // [의도(Why)] 다양한 형태(위치, 텍스트, 다중 파라미터)의 JSON 인자를 BTTask 대신 컴포넌트 레벨에서 일괄 파싱 및 캐싱하여 각 세부 Execute 함수로 안전하게 전달합니다.
     // Parameters 딕셔너리 키는 Python 서버 snake_case 기준으로 단일화됨.
     FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);
+    // 아이템 ID — use/equip/give/drop/craft/repair 류. 비면 target_id 폴백(레거시 호환).
+    FString ItemID = Params.FindRef(NPCActionKeys::Key_Item);
+    if (ItemID.IsEmpty()) ItemID = TargetID;
 
     // 위치: Python이 직접 보내는 경우는 없고, C++ 내부 주입(전술 쿼리 결과)만 존재 → Key_TargetLoc 단일 조회
     FVector Location = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc));
@@ -648,7 +651,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
     TArray<FString> CraftItemIDs;
     FString CraftItemsStr = Params.FindRef(TEXT("ItemIDs"));
-    if (CraftItemsStr.IsEmpty()) CraftItemsStr = TargetID;
+    if (CraftItemsStr.IsEmpty()) CraftItemsStr = ItemID;
     CraftItemsStr.ParseIntoArray(CraftItemIDs, TEXT(","), true);
 
     // 단일화된 EAction enum 값에 따라 세부적인 행동 함수로 라우팅합니다.
@@ -660,9 +663,9 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Dialogue:     ExecuteDialogue(TextBody, EFacialState::Neutral); break;
     case EAction::TurnTo:       ExecuteTurnTo(Location, TargetActor); break;
     case EAction::Scan:         ExecuteScan(Location, TargetActor); break;
-    case EAction::UseItem:      ExecuteUseItem(TargetID); break;
-    case EAction::Equip:        ExecuteEquipAction(TargetID); break;
-    case EAction::Unequip:      ExecuteUnequipAction(TargetID); break;
+    case EAction::UseItem:      ExecuteUseItem(ItemID); break;
+    case EAction::Equip:        ExecuteEquipAction(ItemID); break;
+    case EAction::Unequip:      ExecuteUnequipAction(ItemID); break;
     
     // Combat
     case EAction::Attack:       ExecuteAttackAction(TargetActor, EAttackType::Melee); break;
@@ -729,16 +732,16 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::SignalAllies: ExecuteSignalAllies(TargetID); break;
 
     // Social
-    case EAction::Trade:        ExecuteTrade(TargetActor, GiveItemID.IsEmpty() ? TargetID : GiveItemID, GiveAmount, GetItemID, GetAmount); break;
-    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, TargetID, Amount); break;
+    case EAction::Trade:        ExecuteTrade(TargetActor, GiveItemID.IsEmpty() ? ItemID : GiveItemID, GiveAmount, GetItemID, GetAmount); break;
+    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, ItemID, Amount); break;
     case EAction::Comfort:      ExecuteComfort(TargetActor); break;
-    case EAction::HandObject:   ExecuteHandObject(TargetID); break;
-    
+    case EAction::HandObject:   ExecuteHandObject(ItemID); break;
+
     // Task
     case EAction::PickUp:       ExecutePickUp(Location); break;
-    case EAction::Drop:         ExecuteDrop(TargetID); break;
+    case EAction::Drop:         ExecuteDrop(ItemID); break;
     case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
-    case EAction::Repair:       ExecuteRepair(TargetID); break;
+    case EAction::Repair:       ExecuteRepair(ItemID); break;
     
     // Investigate
     case EAction::Investigate:  ExecuteInvestigate(Location); break;

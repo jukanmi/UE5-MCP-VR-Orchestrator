@@ -183,6 +183,11 @@ void UNPCManager::UnregisterNPC(const FString& AgentID)
     }
 }
 
+ASmartNPC* UNPCManager::GetNPCById(const FString& AgentID) const
+{
+    return NPCMap ? NPCMap->GetValidNPC(AgentID) : nullptr;
+}
+
 void UNPCManager::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
     if (NPCMap)
