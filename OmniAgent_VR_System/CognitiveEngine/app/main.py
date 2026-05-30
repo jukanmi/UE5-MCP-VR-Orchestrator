@@ -34,6 +34,10 @@ logging.basicConfig(
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
 
+# SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
+# 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
+SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
+
 async def _check_ollama_model() -> None:
     try:
         import httpx, time as _t
@@ -286,10 +290,19 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         payload = envelope.parse_emergency_report_payload()
         logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
+        # ── danger 게이트 ──────────────────────────────────────────────
+        # SLM Reflex 는 "긴급 전투(0.5초 반사)" 용. 친화적/저위협(예: 호감도 높은
+        # 플레이어를 시야에 둠, danger<0.5) perception 까지 매번 SLM 을 때리면
+        # 낭비·로그도배. 최고 danger 가 임계 미만이면 반사 생략(무행동).
+        max_danger = max((p.danger_score for p in payload.perceptions), default=0.0)
+        if max_danger < SLM_REFLEX_DANGER_THRESHOLD:
+            logger.info(
+                f"[Main] 비긴급(maxdanger={max_danger:.2f}<{SLM_REFLEX_DANGER_THRESHOLD}) "
+                f"— SLM Reflex 생략. npc={payload.agent_id}"
+            )
+            return ModeActionRequest(Mode="Common", ActionBatches={}).model_dump_json()
+
         # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
-        # 기존에는 무거운 LangGraph 파이프라인(26B 모델)을 전체 순회하여
-        # 수 초간의 지연이 발생했으나, 이제는 즉시 4B 경량 SLM 또는 키워드 폴백으로
-        # 우회 처리(Bypass)하여 체감 지연 시간을 제로에 가깝게 최적화함.
         logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
         return await _handle_slm_reflex(payload)
 

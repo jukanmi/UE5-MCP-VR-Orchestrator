@@ -192,12 +192,13 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Actor->GetActorLocation());
                     Perception.DangerScore = FinalDanger;
 
-                    StateComp->RequestEventCognition(Perception);
-
-                    // Option B: 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 EQS 전술 쿼리.
-                    // 중립(배율 0.5→danger 0.3) 감지 시 전투 포지셔닝 방지. (쿨다운 내장)
+                    // 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 emergency report·EQS.
+                    // 중립/친화(배율로 danger 하락) 감지 시 SLM 반사·전투 포지셔닝 모두 생략.
+                    // 플레이어 상호작용은 dialogue(prompt) 경로로 처리.
                     if (FinalDanger >= CombatDangerThreshold)
                     {
+                        StateComp->RequestEventCognition(Perception);
+
                         if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                         {
                             TArray<FVector> EnemyLocs;
@@ -339,5 +340,10 @@ void ASmartNPCAIController::OnPerceptionTick()
     UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] PerceptionTick: %s dist=%.0f danger=%.2f"),
         *TargetID, Perception.Distance, Perception.DangerScore);
 
-    StateComp->RequestEventCognition(Perception);
+    // 저위협(친화적/중립) 대상은 emergency report 생략 — 반복 perception 마다 SLM 반사를
+    // 때리지 않게. danger 가 임계 이상으로 오르면(호감도 하락 등) 그때 보고됨.
+    if (Perception.DangerScore >= CombatDangerThreshold)
+    {
+        StateComp->RequestEventCognition(Perception);
+    }
 }
