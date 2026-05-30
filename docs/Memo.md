@@ -10,7 +10,7 @@
 목표: PC 전용 플레이어 + NPC AI + ChatWidget을 Quest 3S 스탠드얼론 + 음성 TTS 로 동작시키기
 
 ### 🆕 다음 설계 작업
-- [ ] **ASR(음성→텍스트) 입력** — 단순 대화의 발화 입력을 디버그 exec(`SendNPCDialogue`)에서 실제 마이크/Whisper 스트리밍으로 교체. send 진입점(`UNPCManager::SendPlayerDialogue`) 재사용.
+- [X] **ASR(음성→텍스트) 입력** — 단순 대화의 발화 입력을 디버그 exec(`SendNPCDialogue`)에서 실제 마이크/Whisper 스트리밍으로 교체. send 진입점(`UNPCManager::SendPlayerDialogue`) 재사용.
 - [ ] **대화 UI(ChatWidget) 부활** — 현재 응답은 화면 자막(AddOnScreenDebugMessage)뿐. WorldSpace ChatWidget 또는 자막 위젯으로 정식화.
 
 ### 🔥 지금 다음 액션 (사용자 직접, UE Editor)
@@ -18,14 +18,14 @@
 #### Quest 빌드 — 케이블 도착 후 재개 (보류 중, 2026-05-16)
 **현재 상태**: VR 코드(Phase 1·2)는 Develop에 머지 완료. 실기 빌드·사이드로딩만 남음. USB-C 케이블 도착하면 아래 순서대로.
 
-- [ ] Project Settings → Platforms → Android SDK
+- [X] Project Settings → Platforms → Android SDK
   - NDK 경로(r25c) / SDK 경로(API 32·34 설치) / JDK 17 경로 — 머신별 설정이라 .ini 미포함
   - "Accept SDK License" 클릭
-- [ ] Project Settings → Platforms → Android → Distribution Signing
+- [X] Project Settings → Platforms → Android → Distribution Signing
   - Debug keystore 자동 생성 OK / Release 는 별도 keystore 준비
-- [ ] (선택) `MetaXR` 플러그인 설치 — 가상 키보드·핸드 포즈 등 Meta 전용 기능 사용 시
+- [X] (선택) `MetaXR` 플러그인 설치 — 가상 키보드·핸드 포즈 등 Meta 전용 기능 사용 시
 - [ ] `Project → Package → Android (ASTC)` 빌드 → APK 생성
-- [ ] Quest 개발자 모드 활성화 (Meta 계정 / Oculus 앱)
+- [X] Quest 개발자 모드 활성화 (Meta 계정 / Oculus 앱)
 - [ ] ADB 또는 Meta Quest Developer Hub 로 APK 설치: `adb install <APK경로>` (**케이블 필수**)
 - [ ] LLM/TTS 서버 IP 하드코딩 제거 → `DefaultGame.ini` [OmniAgent] 섹션 (현재 모두 127.0.0.1 — Quest 에선 PC IP 필요)
 
@@ -33,27 +33,6 @@
 - [ ] 지연 측정 수치 기록 — T0(PlayFromUrl) → T1(WS Connected) → T2(첫 청크) → Play() 실측치, 목표 < 600ms
 
 ---
-
-### 🆕 VR 자세 시스템 — 에디터 작업 (C++ Phase 1-3 완료, 2026-05-23)
-
-계획서: `~/.claude/plans/vr-ancient-crown.md`. C++ 측은 `feature/MetaQuest3S-VR` 에 반영됨.
-
-#### Phase 4 — BP_VRPawn 메시 부착 + AnimBP 생성
-- [ ] `BP_VRPawn` → Mesh 컴포넌트에 `X_Bot` 할당
-- [ ] Mesh Relative Z = `-88` (캡슐 기본 절반높이), Yaw = -90 (X+ 정렬, 빌드 후 확인하여 조정)
-- [ ] 신규 `Content/Blueprint/Player/ABP_VRPawn` (Anim Blueprint, X_Bot_Skeleton)
-  - `BlueprintThreadSafeUpdateAnimation` 오버라이드 (Event 그래프 X)
-  - Property Access 로 `AVRPawn::CurrentPosture` / `CalibratedStandingHeight` / VRCamera·MotionController Transform 가져옴
-  - AnimGraph 는 변수 직접 핀 연결만 (Fast Path 유지) — Cast/수식 금지
-  - 작은 State Machine: Standing/Crouching/Prone (Enum 동등 비교 전이)
-- [ ] Mesh → Anim Class = ABP_VRPawn 지정
-
-#### Phase 5 — FBIK Control Rig
-- [ ] 신규 `Content/Core/Animation/CR_VRPawn_FBIK` (Control Rig, X_Bot_Skeleton 기반)
-- [ ] Full Body IK 노드 추가 — Root: `Hips`
-- [ ] Effectors: Head (HMD), LeftHand (MC Left Grip), RightHand (MC Right Grip)
-- [ ] Exclude Bones: Spine, Spine1, Spine2, Neck (PDF §척추 압축 방지)
-- [ ] ABP_VRPawn AnimGraph 에 Control Rig 노드 추가 + Effector 트랜스폼 핀 연결
 
 ### Phase 6 — VR 자세 동기화 멀티플레이어 (별도 작업, 우선순위 낮음)
 - [ ] AVRPawn 리플리케이션 설정 — bReplicates=true, ReplicateMovement, Component Replicates
@@ -65,8 +44,8 @@
 ---
 
 ### Phase 3 — Quest ↔ PC 네트워크
-- [ ] `WebSocketClient.cpp` — Quest 에서 PC Python 서버로 ws:// 연결 검증 (같은 Wi-Fi 필수)
-- [ ] LLM/TTS 서버 IP 하드코딩 제거 → `DefaultGame.ini` [OmniAgent] 섹션에서 읽도록 수정
+- [X] `WebSocketClient.cpp` — Quest 에서 PC Python 서버로 ws:// 연결 검증 (같은 Wi-Fi 필수)
+- [X] LLM/TTS 서버 IP 하드코딩 제거 → `DefaultGame.ini` [OmniAgent] 섹션에서 읽도록 수정
   - 현재 LLM=`ws://127.0.0.1:8000/ws/llm`, TTS=`http://127.0.0.1:8001` 모두 localhost 가정
 - [ ] (필요 시) AndroidManifest 에 `CHANGE_NETWORK_STATE` 추가 — 현재 INTERNET 만 등록됨
 
@@ -137,6 +116,7 @@
 
 ## Done
 
+- [x] VR 자세 시스템 Phase 4-5 에디터 — BP_VRPawn 메시(X_Bot) 부착·Anim Class=ABP_VRPawn, ABP_VRPawn(ThreadSafe·Standing/Crouching/Prone SM), CR_VRPawn_FBIK(Root=Hips, Head·양손 Effector, Spine·Neck Exclude) AnimGraph 연결 — 2026-05-30
 - [x] LLM 단순 대화 경로 — `UNPCManager::SendPlayerDialogue`(snake_case PromptPayload→BuildPrompt), VRPlayerCharacter/VRPawn `SendNPCDialogue` exec, HandleNPCDialogue 화면 자막. Python 파이프라인 기완비라 UE5 입력측만 연결 (커밋 50add82) — 2026-05-30
 - [x] NPC 상태 소유권 단일화 + BehaviorMode orphan 버그 수정 — CurrentBehaviorMode 미저장으로 Combat 자동 Attack 죽어있던 것 수정(ExecuteActionBatch가 Batch.Mode 저장), BehaviorMode를 NPCStateComponent 소유로 이동, CurrentActionType 3중 표현 제거(ActionComp 단일 소스) (커밋 bc16134) — 2026-05-30
 - [x] NPC 액션 파이프라인 비동기 완료 모델 + 중복제거 리팩토링 — 동기 완료를 bIsBusy 폴링 비동기로 전환(이동/몽타주 콜백), danger 단일화·EQS gen·GameplayTagUtils·ClearActiveActionState (커밋 0428585·95fc71d) — 2026-05-30
