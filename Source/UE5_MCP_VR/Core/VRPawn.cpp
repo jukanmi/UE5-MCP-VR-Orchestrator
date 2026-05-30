@@ -17,6 +17,7 @@
 #include "../NPC/SmartNPC.h"
 #include "../NPC/NPCManager.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Engine.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 
 // ============================================================================
@@ -132,6 +133,7 @@ void AVRPawn::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     SyncCapsuleToHMD();
+    UpdateSmoothTurn(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
 }
@@ -189,6 +191,16 @@ void AVRPawn::FinishCalibration()
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Calibration fallback to %.1f cm (no valid samples)"),
                CalibratedStandingHeight);
     }
+
+    // 아바타를 플레이어 키 비율로 균일 스케일 — 팔 길이를 맞춰 손 IK 타겟에 자연히
+    // 닿게 한다. 메시 피벗(발)이 기준이라 발은 바닥에 고정된 채 몸만 스케일됨.
+    if (bScaleAvatarToPlayer && GetMesh() && AvatarReferenceHeight > KINDA_SMALL_NUMBER)
+    {
+        const float Scale = FMath::Clamp(CalibratedStandingHeight / AvatarReferenceHeight, 0.7f, 1.3f);
+        GetMesh()->SetRelativeScale3D(FVector(Scale));
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] Avatar scaled to %.3f (player %.1f / avatar %.1f)"),
+               Scale, CalibratedStandingHeight, AvatarReferenceHeight);
+    }
 }
 
 float AVRPawn::GetCurrentHMDHeight() const
@@ -209,7 +221,10 @@ float AVRPawn::GetCurrentHMDHeight() const
 FTransform AVRPawn::GetHeadEffectorCS() const
 {
     if (!VRCamera || !GetMesh()) return FTransform::Identity;
-    return VRCamera->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    FTransform T = VRCamera->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    // 머리 본 축 보정을 로컬 공간에 적용(우측 곱).
+    T.SetRotation(T.GetRotation() * HeadEffectorOffset.Quaternion());
+    return T;
 }
 
 FTransform AVRPawn::GetLeftHandEffectorCS() const
@@ -306,7 +321,8 @@ void AVRPawn::UpdateDynamicCapsule(float DeltaTime)
     // VROrigin Z = -InterpedHalfHeight 이어야 한다. 즉 BeginPlay의 -BaseHalfHeight
     // 식을 동적값으로 확장한 형태.
     const FVector OriginLoc = VROrigin->GetRelativeLocation();
-    VROrigin->SetRelativeLocation(FVector(OriginLoc.X, OriginLoc.Y, -InterpedCapsuleHalfHeight));
+    VROrigin->SetRelativeLocation(FVector(OriginLoc.X, OriginLoc.Y,
+                                          -InterpedCapsuleHalfHeight + CameraHeightOffset));
 }
 
 // ============================================================================
@@ -320,7 +336,13 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
         if (IA_Move)          EIC->BindAction(IA_Move,          ETriggerEvent::Triggered, this, &AVRPawn::OnMove);
-        if (IA_SnapTurn)      EIC->BindAction(IA_SnapTurn,      ETriggerEvent::Triggered, this, &AVRPawn::OnSnapTurn);
+        if (IA_SnapTurn)
+        {
+            // 부드러운 연속 회전 — Triggered로 입력값 갱신, Completed/Canceled에서 0 리셋.
+            EIC->BindAction(IA_SnapTurn, ETriggerEvent::Triggered, this, &AVRPawn::OnTurn);
+            EIC->BindAction(IA_SnapTurn, ETriggerEvent::Completed, this, &AVRPawn::OnTurnReleased);
+            EIC->BindAction(IA_SnapTurn, ETriggerEvent::Canceled,  this, &AVRPawn::OnTurnReleased);
+        }
         if (IA_Attack)        EIC->BindAction(IA_Attack,        ETriggerEvent::Started,   this, &AVRPawn::OnAttack);
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
     }
@@ -347,33 +369,31 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
     AddStateTag(TAG_State_Action_Common_Move);
 }
 
-void AVRPawn::OnSnapTurn(const FInputActionValue& Value)
+void AVRPawn::OnTurn(const FInputActionValue& Value)
 {
-    if (bSnapTurnCooling) return;
+    // 입력값만 저장 — 실제 회전은 Tick(UpdateSmoothTurn)에서 프레임 보정 적용.
+    TurnAxisInput = Value.Get<FVector2D>().X;
+}
 
-    float AxisX = Value.Get<FVector2D>().X;
-    if (FMath::Abs(AxisX) < 0.5f) return;  // 데드존
+void AVRPawn::OnTurnReleased(const FInputActionValue& Value)
+{
+    TurnAxisInput = 0.f;
+}
 
-    const float TurnDelta = (AxisX > 0.f) ? SnapTurnAngle : -SnapTurnAngle;
+void AVRPawn::UpdateSmoothTurn(float DeltaTime)
+{
+    // 조이스틱 X 입력만큼 프레임당 연속 회전. 데드존 미만은 무시.
+    if (!VRCamera || FMath::Abs(TurnAxisInput) < TurnInputDeadzone) return;
 
-    // HMD 월드 위치를 피벗으로 회전한다. 액터 피벗 기준으로 그냥 돌리면 HMD가
-    // 피벗에서 떨어진 거리만큼 호를 그리며 측면으로 밀려난다 → 회전 전후 HMD
-    // 월드 XY를 측정해 그 차이만큼 액터를 역보정, 제자리 회전으로 만든다.
-    const FVector PivotBefore = VRCamera ? VRCamera->GetComponentLocation() : GetActorLocation();
+    const float TurnDelta = TurnAxisInput * SmoothTurnRate * DeltaTime;
+
+    // HMD 월드 위치를 피벗으로 회전 — 액터 피벗 기준으로 돌면 HMD가 호를 그리며
+    // 측면으로 밀리므로, 회전 전후 HMD 월드 XY 차이만큼 역보정해 제자리 회전 유지.
+    const FVector PivotBefore = VRCamera->GetComponentLocation();
     AddActorWorldRotation(FRotator(0.f, TurnDelta, 0.f));
-    if (VRCamera)
-    {
-        const FVector PivotAfter = VRCamera->GetComponentLocation();
-        AddActorWorldOffset(FVector(PivotBefore.X - PivotAfter.X,
-                                    PivotBefore.Y - PivotAfter.Y, 0.f));
-    }
-
-    // 쿨다운 — 연속 회전 방지
-    bSnapTurnCooling = true;
-    GetWorldTimerManager().SetTimer(
-        SnapTurnCooldownTimer,
-        [this]() { bSnapTurnCooling = false; },
-        SnapTurnCooldown, false);
+    const FVector PivotAfter = VRCamera->GetComponentLocation();
+    AddActorWorldOffset(FVector(PivotBefore.X - PivotAfter.X,
+                                PivotBefore.Y - PivotAfter.Y, 0.f));
 }
 
 void AVRPawn::SyncCapsuleToHMD()
@@ -523,6 +543,44 @@ void AVRPawn::SendNPCDialogue(const FString& Text)
             Manager->SendPlayerDialogue(GetName(), CurrentTargetNPCID, Text);
         }
     }
+}
+
+void AVRPawn::LogIKMetrics()
+{
+    USkeletalMeshComponent* M = GetMesh();
+    if (!M || !MotionControllerRight) return;
+
+    // X_Bot 본 이름(접두어 없음). 어깨(상완 시작)→손 = 아바타 오른팔 길이.
+    const FVector Shoulder = M->GetSocketLocation(TEXT("RightArm"));
+    const FVector Hand     = M->GetSocketLocation(TEXT("RightHand"));
+    const float ArmLen     = (Hand - Shoulder).Size();
+
+    // 컨트롤러(=실제 손 타겟)가 아바타 어깨에서 떨어진 거리 = 필요한 도달거리.
+    const FVector Ctrl  = MotionControllerRight->GetComponentLocation();
+    const float Reach   = (Ctrl - Shoulder).Size();
+    const float Scale   = M->GetRelativeScale3D().X;
+
+    const FString Msg = FString::Printf(
+        TEXT("[IK] ArmLen=%.1f  Reach=%.1f  diff=%.1f  scale=%.3f  (Reach>ArmLen=팔짧음, Reach<<ArmLen=팔길어 팔꿈치접힘)"),
+        ArmLen, Reach, Reach - ArmLen, Scale);
+    UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
+
+    // 현재 이펙터 타겟(메시 공간) — CR 변수 Default Value 에 박아 프리뷰 재현용.
+    auto Dump = [](const TCHAR* Name, const FTransform& T)
+    {
+        const FVector L = T.GetLocation();
+        const FRotator R = T.Rotator();
+        UE_LOG(LogTemp, Warning,
+            TEXT("[IK] %s  Loc=(%.2f, %.2f, %.2f)  Rot=(P=%.2f, Y=%.2f, R=%.2f)"),
+            Name, L.X, L.Y, L.Z, R.Pitch, R.Yaw, R.Roll);
+    };
+    Dump(TEXT("HeadTarget     "), GetHeadEffectorCS());
+    Dump(TEXT("LeftHandTarget "), GetLeftHandEffectorCS());
+    Dump(TEXT("RightHandTarget"), GetRightHandEffectorCS());
+
+#if !UE_BUILD_SHIPPING
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, Msg);
+#endif
 }
 
 // ============================================================================

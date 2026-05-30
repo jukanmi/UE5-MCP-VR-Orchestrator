@@ -129,13 +129,13 @@ public:
     // 이동 설정
     // ============================================================================
 
-    /** 스냅턴 각도 (기본 45°) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "15", ClampMax = "90"))
-    float SnapTurnAngle = 45.f;
+    /** 부드러운 회전 속도(초당 도). 오른 조이스틱 X 로 연속 회전. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "30", ClampMax = "180"))
+    float SmoothTurnRate = 90.f;
 
-    /** 스냅턴 쿨다운 — 연속 회전 방지 (초) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-    float SnapTurnCooldown = 0.25f;
+    /** 조이스틱 회전 입력 데드존. 이 미만은 무시. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "0.05", ClampMax = "0.5"))
+    float TurnInputDeadzone = 0.15f;
 
     // ============================================================================
     // 전투
@@ -194,6 +194,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "5.0"))
     float CalibrationDuration = 2.f;
 
+    /** 시야 높이 오프셋(cm, 음수=내림). VROrigin Z에 더해 카메라+컨트롤러 트래킹
+     *  공간을 통째로 내림 — 아바타 머리 본이 시야보다 위로 뜰 때 시야를 머리로 맞춤.
+     *  부모(VROrigin)에 적용해 HMD 레이트업데이트가 안 덮음. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-40.0", ClampMax = "10.0"))
+    float CameraHeightOffset = -30.f;
+
     /** 자세 전이 시 브로드캐스트. AnimBP / UI 가 바인딩. */
     UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
     FOnVRPostureChanged OnPostureChanged;
@@ -215,13 +221,27 @@ public:
     /** 손 그립 축 보정 — 컨트롤러 그립 포즈 축과 메시 손 본 축이 달라서 생기는
      *  손목 회전 오차를 상쇄. 손 로컬 공간에 적용되므로 손이 움직여도 유지됨.
      *  에디터 Details 에서 라이브 튜닝(리빌드 불필요). 좌우 미러라 값이 다름. */
-    // X_Bot 손 본 기준 튜닝값. FRotator(Pitch, Yaw, Roll).
-    // Left  = Roll 90, Pitch 180, Yaw 0  /  Right = Roll -90, Pitch 0, Yaw 0
+    // X_Bot 본 축과 HMD/컨트롤러 축 차이 보정. 손 로컬 공간 우측곱(손 회전해도 유지).
+    // FRotator(Pitch, Yaw, Roll). 에디터 Details 라이브 튜닝(리빌드 불필요).
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator LeftHandGripOffset = FRotator(180.f, 0.f, 90.f);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator RightHandGripOffset = FRotator(0.f, 0.f, -90.f);
+
+    /** 머리 본 축 보정 — HMD 카메라 축과 head 본 축 차이 상쇄(머리 꺾임 교정). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
+
+    /** 캘리브레이션 시 아바타를 플레이어 키 비율로 스케일할지. 끄면 네이티브 크기.
+     *  켜면 아바타 팔길이도 같이 줄어 손 IK 타겟에 자연히 닿음(팔꿈치 과접힘 방지). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    bool bScaleAvatarToPlayer = true;
+
+    /** 아바타 네이티브 정자세 눈높이(cm). 스케일 = CalibratedStandingHeight / 이 값.
+     *  X_Bot 기준 실측해 조정(팔 길이가 맞을 때까지). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK", meta = (ClampMin = "120.0", ClampMax = "200.0"))
+    float AvatarReferenceHeight = 170.f;
 
     /** HMD(VRCamera)를 몸체 메시 공간으로 변환한 Head Effector Transform. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
@@ -268,7 +288,8 @@ public:
 private:
     // --- 입력 핸들러 ---
     void OnMove(const FInputActionValue& Value);
-    void OnSnapTurn(const FInputActionValue& Value);
+    void OnTurn(const FInputActionValue& Value);
+    void OnTurnReleased(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
     void OnInteract(const FInputActionValue& Value);
 
@@ -276,8 +297,11 @@ private:
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */
     void SyncCapsuleToHMD();
 
-    bool bSnapTurnCooling = false;
-    FTimerHandle SnapTurnCooldownTimer;
+    /** 오른 조이스틱 X 입력만큼 액터를 매 프레임 연속 회전 — 매 Tick 호출 */
+    void UpdateSmoothTurn(float DeltaTime);
+
+    /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
+    float TurnAxisInput = 0.f;
 
     // --- 자세 시스템 내부 상태 ---
 
@@ -318,6 +342,11 @@ private:
     /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
     UFUNCTION(Exec)
     void SendNPCDialogue(const FString& Text);
+
+    /** 콘솔 진단 — 아바타 팔길이 vs 컨트롤러 도달거리 + 현재 스케일 로그/화면 출력.
+     *  팔 뻗은 자세에서 호출해 비율 확인. Reach > ArmLen 이면 아바타 팔이 짧음. */
+    UFUNCTION(Exec)
+    void LogIKMetrics();
 
     // --- 전투 ---
     UFUNCTION()
