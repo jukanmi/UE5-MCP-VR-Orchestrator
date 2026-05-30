@@ -365,11 +365,14 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         final_action.AgentID if final_action else target_npc_from_payload
     )
     dialogue_text_for_audio: Optional[str] = None
+    dialogue_emotion: str = "Neutral"   # M3: Dialogue 액션 FacialState → TTS emotion
     if final_action and final_action.Actions:
         for act in final_action.Actions:
             if act.ActionType == "Dialogue":
                 # NPCActionKeys::Key_Text == "text"
                 dialogue_text_for_audio = act.Parameters.get("text") or None
+                # FacialState(9종) 를 그대로 emotion 으로 — TTSService 가 정규화/매핑.
+                dialogue_emotion = act.FacialState or "Neutral"
                 if dialogue_text_for_audio:
                     break
 
@@ -377,7 +380,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
-            emotion="neutral",  # M2 무시. M3 에서 ActionBatch.FacialState 매핑 검토.
+            emotion=dialogue_emotion,
         ))
     elif npc_id_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
