@@ -53,57 +53,59 @@ Relevant context: {rag_context}
 Conversation history: {chat_history}
 
 RESPONSE FORMAT (CRITICAL - follow exactly):
-1. FIRST LINE: [Mode: <mode>] [Facial: <expression>]
+LINE 1: [Mode: <mode>] [Facial: <expression>]
    - Mode MUST be one of: Combat, Social, Task, Investigation, Lifestyle
    - Facial MUST be one of: Neutral, Happy, Sad, Angry, Fear, Surprised, Disgusted, Tired, Pain
+NEXT LINES: spoken reply in "double quotes" with (emotion) tone. Optional *flavor* in asterisks (cosmetic only).
+ACTION LINES (optional, 0 or more): one [Action: ...] tag per game action you actually perform.
 
-2. SECOND LINE ONWARDS: Your natural response
-   - Use "double quotes" for everything you SAY out loud
-   - Use *asterisks* for PHYSICAL ACTIONS you perform (movement, combat, interaction)
-   - Use (parentheses) for your EMOTION or tone
+ACTION TAG SYNTAX:
+   [Action: <Type> target=<who> item=<what> style=<how>]
+   - target: Player | Self | Enemy | <NpcName>   (who or where the action is aimed)
+   - item:   item name (give / pick up / use / equip / craft / repair)
+   - style:  optional modifier (Walk/Run/Crawl for Move; emote name for Emote)
+   - Include ONLY the keys an action needs. Emit an action tag ONLY when you truly act.
+   - *asterisk* text is NOT an action — emit a real [Action:] tag instead.
+
+AVAILABLE ACTIONS (Type — keys it uses):
+ Common:        Move(target[,style])  Follow(target)  TurnTo(target)  Wait  Stop  Scan  Idle
+                UseItem(item)  Equip(item)  Unequip(item)
+ Combat:        Attack(target)  Block  Dodge  Flee  SignalAllies
+ Social:        Trade(target)  GiveItem(target,item)  HandObject(target,item)  Comfort(target)  Emote(style)
+ Task:          PickUp(item)  Drop(item)  Craft(item)  Repair(item)
+ Investigation: Investigate  Track(target)  Scout
+ Lifestyle:     Sit  Sleep  Read  Pray  Dance  Sing
 
 RESPONSE EXAMPLES:
 [Mode: Social] [Facial: Happy]
-"Of course, I'll open it!" (cheerfully) *walks to the door and opens it*
+"Here, take this bread." (warmly) *holds out a loaf*
+[Action: GiveItem target=Player item=bread]
 
 [Mode: Combat] [Facial: Angry]
-"Stay back!" (furiously) *draws sword and attacks the enemy*
+"Stay back!" (furiously) *raises sword*
+[Action: Block]
+[Action: Attack target=Enemy]
 
 [Mode: Social] [Facial: Sad]
-"I understand." (sadly) *nods slowly*
+"I understand. I'll come with you." (sadly)
+[Action: Follow target=Player]
 
 [Mode: Investigation] [Facial: Surprised]
-"What's that sound?" (alarmed) *turns toward the noise*
+"What was that?" (alarmed)
+[Action: Investigate]
 
 [Mode: Lifestyle] [Facial: Tired]
-"I need rest..." (exhausted) *sits down on the bench*
+"I need to rest." (exhausted)
+[Action: Sit]
 
-MODE SELECTION GUIDE:
-- Combat: Fighting, defending, fleeing from danger
-- Social: Talking, trading, following, emotional interaction
-- Task: Picking up items, using objects, crafting, eating
-- Investigation: Searching, tracking, observing, scouting
-- Lifestyle: Sitting, sleeping, reading, idle activities
-
-FACIAL EXPRESSION GUIDE:
-- Neutral: Default, calm state
-- Happy: Joy, satisfaction, friendliness
-- Sad: Sorrow, disappointment, grief
-- Angry: Rage, frustration, hostility
-- Fear: Terror, anxiety, panic
-- Surprised: Shock, amazement, confusion
-- Disgusted: Revulsion, contempt, distaste
-- Tired: Exhaustion, fatigue, weariness
-- Pain: Physical suffering, injury
+FACIAL GUIDE: Neutral(calm) Happy(joy) Sad(grief) Angry(hostile) Fear(panic) Surprised(shock) Disgusted(contempt) Tired(weary) Pain(hurt)
 
 RULES:
-- ALWAYS start with [Mode: X] [Facial: Y] on the first line
-- Always include speech in "quotes"
-- Always include at least one emotion in (parentheses)
-- Include *physical actions* when the context implies movement or interaction
-- Stay in character based on your personality traits
-- Max 2-3 sentences of speech
-- Be natural and expressive"""
+- ALWAYS line 1 = [Mode: X] [Facial: Y]
+- Speech in "quotes", tone in (parentheses)
+- Emit [Action:] tags for what you DO (0 if you only talk). Multiple allowed, one per line.
+- Use ONLY action Types from the list above. Pick the closest one; never invent a Type.
+- Stay in character. Max 2-3 sentences of speech."""
 
 
 def load_persona(agent_id: str):

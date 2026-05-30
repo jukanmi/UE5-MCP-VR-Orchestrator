@@ -109,10 +109,13 @@ def interface_output_node(state: AgentState):
         print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
-    action_batch = None
+    # 2단계: [Action:] 구조화 태그 파싱(원문 기준 — clean_response 는 [Mode]/[Facial] 만 제거).
+    tag_actions = _parse_action_tags(raw_response, facial_state)
+    if tag_actions:
+        print(f"[Interface Output] [Action:] 태그 {len(tag_actions)}개 파싱")
 
-    # 2단계: Regex 파싱 (dialogue.py 출력 형식 기준)
-    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
+    # 3단계: Dialogue + 액션 배치 (태그 우선, 없으면 asterisk 폴백)
+    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state, tag_actions)
 
     if action_batch and action_batch.Actions:
         print(f"[Interface Output] Regex 파싱 성공: {len(action_batch.Actions)}개 액션")
@@ -131,12 +134,62 @@ def interface_output_node(state: AgentState):
 
 
 
+# C++ EAction(NPCActionTypes.h) 34종 — LLM [Action:] Type 검증용 (canonical 케이스).
+VALID_ACTIONS = {
+    "Idle", "Move", "Follow", "Wait", "Dialogue", "TurnTo", "Stop", "Scan",
+    "UseItem", "Equip", "Unequip",
+    "Attack", "Block", "Dodge", "Flee", "SignalAllies",
+    "Trade", "Emote", "GiveItem", "Comfort", "HandObject",
+    "PickUp", "Drop", "Craft", "Repair",
+    "Investigate", "Track", "Scout",
+    "Sit", "Sleep", "Read", "Pray", "Dance", "Sing",
+}
+_VALID_ACTIONS_LOWER = {a.lower(): a for a in VALID_ACTIONS}
+
+# 태그 키 → Parameters 키 (CLAUDE.md §1: Parameters 는 snake_case, NPCActionKeys 정합).
+_PARAM_KEY_MAP = {
+    "target": "target_id", "item": "item", "loc": "target_loc",
+    "location": "target_loc", "style": "style", "direction": "direction",
+    "duration": "duration",
+}
+
+
+def _parse_action_tags(raw_response: str, facial_state: str) -> list:
+    """[Action: <Type> k=v ...] 태그들을 GameAction 리스트로.
+
+    target 등 의미키워드(Player/Self/Enemy/<NpcName>) 는 그대로 Parameters 에 담고,
+    실제 AgentID/아이템 해석은 C++(perception/inventory) 책임.
+    """
+    from ..schemas.actions import GameAction
+    out = []
+    for m in re.finditer(r'\[Action:\s*([^\]]+)\]', raw_response, re.IGNORECASE):
+        body = m.group(1).strip()
+        tmatch = re.match(r'([A-Za-z]+)', body)
+        if not tmatch:
+            continue
+        canon = _VALID_ACTIONS_LOWER.get(tmatch.group(1).lower())
+        if not canon:
+            print(f"[Interface Output] 알 수 없는 Action Type 무시: {tmatch.group(1)!r}")
+            continue
+        params = {}
+        for k, v in re.findall(r'(\w+)\s*=\s*("[^"]*"|\S+)', body):
+            key = _PARAM_KEY_MAP.get(k.lower())
+            val = v.strip('"').strip()
+            if key and val:
+                params[key] = val
+        out.append(GameAction(ActionType=canon, FacialState=facial_state, Parameters=params))
+    return out
+
+
 def _regex_fallback_parse(raw_response: str, npc_id: str,
                           behavior_mode: str = "Common",
-                          facial_state: str = "Neutral") -> ActionBatch:
+                          facial_state: str = "Neutral",
+                          tag_actions: list = None) -> ActionBatch:
     """
-    Regex 기반 폴백 파서.
-    CLI 실패 시 raw_response에서 "quotes", *asterisks*, (emotions)를 직접 추출.
+    raw_response 에서 Dialogue("quotes") + 게임 액션을 추출.
+    액션 소스 우선순위:
+      ① [Action:] 구조화 태그(tag_actions) — 1순위. 있으면 asterisk 키워드 매핑 생략.
+      ② 폴백: *asterisk* 자연어 키워드 매핑 (태그를 안 쓴 모델 대비).
     """
     from ..schemas.actions import GameAction
     actions = []
@@ -159,12 +212,15 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
             Parameters={"text": speech_matches[0], "emotion": emotion},
         ))
 
-    # 2. 물리 액션 추출 (*asterisks* → 해당 ActionType 매핑)
-    action_matches = re.findall(r'\*([^*]+)\*', raw_response)
-    for action_text in action_matches:
-        parsed = _parse_natural_action(action_text, behavior_mode)
-        if parsed:
-            actions.append(parsed)
+    # 2. 게임 액션 — [Action:] 태그 1순위, 없으면 asterisk 키워드 폴백
+    if tag_actions:
+        actions.extend(tag_actions)
+    else:
+        action_matches = re.findall(r'\*([^*]+)\*', raw_response)
+        for action_text in action_matches:
+            parsed = _parse_natural_action(action_text, behavior_mode)
+            if parsed:
+                actions.append(parsed)
 
     # 3. 아무 액션도 없으면 전체를 Dialogue로 처리 — FacialState 는 태그값 유지
     if not actions:
