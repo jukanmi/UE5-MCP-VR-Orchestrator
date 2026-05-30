@@ -15,6 +15,7 @@ class UCameraComponent;
 class UMotionControllerComponent;
 class UAnimMontage;
 class USkeletalMeshComponent;
+class UVoiceInputComponent;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
 UENUM(BlueprintType)
@@ -88,6 +89,10 @@ public:
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
+    /** 음성 입력 — push-to-talk 마이크 캡처 → ASR → transcript → 대화. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
+    UVoiceInputComponent* VoiceInput;
+
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
     // ============================================================================
@@ -124,6 +129,10 @@ public:
     /** A버튼 → NPC 상호작용 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_Interact;
+
+    /** Push-to-talk — 누름(Started) StartTalking, 뗌(Completed) StopTalking */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_VoiceInput;
 
     // ============================================================================
     // 이동 설정
@@ -292,6 +301,11 @@ private:
     void OnTurnReleased(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
     void OnInteract(const FInputActionValue& Value);
+    void OnVoiceStart(const FInputActionValue& Value);
+    void OnVoiceStop(const FInputActionValue& Value);
+
+    /** ASR transcript 확정 → NPCManager::SendPlayerDialogue 로 전달. */
+    void HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript);
 
     // --- 로코모션 ---
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */
