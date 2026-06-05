@@ -91,6 +91,18 @@ _active_llm_ws: Optional[WebSocket] = None
 # fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
 _background_tasks: set = set()
 
+# Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
+# TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
+_ollama_client = None
+
+
+def _get_ollama_client():
+    global _ollama_client
+    import httpx
+    if _ollama_client is None or _ollama_client.is_closed:
+        _ollama_client = httpx.AsyncClient(timeout=20.0)
+    return _ollama_client
+
 
 @app.get("/")
 async def health_check():
@@ -595,8 +607,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
         }
         _llm_start = _t.perf_counter()
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(f"{ollama_base}/api/generate", json=body)
+        resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
         _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
         raw_text = (resp.json().get("response") or "").strip()
         logger.info(f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})")
