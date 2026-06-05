@@ -197,8 +197,10 @@ void UVoiceInputComponent::HandleAsrMessage(const FString& Message)
     {
         FString Transcript;
         Obj->TryGetStringField(TEXT("transcript"), Transcript);
-        const FString Target = Obj->HasField(TEXT("target_npc_id")) ? Obj->GetStringField(TEXT("target_npc_id")) : PendingTargetNpc;
-        const FString Player = Obj->HasField(TEXT("player_id")) ? Obj->GetStringField(TEXT("player_id")) : PendingPlayerId;
+        FString Target = PendingTargetNpc;
+        Obj->TryGetStringField(TEXT("target_npc_id"), Target);
+        FString Player = PendingPlayerId;
+        Obj->TryGetStringField(TEXT("player_id"), Player);
 
         UE_LOG(LogTemp, Log, TEXT("[Voice] final transcript=\"%s\" target=%s"), *Transcript, *Target);
         if (!Transcript.IsEmpty() && OnTranscriptReady.IsBound())
