@@ -24,15 +24,17 @@
 - [ ] ChatWidget 스크린스페이스 → WorldSpace 전환 (WristWidgetComp, BP_ChatWidget "Is Variable" → World Space)
 - [ ] ChatWidget 폰트 크기 VR 용 확대
 - [ ] 텍스트 입력 — Meta Quest 시스템 키보드 (`UMetaXRInputFunctionLibrary::ShowVirtualKeyboard()`, MetaXR)
+- [ ] WorldSpace 위젯 레이캐스트/손가락 상호작용 셋업 (PDF 설계서 §7.2): ① Widget Trace Response Ignore→**Block** ② `Set Input Mode Game and UI` (하이브리드 포커싱) ③ Widget Component `Receive Hardware Input` 활성
 
 ### TTS 잔여
 - [ ] 지연 측정 수치 기록 — T0(PlayFromUrl)→T1(WS Connected)→T2(첫 청크)→Play() 실측, 목표 < 600ms
 
 #### M3 — 운영 강화
-- [ ] TTS 타임아웃·재시도 정책 (현재 단발 실패 시 자막만)
-- [ ] `request_id` 기반 로그 trace (LLM ↔ TTS ↔ UE5 일관성)
-- [ ] 동시 발화 1–2 NPC 큐잉 검증
-- [ ] LLM 스트리밍 도입 여부 재검토
+- [x] TTS 타임아웃·재시도 정책 — tts_client 0.2s 백오프 1회 재시도, 실패 시 자막 fallback (2026-06-05)
+- [x] `request_id` 기반 로그 trace — msg_id→request_id 상속, `[trace=]` 로그태그 (main.py·tts_client·server.py) (2026-06-05)
+- [ ] 동시 발화 1–2 NPC 큐잉 검증 (런타임 검증 필요)
+- [ ] LLM 스트리밍 도입 여부 재검토 — 도입 시 문장단위(마침표/쉼표) 조기 전송 + 청크 합성
+- [ ] 청크 이음새 튀는 소리 제거 — `cross_fade_duration=0.15` 적용 (PDF 설계서 §6.2)
 
 #### M4 (선택) — 표정·제스처 동기화
 - [ ] MetaHuman Lip Sync 또는 Audio2Face 에 오디오 스트림 분기
@@ -46,12 +48,21 @@
 - [ ] ASR 결과 → NPCManager → LLM 전달 (send 진입점 `UNPCManager::SendPlayerDialogue` 재사용)
 - [ ] (전환 완료 후) ChatWidget 채팅 기록 코드 정리 또는 레거시 모드로 분리
 
+### RAG 지식 충전 (NPC 페르소나 미로드 — `No documents found for Skadi`)
+- [ ] NPC별 설정 텍스트(lore/persona/history) 작성 → `utils/memory_manager.py` 로 청킹·임베딩 적재
+- [ ] 임베딩은 **로컬** `models/embeddings/all-MiniLM-L6-v2` 사용 (PDF의 `text-embedding-3-small` 은 오기재 — 클라우드 금지)
+- [ ] 벡터 스키마: `memory_id / npc_id / chunk_category(lore·persona·history) / raw_text / embedding_vector`
+- [ ] 검색 순서 = 메타필터(`where npc_id==current`) **먼저** → ANN 상위 3~5개만 프롬프트 주입 (할루 차단)
+- [ ] 데이터 대량화 대비 HNSW(또는 IVF_FLAT) 인덱스 파라미터 명시 (PDF 설계서 §5)
+
 ### Phase 6 — VR 자세 동기화 멀티플레이어 (우선순위 낮음)
 - [ ] AVRPawn 리플리케이션 — bReplicates=true, ReplicateMovement, Component Replicates
 - [ ] EVRPosture `ReplicatedUsing=OnRep_Posture` — Enum 만 전송 (저주파, RPC 파라미터)
 - [ ] HMD/양손 Transform VROrigin 기준 Relative 직렬화 후 Multicast RPC — World 좌표 금지
-- [ ] OnRep_Posture 에서 SetCapsuleHalfHeight + VInterpTo 보간 원격 클라이언트 자체 실행
-- [ ] 참고: PDF §"멀티플레이어 환경의 네트워크 리플리케이션 및 패킷 최적화 전략"
+- [ ] 캡슐/VROrigin = CharacterMovementComponent 서버검증 복제 / HMD·손 = 상대벡터만 ~0.25s 틱 RPC (계층 분리)
+- [ ] OnRep_Posture 에서 SetCapsuleHalfHeight + VInterpTo(위치)·**RInterpTo(회전)** 보간 — Snap 금지, 원격 클라 자체 실행
+- [ ] Remote proxy 카메라 컴포넌트 `DestroyComponent` (`!IsLocallyControlled` 확인) — 렌더/오버헤드 차단
+- [ ] 참고: PDF 설계서 §7 (상대좌표 복제 / World UI)
 
 ### BehaviorTree → StateTree 마이그레이션 (잔여, 에디터)
 - [ ] `ST_NPC.uasset` Transition 조건(`bHasAction==true`) 및 Evaluator 연결 확인

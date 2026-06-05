@@ -65,6 +65,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void UnregisterNPC(const FString& AgentID);
 
+    /** AgentID 로 등록된 NPC 조회 (없으면 nullptr). LLM target_id 키워드 해석용. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
+    ASmartNPC* GetNPCById(const FString& AgentID) const;
+
     // === 취합된 긴급 인지 이벤트 전송 (단일 LLM 채널, Python이 SLM/LLM 자동 라우팅) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEventReport(const FString& AgentID, const FString& CombinedPayload);

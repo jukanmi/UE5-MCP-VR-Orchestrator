@@ -109,10 +109,13 @@ def interface_output_node(state: AgentState):
         print(f"[Interface Output] Parsed Mode={behavior_mode}, Facial={facial_state}")
     print(f"[Interface Output] Structuring: '{clean_response[:80]}...'")
 
-    action_batch = None
+    # 2단계: [Action:] 구조화 태그 파싱(원문 기준 — clean_response 는 [Mode]/[Facial] 만 제거).
+    tag_actions = _parse_action_tags(raw_response, facial_state)
+    if tag_actions:
+        print(f"[Interface Output] [Action:] 태그 {len(tag_actions)}개 파싱")
 
-    # 2단계: Regex 파싱 (dialogue.py 출력 형식 기준)
-    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state)
+    # 3단계: Dialogue + 액션 배치 (태그 우선, 없으면 asterisk 폴백)
+    action_batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state, tag_actions)
 
     if action_batch and action_batch.Actions:
         print(f"[Interface Output] Regex 파싱 성공: {len(action_batch.Actions)}개 액션")
@@ -121,6 +124,7 @@ def interface_output_node(state: AgentState):
         print("[Interface Output] 액션 없음, 전체 텍스트를 Dialogue로 처리")
         action_batch = _create_empty_batch(npc_id)
         action_batch.Actions[0].Parameters["text"] = clean_response[:200]
+        action_batch.Actions[0].FacialState = facial_state  # 태그값 유지(중립 강제 X)
 
     return {
         "action_batch": action_batch,
@@ -130,12 +134,64 @@ def interface_output_node(state: AgentState):
 
 
 
+# C++ EAction(NPCActionTypes.h) 34종 — LLM [Action:] Type 검증용 (canonical 케이스).
+VALID_ACTIONS = {
+    "Idle", "Move", "Follow", "Wait", "Dialogue", "TurnTo", "Stop", "Scan",
+    "UseItem", "Equip", "Unequip",
+    "Attack", "Block", "Dodge", "Flee", "SignalAllies",
+    "Trade", "Emote", "GiveItem", "Comfort", "HandObject",
+    "PickUp", "Drop", "Craft", "Repair",
+    "Investigate", "Track", "Scout",
+    "Sit", "Sleep", "Read", "Pray", "Dance", "Sing",
+}
+_VALID_ACTIONS_LOWER = {a.lower(): a for a in VALID_ACTIONS}
+
+# 태그 키 → Parameters 키 (CLAUDE.md §1: Parameters 는 snake_case, NPCActionKeys 정합).
+_PARAM_KEY_MAP = {
+    "target": "target_id", "item": "item", "loc": "target_loc",
+    "location": "target_loc", "style": "style", "direction": "direction",
+    "duration": "duration",
+}
+
+
+def _parse_action_tags(raw_response: str, facial_state: str) -> list:
+    """[Action: <Type> k=v ...] 태그들을 GameAction 리스트로.
+
+    target 등 의미키워드(Player/Self/Enemy/<NpcName>) 는 그대로 Parameters 에 담고,
+    실제 AgentID/아이템 해석은 C++(perception/inventory) 책임.
+    """
+    from ..schemas.actions import GameAction
+    out = []
+    for m in re.finditer(r'\[Action:\s*([^\]]+)\]', raw_response, re.IGNORECASE):
+        body = m.group(1).strip()
+        tmatch = re.match(r'([A-Za-z]+)', body)
+        if not tmatch:
+            continue
+        canon = _VALID_ACTIONS_LOWER.get(tmatch.group(1).lower())
+        if not canon:
+            print(f"[Interface Output] 알 수 없는 Action Type 무시: {tmatch.group(1)!r}")
+            continue
+        params = {}
+        for k, v in re.findall(r'(\w+)\s*=\s*("[^"]*"|\S+)', body):
+            # LLM 이 이미 올바른 snake_case 키(target_id 등)를 직접 출력하면
+            # 매핑 테이블에 없어도 그대로 사용 (무시 방지).
+            key = _PARAM_KEY_MAP.get(k.lower(), k.lower())
+            val = v.strip('"').strip()
+            if key and val:
+                params[key] = val
+        out.append(GameAction(ActionType=canon, FacialState=facial_state, Parameters=params))
+    return out
+
+
 def _regex_fallback_parse(raw_response: str, npc_id: str,
                           behavior_mode: str = "Common",
-                          facial_state: str = "Neutral") -> ActionBatch:
+                          facial_state: str = "Neutral",
+                          tag_actions: list = None) -> ActionBatch:
     """
-    Regex 기반 폴백 파서.
-    CLI 실패 시 raw_response에서 "quotes", *asterisks*, (emotions)를 직접 추출.
+    raw_response 에서 Dialogue("quotes") + 게임 액션을 추출.
+    액션 소스 우선순위:
+      ① [Action:] 구조화 태그(tag_actions) — 1순위. 있으면 asterisk 키워드 매핑 생략.
+      ② 폴백: *asterisk* 자연어 키워드 매핑 (태그를 안 쓴 모델 대비).
     """
     from ..schemas.actions import GameAction
     actions = []
@@ -143,30 +199,52 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
     # 1. 대사 추출 ("quotes" → Dialogue 액션)
     speech_matches = re.findall(r'"([^"]+)"', raw_response)
     if speech_matches:
+        # FacialState 소스 우선순위:
+        #   ① [Facial: X] 태그(facial_state) — 프롬프트가 강제, 9종 검증됨(1순위)
+        #   ② 괄호 톤워드 (furiously) — 태그가 Neutral/누락일 때만 폴백
+        # WHY: 태그가 더 신뢰. 자유 톤워드(coldly/menacingly 등)는 매핑 실패해
+        #      Neutral 로 죽으므로, 검증된 태그를 우선해 감정 음색을 살린다.
         emotion_matches = re.findall(r'\(([^)]+)\)', raw_response)
-        emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
+        paren_emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
+        emotion = facial_state if facial_state != "Neutral" else paren_emotion
 
         actions.append(GameAction(
             ActionType="Dialogue",
             FacialState=emotion,
             Parameters={"text": speech_matches[0], "emotion": emotion},
         ))
+    else:
+        # 따옴표 없이 액션 태그만 출력한 경우 NPC 가 침묵하지 않도록 —
+        # [Action:]/괄호/별표 제거한 잔여 텍스트가 있으면 Dialogue 로 폴백.
+        bare = re.sub(r'\[Action:\s*[^\]]+\]', '', raw_response, flags=re.IGNORECASE)
+        bare = re.sub(r'[*()]', '', bare).strip()
+        if bare:
+            actions.append(GameAction(
+                ActionType="Dialogue",
+                FacialState=facial_state,
+                Parameters={"text": bare[:200], "emotion": facial_state},
+            ))
 
-    # 2. 물리 액션 추출 (*asterisks* → 해당 ActionType 매핑)
-    action_matches = re.findall(r'\*([^*]+)\*', raw_response)
-    for action_text in action_matches:
-        parsed = _parse_natural_action(action_text, behavior_mode)
-        if parsed:
-            actions.append(parsed)
+    # 2. 게임 액션 — [Action:] 태그 1순위, 없으면 asterisk 키워드 폴백
+    if tag_actions:
+        actions.extend(tag_actions)
+    else:
+        action_matches = re.findall(r'\*([^*]+)\*', raw_response)
+        for action_text in action_matches:
+            parsed = _parse_natural_action(action_text, behavior_mode)
+            if parsed:
+                actions.append(parsed)
 
-    # 3. 아무 액션도 없으면 전체를 Dialogue로 처리
+    # 3. 아무 액션도 없으면 전체를 Dialogue로 처리 — FacialState 는 태그값 유지
     if not actions:
-        clean_text = re.sub(r'[*()]', '', raw_response).strip()
+        # [Action:] 태그가 남아 NPC 가 태그를 직접 발화하는 것 방지(폴백 누수 차단).
+        clean_text = re.sub(r'\[Action:\s*[^\]]+\]', '', raw_response, flags=re.IGNORECASE)
+        clean_text = re.sub(r'[*()]', '', clean_text).strip()
         if clean_text:
             actions.append(GameAction(
                 ActionType="Dialogue",
-                FacialState="Neutral",
-                Parameters={"text": clean_text[:200], "emotion": "Neutral"},
+                FacialState=facial_state,
+                Parameters={"text": clean_text[:200], "emotion": facial_state},
             ))
 
     return ActionBatch(

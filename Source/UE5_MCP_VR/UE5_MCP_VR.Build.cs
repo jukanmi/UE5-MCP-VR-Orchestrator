@@ -12,6 +12,9 @@ public class UE5_MCP_VR : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "JsonUtilities" });
 
+		// ASR 음성 입력 — 마이크 캡처 (Audio::FAudioCapture)
+		PrivateDependencyModuleNames.AddRange(new string[] { "AudioCapture", "AudioCaptureCore" });
+
 		// Uncomment if you are using Slate UI
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

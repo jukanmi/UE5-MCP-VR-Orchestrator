@@ -18,6 +18,7 @@
 #include "../NPC/NPCManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
+#include "VoiceInputComponent.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 
 // ============================================================================
@@ -67,6 +68,9 @@ AVRPawn::AVRPawn()
     StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
     StimuliSource->RegisterWithPerceptionSystem();
 
+    // 음성 입력 컴포넌트
+    VoiceInput = CreateDefaultSubobject<UVoiceInputComponent>(TEXT("VoiceInput"));
+
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
     bUseControllerRotationPitch = false;
@@ -88,6 +92,18 @@ AVRPawn::AVRPawn()
 void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
+
+    // 음성 입력 — 대상/플레이어 공급자 + transcript 콜백 바인딩
+    if (VoiceInput)
+    {
+        VoiceInput->ResolveTargetNpc = [this]()
+        {
+            if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
+            return CurrentTargetNPCID;
+        };
+        VoiceInput->ResolvePlayerId = [this]() { return GetName(); };
+        VoiceInput->OnTranscriptReady.BindUObject(this, &AVRPawn::HandleVoiceTranscript);
+    }
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
     // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
@@ -345,6 +361,13 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         }
         if (IA_Attack)        EIC->BindAction(IA_Attack,        ETriggerEvent::Started,   this, &AVRPawn::OnAttack);
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
+        if (IA_VoiceInput)
+        {
+            // Push-to-talk: 누름 시작 → 녹음, 뗌 → 종료
+            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Started,   this, &AVRPawn::OnVoiceStart);
+            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Completed, this, &AVRPawn::OnVoiceStop);
+            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Canceled,  this, &AVRPawn::OnVoiceStop);
+        }
     }
 }
 
@@ -541,6 +564,35 @@ void AVRPawn::SendNPCDialogue(const FString& Text)
         {
             // player_id = actor 이름 — affinity DB 키와 일치
             Manager->SendPlayerDialogue(GetName(), CurrentTargetNPCID, Text);
+        }
+    }
+}
+
+void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
+{
+    if (VoiceInput) VoiceInput->StartTalking();
+}
+
+void AVRPawn::OnVoiceStop(const FInputActionValue& Value)
+{
+    if (VoiceInput) VoiceInput->StopTalking();
+}
+
+void AVRPawn::HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript)
+{
+    // ASR transcript → 기존 단순 대화 경로 재사용. 대상은 ASR 가 echo 한 값 우선,
+    // 없으면 현재 타겟. 스텁 transcript("[ASR stub] …")도 그대로 흘려보내 end-to-end 검증.
+    const FString Target = TargetNpc.IsEmpty() ? CurrentTargetNPCID : TargetNpc;
+    if (Target.IsEmpty() || Transcript.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Voice transcript 폐기 — target/transcript 비어있음"));
+        return;
+    }
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        {
+            Manager->SendPlayerDialogue(PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
         }
     }
 }

@@ -156,10 +156,58 @@
   </div>
 </div>
 
+<!-- ─── NPC 대화 테스트 (말 걸기) ───────────────────────────────── -->
+<div class="section">
+  <div class="section-title">NPC 대화 테스트 (말 걸기 → LLM 응답)</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <label style="font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      NPC ID
+      <input type="text" id="talkNpc" placeholder="Skadi" style="width:120px">
+    </label>
+    <label style="flex:1;min-width:240px;font-size:0.75rem;color:#64748b;display:flex;flex-direction:column;gap:4px">
+      할 말
+      <input type="text" id="talkText" placeholder="안녕, 사과 하나 줄래?" onkeydown="if(event.key==='Enter')talkToNpc()">
+    </label>
+    <button class="btn-save" onclick="talkToNpc()">▶ 말 걸기</button>
+  </div>
+  <pre id="talkResult" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;font-size:0.8rem;color:#cbd5e1;white-space:pre-wrap;min-height:40px;margin:0">응답이 여기 표시됩니다. (UE 없이 LLM→ActionBatch 확인용)</pre>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 const API = '';
+
+// ─── NPC 대화 테스트 — UE 없이 prompt → ActionBatch 확인 ───
+async function talkToNpc() {
+  const npc = document.getElementById('talkNpc').value.trim();
+  const text = document.getElementById('talkText').value.trim();
+  const out = document.getElementById('talkResult');
+  if (!npc || !text) { showToast('NPC ID와 할 말을 입력하세요', false); return; }
+  out.textContent = '⏳ LLM 응답 대기 중...';
+  try {
+    const res = await fetch(`${API}/api/debug/prompt`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({npc_id: npc, text: text})
+    });
+    if (!res.ok) { out.textContent = '❌ ' + res.status + ' ' + await res.text(); return; }
+    out.textContent = formatBatch(await res.json());
+  } catch(e) { out.textContent = '❌ ' + e; }
+}
+function formatBatch(data) {
+  const lines = ['Mode: ' + (data.Mode || '?')];
+  const batches = data.ActionBatches || {};
+  if (Object.keys(batches).length === 0) lines.push('(ActionBatch 비어있음)');
+  for (const npc in batches) {
+    const b = batches[npc];
+    lines.push(`\n[${npc}] (${b.Mode})`);
+    for (const a of (b.Actions || [])) {
+      const p = Object.entries(a.Parameters || {}).map(([k,v]) => `${k}=${v}`).join('  ');
+      lines.push(`  • ${a.ActionType}   facial=${a.FacialState}` + (p ? `   ${p}` : ''));
+    }
+  }
+  return lines.join('\n');
+}
 
 function showToast(msg, ok=true) {
   const t = document.getElementById('toast');

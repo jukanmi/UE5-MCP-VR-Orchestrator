@@ -22,7 +22,7 @@ EAction = Literal[
     "Trade", "Emote", "GiveItem", "Comfort", "HandObject",
     "PickUp", "Drop", "Craft", "Repair",
     "Investigate", "Track", "Scout",
-    "Sit", "Sleep", "Clean", "Read", "Pray", "Dance", "Sing"
+    "Sit", "Sleep", "Read", "Pray", "Dance", "Sing"
 ]
 
 class GameAction(BaseModel):

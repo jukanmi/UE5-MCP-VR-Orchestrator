@@ -34,6 +34,10 @@ logging.basicConfig(
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
 
+# SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
+# 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
+SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
+
 async def _check_ollama_model() -> None:
     try:
         import httpx, time as _t
@@ -84,6 +88,8 @@ _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
+# fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
+_background_tasks: set = set()
 
 
 @app.get("/")
@@ -286,10 +292,19 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         payload = envelope.parse_emergency_report_payload()
         logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
+        # ── danger 게이트 ──────────────────────────────────────────────
+        # SLM Reflex 는 "긴급 전투(0.5초 반사)" 용. 친화적/저위협(예: 호감도 높은
+        # 플레이어를 시야에 둠, danger<0.5) perception 까지 매번 SLM 을 때리면
+        # 낭비·로그도배. 최고 danger 가 임계 미만이면 반사 생략(무행동).
+        max_danger = max((p.danger_score for p in payload.perceptions), default=0.0)
+        if max_danger < SLM_REFLEX_DANGER_THRESHOLD:
+            logger.info(
+                f"[Main] 비긴급(maxdanger={max_danger:.2f}<{SLM_REFLEX_DANGER_THRESHOLD}) "
+                f"— SLM Reflex 생략. npc={payload.agent_id}"
+            )
+            return ModeActionRequest(Mode="Common", ActionBatches={}).model_dump_json()
+
         # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
-        # 기존에는 무거운 LangGraph 파이프라인(26B 모델)을 전체 순회하여
-        # 수 초간의 지연이 발생했으나, 이제는 즉시 4B 경량 SLM 또는 키워드 폴백으로
-        # 우회 처리(Bypass)하여 체감 지연 시간을 제로에 가깝게 최적화함.
         logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
         return await _handle_slm_reflex(payload)
 
@@ -365,20 +380,33 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         final_action.AgentID if final_action else target_npc_from_payload
     )
     dialogue_text_for_audio: Optional[str] = None
+    dialogue_emotion: str = "Neutral"   # M3: Dialogue 액션 FacialState → TTS emotion
     if final_action and final_action.Actions:
         for act in final_action.Actions:
             if act.ActionType == "Dialogue":
                 # NPCActionKeys::Key_Text == "text"
                 dialogue_text_for_audio = act.Parameters.get("text") or None
+                # FacialState(9종) 를 그대로 emotion 으로 — TTSService 가 정규화/매핑.
+                dialogue_emotion = act.FacialState or "Neutral"
                 if dialogue_text_for_audio:
                     break
 
+    # 문장부호/공백만 있는 대사(예: "...")는 MeloTTS 가 엉뚱한 음("다" 등)으로
+    # 합성하므로 TTS 스킵. isalnum 은 한글 포함 유니코드 글자 판정.
+    has_speech = bool(dialogue_text_for_audio) and any(c.isalnum() for c in dialogue_text_for_audio)
+
     if npc_id_for_audio and dialogue_text_for_audio:
-        asyncio.create_task(_dispatch_npc_audio(
+        # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송 —
+        # NpcAudioResponse(빈 url)가 UE5 자막 경로이므로 dispatch 자체는 항상 수행.
+        task = asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
-            emotion="neutral",  # M2 무시. M3 에서 ActionBatch.FacialState 매핑 검토.
+            emotion=dialogue_emotion,
+            trace_id=envelope.msg_id,
+            bypass_tts=not has_speech,
         ))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
     elif npc_id_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
     else:
@@ -397,22 +425,30 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         return fallback.model_dump_json()
 
 
-async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> None:
+async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
+                              trace_id: str = "", bypass_tts: bool = False) -> None:
     """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
 
+    trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
+    bypass_tts: 글자 없는 대사("...") — TTS 합성 생략, 자막만 전송(빈 url).
     실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
     """
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
-    try:
-        info = await tts_client.synthesize(
-            text=dialogue_text,
-            voice_id=npc_id,
-            emotion=emotion,
-        )
-    except tts_client.TTSError as e:
-        logger.warning(f"[Main][TTS] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+    if bypass_tts:
+        logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
         info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+    else:
+        try:
+            info = await tts_client.synthesize(
+                text=dialogue_text,
+                voice_id=npc_id,
+                emotion=emotion,
+                trace_id=trace_id,
+            )
+        except tts_client.TTSError as e:
+            logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+            info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
     if _active_llm_ws is None:
         logger.info("[Main][TTS] 활성 UE5 WS 없음 — NpcAudioResponse 송신 생략")
@@ -431,7 +467,7 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> 
     )
     try:
         await _active_llm_ws.send_text(response.model_dump_json())
-        logger.info(f"[Main][TTS] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
+        logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
     except Exception as e:
         logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
 
@@ -724,6 +760,40 @@ async def api_npc_command(npc_id: str, req: NpcCommandRequest):
 @app.get("/api/ws/status")
 async def api_ws_status():
     return {"connected": _active_llm_ws is not None}
+
+
+class DebugPromptRequest(BaseModel):
+    npc_id: str
+    text: str
+    player_id: str = "Debug_Player"
+
+
+@app.post("/api/debug/prompt")
+async def api_debug_prompt(req: DebugPromptRequest):
+    """디버그: UE 없이 콘솔/웹에서 NPC 에게 직접 말 걸기.
+    PROMPT envelope 를 만들어 그래프 실행 → ActionBatch(JSON) 반환.
+    TTS dispatch 도 _handle_prompt 내부에서 함께 동작(활성 UE WS 있으면 음성 푸시)."""
+    import uuid
+    import time as _t
+    env = MessageEnvelope(
+        msg_id=str(uuid.uuid4()),
+        # auth_token 은 WS 수신 루프에서만 검증됨. 디버그는 _handle_prompt 직접 호출이라
+        # 검증을 거치지 않지만 pydantic 필수 필드라 env 값(없으면 더미)으로 채운다.
+        auth_token=os.environ.get("WS_AUTH_TOKEN", "debug"),
+        timestamp=_t.time(),
+        type=EEnvelopeType.PROMPT,
+        payload={
+            "player_id": req.player_id,
+            "voice_transcript": req.text,
+            "target_npc_id": req.npc_id,
+        },
+    )
+    try:
+        result_json = await _handle_prompt(env)
+        return json.loads(result_json)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[Debug] prompt 처리 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _handle_action_failed(envelope: MessageEnvelope) -> str:

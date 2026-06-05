@@ -1,16 +1,62 @@
-# NPC AgentID → OpenVoice reference WAV 파일명 매핑.
-# value = voices/<value>.wav 의 stem.
-#   - 파일이 없으면 첫 사용 시 MeloTTS KR base 로 자동 생성 (음색은 base 와 동일).
-#   - 진짜 차별화는 클린 reference WAV(6~10초, 잡음 없음)를 voices/<value>.wav 에 두면 자동 적용.
+# NPC AgentID × emotion → OpenVoice 음성 메타 매핑.
 #
-# 보통 NPC 이름과 동일하게 두면 충분. 한 reference WAV 를 여러 NPC 가 공유하고 싶으면 같은 값으로 매핑.
-# 미매핑 NPC 는 default 사용.
+# 감정 enum (C++ EFacialState · interface_output.py::_normalize_emotion 와 정합):
+#   Neutral | Happy | Sad | Angry | Fear | Surprised | Disgusted | Tired | Pain
+#
+# 스키마:
+#   npcs:
+#     <AgentID>:
+#       default_ref: <stem>          # base_voices/<stem>.wav. emotion 누락 시 폴백.
+#       lang:        KR | EN         # 생략 시 텍스트 자동감지.
+#       speed:       1.0             # NPC 기본 속도. emotion 에서 override 가능.
+#       emotions:
+#         <EmotionName>:
+#           ref:   <stem>            # 감정별 reference (생략 시 default_ref)
+#           speed: 1.05              # 감정별 속도 (생략 시 NPC speed)
+#
+# 단축형: 값을 문자열로 두면 default_ref 만 지정한 것과 동일.
+#   npcs:
+#     Skadi: Skadi
+#
+# Fallback 정책:
+#   - emotion 입력 → 해당 entry 있으면 사용
+#   - 없으면 NPC default_ref/speed 로 폴백 (자동 더미 생성 X)
+#   - default_ref 도 없으면 최상위 default 사용
 
 default: Skadi
 
 npcs:
-  Skadi: Skadi
-  # 추후 NPC 추가 예시:
-  # Guard_01:  Guard_01      # voices/Guard_01.wav (남성 클린 녹음)
-  # Merchant:  Merchant      # voices/Merchant.wav
-  # Guard_02:  Guard_01      # Guard_01 과 같은 목소리 재사용
+  Skadi:
+    default_ref: Skadi
+    lang: KR
+    speed: 1.0
+    emotions:
+      Neutral:   { ref: Skadi,         speed: 1.0  }
+      Happy:     { ref: Skadi_happy,   speed: 1.05 }
+      Sad:       { ref: Skadi_sad,     speed: 0.92 }
+      Angry:     { ref: Skadi_angry,   speed: 1.08 }
+      Fear:      { ref: Skadi_fear,    speed: 1.10 }
+      Surprised: { ref: Skadi_happy,   speed: 1.10 }   # 샘플 없으면 Happy 공유
+      Disgusted: { ref: Skadi_angry,   speed: 0.95 }   # Angry 공유
+      Tired:     { ref: Skadi_sad,     speed: 0.88 }   # Sad 공유
+      Pain:      { ref: Skadi_sad,     speed: 0.95 }
+  Moca:
+    default_ref: Moca
+    lang: KR
+    speed: 1.0
+    emotions:
+      Neutral:   { ref: Moca,         speed: 1.0  }
+      Happy:     { ref: Moca_happy,   speed: 1.05 }
+      Sad:       { ref: Moca_sad,     speed: 0.92 }
+      Angry:     { ref: Moca_angry,   speed: 1.08 }
+      Fear:      { ref: Moca_fear,    speed: 1.10 }
+      Surprised: { ref: Moca_happy,   speed: 1.10 }
+      Disgusted: { ref: Moca_angry,   speed: 0.95 }
+      Tired:     { ref: Moca_sad,     speed: 0.88 }
+      Pain:      { ref: Moca_sad,     speed: 0.95 }
+  # 예시:
+  # Guard_01:
+  #   default_ref: guard_male
+  #   lang: KR
+  #   emotions:
+  #     Angry: { ref: guard_male_angry, speed: 1.1 }
