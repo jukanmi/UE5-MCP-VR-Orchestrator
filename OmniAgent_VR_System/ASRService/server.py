@@ -51,6 +51,8 @@ logging.basicConfig(
 
 TARGET_SAMPLE_RATE = 16000   # whisper 입력 규격
 BYTES_PER_SAMPLE = 2         # pcm_s16le
+# end 누락 클라이언트의 무한 스트리밍 → OOM/DoS 방지. 48kHz·16bit·120초 ≈ 11.5MB 상한.
+MAX_AUDIO_BUF_BYTES = 48000 * BYTES_PER_SAMPLE * 120
 
 # ── faster-whisper 설정 (§0 결정) ────────────────────────────────────────────
 WHISPER_MODEL_SIZE = "large-v3"
@@ -110,6 +112,11 @@ def _transcribe(pcm_bytes: bytes, sample_rate: int, language: Optional[str]) -> 
     """동기 인식 — asyncio.to_thread 로 호출(이벤트 루프 비차단)."""
     if _model is None or len(pcm_bytes) < BYTES_PER_SAMPLE * 2:
         return ""
+
+    # 홀수 바이트 → np.frombuffer ValueError 크래시 방지: 샘플 크기 배수로 절단.
+    rem = len(pcm_bytes) % BYTES_PER_SAMPLE
+    if rem:
+        pcm_bytes = pcm_bytes[:-rem]
 
     # s16le → float32 [-1,1]
     audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
@@ -200,6 +207,14 @@ async def ws_stream(websocket: WebSocket) -> None:
                     })
 
             elif "bytes" in msg and msg["bytes"] is not None:
+                # 버퍼 상한 초과 시 중단 — end 미전송 무한 스트리밍 OOM/DoS 차단.
+                if len(audio_buf) + len(msg["bytes"]) > MAX_AUDIO_BUF_BYTES:
+                    logger.warning(f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단")
+                    await websocket.send_json({
+                        "type": "error", "request_id": request_id,
+                        "code": "BUFFER_OVERFLOW", "message": "audio buffer size limit exceeded",
+                    })
+                    break
                 audio_buf += msg["bytes"]
                 chunk_count += 1
 

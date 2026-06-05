@@ -270,10 +270,18 @@ def _load_target_se_sync(voice_id: str) -> object:
     # 디스크 SE 캐시 — 매 부팅 재추출 방지. ref WAV 가 캐시보다 새 것일 때만 재추출.
     se_cache = VOICES_DIR / "_processed" / f"{voice_id}.se.pth"
     if se_cache.exists() and se_cache.stat().st_mtime >= ref_wav.stat().st_mtime:
-        target_se = torch.load(str(se_cache), map_location=DEVICE)
-        _state.target_se_cache[voice_id] = target_se
-        logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
-        return target_se
+        try:
+            target_se = torch.load(str(se_cache), map_location=DEVICE)
+            _state.target_se_cache[voice_id] = target_se
+            logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
+            return target_se
+        except Exception as e:
+            # 손상/불완전 저장된 캐시 → 삭제 후 아래에서 재추출(서비스 전체 실패 방지).
+            logger.warning(f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}")
+            try:
+                se_cache.unlink()
+            except OSError:
+                pass
 
     from openvoice import se_extractor
 

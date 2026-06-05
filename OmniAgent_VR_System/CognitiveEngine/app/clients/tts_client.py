@@ -70,7 +70,8 @@ async def synthesize(
             if "request_id" not in data or "ws_url" not in data:
                 raise TTSError(f"TTS 응답 형식 오류: {data}")
             return data
-        except (httpx.HTTPError, TTSError) as e:
+        except (httpx.HTTPError, TTSError, ValueError) as e:
+            # ValueError: 서버가 비-JSON(HTML 에러페이지 등) 반환 시 r.json() 가 던짐 → 재시도 대상.
             last_err = e
             if attempt < TTS_MAX_ATTEMPTS:
                 logger.warning(
