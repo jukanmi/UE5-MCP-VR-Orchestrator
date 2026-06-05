@@ -34,6 +34,26 @@ class TTSError(RuntimeError):
     pass
 
 
+# 전역 싱글톤 클라이언트 — 매 요청 AsyncClient 생성 시 TCP/TLS 핸드셰이크 오버헤드가
+# TTFA(<600ms) 예산을 갉아먹으므로 커넥션 풀을 재사용한다.
+_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=TTS_TIMEOUT_SEC)
+    return _client
+
+
+async def aclose() -> None:
+    """앱 종료 시 커넥션 풀 정리(선택)."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+        _client = None
+
+
 async def synthesize(
     text: str,
     voice_id: str,
@@ -63,10 +83,10 @@ async def synthesize(
     last_err: Optional[Exception] = None
     for attempt in range(1, TTS_MAX_ATTEMPTS + 1):
         try:
-            async with httpx.AsyncClient(timeout=TTS_TIMEOUT_SEC) as client:
-                r = await client.post(url, json=body)
-                r.raise_for_status()
-                data = r.json()
+            client = _get_client()
+            r = await client.post(url, json=body)
+            r.raise_for_status()
+            data = r.json()
             if "request_id" not in data or "ws_url" not in data:
                 raise TTSError(f"TTS 응답 형식 오류: {data}")
             return data

@@ -63,6 +63,8 @@ WHISPER_COMPUTE = "float16"
 LANG_MAP = {"KR": "ko", "KO": "ko", "EN": "en", "US": "en", "JP": "ja", "JA": "ja"}
 
 _model: Optional[WhisperModel] = None
+# faster-whisper WhisperModel 은 스레드 안전하지 않음 — 동시 스트림의 GPU 추론을 직렬화.
+_transcribe_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -181,9 +183,10 @@ async def ws_stream(websocket: WebSocket) -> None:
                     total_bytes = len(audio_buf)
                     duration_audio_ms = int(total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000)
                     t_rec = time.perf_counter()
-                    transcript = await asyncio.to_thread(
-                        _transcribe, bytes(audio_buf), sample_rate, language
-                    )
+                    async with _transcribe_lock:
+                        transcript = await asyncio.to_thread(
+                            _transcribe, bytes(audio_buf), sample_rate, language
+                        )
                     infer_ms = int((time.perf_counter() - t_rec) * 1000)
                     logger.info(
                         f"[ASR] end request_id={request_id} chunks={chunk_count} "
