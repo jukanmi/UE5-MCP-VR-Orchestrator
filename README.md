@@ -1,271 +1,134 @@
 <!--
 File: README.md
-Purpose: Project Documentation.
-OmniAgent VR System의 전체 아키텍처(Remote Cortex), 핵심 흐름, 데이터 규격, 사용법을 기술합니다.
+Purpose: 프로젝트 최상위 개요. 상세 문서는 docs/index.html, 세션 메모는 docs/Memo.md, 로드맵은 docs/ROADMAP.md.
 -->
 
-# OmniAgent VR System
+# OmniAgent VR System (UE5_MCP_VR)
 
-> **한줄 요약**: 언리얼 엔진 5(UE5)의 VR 환경과 파이썬(Python) 기반 인지 엔진(Cognitive Engine)을 실시간 웹소켓(WebSocket)으로 연결하여, 지연을 최소화한 지능형 NPC 반응 시스템을 구축하는 **정책 기반 하이브리드 아키텍처(Policy-Driven Hybrid Architecture)**입니다.
+> **한줄 요약**: 언리얼 엔진 5(UE5) VR 게임과 파이썬 인지 엔진을 WebSocket으로 연결해, LLM/SLM이 자율적으로 사고·행동하는 멀티 에이전트 NPC를 구동하는 **Remote Cortex 아키텍처**.
 
----
-
-## 📖 개요 (Overview)
-
-이 프로젝트는 **Remote Cortex 패턴**을 구현합니다. 복잡한 추론과 상태 관리(State Management)는 파이썬 서버가 전담하고, 언리얼 엔진(UE5)은 렌더링과 몰입적인 VR 상호작용(Interaction)에만 집중합니다.
-
-4개의 전문 에이전트(Agent)가 협업하여 생동감 있는 월드를 만들어냅니다:
-
-| 에이전트         | 역할                                                    |
-| :--------------- | :------------------------------------------------------ |
-| **Supervisor**   | 전체 파이프라인 제어 및 에이전트 간 라우팅(Routing) 결정 |
-| **Dialogue**     | NPC의 성격(Persona)과 기억(Memory)을 반영한 대화 생성    |
-| **Rules**        | 게임 규칙 위반 여부 검증 및 수치 클램핑(Clamping)        |
-| **Interface**    | UE5 ↔ 자연어 간 데이터 변환 (Input/Output 노드)         |
-
-> 📚 **상세 기술 문서**
-> - [NPC 아키텍처 (NPC.md)](docs/NPC.md)
-> - [네트워크 통신 규격 (Connect.md)](docs/Connect.md)
-> - [Python 인지 엔진 (Python.md)](docs/Python.md)
+UE5는 렌더링·VR 상호작용·물리 실행만 전담하고, Python 서버가 전략 수립·대화 생성·음성 합성(TTS)·음성 인식(ASR)·기억 검색(RAG) 같은 연산 집약 추론을 전담한다.
 
 ---
 
-## 🏗 핵심 아키텍처 (Architecture)
+## 구성 요소
 
-### 시스템 토폴로지 (System Topology)
+| 프로세스 | 포트 | 역할 |
+| :--- | :--- | :--- |
+| **CognitiveEngine** | `:8000` | LangGraph 멀티 에이전트(대화·규칙·라우팅), SLM 반사, EQS 위치 결정, affinity/memory/RAG |
+| **TTSService** | `:8001` | OpenVoice v2 + MeloTTS 감정 음색 합성 (zero-shot) |
+| **ASRService** | `:8002` | faster-whisper large-v3 음성 인식 (push-to-talk) |
+| **UE5 클라이언트** | — | SmartNPC(StateTree AI), VRPawn, 네트워크 레이어 |
+
+각 서비스 상세 실행법은 해당 폴더 README 참조: [CognitiveEngine](OmniAgent_VR_System/CognitiveEngine/README.md) · [TTSService](OmniAgent_VR_System/TTSService/README.md) · [ASRService](OmniAgent_VR_System/ASRService/README.md).
+
+---
+
+## 아키텍처
 
 ```mermaid
 graph TD
-    subgraph UE5_Client [UE5 Client - Body]
-        NPC[ASmartNPC]
+    subgraph UE5 [UE5 클라이언트 - Body]
+        NPC[ASmartNPC + StateTree]
+        AIC[SmartNPCAIController]
         SC[NPCStateComponent]
         AC[NPCActionComponent]
-        AIC[SmartNPCAIController]
         NM[NPCManager]
-        LLMC[LLMNetworkClient]
-        SLMC[SLMNetworkClient]
+        VI[VoiceInputComponent]
+        AU[NPCAudioStreamComponent]
     end
-
-    subgraph Python_Backend [Cognitive Engine - Brain]
-        Router[Message Router]
-        LLM[LLM Agent - Strategic]
-        SLM[SLM Agent - Reflexive]
-        LG[LangGraph Workflow]
+    subgraph PY [Python 백엔드 - Brain]
+        CE[CognitiveEngine :8000]
+        TTS[TTSService :8001]
+        ASR[ASRService :8002]
     end
-
-    NPC --- SC
-    NPC --- AC
-    NPC --- AIC
-    AIC -.->|Perception 트리거| SC
+    AIC -.->|perception| SC
     SC -->|emergency_report| NM
-    NM --> LLMC
-    NM --> SLMC
-    LLMC -- "ws://.../ws/llm" --> Router
-    SLMC -- "ws://.../ws/slm" --> Router
-    Router --> LLM
-    Router --> SLM
-    LLM --> LG
-    LG -- "ActionBatch (JSON)" --> Router
-    Router -- "ActionBatch" --> NM
-    NM -->|Route by AgentID| AC
+    VI -->|mic PCM| ASR
+    ASR -->|transcript| NM
+    NM -- "ws://.../ws/llm (Envelope)" --> CE
+    CE -- "ActionBatch" --> NM
+    CE -- "NpcAudioResponse(ws_url)" --> AU
+    AU -->|오디오 청크| TTS
+    NM -->|AgentID 라우팅| AC
 ```
 
-### 디렉토리 구조 (Directory Structure)
-
-```
-/OmniAgent_VR_System
-├── 📂 CognitiveEngine               # Python 에이전트 서버 (FastAPI + LangGraph)
-│   ├── 📂 app
-│   │   ├── 📂 agents                # 에이전트 로직 (Supervisor, Dialogue, Rules, Interface)
-│   │   │   └── 📂 subgraphs         # 하위 그래프 (Dialogue, Rules 노드)
-│   │   ├── 📂 schemas               # 데이터 계약 (Pydantic V2 검증)
-│   │   │   ├── 📄 actions.py         # ActionBatch, Clamp 로직
-│   │   │   ├── 📄 game_state.py      # Vector3D, Entity 검증
-│   │   │   └── 📄 vr_context.py      # GesPrompt (음성 + 제스처)
-│   │   ├── 📂 utils                  # 유틸리티 (LLM Factory, 로깅)
-│   │   └── 📄 main.py                # WebSocket 진입점 (Entry Point)
-│   └── 📄 requirements.txt
-│
-├── 📂 Source (UE5 C++)               # 언리얼 엔진 소스
-│   ├── 📂 NPC                        # NPC 시스템
-│   │   ├── 📄 SmartNPC.h/cpp           # NPC 엔티티 (AgentID, Attributes, Tags)
-│   │   ├── 📂 Action                   # 행동 시스템
-│   │   │   ├── 📄 NPCActionComponent    # 행동 큐 및 실행기 (Action Queue & Executor)
-│   │   │   └── 📄 SmartNPCAIController  # 인지 & 행동트리 드라이버
-│   │   └── 📄 NPCStateComponent        # 상태 & 인지 배치 처리기
-│   ├── 📂 Network                     # 네트워크 클라이언트 (WebSocket)
-│   └── 📂 Core                        # 게임 상태 데이터
-│
-└── 📂 docs                           # 기술 문서
-    ├── 📄 NPC.md
-    ├── 📄 Connect.md
-    └── 📄 Python.md
-```
+> **단일 WebSocket 채널**: `ws://127.0.0.1:8000/ws/llm` 하나만 사용. `emergency_report`가 들어오면 Python이 Envelope 타입을 보고 내부에서 **SLM Reflex**(0.5초 반사 전투)와 **LLM 전략**으로 자동 라우팅한다. (구 `/ws/slm` 채널은 제거됨.)
 
 ---
 
-## 🔄 핵심 흐름: 4단계 파이프라인 (Core Flow)
+## 데이터 흐름
 
-전체 시스템은 다음 4단계를 순환하며 동작합니다.
-
-### Step 1. 인지 및 수집 (Perception-Push)
-
-NPC의 말초 감각(시각, 청각, 피격 등)이 취합되어 파이썬 서버로 전달되는 **저지연 보고 흐름**입니다.
-
-```mermaid
-sequenceDiagram
-    participant PC as Perception (AIController)
-    participant SC as StateComp (Batcher)
-    participant NM as NPCManager (Bridge)
-    participant PY as Cognitive Engine
-
-    PC->>SC: RequestEventCognition(FPerceptionData)
-    Note over SC: 0.3초 타이머 (Opportunistic Batching)
-    SC->>NM: SendEventReport(JSON)
-    NM->>PY: WebSocket Send (emergency_report)
-```
-
-- `SmartNPCAIController`가 시야/소리/피격을 감지하면 `NPCStateComponent`에 이벤트를 push합니다.
-- `NPCStateComponent`는 0.3초 동안 이벤트를 일괄 취합(Batching)한 후, 단일 패킷(Single Packet)으로 서버에 전송합니다.
-
-### Step 2. 채널 라우팅 (Channel Routing)
-
-목적에 따라 **전략적 추론(LLM)**과 **반사적 대응(SLM)** 두 개의 통신 채널로 분기합니다.
-
-| 채널       | 엔드포인트    | 용도                                   | 지연 허용 |
-| :--------- | :------------ | :------------------------------------- | :-------- |
-| **LLM**    | `/ws/llm`     | 장기 전략, 대화 생성, 복잡한 상황 판단 | 높음      |
-| **SLM**    | `/ws/slm`     | 즉각적 감각 반응, 위협 감지, 도주/방어 | 500ms 이내 |
-
-- SLM 채널은 LLM의 긴 추론 시간을 **우회(Bypass)**하여 즉각적인 행동 배치(ActionBatch)를 반환합니다.
-
-### Step 3. 인지 엔진 추론 (Cognitive Reasoning)
-
-파이썬 서버 내부의 **랭그래프(LangGraph) 파이프라인**이 수신된 데이터를 다중 에이전트 협업으로 처리합니다.
-
-```
-[수신] → Interface_Input (UE5 데이터 → 자연어 변환)
-      → Supervisor (상황에 맞는 에이전트 선택/라우팅)
-      → Dialogue / Action 에이전트 (추론 수행)
-      → Interface_Output (자연어 결정 → ActionBatch 구조 변환)
-      → Rules (게임 규칙 검증 & 수치 클램핑)
-      → [송신]
-```
-
-- **숏컷(Shortcut)**: `has_error=True`이거나 대상 NPC가 없으면 LLM 호출 없이 즉시 종료하여 리소스를 절약합니다.
-- **폴백(Fallback)**: 에이전트 응답 실패 시 Supervisor가 최소한의 리액션("..."; Confused)을 강제 생성하여 NPC의 멍 때림을 방지합니다.
-
-### Step 4. 명령 실행 (Command-Pull)
-
-인지 엔진의 결정이 UE5의 물리적 액션으로 변환·실행되는 흐름입니다.
-
-```mermaid
-sequenceDiagram
-    participant PY as Cognitive Engine
-    participant NM as NPCManager
-    participant AC as ActionComp (Queue)
-    participant BT as BehaviorTree (Task)
-
-    PY->>NM: ActionBatch (JSON)
-    NM->>AC: ExecuteActionBatch(FActionBatch)
-    AC->>AC: ProcessNextAction (Queue Pop)
-    AC-->>BT: OnActionStarted (Delegate → Blackboard 갱신)
-    BT->>AC: GetCurrentAction() (직접 참조)
-```
-
-- `NPCManager`가 응답의 `AgentID`를 기준으로 올바른 NPC에게 명령을 라우팅합니다.
-- `NPCActionComponent`는 행동 대기열(Queue)에서 순차적으로 꺼내 실행하며, 델리게이트(Delegate)를 통해 블랙보드(Blackboard)와의 강결합(Tight Coupling)을 해소합니다.
+1. **인지(Perception-Push)**: `SmartNPCAIController`가 시야/소리/피격 감지 → `NPCStateComponent`가 0.3초 디바운스 배치 → `emergency_report` 전송.
+2. **음성 입력(ASR)**: push-to-talk → `VoiceInputComponent`가 PCM을 ASRService로 스트리밍 → transcript → `SendPlayerDialogue` → `prompt` 전송.
+3. **추론(Cognitive)**: LangGraph 파이프라인 `interface_input → supervisor → dialogue → interface_output → rules`. persona·RAG·memory·affinity 반영.
+4. **음성 출력(TTS)**: Dialogue 액션의 텍스트+FacialState → CognitiveEngine이 `NpcAudioResponse`(ws_url) 반환 → UE5가 TTSService에 직접 연결해 감정 음색 오디오 청크 수신.
+5. **실행(Command-Pull)**: `ActionBatch`가 `AgentID`로 라우팅 → `NPCActionComponent` 큐 → StateTree(`STTask_PrepareNextAction` → `STTask_ExecuteSmartAction`)가 순차 실행.
 
 ---
 
-## 📦 데이터 계약 (Data Contract)
+## 통신 규격: MessageEnvelope
 
-### 통신 규격: Envelope System
-
-모든 메시지는 추적과 보안을 위해 **Envelope**이라는 공통 래퍼(Wrapper)로 포장됩니다.
+UE5 ↔ Python 모든 메시지는 공통 래퍼로 포장된다.
 
 ```json
 {
-    "msg_id": "GUID-String",
-    "type": "state_update | prompt | emergency_report | action_failed",
-    "timestamp": "ISO-8601-String",
-    "auth_token": "Secret-Key",
-    "ref_msg_id": "(Optional) Parent Message ID",
-    "payload": { "/* 타입별 실제 데이터 */" }
+  "msg_id": "uuid",
+  "auth_token": "...",
+  "timestamp": 1234567890.0,
+  "type": "prompt | state_update | action_failed | emergency_report | location_decision",
+  "payload": { "/* 타입별 데이터 */" }
 }
 ```
 
-### 핵심 데이터 구조체
+| type | 방향 | 용도 |
+| :--- | :--- | :--- |
+| `state_update` | 양방향 | NPC 상태/호감도 동기화 |
+| `prompt` | UE5→PY | 플레이어 발화(ASR)·제스처 명령 |
+| `emergency_report` | UE5→PY | 위협 감지(0.3초 배치) → SLM Reflex |
+| `location_decision` | UE5→PY | EQS 후보 중 전술 위치를 LLM에 문의 |
+| `ModeActionRequest` | PY→UE5 | NPC 다음 행동 큐(ActionBatch) |
 
-| 구조체                | 핵심 필드                                          | 설명                          |
-| :-------------------- | :------------------------------------------------- | :---------------------------- |
-| **`FActionBatch`**    | `Mode`, `Actions[]`, `AgentID`                     | 서버에서 오는 단일 패킷 단위  |
-| **`FGameAction`**     | `ActionType`, `FacialState`, `Parameters`          | Blackboard 우회 직접 참조     |
-| **`FPerceptionData`** | `TargetID`, `SenseType`, `Location`, `DangerScore` | 시각/청각 인지 데이터         |
-| **`FNPCAttributes`**  | `Resources(HP/MP)`, `Combat`, `Traits`             | NPC 정적/동적 상태 스냅샷     |
+새 타입 추가 시 UE `EnvelopeBuilder` + Python `schemas/envelope.py`(`EEnvelopeType`) + `interface_input` 수신 분기를 **동시에** 수정해야 한다.
 
 ---
 
-## 🚀 시작하기 (Getting Started)
+## 주요 기술 특징
 
-### 사전 요구사항 (Prerequisites)
+- **StateTree AI**: BehaviorTree에서 마이그레이션 완료. `SmartNPCAIController`(ST schema) → `STTask_PrepareNextAction`(큐 Dequeue) → `STTask_ExecuteSmartAction`(실행). 비동기 액션 완료(이동 도착/몽타주 종료 콜백).
+- **로컬 LLM/SLM**: Ollama gemma4 라우팅(normal `e4b` / high `12b` / core `26b`). 클라우드 API 미사용.
+- **감정 TTS**: LLM `[Facial: Angry]` → emotion → OpenVoice ToneColorConverter zero-shot 음색. 0.2s 백오프 1회 재시도, 실패 시 자막 폴백, `[trace=msg_id]` 로그 체인.
+- **RAG 기억**: NPC별 FAISS 벡터스토어(로컬 `all-MiniLM-L6-v2`), `lore/persona/history` 카테고리. 지식 작성은 `knowledge_template/` 참조.
+- **엄격한 검증**: Pydantic V2로 LLM 출력 클램핑(데미지 등)·좌표 NaN 거부.
 
-- **Python** 3.10+
-- **Unreal Engine** 5.5+
-- **Ollama** (로컬 SLM 추론용)
-- 파이썬 패키지 설치: `pip install -r CognitiveEngine/requirements.txt`
+---
 
-### 인지 엔진 실행 (Running the Cognitive Engine)
+## 시작하기
 
-```bash
-cd OmniAgent_VR_System/CognitiveEngine
-python -m uvicorn app.main:app --port 8000
+### 사전 요구사항
+- Python 3.10+, Ollama(로컬 LLM), CUDA GPU(ASR/TTS large 모델), Unreal Engine 5.5+
+- `pip install -r OmniAgent_VR_System/CognitiveEngine/requirements.txt`
+
+### 서버 실행 (프로젝트 루트에서, 각각 별도 프로세스)
+```powershell
+python -m uvicorn OmniAgent_VR_System.CognitiveEngine.app.main:app --port 8000
+python -m uvicorn OmniAgent_VR_System.TTSService.server:app --port 8001
+python -m uvicorn OmniAgent_VR_System.ASRService.server:app --port 8002
 ```
 
-서버가 기동되면 다음 엔드포인트가 활성화됩니다:
-- `ws://localhost:8000/ws/llm` — 전략적 추론 (LLM)
-- `ws://localhost:8000/ws/slm` — 반사적 대응 (SLM)
-
-### 언리얼 엔진 설정 (Unreal Engine Setup)
-
-1. UE5 프로젝트를 엽니다.
-2. **WebSockets** 플러그인이 활성화되어 있는지 확인합니다.
-3. `NPCManager`가 초기화 시 자동으로 LLM/SLM 웹소켓 클라이언트를 생성하고 서버에 연결합니다.
-4. 서버 연결이 끊어지면, 행동 트리(Behavior Tree)의 `IsConnected` 블랙보드 키를 통해 자동으로 로컬 폴백(Fallback) 서브트리가 실행됩니다.
+### UE5
+1. 프로젝트를 열고 **WebSockets** 플러그인 활성 확인.
+2. `NPCManager`가 초기화 시 `ws://127.0.0.1:8000/ws/llm`에 자동 연결.
+3. 디버그 대시보드: `http://127.0.0.1:8000/debug` (UE 없이 prompt→ActionBatch 확인).
 
 ---
 
-## ✨ 주요 기술적 특징 (Key Features)
+## 문서
 
-### 1. 엄격한 데이터 검증 (Strict Data Contracts — Pydantic V2)
-
-LLM의 환각(Hallucination)이 게임 엔진을 충돌시키는 것을 방지하기 위해, 모든 에이전트 결과물(Output)은 파이썬 측에서 엄격하게 검증됩니다.
-
-- **클램핑(Clamping)**: 데미지 값이 100을 초과하면 자동으로 100으로 고정됩니다.
-- **좌표 검증(Validation)**: `Vector3D` 좌표에 NaN/Inf 값이 들어오면 거부됩니다.
-
-### 2. GesPrompt (멀티모달 인터페이스)
-
-Interface 에이전트가 음성 전사(Transcription)와 VR 제스처 데이터를 융합하여, 지시 대명사(Deictic Reference)를 해소합니다.
-
-- _플레이어가 말합니다_: "**이거** 열어." + _시선/포인팅_: `[Door_42]`
-- _시스템이 해석합니다_: `Intent: Open(Target=Door_42)`
-
-### 3. 듀얼 채널 최적화 (Dual-Channel Optimization)
-
-- **LLM 채널**: 복잡한 대화와 전략 수립에 사용됩니다. 지연 시간이 길어도 괜찮습니다.
-- **SLM 채널**: 즉각적인 위협 대응에 사용되며, 500ms 이내의 응답을 보장합니다.
-
-### 4. 에러 회복력 (Error Resilience)
-
-- **서버 단절 시**: UE5 행동 트리의 로컬 폴백 서브트리가 자동으로 NPC를 제어합니다.
-- **추론 실패 시**: Supervisor가 최소한의 물리적 리액션을 강제 생성합니다.
-
----
-
-## 🗺 로드맵 (Roadmap)
-
-- [x] **Phase 1**: Foundation — 모노레포, 스키마, 기본 네트워크
-- [x] **Phase 2**: Agent Logic — LangGraph 구현, Persona 로딩
-- [/] **Phase 3**: Integration — UE5 행동 트리 연동, 인지 파이프라인
-- [ ] **Phase 4**: Optimization — 스트리밍 응답, 지연 마스킹(Latency Masking)
+| 위치 | 내용 |
+| :--- | :--- |
+| `docs/index.html` | 통합 기술 문서(아키텍처·파이프라인·Envelope, Mermaid) — 브라우저로 열기 |
+| `docs/ROADMAP.md` | 통합 로드맵(TTS/ASR/RAG/VR/멀티플레이) |
+| `docs/Memo.md` | 세션 간 인수인계 메모(Todo/Done/Handoff) |
+| `docs/주간기록/` | 주차별 개발 일지 |
+| `CLAUDE.md` | 개발 규칙·컨벤션 |

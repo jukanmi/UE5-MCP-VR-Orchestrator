@@ -54,9 +54,8 @@ TTS 본체(M2)는 완성. 남은 것은 **운영 품질·표현력·견고성**.
 - **할 일**: T0(PlayFromUrl)→T1(WS Connected)→T2(첫 청크)→Play() 실측. `NPCAudioStreamComponent` 의 `[T0/T1/T2]` 로그(이미 있음) 수치 수집.
 - **파일**: UE `NPCAudioStreamComponent` (헤더에 `HandleConnected`/`PlayRequestedAt` 존재)
 
-### 1.7 🟢 README/문서 최신화 — S
-- **갭**: `TTSService/README.md` 가 "M1 Stub"(사인파) 기준 — 실제는 M2 OpenVoice. 오해 소지.
-- **할 일**: README 를 v0.6.0 OpenVoice 기준으로 갱신.
+### 1.7 ✅ README/문서 최신화 — 완료 2026-06-05
+- 루트·CognitiveEngine·TTSService·ASRService README 정확본 갱신(단일채널·StateTree·OpenVoice·로컬 LLM 반영). 옛 `/ws/slm`·BT·`/ws/ue5`·OpenAI 서술 제거.
 
 ### 1.8 🟢 M4 (선택) — 표정·립싱크·제스처 — L
 - MetaHuman Lip Sync 또는 Audio2Face 에 오디오 스트림 분기
