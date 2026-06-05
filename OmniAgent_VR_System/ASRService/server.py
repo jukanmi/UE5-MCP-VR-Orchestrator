@@ -75,8 +75,12 @@ async def lifespan(app: FastAPI):
         f"({WHISPER_DEVICE}/{WHISPER_COMPUTE}) … (최초엔 모델 다운로드로 수십초 소요)"
     )
     t0 = time.perf_counter()
-    _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
-    logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter()-t0):.1f}s)")
+    try:
+        _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
+        logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter()-t0):.1f}s)")
+    except Exception as e:  # OOM/CUDA 미설치/다운로드 실패 — 서비스 기동은 유지, health 가 loading 반영
+        logger.error(f"[ASR] 모델 로드 치명적 실패: {e}")
+        _model = None
     # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거
     try:
         warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)

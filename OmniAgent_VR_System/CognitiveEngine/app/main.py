@@ -88,6 +88,8 @@ _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
+# fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
+_background_tasks: set = set()
 
 
 @app.get("/")
@@ -396,13 +398,15 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     if npc_id_for_audio and dialogue_text_for_audio:
         # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송 —
         # NpcAudioResponse(빈 url)가 UE5 자막 경로이므로 dispatch 자체는 항상 수행.
-        asyncio.create_task(_dispatch_npc_audio(
+        task = asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
             emotion=dialogue_emotion,
             trace_id=envelope.msg_id,
             bypass_tts=not has_speech,
         ))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
     elif npc_id_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
     else:

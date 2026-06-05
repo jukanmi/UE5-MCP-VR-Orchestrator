@@ -29,6 +29,7 @@ import math
 import os
 import re
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -257,10 +258,22 @@ def _find_reference_wav(voice_id: str) -> Optional[Path]:
     return None
 
 
+_se_extract_lock = threading.Lock()
+
+
 def _load_target_se_sync(voice_id: str) -> object:
     cached = _state.target_se_cache.get(voice_id)
     if cached is not None:
         return cached
+    # 동일 voice_id 동시 추출 시 torch.save 파일 손상/레이스 방지 — 추출·캐싱 직렬화.
+    with _se_extract_lock:
+        cached = _state.target_se_cache.get(voice_id)
+        if cached is not None:
+            return cached
+        return _extract_target_se_sync(voice_id)
+
+
+def _extract_target_se_sync(voice_id: str) -> object:
     import torch
 
     ref_wav = _find_reference_wav(voice_id)
