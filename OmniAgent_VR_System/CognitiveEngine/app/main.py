@@ -398,6 +398,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
             emotion=dialogue_emotion,
+            trace_id=envelope.msg_id,
         ))
     elif npc_id_for_audio and dialogue_text_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} 대사가 글자 없음('{dialogue_text_for_audio}') → TTS 생략")
@@ -419,9 +420,10 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         return fallback.model_dump_json()
 
 
-async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> None:
+async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str, trace_id: str = "") -> None:
     """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
 
+    trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
     실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
     """
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
@@ -431,9 +433,10 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> 
             text=dialogue_text,
             voice_id=npc_id,
             emotion=emotion,
+            trace_id=trace_id,
         )
     except tts_client.TTSError as e:
-        logger.warning(f"[Main][TTS] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+        logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
         info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
     if _active_llm_ws is None:
@@ -453,7 +456,7 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str) -> 
     )
     try:
         await _active_llm_ws.send_text(response.model_dump_json())
-        logger.info(f"[Main][TTS] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
+        logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
     except Exception as e:
         logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
 

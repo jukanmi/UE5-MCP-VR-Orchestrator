@@ -114,6 +114,7 @@ class SynthesizeRequest(BaseModel):
     sample_rate: int = TARGET_SAMPLE_RATE
     output_format: str = "pcm_s16le"
     language: Optional[str] = None
+    trace_id: str = ""   # 발원 msg_id 상속 → request_id 로 재사용, 로그 체인 통일
 
 
 class SynthesizeResponse(BaseModel):
@@ -402,8 +403,11 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────────────────────
 @app.post("/v1/tts/synthesize", response_model=SynthesizeResponse)
 async def synthesize(req: SynthesizeRequest) -> SynthesizeResponse:
-    request_id = f"tts_{uuid.uuid4().hex[:12]}"
+    # 발원 trace_id(msg_id) 가 있으면 request_id 로 상속 — 이후 모든 WS 로그가
+    # 같은 id 를 찍어 LLM↔TTS↔UE5 가 [trace=...] 한 줄로 꿰진다. 없으면 신규 생성.
+    request_id = f"tts_{req.trace_id}" if req.trace_id else f"tts_{uuid.uuid4().hex[:12]}"
     _pending[request_id] = req
+    logger.info(f"[TTS][trace={req.trace_id or request_id}] 합성 등록 npc={req.voice_id} emo={req.emotion} text_len={len(req.text)}")
     return SynthesizeResponse(
         request_id=request_id,
         ws_url=f"ws://127.0.0.1:8001/ws/tts/stream/{request_id}",
