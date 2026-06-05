@@ -159,7 +159,7 @@ def _create_persona(agent_id: str) -> dict:
     return persona
 
 
-def dialogue_node(state: AgentState):
+async def dialogue_node(state: AgentState):
     """
     Dialogue Agent (LLM #2).
     
@@ -189,19 +189,10 @@ def dialogue_node(state: AgentState):
     # --- Affinity DB 연동: 실제 대상(보통 Player)과의 호감도(Sentiment) 조회 ---
     player_id = state.get("vr_context", {}).get("player_id", "Player") if isinstance(state.get("vr_context"), dict) else getattr(state.get("vr_context"), "player_id", "Player")
     
+    # async 노드이므로 get_affinity 를 직접 await — nest_asyncio/run_until_complete 해킹 제거.
     try:
-        # LangGraph 콜백 등 쓰레드 문제 해결을 위해 async loop 없이 임시로 동기 메소드 활용 (또는 에러 방지 위해 우회)
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import nest_asyncio
-                nest_asyncio.apply()
-            relation = loop.run_until_complete(db_manager.get_affinity(agent_id, player_id))
-            sentiment = f"{relation.reputation_tag} (Score: {relation.affinity_score})"
-        except RuntimeError:
-            # Cannot use run_until_complete inside active loop without nest_asyncio trick failing in some contexts.
-            # Fallback for now, relying on initial lookup or skipping.
-            sentiment = memory.get("sentiment", "Neutral")
+        relation = await db_manager.get_affinity(agent_id, player_id)
+        sentiment = f"{relation.reputation_tag} (Score: {relation.affinity_score})"
     except Exception as e:
         print(f"[Dialogue] Failed to fetch affinity: {e}")
         sentiment = memory.get("sentiment", "Neutral")
@@ -216,8 +207,8 @@ def dialogue_node(state: AgentState):
         elif isinstance(vr_context, dict):
             clean_query = vr_context.get("voice_transcript", "")
 
-    # Retrieve context via RAG and memory
-    rag_context = retrieve_context(agent_id, clean_query, k=3) if clean_query else ""
+    # Retrieve context via RAG and memory — RAG 임베딩/검색은 CPU 블로킹이라 스레드 오프로드.
+    rag_context = await asyncio.to_thread(retrieve_context, agent_id, clean_query, 3) if clean_query else ""
     chat_history = get_conversation_context(agent_id, k=5)
 
     # Build system prompt with persona info
@@ -252,7 +243,7 @@ def dialogue_node(state: AgentState):
             ("system", "{system_msg}"),
             ("human", "Context: {context}")
         ])
-        response = (prompt | llm).invoke({
+        response = await (prompt | llm).ainvoke({
             "system_msg": system_content,
             "context": natural_context
         })
@@ -263,7 +254,7 @@ def dialogue_node(state: AgentState):
         print(f"[Dialogue] LLM 오류 ({model_name}): {e}")
         # 폴백: call_ollama_direct 직접 호출
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
-        raw_response = call_ollama_direct(cli_prompt, extract_json=False)
+        raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt, False)
         if raw_response:
             raw_response = raw_response.strip()
 
@@ -284,7 +275,7 @@ def dialogue_node(state: AgentState):
     
     # [버그 수정] 삭제된 user_input 대신, 깔끔한 대사(clean_query)를 우선 기록하고 없으면 natural_context 기록
     memory_input = clean_query if clean_query else natural_context
-    add_conversation(agent_id, memory_input, speech_for_memory)
+    await asyncio.to_thread(add_conversation, agent_id, memory_input, speech_for_memory)
 
     return {
         "raw_response": raw_response,  # 태그 포함 원본 전달
