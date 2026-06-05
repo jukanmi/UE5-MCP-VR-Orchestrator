@@ -10,6 +10,7 @@
 """
 import os
 import json
+import threading
 from datetime import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
@@ -57,6 +58,8 @@ class ConversationMemory:
     def __init__(self, agent_id: str):
         self.agent_id = agent_id.lower()
         self.entries: List[MemoryEntry] = []
+        # add_conversation 이 to_thread 로 멀티스레드 실행되므로 동일 NPC 동시 쓰기/파일저장 보호.
+        self.lock = threading.Lock()
         self._load_from_file()
 
     @property
@@ -108,11 +111,12 @@ class ConversationMemory:
             content=content,
             is_summary=False,
         )
-        self.entries.append(entry)
-
-        # 토큰 예산 초과 시 요약으로 압축
-        self._check_and_summarize()
-        self._save_to_file()
+        # 메모리 수정 + 파일 저장을 원자적으로 — 동시 쓰기로 인한 파일 손상/유실 방지.
+        with self.lock:
+            self.entries.append(entry)
+            # 토큰 예산 초과 시 요약으로 압축
+            self._check_and_summarize()
+            self._save_to_file()
 
     def _check_and_summarize(self):
         """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다."""

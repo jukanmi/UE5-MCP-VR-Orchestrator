@@ -1,6 +1,7 @@
 import aiosqlite
 import asyncio
 import logging
+import threading
 from typing import Dict, Tuple, Optional
 from ..schemas.vr_context import NPCRelation
 import os
@@ -14,6 +15,9 @@ SYNC_INTERVAL_SECONDS = 5.0
 # --- State ---
 # Memory Cache: (source_id, target_id) -> NPCRelation
 _affinity_cache: Dict[Tuple[str, str], NPCRelation] = {}
+# 캐시는 async 이벤트루프와 동기 스레드풀(to_thread)에서 동시 접근 가능 — dict 변경 중 순회
+# RuntimeError 방지용 락. 짧은 dict 연산에만 보유(await 가로질러 보유 금지).
+_cache_lock = threading.Lock()
 _sync_task: Optional[asyncio.Task] = None
 _is_shutting_down: bool = False
 
@@ -65,9 +69,11 @@ async def stop_background_sync():
 async def get_affinity(source_id: str, target_id: str) -> NPCRelation:
     """메모리 캐시 조회 -> 없으면 DB에서 로드 후 캐싱"""
     key = (source_id, target_id)
-    if key in _affinity_cache:
-        return _affinity_cache[key]
-    
+    with _cache_lock:
+        cached = _affinity_cache.get(key)
+    if cached is not None:
+        return cached
+
     # Cache Miss -> DB 조회
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -91,7 +97,8 @@ async def get_affinity(source_id: str, target_id: str) -> NPCRelation:
                 # DB에도 없으면 기본 0짜리 신규 생성
                 relation = NPCRelation(source_id=source_id, target_id=target_id, is_dirty=True)
             
-            _affinity_cache[key] = relation
+            with _cache_lock:
+                _affinity_cache[key] = relation
             return relation
     except Exception as e:
         logger.error(f"[DBManager] Cache miss 중 DB 로드 에러 (soruce={source_id}): {e}")
@@ -105,12 +112,13 @@ def update_affinity_sync(source_id: str, target_id: str, score_delta: int, inter
     초회 접근 시에는 데이터가 없을 수 있으므로 이 함수를 쓰기 전에 get_affinity를 먼저 호출했음을 가정함.
     """
     key = (source_id, target_id)
-    if key not in _affinity_cache:
-        logger.warning(f"[DBManager] update_affinity_sync: 캐시에 존재하지 않는 대상. get_affinity를 선행 호출하세요. {key}")
-        # 일단 0에서 가감해서 밀어넣음
-        _affinity_cache[key] = NPCRelation(source_id=source_id, target_id=target_id)
-    
-    relation = _affinity_cache[key]
+    with _cache_lock:
+        relation = _affinity_cache.get(key)
+        if relation is None:
+            logger.warning(f"[DBManager] update_affinity_sync: 캐시에 존재하지 않는 대상. get_affinity를 선행 호출하세요. {key}")
+            # 일단 0에서 가감해서 밀어넣음
+            relation = NPCRelation(source_id=source_id, target_id=target_id)
+            _affinity_cache[key] = relation
     
     # 스코어 클램핑 (-100 ~ 100)
     new_score = relation.affinity_score + score_delta
@@ -220,7 +228,9 @@ async def _background_sync_loop():
 
 async def _flush_dirty_cache():
     """is_dirty=True 인 모든 캐시들을 모아 트랜잭션 단위로 일괄 저장"""
-    dirty_items = [rel for rel in _affinity_cache.values() if rel.is_dirty]
+    # 순회 중 다른 스레드의 키 추가로 인한 RuntimeError 방지 — 락 하에 스냅샷.
+    with _cache_lock:
+        dirty_items = [rel for rel in _affinity_cache.values() if rel.is_dirty]
     if not dirty_items:
         return
 
