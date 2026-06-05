@@ -22,7 +22,11 @@ namespace
         if (Keyword.Equals(TEXT("Enemy"), ESearchCase::IgnoreCase)) return BBTarget;
         if (Keyword.Equals(TEXT("Player"), ESearchCase::IgnoreCase))
         {
-            if (AActor* P = UGameplayStatics::GetPlayerPawn(Self, 0)) return P;
+            // GetPlayerPawn 은 유효 WorldContext 필요 — Self null 시 크래시 방지.
+            if (Self)
+            {
+                if (AActor* P = UGameplayStatics::GetPlayerPawn(Self, 0)) return P;
+            }
             return BBTarget;
         }
         // <NpcName> — NPCMap 조회

@@ -190,10 +190,13 @@ void UVoiceInputComponent::HandleAsrMessage(const FString& Message)
     const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
     if (!FJsonSerializer::Deserialize(Reader, Obj) || !Obj.IsValid()) return;
 
-    const FString Type = Obj->GetStringField(TEXT("type"));
+    // 누락/비문자열 키에서 GetStringField 는 어설션/크래시 — TryGetStringField 로 안전 처리.
+    FString Type;
+    if (!Obj->TryGetStringField(TEXT("type"), Type)) return;
     if (Type == TEXT("final"))
     {
-        const FString Transcript = Obj->GetStringField(TEXT("transcript"));
+        FString Transcript;
+        Obj->TryGetStringField(TEXT("transcript"), Transcript);
         const FString Target = Obj->HasField(TEXT("target_npc_id")) ? Obj->GetStringField(TEXT("target_npc_id")) : PendingTargetNpc;
         const FString Player = Obj->HasField(TEXT("player_id")) ? Obj->GetStringField(TEXT("player_id")) : PendingPlayerId;
 
