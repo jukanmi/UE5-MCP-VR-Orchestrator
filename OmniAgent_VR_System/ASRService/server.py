@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -55,9 +56,10 @@ BYTES_PER_SAMPLE = 2         # pcm_s16le
 MAX_AUDIO_BUF_BYTES = 48000 * BYTES_PER_SAMPLE * 120
 
 # ── faster-whisper 설정 (§0 결정) ────────────────────────────────────────────
-WHISPER_MODEL_SIZE = "large-v3"
-WHISPER_DEVICE = "cuda"
-WHISPER_COMPUTE = "float16"
+# 환경변수로 오버라이드 가능 — CPU 환경은 WHISPER_DEVICE=cpu WHISPER_COMPUTE=int8.
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "large-v3")
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cuda")
+WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "float16")
 
 # UE5 language 힌트 → whisper 언어 코드. 미지정/미매핑은 None(자동 감지).
 LANG_MAP = {"KR": "ko", "KO": "ko", "EN": "en", "US": "en", "JP": "ja", "JA": "ja"}
@@ -81,14 +83,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # OOM/CUDA 미설치/다운로드 실패 — 서비스 기동은 유지, health 가 loading 반영
         logger.error(f"[ASR] 모델 로드 치명적 실패: {e}")
         _model = None
-    # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거
-    try:
-        warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)
-        segs, _ = _model.transcribe(warm, language="ko")
-        list(segs)
-        logger.info("[ASR] 프리워밍 완료")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[ASR] 프리워밍 실패(무시): {e}")
+    # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거 (모델 로드 성공 시에만)
+    if _model is not None:
+        try:
+            warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)
+            segs, _ = _model.transcribe(warm, language="ko")
+            list(segs)
+            logger.info("[ASR] 프리워밍 완료")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ASR] 프리워밍 실패(무시): {e}")
     yield
     _model = None
 

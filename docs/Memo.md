@@ -42,11 +42,12 @@
 - [ ] `animation_metadata.emotion` → AnimBP `EmotionMood` 파라미터 주입
 - [ ] (별도 브랜치 R&D) StreamingTalker / Audio2Gesture / CAP4D
 
-### 음성 입력 (ASR) — TTS 안정화 후
-- [ ] `asr-service` (Whisper 계열 WS 스트리밍) — 부분/최종 결과 이벤트
-- [ ] UE Mic Capture 컴포넌트 — PCM/Opus → asr-service
-- [ ] ASR 결과 → NPCManager → LLM 전달 (send 진입점 `UNPCManager::SendPlayerDialogue` 재사용)
-- [ ] (전환 완료 후) ChatWidget 채팅 기록 코드 정리 또는 레거시 모드로 분리
+### 음성 입력 (ASR)
+- [x] `ASRService` (faster-whisper large-v3, WS, **final** 결과) — 동시추론 Lock·버퍼상한·프리워밍 (2026-06-05). README 추가.
+- [x] UE Mic Capture (`UVoiceInputComponent`, PCM s16le → ASR WS) (2026-06-05)
+- [x] ASR→NPCManager→LLM 배선 검증 (2026-06-05): IA_VoiceInput→StartTalking→ASR→`OnTranscriptReady`→`HandleVoiceTranscript`→`SendPlayerDialogue`→BuildPrompt. 포트(8002)·PromptPayload(voice_transcript/target_npc_id)·main.py 파싱 전부 일치. **코드 완결**.
+- [ ] **ASR partial text 스트리밍** (Sprint 3): 서버가 부분 인식 결과를 주기 송신, `HandleAsrMessage` 의 `partial`/`ready` 처리(현재 무시) + 월드위젯 타이핑 표시. PDF §8.3.
+- [ ] (전환 완료 후) ChatWidget 채팅 기록 코드 정리 또는 레거시 모드로 분리 (에디터)
 
 ### RAG 지식 충전 (NPC 페르소나 미로드 — `No documents found for Skadi`)
 - [x] 파이프라인 완성 (2026-06-05): `rag_utils` chunk_category(lore/persona/history) 메타 태깅, 재빌드 CLI `python -m app.utils.build_knowledge`, 작성 템플릿/가이드 `knowledge_template/`. end-to-end 스모크 검증됨.
