@@ -81,14 +81,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # OOM/CUDA 미설치/다운로드 실패 — 서비스 기동은 유지, health 가 loading 반영
         logger.error(f"[ASR] 모델 로드 치명적 실패: {e}")
         _model = None
-    # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거
-    try:
-        warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)
-        segs, _ = _model.transcribe(warm, language="ko")
-        list(segs)
-        logger.info("[ASR] 프리워밍 완료")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[ASR] 프리워밍 실패(무시): {e}")
+    # 프리워밍 — 0.5s 무음으로 첫 호출 cold-start 지연 제거 (모델 로드 성공 시에만)
+    if _model is not None:
+        try:
+            warm = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)
+            segs, _ = _model.transcribe(warm, language="ko")
+            list(segs)
+            logger.info("[ASR] 프리워밍 완료")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ASR] 프리워밍 실패(무시): {e}")
     yield
     _model = None
 
