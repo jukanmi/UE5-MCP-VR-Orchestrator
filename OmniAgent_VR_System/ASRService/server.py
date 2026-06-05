@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -55,9 +56,10 @@ BYTES_PER_SAMPLE = 2         # pcm_s16le
 MAX_AUDIO_BUF_BYTES = 48000 * BYTES_PER_SAMPLE * 120
 
 # ── faster-whisper 설정 (§0 결정) ────────────────────────────────────────────
-WHISPER_MODEL_SIZE = "large-v3"
-WHISPER_DEVICE = "cuda"
-WHISPER_COMPUTE = "float16"
+# 환경변수로 오버라이드 가능 — CPU 환경은 WHISPER_DEVICE=cpu WHISPER_COMPUTE=int8.
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "large-v3")
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cuda")
+WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "float16")
 
 # UE5 language 힌트 → whisper 언어 코드. 미지정/미매핑은 None(자동 감지).
 LANG_MAP = {"KR": "ko", "KO": "ko", "EN": "en", "US": "en", "JP": "ja", "JA": "ja"}
