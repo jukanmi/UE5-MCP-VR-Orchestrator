@@ -45,17 +45,32 @@ void UVoiceInputComponent::StartTalking()
         return;
     }
 
-    Socket->OnConnected().AddLambda([this]()
+    // 비동기 WS 콜백 — 컴포넌트가 먼저 소멸되면 raw this 는 use-after-free.
+    // TWeakObjectPtr 로 매 콜백에서 생존 검증 후 실행.
+    TWeakObjectPtr<UVoiceInputComponent> WeakThis(this);
+    Socket->OnConnected().AddLambda([WeakThis]()
     {
-        UE_LOG(LogTemp, Log, TEXT("[Voice] ASR WS 연결됨 — start 송신"));
-        SendStartIfReady();
+        if (UVoiceInputComponent* StrongThis = WeakThis.Get())
+        {
+            UE_LOG(LogTemp, Log, TEXT("[Voice] ASR WS 연결됨 — start 송신"));
+            StrongThis->SendStartIfReady();
+        }
     });
-    Socket->OnConnectionError().AddLambda([this](const FString& Error)
+    Socket->OnConnectionError().AddLambda([WeakThis](const FString& Error)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Voice] ASR WS 연결오류 — %s"), *Error);
-        bTalking = false;
+        if (UVoiceInputComponent* StrongThis = WeakThis.Get())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Voice] ASR WS 연결오류 — %s"), *Error);
+            StrongThis->bTalking = false;
+        }
     });
-    Socket->OnMessage().AddLambda([this](const FString& Msg) { HandleAsrMessage(Msg); });
+    Socket->OnMessage().AddLambda([WeakThis](const FString& Msg)
+    {
+        if (UVoiceInputComponent* StrongThis = WeakThis.Get())
+        {
+            StrongThis->HandleAsrMessage(Msg);
+        }
+    });
     Socket->Connect();
 
     // 2) 마이크 캡처 오픈 — 콜백에서 raw float 수신
