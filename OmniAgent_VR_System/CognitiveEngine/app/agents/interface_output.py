@@ -173,7 +173,9 @@ def _parse_action_tags(raw_response: str, facial_state: str) -> list:
             continue
         params = {}
         for k, v in re.findall(r'(\w+)\s*=\s*("[^"]*"|\S+)', body):
-            key = _PARAM_KEY_MAP.get(k.lower())
+            # LLM 이 이미 올바른 snake_case 키(target_id 등)를 직접 출력하면
+            # 매핑 테이블에 없어도 그대로 사용 (무시 방지).
+            key = _PARAM_KEY_MAP.get(k.lower(), k.lower())
             val = v.strip('"').strip()
             if key and val:
                 params[key] = val
@@ -224,7 +226,9 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
 
     # 3. 아무 액션도 없으면 전체를 Dialogue로 처리 — FacialState 는 태그값 유지
     if not actions:
-        clean_text = re.sub(r'[*()]', '', raw_response).strip()
+        # [Action:] 태그가 남아 NPC 가 태그를 직접 발화하는 것 방지(폴백 누수 차단).
+        clean_text = re.sub(r'\[Action:\s*[^\]]+\]', '', raw_response, flags=re.IGNORECASE)
+        clean_text = re.sub(r'[*()]', '', clean_text).strip()
         if clean_text:
             actions.append(GameAction(
                 ActionType="Dialogue",
