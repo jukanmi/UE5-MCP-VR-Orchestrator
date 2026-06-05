@@ -65,11 +65,22 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         return True
 
     try:
-        import ast
-        loc_dict = ast.literal_eval(target_loc_str)
-        x, y, z = loc_dict.get("x", 0), loc_dict.get("y", 0), loc_dict.get("z", 0)
+        import ast, re
+        coords: dict = {}
+        # ① dict/JSON 문자열 시도
+        try:
+            parsed = ast.literal_eval(target_loc_str)
+            if isinstance(parsed, dict):
+                coords = {str(k).lower(): float(v) for k, v in parsed.items()}
+        except Exception:
+            pass
+        # ② UE 형식 (X=100,Y=200,Z=0) 폴백 — literal_eval 로는 SyntaxError
+        if not coords:
+            coords = {k.lower(): float(v) for k, v in
+                      re.findall(r'([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)', target_loc_str)}
+        x, y, z = coords.get("x", 0), coords.get("y", 0), coords.get("z", 0)
     except Exception:
-        # Pydantic 파싱에서 실패한 경우 무시
+        # 파싱 자체 실패 시 경계검증 생략(통과)
         return True
 
     x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
@@ -197,10 +208,8 @@ def rules_node(state: AgentState) -> dict:
 
     # 모든 액션이 제거된 경우 → reasoning에 REJECTED 표시
     if not validated_actions:
-        print("[Rules] ❌ 모든 액션이 검증 실패, REJECTED 처리")
-        # Optional field 처리에 유의
-        current_reasoning = getattr(batch, "reasoning", "") or ""
-        setattr(batch, "reasoning", f"REJECTED: 유효한 액션 없음. 이유: {'; '.join(all_corrections)}")
+        # ActionBatch 에 reasoning 필드 없음(직렬화 안 됨) — 로그로만 남김.
+        print(f"[Rules] ❌ 모든 액션이 검증 실패, REJECTED 처리. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
         return {
             "action_batch": batch,

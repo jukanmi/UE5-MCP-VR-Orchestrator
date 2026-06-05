@@ -175,7 +175,10 @@ async def ws_stream(websocket: WebSocket) -> None:
                     request_id = data.get("request_id") or request_id
                     target_npc_id = data.get("target_npc_id")
                     player_id = data.get("player_id") or player_id
-                    sample_rate = int(data.get("sample_rate") or TARGET_SAMPLE_RATE)
+                    try:
+                        sample_rate = int(data.get("sample_rate") or TARGET_SAMPLE_RATE)
+                    except (TypeError, ValueError):   # 비숫자 문자열 → 연결끊김 방지
+                        sample_rate = TARGET_SAMPLE_RATE
                     if sample_rate <= 0:   # 0/음수 → ZeroDivision·resample 크래시 방지
                         sample_rate = TARGET_SAMPLE_RATE
                     language = data.get("language")

@@ -113,7 +113,9 @@ async def websocket_llm_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
     finally:
-        _active_llm_ws = None
+        # 다중 클라이언트 레이스 방지 — 현재 끊기는 소켓이 활성 소켓일 때만 해제.
+        if _active_llm_ws is websocket:
+            _active_llm_ws = None
 
 async def _process_llm_message(raw_data: str) -> str:
     try:
@@ -550,10 +552,10 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             roll = random.randint(1, 100)
 
             if roll > 40:  # 60% chance to act rationally
-                fallback_id = top_n[0].get("id", candidates_raw[0]["id"])
+                fallback_id = top_n[0].get("id", "OPTIMAL_0")
                 reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
             else:          # 40% chance to panic
-                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", candidates_raw[0]["id"])
+                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", "OPTIMAL_0")
                 reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
 
         logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})")

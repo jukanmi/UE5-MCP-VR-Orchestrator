@@ -178,7 +178,7 @@ def interface_input_node(state: AgentState) -> dict:
     # prompt envelope에는 perceived_targets가 없으므로 state.get("game_state_data") 형태로 캐시된 최신 상태를 쓰거나
     # 임시로 none 처리합니다 (interface_input이 GesPrompt만 처리중이므로)
     perceived_str = "Unknown"
-    state_payload = state.get("game_state_data", {})
+    state_payload = state.get("cached_world_state", {})
     if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
         targets = state_payload["perceived_targets"]
         if targets:
