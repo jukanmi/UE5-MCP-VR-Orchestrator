@@ -56,10 +56,12 @@ void UWebSocketClient::TryReconnect()
 
     if (UWorld* World = GetWorld())
     {
+        TWeakObjectPtr<UWebSocketClient> WeakThis(this);
         World->GetTimerManager().SetTimer(
             ReconnectTimerHandle,
-            [this]()
+            [this, WeakThis]()
             {
+                if (!WeakThis.IsValid()) return;   // 재연결 타이머 발화 시 객체 GC 가드
                 if (WebSocket.IsValid() && WebSocket->IsConnected())
                     WebSocket->Close();
                 WebSocket = FWebSocketsModule::Get().CreateWebSocket(CachedServerURL);

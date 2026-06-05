@@ -673,7 +673,9 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Dodge:        ExecuteDodgeAction(Direction.IsNearlyZero() ? FVector(100, 100, 0) : Direction); break;
     case EAction::Flee:
     {
-        auto DoFlee = [this, Location, TargetActor]() {
+        TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
+        auto DoFlee = [this, WeakThis, Location, TargetActor]() {
+            if (!WeakThis.IsValid()) return;   // 지연 타이머 발화 시 컴포넌트 GC 가드(use-after-free)
             FVector FleeTarget = Location;
             if (FleeTarget.IsNearlyZero())
             {
@@ -1238,8 +1240,9 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
             // LLM 무응답 시 자동 복구 타이머
             if (UWorld* W = GetWorld())
             {
+                TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
                 W->GetTimerManager().SetTimer(TacticalLLMTimeoutTimer,
-                    [this]() { AbortTacticalQuery(); },
+                    [this, WeakThis]() { if (WeakThis.IsValid()) AbortTacticalQuery(); },
                     TacticalLLMTimeout, false);
             }
 
