@@ -68,10 +68,16 @@
 - [ ] `ST_NPC.uasset` Transition 조건(`bHasAction==true`) 및 Evaluator 연결 확인
 - [ ] `BB_NPC.uasset` 에서 HasAction / SubAction / BehaviorMode / FacialState 키 제거 (ST 에셋 확인 후)
 
-### DA_NPC_Actions 몽타주 등록 (에디터)
+### DA_NPC_Actions 몽타주 등록 (에디터) — 🔴 최우선(이게 비면 LLM 행동 절반 무음실패)
 - [ ] `Block` / `Dodge` / `SitDown` / `SitUp` / `LieDown` / `LieUp`
 - [ ] `Give` / `PickUp` / `Drop` / `Eat` / `Comfort` / `Craft` / `Repair` / `Pray` / `Read`
 - [ ] `Emote_*` / `Dance_*` / `Sing_*` — LLM 스타일 키 (대표값 사전 등록)
+
+### 에디터 잔여 (빌드 후 / 에셋 연결)
+- [ ] **EQS Named Parameter 바인딩** (빌드 후 필수): `DistanceWeightParam`/`CoverWeightParam`→Test Score Factor, `SafeDistance`→Distance Filter Min, `AggressionWeightParam`→TacticalPositionsQuery Inverse Distance Test (Generator 반경은 고정값). 안 하면 전술 가중치 무효.
+- [ ] **BP CDO `PerceptionTickInterval` 리셋**: C++ 기본 9.0f인데 BP CDO가 옛 3.0f 직렬화 중. NPC BP Details에서 ↺ 리셋 후 저장.
+- [ ] **`IA_VoiceInput` 에셋 할당 확인**: `BP_VRPawn`의 IA 프로퍼티 + IMC 매핑(push-to-talk). 코드 배선은 완료, 에셋 연결만 에디터.
+- [ ] (PR #9 머지 후) **UE 풀빌드 1회** — 이번 세션 C++ 변경(퍼셉션 StaticClass, SetTimer TWeakObjectPtr×3 등) 빌드 검증.
 
 ---
 
@@ -86,6 +92,7 @@
 
 ## Handoff Notes
 
+- **PR #9 Gemini 보류 항목 (2026-06-05)**: 티키타카 5라운드로 ~20건 반영했으나 아래는 의도적 보류 — 빌드/런타임 검증 필요, 크래시 아님(perf/동작). **How to apply**: UE 풀빌드 후 실측하며 판단. ① `ItemManager::GetItemsInRange` O(N×M) → 역참조 맵 / `StaticLoadObject` 동기로드 hitch → 비동기 로드. ② `NPCStateComponent::FlushEventReport` WaitingLLM 조기반환 시 지연 이벤트가 재flush 안 돼 영구대기 가능 — TacticalQueryState 해제 시 재처리 트리거 필요. ③ `VRPawn` ShotDirection 이 Grip 포즈 forward 인데 조준선은 Aim 포즈 — 무기 명중 방향 불일치. **player_id 는 오탐**(vr_context.player_id 정상, 건드리지 말 것).
 - **VR PCVR(Link) 결론 (2026-05-30)**: 현재 Quest Link(케이블 PCVR)로 개발 — 게임은 PC 실행, Quest는 디스플레이. **APK/사이드로딩/IP외부화 불필요**(서버도 PC, 127.0.0.1 OK). 타이틀바 `OpenXR Oculus`+Link 가 PCVR 증거. **How to apply**: 스탠드얼론(Quest 단독 언테더드)을 최종 타겟으로 확정하기 전엔 Memo "Quest 스탠드얼론 빌드" 항목 손대지 말 것. 확정 시 APK + IP외부화 + 모바일 성능 최적화 동반. VR 아바타 IK 자체는 완성·머지됨.
 - **VR FBIK 튜닝값 (2026-05-30)**: X_Bot 기준 C++ 기본값 박힘 — `LeftHandGripOffset(180,0,90)`, `RightHandGripOffset(0,0,-90)`, `HeadEffectorOffset(0,-90,90)`, `CameraHeightOffset=-30`, `AvatarReferenceHeight=170`. **Why C++ 기본값**: CLAUDE.md §9(에디터 수작업 최소화) — 바이너리 uasset 대신 소스에 명시해 버전관리·인수인계. **How to apply**: 다른 스켈레톤 쓰면 이 값들 재튜닝 필요. `LogIKMetrics` exec 로 이펙터 Transform 덤프 → CR 변수 Default 에 박아 프리뷰에서 PIE 로딩 없이 튜닝(이번 워크플로우). 팔꿈치는 CR_VRPawn_FBIK Bone Settings Preferred Angle.
 - **Quest 빌드 보류 (2026-05-16)**: USB-C 케이블 미보유로 실기 사이드로딩 불가. **현재 코드는 다 준비됨** — VR Phase 1·2 (OpenXR·VRPawn·BP_VRPawn·Android 패키지 설정·OBB 통합·Vulkan·arm64) 모두 Develop 머지 완료. 케이블 도착 즉시 위 "Quest 빌드" 체크리스트 실행하면 됨. **잊지 말 것**: ① 케이블 도착 알림 / ② Android SDK 머신 설정은 .ini에 없으니 새로 셋업 필요 / ③ Quest 와 PC 같은 Wi-Fi 확인.
