@@ -10,6 +10,8 @@
 // 명시한다. 16kHz 리샘플은 Python(ASR) 책임. (CLAUDE.md §0 결정)
 #pragma once
 
+#include <atomic>
+
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "AudioCaptureCore.h"
@@ -64,7 +66,9 @@ private:
 
     bool bTalking = false;
     bool bStartSent = false;
-    int32 StreamSampleRate = 48000;
+    // 오디오 스레드(HandleAudioGenerate 직전 콜백)에서 쓰고 게임 스레드(SendStartIfReady)에서 읽음.
+    // 동기화 없으면 ARM64(Quest)에서 데이터 레이스 → atomic 으로 보호.
+    std::atomic<int32> StreamSampleRate{ 48000 };
     FString RequestId;
     FString PendingTargetNpc;
     FString PendingPlayerId;

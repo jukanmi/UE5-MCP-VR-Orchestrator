@@ -15,6 +15,10 @@ UVoiceInputComponent::UVoiceInputComponent()
 void UVoiceInputComponent::StartTalking()
 {
     if (bTalking) return;
+
+    // 빠른 재누름 가드 — 이전 소켓이 final 대기로 남아있을 수 있어 명시 정리(고스트 연결/누수 방지).
+    CloseSocket();
+
     bTalking = true;
     bStartSent = false;
     RequestId = FString::Printf(TEXT("asr_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(12));
@@ -114,7 +118,7 @@ void UVoiceInputComponent::SendStartIfReady()
     Obj->SetStringField(TEXT("request_id"), RequestId);
     Obj->SetStringField(TEXT("target_npc_id"), PendingTargetNpc);
     Obj->SetStringField(TEXT("player_id"), PendingPlayerId);
-    Obj->SetNumberField(TEXT("sample_rate"), StreamSampleRate);
+    Obj->SetNumberField(TEXT("sample_rate"), StreamSampleRate.load());
     Obj->SetStringField(TEXT("language"), Language);
 
     FString Out;
