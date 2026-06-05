@@ -190,7 +190,7 @@ Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
 Reply with ONLY the action name, e.g.: Attack"""
 
 
-def _empty_batch_json(mode: str = "Common") -> str:
+def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
     """액션 없는 기본 ModeActionRequest JSON — 폴백/무행동 공통 응답."""
     return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
 
