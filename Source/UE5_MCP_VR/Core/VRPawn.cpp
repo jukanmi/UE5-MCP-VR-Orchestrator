@@ -65,7 +65,7 @@ AVRPawn::AVRPawn()
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
-    StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
+    StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
     StimuliSource->RegisterWithPerceptionSystem();
 
     // 음성 입력 컴포넌트

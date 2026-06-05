@@ -36,8 +36,8 @@ ASmartNPC::ASmartNPC()
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
     if (StimuliSource)
     {
-        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
-        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Hearing>());
+        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+        StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
         StimuliSource->RegisterWithPerceptionSystem();
     }
 

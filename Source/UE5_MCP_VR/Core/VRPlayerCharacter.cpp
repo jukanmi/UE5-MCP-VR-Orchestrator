@@ -29,7 +29,7 @@ AVRPlayerCharacter::AVRPlayerCharacter()
     if (StimuliSource)
     {
         // Register this actor as a source for Sight sense
-        StimuliSource->RegisterForSense(TSubclassOf<UAISense_Sight>());
+        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
         StimuliSource->RegisterWithPerceptionSystem();
     }
 }
