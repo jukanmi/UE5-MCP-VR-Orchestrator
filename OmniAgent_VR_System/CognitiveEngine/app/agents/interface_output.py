@@ -213,6 +213,17 @@ def _regex_fallback_parse(raw_response: str, npc_id: str,
             FacialState=emotion,
             Parameters={"text": speech_matches[0], "emotion": emotion},
         ))
+    else:
+        # 따옴표 없이 액션 태그만 출력한 경우 NPC 가 침묵하지 않도록 —
+        # [Action:]/괄호/별표 제거한 잔여 텍스트가 있으면 Dialogue 로 폴백.
+        bare = re.sub(r'\[Action:\s*[^\]]+\]', '', raw_response, flags=re.IGNORECASE)
+        bare = re.sub(r'[*()]', '', bare).strip()
+        if bare:
+            actions.append(GameAction(
+                ActionType="Dialogue",
+                FacialState=facial_state,
+                Parameters={"text": bare[:200], "emotion": facial_state},
+            ))
 
     # 2. 게임 액션 — [Action:] 태그 1순위, 없으면 asterisk 키워드 폴백
     if tag_actions:

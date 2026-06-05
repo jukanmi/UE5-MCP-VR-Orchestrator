@@ -176,7 +176,9 @@ def list_voices() -> Iterator[tuple[str, str, VoiceMeta]]:
             ref = str(entry.get("ref") or npc_ref)
             if ref in seen:
                 continue
-            speed = entry.get("speed", npc_speed)
+            speed = entry.get("speed")
+            if speed is None:
+                speed = npc_speed
             yield (
                 npc_id,
                 normalize_emotion(emo_key),
