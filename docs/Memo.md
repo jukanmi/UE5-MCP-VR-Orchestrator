@@ -49,11 +49,10 @@
 - [ ] (전환 완료 후) ChatWidget 채팅 기록 코드 정리 또는 레거시 모드로 분리
 
 ### RAG 지식 충전 (NPC 페르소나 미로드 — `No documents found for Skadi`)
-- [ ] NPC별 설정 텍스트(lore/persona/history) 작성 → `utils/memory_manager.py` 로 청킹·임베딩 적재
-- [ ] 임베딩은 **로컬** `models/embeddings/all-MiniLM-L6-v2` 사용 (PDF의 `text-embedding-3-small` 은 오기재 — 클라우드 금지)
-- [ ] 벡터 스키마: `memory_id / npc_id / chunk_category(lore·persona·history) / raw_text / embedding_vector`
-- [ ] 검색 순서 = 메타필터(`where npc_id==current`) **먼저** → ANN 상위 3~5개만 프롬프트 주입 (할루 차단)
-- [ ] 데이터 대량화 대비 HNSW(또는 IVF_FLAT) 인덱스 파라미터 명시 (PDF 설계서 §5)
+- [x] 파이프라인 완성 (2026-06-05): `rag_utils` chunk_category(lore/persona/history) 메타 태깅, 재빌드 CLI `python -m app.utils.build_knowledge`, 작성 템플릿/가이드 `knowledge_template/`. end-to-end 스모크 검증됨.
+- [x] 폴더 정합 (2026-06-05): `elera`→`elara` 통일(persona+knowledge), stale vectorstore(elara/james) 삭제. NPC별 서브폴더 스캐폴드.
+- [ ] **(사용자) 실제 lore/persona/history 텍스트 작성** — `knowledge/<npc>/{lore,persona,history}/*.md`. skadi/elara/james 폴더 비어있음("No documents" 원인). `knowledge_template/_AUTHORING_GUIDE.md` 참조 후 `build_knowledge --all`.
+- 참고: 임베딩 로컬 `all-MiniLM-L6-v2`(클라우드 금지), npc_id 필터는 NPC별 스토어 분리로 달성. memory_manager.py 는 대화 히스토리(JSON)용 — RAG 인제스트 아님(PDF 혼동).
 
 ### Phase 6 — VR 자세 동기화 멀티플레이어 (우선순위 낮음)
 - [ ] AVRPawn 리플리케이션 — bReplicates=true, ReplicateMovement, Component Replicates
