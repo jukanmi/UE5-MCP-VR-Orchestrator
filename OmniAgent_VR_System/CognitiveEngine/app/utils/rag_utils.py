@@ -93,7 +93,7 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
         # 즉시 상위 폴더명(lore/persona/history)을 chunk_category 메타데이터로 태깅.
         # 검색 시 카테고리 라벨로 노출되고, 추후 필터링 확장 지점.
         for doc in documents:
-            src = doc.metadata.get("source", "")
+            src = doc.metadata.get("source") or ""
             parent = os.path.basename(os.path.dirname(src)) if src else ""
             doc.metadata["chunk_category"] = parent if parent in _KNOWN_CATEGORIES else "general"
             doc.metadata["npc_id"] = agent_lower
@@ -156,7 +156,7 @@ def retrieve_context(agent_id: str, query: str, k: int = 3) -> str:
             if not doc.page_content:
                 continue
                 
-            source = os.path.basename(doc.metadata.get("source", "unknown"))
+            source = os.path.basename(doc.metadata.get("source") or "unknown")
             category = doc.metadata.get("chunk_category", "general")
             # Clean content and ensure it's a string
             content = str(doc.page_content).strip()

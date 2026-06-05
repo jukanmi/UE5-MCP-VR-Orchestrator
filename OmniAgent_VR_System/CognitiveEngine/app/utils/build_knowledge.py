@@ -63,8 +63,8 @@ def main() -> None:
     g.add_argument("--agent", help="특정 NPC id (예: skadi)")
     g.add_argument("--all", action="store_true", help="knowledge/ 의 모든 NPC 빌드")
     g.add_argument("--list", action="store_true", help="에이전트와 문서 수만 출력")
-    parser.add_argument("--force", action="store_true", default=True,
-                        help="캐시 무시 강제 재빌드 (기본 True)")
+    parser.add_argument("--force", action="store_true", default=False,
+                        help="캐시 무시 강제 재빌드 (기본 False — 캐시 있으면 재사용)")
     args = parser.parse_args()
 
     agents = discover_agents()
@@ -74,6 +74,10 @@ def main() -> None:
             return
         for a in agents:
             print(f"  {a}: {_count_md(a)} md")
+        return
+
+    if args.agent is not None and not args.agent.strip():
+        print("[Build] 에러: 올바른 에이전트 ID를 입력하세요 (빈 값 불가).")
         return
 
     targets = agents if args.all else [args.agent]
