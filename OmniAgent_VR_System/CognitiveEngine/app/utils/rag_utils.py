@@ -94,7 +94,7 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
         # 검색 시 카테고리 라벨로 노출되고, 추후 필터링 확장 지점.
         for doc in documents:
             src = doc.metadata.get("source") or ""
-            parent = os.path.basename(os.path.dirname(src)) if src else ""
+            parent = os.path.basename(os.path.dirname(src)).lower() if src else ""
             doc.metadata["chunk_category"] = parent if parent in _KNOWN_CATEGORIES else "general"
             doc.metadata["npc_id"] = agent_lower
 
