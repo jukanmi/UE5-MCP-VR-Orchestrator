@@ -113,7 +113,7 @@ void AVRPawn::BeginPlay()
     // 높이를 "바닥" 기준으로 보고하므로, VROrigin을 캡슐 절반 높이만큼 내려
     // 트래킹 공간 원점을 실제 바닥에 맞춘다. 이를 빼지 않으면 카메라가
     // 캡슐 절반 높이(기본 88cm)만큼 떠 보인다.
-    if (VROrigin)
+    if (VROrigin && GetCapsuleComponent())
     {
         const float HalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
         VROrigin->SetRelativeLocation(FVector(0.f, 0.f, -HalfHeight));

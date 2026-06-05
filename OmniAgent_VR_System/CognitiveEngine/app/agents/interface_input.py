@@ -83,7 +83,9 @@ def _format_gestures(gestures) -> str:
         if g.hand:
             desc += f" ({g.hand} hand)"
         if g.location:
-            desc += f" at location {g.location}"
+            loc = g.location
+            loc_str = f"({loc.x}, {loc.y}, {loc.z})" if hasattr(loc, "x") else str(loc)
+            desc += f" at location {loc_str}"
         if g.held_object_id:
             desc += f", holding {g.held_object_id}"
         descriptions.append(desc)

@@ -301,10 +301,11 @@ def _extract_target_se_sync(voice_id: str) -> object:
     conv = _load_converter_sync()
     logger.info(f"[TTS] target SE 추출(신규/변경): {voice_id} ← {ref_wav.name}")
     t0 = time.perf_counter()
+    # get_se 가 target_dir 에 저장 시도 → 먼저 디렉터리 보장(FileNotFoundError 방지).
+    se_cache.parent.mkdir(parents=True, exist_ok=True)
     target_se, _audio_name = se_extractor.get_se(
         str(ref_wav), conv, vad=True, target_dir=str(VOICES_DIR / "_processed")
     )
-    se_cache.parent.mkdir(parents=True, exist_ok=True)
     torch.save(target_se, str(se_cache))
     _state.target_se_cache[voice_id] = target_se
     logger.info(f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")

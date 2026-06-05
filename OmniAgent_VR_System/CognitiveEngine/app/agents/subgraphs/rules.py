@@ -78,6 +78,9 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         if not coords:
             coords = {k.lower(): float(v) for k, v in
                       re.findall(r'([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)', target_loc_str)}
+        if not coords:
+            # 파싱 실패 → (0,0,0) 오판 대신 경계검증 생략(통과)
+            return True
         x, y, z = coords.get("x", 0), coords.get("y", 0), coords.get("z", 0)
     except Exception:
         # 파싱 자체 실패 시 경계검증 생략(통과)
