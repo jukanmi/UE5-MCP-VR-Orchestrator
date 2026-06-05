@@ -22,6 +22,9 @@ VECTORSTORE_PATH = os.path.join(KNOWLEDGE_BASE_PATH, "vectorstores")
 # Cache for loaded vector stores
 _vectorstore_cache = {}
 
+# chunk_category 로 인정되는 서브폴더명 (PDF 설계서 §5)
+_KNOWN_CATEGORIES = {"lore", "persona", "history"}
+
 def get_embeddings():
     """Get the embedding model for vector operations."""
     # 로컬 경로가 있으면 해당 파일을 로드 (오프라인 모드)
@@ -73,7 +76,8 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
         return None
     
     try:
-        # Load all documents from the NPC's knowledge folder
+        # Load all documents from the NPC's knowledge folder.
+        # 서브폴더 구조: knowledge/<npc>/{lore,persona,history}/*.md (PDF 설계서 §5 chunk_category)
         loader = DirectoryLoader(
             knowledge_path,
             glob="**/*.md",
@@ -81,11 +85,19 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
             loader_kwargs={"encoding": "utf-8"}
         )
         documents = loader.load()
-        
+
         if not documents:
             print(f"[RAG] No documents found for {agent_id}")
             return None
-        
+
+        # 즉시 상위 폴더명(lore/persona/history)을 chunk_category 메타데이터로 태깅.
+        # 검색 시 카테고리 라벨로 노출되고, 추후 필터링 확장 지점.
+        for doc in documents:
+            src = doc.metadata.get("source") or ""
+            parent = os.path.basename(os.path.dirname(src)).lower() if src else ""
+            doc.metadata["chunk_category"] = parent if parent in _KNOWN_CATEGORIES else "general"
+            doc.metadata["npc_id"] = agent_lower
+
         # Split documents into chunks
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
@@ -144,11 +156,12 @@ def retrieve_context(agent_id: str, query: str, k: int = 3) -> str:
             if not doc.page_content:
                 continue
                 
-            source = os.path.basename(doc.metadata.get("source", "unknown"))
+            source = os.path.basename(doc.metadata.get("source") or "unknown")
+            category = doc.metadata.get("chunk_category", "general")
             # Clean content and ensure it's a string
             content = str(doc.page_content).strip()
             if content:
-                context_parts.append(f"[{source}] {content}")
+                context_parts.append(f"[{category}:{source}] {content}")
         
         if not context_parts:
             return ""
