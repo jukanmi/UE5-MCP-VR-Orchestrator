@@ -393,15 +393,16 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     # 합성하므로 TTS 스킵. isalnum 은 한글 포함 유니코드 글자 판정.
     has_speech = bool(dialogue_text_for_audio) and any(c.isalnum() for c in dialogue_text_for_audio)
 
-    if npc_id_for_audio and has_speech:
+    if npc_id_for_audio and dialogue_text_for_audio:
+        # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송 —
+        # NpcAudioResponse(빈 url)가 UE5 자막 경로이므로 dispatch 자체는 항상 수행.
         asyncio.create_task(_dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text_for_audio,
             emotion=dialogue_emotion,
             trace_id=envelope.msg_id,
+            bypass_tts=not has_speech,
         ))
-    elif npc_id_for_audio and dialogue_text_for_audio:
-        logger.info(f"[Main][TTS] {npc_id_for_audio} 대사가 글자 없음('{dialogue_text_for_audio}') → TTS 생략")
     elif npc_id_for_audio:
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
     else:
@@ -420,24 +421,30 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         return fallback.model_dump_json()
 
 
-async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str, trace_id: str = "") -> None:
+async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
+                              trace_id: str = "", bypass_tts: bool = False) -> None:
     """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
 
     trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
+    bypass_tts: 글자 없는 대사("...") — TTS 합성 생략, 자막만 전송(빈 url).
     실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
     """
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
-    try:
-        info = await tts_client.synthesize(
-            text=dialogue_text,
-            voice_id=npc_id,
-            emotion=emotion,
-            trace_id=trace_id,
-        )
-    except tts_client.TTSError as e:
-        logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+    if bypass_tts:
+        logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
         info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+    else:
+        try:
+            info = await tts_client.synthesize(
+                text=dialogue_text,
+                voice_id=npc_id,
+                emotion=emotion,
+                trace_id=trace_id,
+            )
+        except tts_client.TTSError as e:
+            logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+            info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
     if _active_llm_ws is None:
         logger.info("[Main][TTS] 활성 UE5 WS 없음 — NpcAudioResponse 송신 생략")
