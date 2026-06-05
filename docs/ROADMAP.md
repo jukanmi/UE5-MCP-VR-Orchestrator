@@ -1,6 +1,6 @@
 # UE5_MCP_VR — 통합 로드맵 (TTS 우선 + 향후 전체)
 
-> 작성 2026-05-30. 코드베이스 탐색 기반. 우선 **TTS에서 다음에 할 것**, 이어서 **프로젝트 전체 향후 작업**.
+> 작성 2026-05-30 · 갱신 2026-06-05. 코드베이스 탐색 기반. 우선 **TTS에서 다음에 할 것**, 이어서 **프로젝트 전체 향후 작업**.
 > 범례 — 규모: S(반나절)/M(1~2일)/L(3일+). 우선순위: 🔴필수 / 🟡중요 / 🟢선택. 의존: 선행 조건.
 > 코드 포인터는 `파일:라인` 또는 `파일::함수`. 세션 메모는 `docs/Memo.md`, 완료 이력은 `docs/주간기록/`.
 
@@ -26,35 +26,17 @@
 
 TTS 본체(M2)는 완성. 남은 것은 **운영 품질·표현력·견고성**. 아래는 코드 탐색으로 확인한 구체적 갭.
 
-### 1.1 🔴 감정 → 음색 연결 복구 (M3 핵심) — M ★중요·발견사항
-> **⚠️ 핵심 발견**: 감정 TTS 기능이 **`feature/TTSExtend` 브랜치에 완성돼 있으나 Develop 에 미머지**.
-> Memo "TTS M2 감정 반영 완료" 는 그 미머지 작업을 가리킨 것 — **현재 Develop TTS 는 감정을 전혀 안 씀**.
+### 1.1 ✅ 감정 → 음색 연결 (M3 핵심) — 완료 2026-06-05 (`feature/TTS-Emotion` 머지)
+- FacialState → emotion → ref/speed: `voice_resolver.resolve_voice_meta(npc_id, emotion)`, `normalize_emotion()`.
+- `server.py` emotion 필드 + MeloTTS→ToneColorConverter zero-shot, target SE 디스크/메모리 캐시 + startup 사전적재.
+- `main.py` `act.FacialState → emotion → tts_client.synthesize(emotion=)` 배선, `[Facial:]` 태그 우선, 글자없는 대사 스킵.
+- (구 기록: 감정 로직은 `feature/TTSExtend` 에 있었으나 별도 `feature/TTS-Emotion` 으로 재구현·머지됨. TTSExtend 브랜치는 폐기.)
 
-- **Develop 현실**: `voice_resolver.resolve_voice(npc_id)` 만 존재(감정 인자 없음). `_synthesize_sync(text, voice_id, language)` 에 emotion 미전달. `main.py:380` 도 `emotion="neutral"` 고정. → 음색 항상 중립.
-- **TTSExtend 에 이미 있는 것(포팅 대상)**:
-  - `voice_resolver.py`: `resolve_voice_meta(npc_id, emotion) → VoiceMeta(ref, lang, speed)`, `normalize_emotion()`(C++ EFacialState 정합), `list_voices()`(부팅 pre-extract).
-  - `server.py`: `_synthesize_sync` 가 ref/speed 메타 사용, emotion 인자 수용.
-  - `voice_map.yaml`: `npcs.*.emotions.<E>` → ref/speed (예: Skadi/Happy → Skadi_happy, speed 1.05). `base_voices/` 에 감정별 WAV 존재(Skadi_angry/fear/happy/sad 등 — 이미 머지됨).
-- **이미 깔린 배관(Develop)**:
-  - LLM `[Facial: Angry]` → `interface_output._parse_mode_and_facial` 파싱 → `GameAction.FacialState`(9종) (`interface_output.py:43-81`).
-  - `tts_client.synthesize(emotion=)` 인자 수용, `NpcAudioResponse.animation_metadata.emotion` 존재.
-- **할 일**: TTSExtend 의 **emotion 부분만 cherry-pick/포팅**(전체 브랜치 머지 금지 — VR/리팩토링 revert됨). ① `voice_resolver.py` 교체 ② `server.py` 의 `_synthesize_sync`+synthesize 가 emotion→ref/speed 사용하도록 ③ `main.py:380` 에서 Dialogue 액션 `act.FacialState` 전달.
-- **파일**: `TTSService/voice_resolver.py`, `TTSService/server.py`, `voice_map.yaml`, `main.py:358-384`
-- **검증**: 화난 대사 → Skadi_angry ref·speed 반영, 로그 `voice=… emotion=Angry`.
-- **선행 점검**: TTSExtend 의 voice_resolver/server 가 현재 OpenVoice v0.6.0 server 구조와 호환되는지(시그니처 차이) 확인 후 포팅.
+### 1.2 ✅ TTS 재시도 정책 — 완료 2026-06-05
+- `tts_client.synthesize` 0.2s 백오프 1회 재시도(timeout/HTTP500/연결오류/비-JSON), 실패 시 자막 폴백 유지.
 
-### 1.2 🟡 TTS 재시도 정책 — S
-- **검증**: 타임아웃은 **이미 존재** — `TTS_TIMEOUT_SEC=3.0`(env 오버라이드 가능), `httpx.AsyncClient(timeout=...)` (`tts_client.py:25,55`). 실패 시 `TTSError`→자막 폴백(`main.py:413-415`).
-- **실제 갭 = 재시도 없음**: 단발 실패 시 바로 자막. 일시적 네트워크/동시성 결함에 1회 재시도 여지.
-- **할 일**: `synthesize` 호출을 1회 재시도(짧은 backoff)로 감싸고, 그래도 실패면 현행 자막 폴백 유지.
-- **파일**: `clients/tts_client.py::synthesize` 또는 `main.py::_dispatch_npc_audio`
-- **주의**: 재시도는 일시 결함에만 의미 — 영구 실패(모델 미로드 503)는 즉시 폴백(무한 재시도 금지).
-
-### 1.3 🟡 request_id 기반 로그 trace — S
-- **갭**: LLM↔TTS↔UE5 를 잇는 일관 추적 ID 부재. 디버깅 시 어느 발화가 어느 요청인지 매칭 어려움.
-- **할 일**: prompt msg_id → TTS request_id → UE5 NpcAudioResponse 까지 동일 trace 필드 전파. 로그 포맷 통일(`[trace=...]`).
-- **참고 패턴**: Memo Handoff "EQS request_gen 프로토콜" — echo 기반 ID 전파를 그대로 재사용 권장.
-- **파일**: `main.py`, `clients/tts_client.py`, `schemas/npc_audio.py`, UE `NPCAudioStreamComponent`
+### 1.3 ✅ request_id 기반 로그 trace — 완료 2026-06-05
+- prompt `msg_id` → TTS `request_id` 상속, `[trace=...]` 로그태그 (`main.py`·`tts_client`·`TTSService/server.py`).
 
 ### 1.4 🟡 동시 발화 큐잉 (1~2 NPC) — M
 - **갭**: 여러 NPC 가 동시에 말하면 TTS 합성/재생 충돌 가능성. 큐잉 정책 미검증.
@@ -82,7 +64,7 @@ TTS 본체(M2)는 완성. 남은 것은 **운영 품질·표현력·견고성**.
 - `animation_metadata.emotion` → AnimBP `EmotionMood`
 - (별도 R&D) StreamingTalker / Audio2Gesture / CAP4D
 
-**TTS 권장 순서**: 1.1(감정복구) → 1.6(지연측정) → 1.3(trace) → 1.2(재시도) → 1.4(큐잉) → 1.5(스트리밍 판단) → 1.8(M4).
+**TTS 권장 순서**: ~~1.1·1.2·1.3 완료~~ → 1.6(지연측정) → 1.4(큐잉) → 1.5(스트리밍 판단) → 1.7(README) → 1.8(M4).
 
 ---
 
@@ -95,10 +77,8 @@ TTS 본체(M2)는 완성. 남은 것은 **운영 품질·표현력·견고성**.
 - **할 일**: 청크 누적분을 주기적으로 부분 인식해 `partial` 메시지 전송 → UE 화면에 실시간 자막.
 - **결정 필요(§0)**: 부분 인식 주기, whisper 재추론 비용 vs streaming-friendly 모델.
 
-### 2.2 🟢 빠른 재누름 가드 — S
-- **갭**: push-to-talk 빠른 재누름 시 이전 final 대기 소켓 orphan(테스트 로그 관찰). M1 무해하나 정리 가치.
-- **할 일**: `VoiceInputComponent::StartTalking` 진입 시 기존 소켓 정리 후 시작.
-- **파일**: `Core/VoiceInputComponent.cpp::StartTalking`
+### 2.2 ✅ 빠른 재누름 가드 — 완료 2026-06-05
+- `StartTalking` 진입 시 `CloseSocket()` 가드 + WS 콜백 `TWeakObjectPtr` 생존검증(use-after-free 방지), `StreamSampleRate` `std::atomic`.
 
 ### 2.3 🟢 ChatWidget 레거시 정리 — S
 - ASR 전환 완료 → 구 채팅 입력 코드 잔재 있으면 제거/정리.
@@ -107,9 +87,10 @@ TTS 본체(M2)는 완성. 남은 것은 **운영 품질·표현력·견고성**.
 
 ## 3. 대화·인지 엔진 (Cognitive)
 
-### 3.1 🟡 메모리·RAG 강화 — M
-- `[RAG] No documents found for Skadi` 로그 관찰 — NPC별 지식 문서 미비. persona·lore 문서 채우면 대화 풍부.
-- **파일**: `utils/rag_utils.py`, `utils/memory_manager.py`
+### 3.1 🟡 메모리·RAG 강화 — 파이프라인 완료 2026-06-05, 콘텐츠 잔여 (`feature/RAG-Knowledge` 머지)
+- **완료**: `rag_utils` 서브폴더(lore/persona/history)→`chunk_category` 메타 태깅, 재빌드 CLI `python -m app.utils.build_knowledge`, 작성 가이드/템플릿 `knowledge_template/`. 폴더 정합(elera→elara, stale 스토어 정리).
+- **잔여(사용자)**: `[RAG] No documents found` 원인 = NPC별 lore/persona/history `.md` 콘텐츠 부재. `knowledge/<npc>/{lore,persona,history}/*.md` 작성 후 `build_knowledge --all`. 임베딩 로컬 `all-MiniLM-L6-v2`.
+- **참고**: `memory_manager.py` 는 대화 히스토리(JSON) — RAG 인제스트 아님.
 
 ### 3.2 🟢 모델 라우팅 점검 — S
 - importance=normal→gemma4:e4b / high→12b / core→26b. 변경 시 `dialogue.py`/`main.py`/`debug.html` 3곳 동기(Memo Handoff).

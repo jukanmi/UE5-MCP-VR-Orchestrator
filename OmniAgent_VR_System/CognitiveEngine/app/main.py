@@ -190,6 +190,11 @@ Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
 Reply with ONLY the action name, e.g.: Attack"""
 
 
+def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
+    """액션 없는 기본 ModeActionRequest JSON — 폴백/무행동 공통 응답."""
+    return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
+
+
 async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     """
     SLM 반사 행동 결정 (목표 500ms).
@@ -302,7 +307,7 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
                 f"[Main] 비긴급(maxdanger={max_danger:.2f}<{SLM_REFLEX_DANGER_THRESHOLD}) "
                 f"— SLM Reflex 생략. npc={payload.agent_id}"
             )
-            return ModeActionRequest(Mode="Common", ActionBatches={}).model_dump_json()
+            return _empty_batch_json()
 
         # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
         logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
@@ -312,8 +317,45 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         logger.error(f"[Main] _handle_emergency_report 실행 중 치명적 오류: {e}")
         import traceback
         traceback.print_exc()
-        fallback = ModeActionRequest(Mode="Common", ActionBatches={})
-        return fallback.model_dump_json()
+        return _empty_batch_json()
+
+
+def _trigger_dialogue_audio(final_action: Optional[ActionBatch],
+                            fallback_npc: Optional[str], trace_id: str) -> None:
+    """ActionBatch 의 Dialogue 액션을 찾아 TTS dispatch 백그라운드 태스크 생성.
+
+    Dialogue 없거나 대상 없으면 생략. 글자 없는 대사("...")는 bypass_tts(자막만 전송).
+    """
+    npc_id_for_audio = final_action.AgentID if final_action else fallback_npc
+    dialogue_text: Optional[str] = None
+    dialogue_emotion: str = "Neutral"   # M3: Dialogue FacialState → TTS emotion
+    if final_action and final_action.Actions:
+        for act in final_action.Actions:
+            if act.ActionType == "Dialogue":
+                # NPCActionKeys::Key_Text == "text"
+                dialogue_text = act.Parameters.get("text") or None
+                dialogue_emotion = act.FacialState or "Neutral"
+                if dialogue_text:
+                    break
+
+    if not npc_id_for_audio:
+        logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
+        return
+    if not dialogue_text:
+        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
+        return
+
+    # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
+    has_speech = any(c.isalnum() for c in dialogue_text)
+    task = asyncio.create_task(_dispatch_npc_audio(
+        npc_id=npc_id_for_audio,
+        dialogue_text=dialogue_text,
+        emotion=dialogue_emotion,
+        trace_id=trace_id,
+        bypass_tts=not has_speech,
+    ))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 async def _handle_prompt(envelope: MessageEnvelope) -> str:
@@ -367,50 +409,13 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     except Exception as e:
         logger.error(f"[Main] LangGraph 실행 중 치명적 오류: {e}")
         traceback.print_exc()
-        fallback = ModeActionRequest(Mode="Common", ActionBatches={})
-        return fallback.model_dump_json()
+        return _empty_batch_json()
 
     final_action: Optional[ActionBatch] = result.get("action_batch")
 
     # ── TTS 트리거 (M2) ──────────────────────────────────────────────────
-    # WHY: TTS 통합 계획서 M2 — LLM 이 ActionBatch 에 Dialogue 액션을 넣으면
-    #      그 Parameters["text"] 를 dialogue_text 로 VibeVoice 합성 요청.
-    #      Dialogue 액션 없으면 발화 안 함 (LLM 의도 존중 — 무관한 NPC 가 떠들지 않게).
-    npc_id_for_audio = (
-        final_action.AgentID if final_action else target_npc_from_payload
-    )
-    dialogue_text_for_audio: Optional[str] = None
-    dialogue_emotion: str = "Neutral"   # M3: Dialogue 액션 FacialState → TTS emotion
-    if final_action and final_action.Actions:
-        for act in final_action.Actions:
-            if act.ActionType == "Dialogue":
-                # NPCActionKeys::Key_Text == "text"
-                dialogue_text_for_audio = act.Parameters.get("text") or None
-                # FacialState(9종) 를 그대로 emotion 으로 — TTSService 가 정규화/매핑.
-                dialogue_emotion = act.FacialState or "Neutral"
-                if dialogue_text_for_audio:
-                    break
-
-    # 문장부호/공백만 있는 대사(예: "...")는 MeloTTS 가 엉뚱한 음("다" 등)으로
-    # 합성하므로 TTS 스킵. isalnum 은 한글 포함 유니코드 글자 판정.
-    has_speech = bool(dialogue_text_for_audio) and any(c.isalnum() for c in dialogue_text_for_audio)
-
-    if npc_id_for_audio and dialogue_text_for_audio:
-        # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송 —
-        # NpcAudioResponse(빈 url)가 UE5 자막 경로이므로 dispatch 자체는 항상 수행.
-        task = asyncio.create_task(_dispatch_npc_audio(
-            npc_id=npc_id_for_audio,
-            dialogue_text=dialogue_text_for_audio,
-            emotion=dialogue_emotion,
-            trace_id=envelope.msg_id,
-            bypass_tts=not has_speech,
-        ))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
-    elif npc_id_for_audio:
-        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
-    else:
-        logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
+    # LLM 이 ActionBatch 에 Dialogue 액션을 넣으면 그 text 를 합성 요청(없으면 발화 안 함).
+    _trigger_dialogue_audio(final_action, target_npc_from_payload, envelope.msg_id)
 
     if final_action:
         logger.info(f"[Main] ActionBatch 생성 완료: agent_id={final_action.AgentID}")
@@ -421,8 +426,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         return wrapper.model_dump_json()
     else:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
-        fallback = ModeActionRequest(Mode="Common", ActionBatches={})
-        return fallback.model_dump_json()
+        return _empty_batch_json()
 
 
 async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
