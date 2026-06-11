@@ -513,13 +513,15 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     # 없으므로 강제로 풀 파이프라인(replan=True)으로 되돌려 plan 을 새로 생성한다.
     requires_replan = prompt_payload.requires_replan
     current_plan = prompt_payload.current_plan
-    # current_plan 전체가 없거나, 대상 NPC 의 plan 이 누락된 경우(다른 NPC plan 오참조 방지) 강제 재계획.
+    # current_plan 전체가 없거나, 대상 NPC 미상(None→supervisor 가 "Elara" 기본 사용),
+    # 또는 대상 NPC plan 누락 시 강제 재계획 — 다른 NPC plan 오참조 방지.
     if not requires_replan and (
         not current_plan
-        or (target_npc_from_payload and target_npc_from_payload not in current_plan)
+        or not target_npc_from_payload
+        or target_npc_from_payload not in current_plan
     ):
         logger.info(
-            "[Main] replan=False 이나 대상 NPC plan 없음 → 강제 재계획 폴백(replan=True)"
+            "[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)"
         )
         requires_replan = True
 
