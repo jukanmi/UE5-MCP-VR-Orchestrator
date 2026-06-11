@@ -29,6 +29,7 @@
 ║   never REMOVE or RENAME existing fields without migration plan.            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
 from langgraph.graph.message import add_messages
 from ..schemas.vr_context import GesPrompt
@@ -60,8 +61,11 @@ class AgentState(TypedDict):
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트
     natural_context: Optional[str]
 
-    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답
+    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답 (단일 NPC 호환)
     raw_response: Optional[str]
+
+    # [멀티 NPC] Dialogue Stage1/2 출력: npc_id → refined raw_response
+    raw_responses: Optional[Dict[str, str]]
 
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
@@ -75,8 +79,11 @@ class AgentState(TypedDict):
     current_speaker: str
 
     # ── 최종 출력 (Python → UE5) ─────────────────────────────────────
-    # Rules 검증 후 UE5로 전송할 ActionBatch
+    # Rules 검증 후 UE5로 전송할 ActionBatch (단일 NPC 호환)
     action_batch: Optional[ActionBatch]
+
+    # [멀티 NPC] Interface_Output Stage3 출력: npc_id → ActionBatch
+    action_batches: Optional[Dict[str, ActionBatch]]
 
     # ── LangGraph 메시지 히스토리 ────────────────────────────────────
     messages: Annotated[List[Any], add_messages]

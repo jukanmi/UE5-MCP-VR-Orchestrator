@@ -90,6 +90,13 @@
 
 ---
 
+### 멀티 NPC 병렬 대화 파이프라인 (2026-06-12)
+- [x] Dialogue 3-Stage 멀티 NPC 전환 — Stage1: e4b×N 병렬(`asyncio.gather`, 지식 격리), Stage2: 12B×1 스타일 정제(NPC 2개↑ 시), Stage3: interface_output e4b 구조화. `state.py` `raw_responses`/`action_batches` Dict 필드 추가 (2026-06-12)
+- [x] interface_output async 전환 + `_correct_facial_contamination` — trait↔FacialState 모순(감정 수렴 오염) 결정론적 Python 보정 (2026-06-12)
+- [x] rules/supervisor/main 멀티 배치 대응 — `action_batches` Dict 루프 검증, 거부 판정/폴백 멀티화, `ModeActionRequest.ActionBatches` 다중 전송 (2026-06-12)
+- [x] interface_input 멀티 NPC 추출 — `_extract_target_npcs` 전체 매칭(등장순·중복제거·상한 3), Player 제외 (2026-06-12)
+- [ ] 멀티 NPC end-to-end 런타임 검증 — `OLLAMA_NUM_PARALLEL=3` 설정 후 2~3 NPC 동시 발화 실측
+
 ### 인지엔진 지연 최적화 (2026-06-12 분석)
 - [x] SLM Reflex raw few-shot 전환 — thinking 잘림(빈 응답→Scan 고정) 해소. 실측 warm 330ms, 적대 케이스 Attack 정상 (2026-06-12)
 - [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
@@ -102,6 +109,7 @@
 
 ## Handoff Notes
 
+- **멀티 NPC 병렬 설계 결정 (2026-06-12)**: 여러 NPC를 한 Dialogue 호출에 묶지 않고 NPC별 e4b 병렬 호출로 분리. **Why**: 단일 호출로 모든 페르소나·RAG를 같은 컨텍스트에 넣으면 ① 감정 수렴 ② **지식 누출**(A만 아는 비밀을 B가 발화) 오염 발생 — 지식 누출은 발화 귀속 추적이 불가능해 사후 교정 못 함. 병렬 별도 호출은 지식 격리가 구조적으로 보장됨. `asyncio.gather`라 순차 대비 지연 동일(단 Ollama가 큐 처리하면 직렬화 — `OLLAMA_NUM_PARALLEL=3` 필요, 미설정 시 기능은 동작하되 병렬 효과 없음). **How to apply**: ① Stage2 12B 정제는 "스타일만, 사실 추가 금지" 프롬프트 — 정제 단계서 지식 섞일까 우려되면 Stage2 스킵 가능(단일 NPC는 이미 스킵). ② 감정 수렴 오염은 `interface_output.py::TRAIT_EMOTION_MAP`로 결정론적 보정(Aggressive NPC가 Fear로 수렴→Angry 복원) — trait 맵에 없는 NPC는 보정 안 됨, 새 페르소나 trait 추가 시 맵 갱신. ③ 동시 NPC 상한 `MAX_TARGET_NPCS=3`(interface_input) — 토큰 폭발/오염 방지, 늘리면 12B 정제도 불안정. ④ 전 파이프라인 단일 NPC 호환 경로 유지(`action_batch`/`raw_response` 단수 필드 병행 채움) — 기존 emergency_report/SLM reflex 경로 안 깨짐.
 - **gemma4-12b 별칭 + thinking 비활성 (2026-06-12)**: core 대화 모델은 `gemma4-12b` — `ollama cp hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M gemma4-12b` 로 만든 로컬 별칭. Ollama 재설치 시 pull 후 cp 재실행 필요. `get_llm` 의 ChatOllama 에 `reasoning=False` 전역 적용 — 12B 실측에서 thinking 이 num_predict 200 전부 잠식해 content="" 발생, think=false 로 663ms 정상 응답. gemma4/qwen3 계열 전부 thinking 모델이라 대화 3티어 공통 적용. 비-thinking 모델(llama3.3 레거시 폴백)을 쓰게 되면 Ollama 가 think 파라미터 거부할 수 있음 — 그때 분기 추가. 26b 는 코드 참조만 제거, 디스크엔 잔존(17GB) — `ollama rm gemma4:26b` 는 사용자 판단.
 - **WS 메시지별 동시 처리 (2026-06-12)**: `websocket_llm_endpoint` 가 메시지마다 `asyncio.create_task` 로 분리 처리 — 응답 순서 비보장. prompt 는 msg_id, location_decision 은 request_gen 으로 수신 측 매칭이라 순서 의존 없음. 같은 소켓 동시 쓰기는 `_ws_send_lock` 으로 직렬화(TTS 푸시·디버그 명령 포함). stale 임계 10초는 유지 — 직렬화 큐잉이 원인이던 지연이 사라졌으므로 실측 후 하향 검토 가능.
 

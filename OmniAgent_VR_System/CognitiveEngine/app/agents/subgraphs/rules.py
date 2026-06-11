@@ -19,8 +19,7 @@
 ║   범위 초과 값 → 클램핑 (삭제 아님). 없는 타겟 → 액션 제거.               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
-import json
-import os
+
 from ..state import AgentState
 from ...schemas.actions import ActionBatch, GameAction, WORLD_CONSTANTS
 from ...utils import db_manager
@@ -65,7 +64,9 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         return True
 
     try:
-        import ast, re
+        import ast
+        import re
+
         coords: dict = {}
         # ① dict/JSON 문자열 시도
         try:
@@ -76,8 +77,12 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
             pass
         # ② UE 형식 (X=100,Y=200,Z=0) 폴백 — literal_eval 로는 SyntaxError
         if not coords:
-            coords = {k.lower(): float(v) for k, v in
-                      re.findall(r'([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)', target_loc_str)}
+            coords = {
+                k.lower(): float(v)
+                for k, v in re.findall(
+                    r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str
+                )
+            }
         if not coords:
             # 파싱 실패 → (0,0,0) 오판 대신 경계검증 생략(통과)
             return True
@@ -86,14 +91,26 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         # 파싱 자체 실패 시 경계검증 생략(통과)
         return True
 
-    x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
-    y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
-    z_ok = WORLD_BOUNDS.get("z_min", float("-inf")) <= z <= WORLD_BOUNDS.get("z_max", float("inf"))
+    x_ok = (
+        WORLD_BOUNDS.get("x_min", float("-inf"))
+        <= x
+        <= WORLD_BOUNDS.get("x_max", float("inf"))
+    )
+    y_ok = (
+        WORLD_BOUNDS.get("y_min", float("-inf"))
+        <= y
+        <= WORLD_BOUNDS.get("y_max", float("inf"))
+    )
+    z_ok = (
+        WORLD_BOUNDS.get("z_min", float("-inf"))
+        <= z
+        <= WORLD_BOUNDS.get("z_max", float("inf"))
+    )
 
     return x_ok and y_ok and z_ok
 
 
-def validate_and_clamp_action(action: 'GameAction') -> tuple:
+def validate_and_clamp_action(action: "GameAction") -> tuple:
     """
     단일 액션의 파라미터를 검증하고 범위를 보정(clamp)한다.
 
@@ -181,65 +198,72 @@ def validate_and_clamp_action(action: 'GameAction') -> tuple:
     action.Parameters = params
     return action, corrections
 
-def rules_node(state: AgentState) -> dict:
-    """
-    Rules Agent (LLM 없는 순수 Python 검증).
 
-    ActionBatch 내 모든 액션을 검증하고 보정한다.
-    타겟 ID 불일치나 좌표 범위 초과 시 해당 액션을 필터링 제거.
-    """
-    batch = state.get("action_batch")
-
-    if not batch:
-        print("[Rules] ActionBatch 없음, 조용히 종료")
-        return {"next": "End", "current_speaker": "Rules"}
+def _validate_batch(batch: "ActionBatch") -> "ActionBatch":
+    """단일 ActionBatch 검증/클램핑. 공통 로직."""
+    from ...schemas.actions import GameAction
 
     all_corrections: list[str] = []
-    from ...schemas.actions import GameAction
     validated_actions: list[GameAction] = []
 
     for action in batch.Actions:
         validated_action, corrections = validate_and_clamp_action(action)
-
         if validated_action is None:
-            # 타겟 미존재 또는 좌표 이탈 → 해당 액션 완전 제거
             all_corrections.extend(corrections)
             continue
-
         validated_actions.append(validated_action)
         all_corrections.extend(corrections)
 
-    # 모든 액션이 제거된 경우 → reasoning에 REJECTED 표시
     if not validated_actions:
-        # ActionBatch 에 reasoning 필드 없음(직렬화 안 됨) — 로그로만 남김.
-        print(f"[Rules] ❌ 모든 액션이 검증 실패, REJECTED 처리. 이유: {'; '.join(all_corrections)}")
+        print(
+            f"[Rules] ❌ {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}"
+        )
         batch.Actions = []
-        return {
-            "action_batch": batch,
-            "current_speaker": "Rules",
-            "next": "End",
-        }
+        return batch
 
     batch.Actions = validated_actions
-
     if all_corrections:
         summary = "; ".join(all_corrections)
-        current_reasoning = getattr(batch, "reasoning", "") or ""
-        setattr(batch, "reasoning", f"{current_reasoning} | Rules: {summary}")
-        print(f"[Rules] ✅ {len(all_corrections)}개 보정 적용: {summary}")
+        print(f"[Rules] ✅ {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
     else:
-        print("[Rules] ✅ 검증 통과, 보정 없음")
+        print(f"[Rules] ✅ {batch.AgentID} 검증 통과")
+    return batch
 
-    # ── [신규] Affinity 평가 및 업데이트 ────────────────────────────
-    _evaluate_and_update_affinity(state, batch)
+
+def rules_node(state: AgentState) -> dict:
+    """
+    Rules Agent (LLM 없는 순수 Python 검증).
+
+    멀티 NPC: action_batches Dict 전체 루프.
+    단일 NPC 호환: action_batches 없으면 action_batch 단일 처리.
+    """
+    action_batches: dict = state.get("action_batches") or {}
+
+    # 단일 NPC 호환 경로
+    if not action_batches:
+        batch = state.get("action_batch")
+        if not batch:
+            print("[Rules] ActionBatch 없음, 조용히 종료")
+            return {"next": "End", "current_speaker": "Rules"}
+        action_batches = {batch.AgentID: batch}
+
+    validated_batches: dict = {}
+    for npc_id, batch in action_batches.items():
+        validated_batches[npc_id] = _validate_batch(batch)
+        _evaluate_and_update_affinity(state, validated_batches[npc_id])
+
+    # 단일 NPC 호환: action_batch 도 채움
+    first_batch = next(iter(validated_batches.values()), None)
 
     return {
-        "action_batch": batch,
+        "action_batches": validated_batches,
+        "action_batch": first_batch,
         "current_speaker": "Rules",
         "next": "End",
     }
 
-def _evaluate_and_update_affinity(state: AgentState, batch: 'ActionBatch'):
+
+def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     """
     ActionBatch에 담긴 행동과 감정을 분석하여
     대상(Player 등)에 대한 우호도(Affinity)를 조정한다.
@@ -250,10 +274,14 @@ def _evaluate_and_update_affinity(state: AgentState, batch: 'ActionBatch'):
     vr_context = state.get("vr_context")
     if not vr_context:
         return
-    
-    player_id = vr_context.get("player_id", "Player") if isinstance(vr_context, dict) else getattr(vr_context, "player_id", "Player")
+
+    player_id = (
+        vr_context.get("player_id", "Player")
+        if isinstance(vr_context, dict)
+        else getattr(vr_context, "player_id", "Player")
+    )
     npc_id = batch.AgentID
-    
+
     if not npc_id:
         return
 
@@ -263,37 +291,39 @@ def _evaluate_and_update_affinity(state: AgentState, batch: 'ActionBatch'):
 
     # 전체 감정에 따른 기본 보정치 (FacialState가 batch 레벨에는 없으므로 첫 번째 액션 참조 또는 생략)
     # ActionBatch는 Mode만 가짐, 개별 Action에 FacialState가 있음. 여기선 단순히 0으로 시작.
-    
+
     # 구체적 액션 평가
     for action in batch.Actions:
         params = action.Parameters or {}
         target_id = params.get("target_id", "")
-        
+
         # Player를 대상으로 한 액션인지 확인
         if target_id and target_id.lower() == player_id.lower():
             if action.ActionType == "Attack":
                 score_delta -= 10
-                interaction_summary.append(f"Attacked player (-10)")
+                interaction_summary.append("Attacked player (-10)")
             elif action.ActionType == "Heal":
                 score_delta += 5
-                interaction_summary.append(f"Healed player (+5)")
+                interaction_summary.append("Healed player (+5)")
             elif action.ActionType == "Dialogue":
                 facial = action.FacialState
                 if facial == "Happy":
-                     score_delta += 2
-                     interaction_summary.append("Spoke happily (+2)")
+                    score_delta += 2
+                    interaction_summary.append("Spoke happily (+2)")
                 elif facial == "Angry":
-                     score_delta -= 2
-                     interaction_summary.append("Spoke angrily (-2)")
+                    score_delta -= 2
+                    interaction_summary.append("Spoke angrily (-2)")
 
     # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
     if score_delta != 0:
         summary_str = ", ".join(interaction_summary)
-        print(f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
+        print(
+            f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})"
+        )
         # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
         db_manager.update_affinity_sync(
             source_id=npc_id,
             target_id=player_id,
             score_delta=score_delta,
-            interaction_summary=summary_str
+            interaction_summary=summary_str,
         )
