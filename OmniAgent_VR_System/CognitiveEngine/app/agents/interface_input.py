@@ -232,7 +232,13 @@ def interface_input_node(state: AgentState) -> dict:
     current_plan = state.get("current_plan")
     if current_plan and isinstance(current_plan, dict):
         target = state.get("target_npc")
-        plan = current_plan.get(target) if target else None
+        plan = None
+        if target:
+            # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
+            target_lower = target.lower()
+            plan = next(
+                (v for k, v in current_plan.items() if k.lower() == target_lower), None
+            )
         if plan is None:
             plan = next(iter(current_plan.values()), None)
         if isinstance(plan, dict) and plan.get("goal"):

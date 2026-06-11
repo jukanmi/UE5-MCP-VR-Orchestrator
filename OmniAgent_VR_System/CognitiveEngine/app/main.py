@@ -513,9 +513,13 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     # 없으므로 강제로 풀 파이프라인(replan=True)으로 되돌려 plan 을 새로 생성한다.
     requires_replan = prompt_payload.requires_replan
     current_plan = prompt_payload.current_plan
-    if not requires_replan and not current_plan:
+    # current_plan 전체가 없거나, 대상 NPC 의 plan 이 누락된 경우(다른 NPC plan 오참조 방지) 강제 재계획.
+    if not requires_replan and (
+        not current_plan
+        or (target_npc_from_payload and target_npc_from_payload not in current_plan)
+    ):
         logger.info(
-            "[Main] replan=False 이나 current_plan 없음 → 강제 재계획 폴백(replan=True)"
+            "[Main] replan=False 이나 대상 NPC plan 없음 → 강제 재계획 폴백(replan=True)"
         )
         requires_replan = True
 

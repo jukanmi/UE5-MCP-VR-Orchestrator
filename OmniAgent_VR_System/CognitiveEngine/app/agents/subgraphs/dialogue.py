@@ -336,7 +336,7 @@ async def _refine_responses(
     refined: Dict[str, str] = {}
     npc_plans: Dict[str, dict] = {}
     for npc_id in raw_responses:
-        pattern = rf"===\s*NPC:\s*{re.escape(npc_id)}\s*===\s*\n(.*?)(?===\s*NPC:|$)"
+        pattern = rf"===\s*NPC:\s*{re.escape(npc_id)}\s*===\s*\n?(.*?)(?===\s*NPC:|$)"
         m = re.search(pattern, refined_text, re.DOTALL | re.IGNORECASE)
         section = m.group(1).strip() if m else raw_responses[npc_id]
         if not m:
