@@ -80,8 +80,9 @@
     <span class="badge" id="npcCount">—</span>
   </div>
   <p style="font-size:0.78rem;color:#4b5563;margin-bottom:12px;">
-    Importance를 <b style="color:#fbbf24">high</b> 또는 <b style="color:#f472b6">core</b>로 설정하면 해당 NPC는 <code>gemma4:26b</code> 모델을 사용합니다.
-    <b style="color:#94a3b8">normal</b>은 <code>qwen (8b)</code>입니다.
+    Importance 라우팅: <b style="color:#f472b6">core</b> → <code>gemma4-12b</code>,
+    <b style="color:#fbbf24">high</b> → <code>qwen3:8b</code>,
+    <b style="color:#94a3b8">normal</b> → <code>gemma4:e4b</code>.
   </p>
   <table>
     <thead>
@@ -243,7 +244,7 @@ function impClass(imp) {
 }
 
 function llmLabel(imp) {
-  if (imp === 'core') return 'gemma4:26b';
+  if (imp === 'core') return 'gemma4-12b';
   if (imp === 'high') return 'qwen3:8b';
   return 'gemma4:e4b';
 }

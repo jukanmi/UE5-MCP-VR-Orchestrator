@@ -94,12 +94,13 @@
 - [x] SLM Reflex raw few-shot 전환 — thinking 잘림(빈 응답→Scan 고정) 해소. 실측 warm 330ms, 적대 케이스 Attack 정상 (2026-06-12)
 - [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
 - [x] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` fire-and-forget 분리, 백그라운드 착지 검증 (2026-06-12)
-- [ ] normal NPC 대화 모델 e4b(thinking) 재검토 — thinking 토큰이 num_predict 300 잠식
+- [x] normal NPC 대화 모델 e4b(thinking) 재검토 — `get_llm` ChatOllama `reasoning=False` 전역 적용으로 해소 (2026-06-12)
 - [ ] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤 (Ollama KV prefix 캐시 활용)
-- [ ] gemma4:12b 도입 시 26b 제거 (VRAM 16GB에 26b=17GB 미적합) — dialogue.py·main.py·debug.html 3곳 동시 수정
+- [x] core 모델 26b→`gemma4-12b` 교체 (OBLITERATED Q4_K_M 별칭, VRAM 16GB 적합) — llm_factory·main.py·debug.html·README 동시 수정 (2026-06-12)
 
 ## Handoff Notes
 
+- **gemma4-12b 별칭 + thinking 비활성 (2026-06-12)**: core 대화 모델은 `gemma4-12b` — `ollama cp hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M gemma4-12b` 로 만든 로컬 별칭. Ollama 재설치 시 pull 후 cp 재실행 필요. `get_llm` 의 ChatOllama 에 `reasoning=False` 전역 적용 — 12B 실측에서 thinking 이 num_predict 200 전부 잠식해 content="" 발생, think=false 로 663ms 정상 응답. gemma4/qwen3 계열 전부 thinking 모델이라 대화 3티어 공통 적용. 비-thinking 모델(llama3.3 레거시 폴백)을 쓰게 되면 Ollama 가 think 파라미터 거부할 수 있음 — 그때 분기 추가. 26b 는 코드 참조만 제거, 디스크엔 잔존(17GB) — `ollama rm gemma4:26b` 는 사용자 판단.
 - **WS 메시지별 동시 처리 (2026-06-12)**: `websocket_llm_endpoint` 가 메시지마다 `asyncio.create_task` 로 분리 처리 — 응답 순서 비보장. prompt 는 msg_id, location_decision 은 request_gen 으로 수신 측 매칭이라 순서 의존 없음. 같은 소켓 동시 쓰기는 `_ws_send_lock` 으로 직렬화(TTS 푸시·디버그 명령 포함). stale 임계 10초는 유지 — 직렬화 큐잉이 원인이던 지연이 사라졌으므로 실측 후 하향 검토 가능.
 
 - **PR #9 Gemini 보류 항목 (2026-06-05)**: 티키타카 5라운드로 ~20건 반영했으나 아래는 의도적 보류 — 빌드/런타임 검증 필요, 크래시 아님(perf/동작). **How to apply**: UE 풀빌드 후 실측하며 판단. ① `ItemManager::GetItemsInRange` O(N×M) → 역참조 맵 / `StaticLoadObject` 동기로드 hitch → 비동기 로드. ② `NPCStateComponent::FlushEventReport` WaitingLLM 조기반환 시 지연 이벤트가 재flush 안 돼 영구대기 가능 — TacticalQueryState 해제 시 재처리 트리거 필요. ③ `VRPawn` ShotDirection 이 Grip 포즈 forward 인데 조준선은 Aim 포즈 — 무기 명중 방향 불일치. **player_id 는 오탐**(vr_context.player_id 정상, 건드리지 말 것).

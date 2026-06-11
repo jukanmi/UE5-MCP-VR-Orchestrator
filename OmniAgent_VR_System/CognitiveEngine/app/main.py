@@ -784,7 +784,7 @@ async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     if req.importance == "core":
-        llm_model = "gemma4:26b"
+        llm_model = "gemma4-12b"
     elif req.importance == "high":
         llm_model = "qwen3:8b"
     else:
