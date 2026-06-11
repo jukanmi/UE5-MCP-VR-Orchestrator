@@ -508,6 +508,17 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
 
+    # ── 계획 캐싱 분기 파싱 + 방어 폴백 ────────────────────────────────
+    # replan=False 인데 보관 plan 이 없으면(첫 턴/유실) e4b 단독 루프가 줄 컨텍스트가
+    # 없으므로 강제로 풀 파이프라인(replan=True)으로 되돌려 plan 을 새로 생성한다.
+    requires_replan = prompt_payload.requires_replan
+    current_plan = prompt_payload.current_plan
+    if not requires_replan and not current_plan:
+        logger.info(
+            "[Main] replan=False 이나 current_plan 없음 → 강제 재계획 폴백(replan=True)"
+        )
+        requires_replan = True
+
     async with _world_state_lock:
         world_snap = _cached_world_state
     async with _action_history_lock:
@@ -519,6 +530,9 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         vr_context=ges_prompt,
         cached_world_state=world_snap,
         failed_action_history=history_snap,
+        requires_replan=requires_replan,
+        current_plan=current_plan,
+        npc_plans=None,
         next="",
         current_speaker="",
         natural_context=None,
@@ -562,9 +576,16 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
 
     logger.info(f"[Main] ActionBatch 생성 완료: {list(action_batches.keys())}")
     first_batch = next(iter(action_batches.values()))
+
+    # 재계획 산출 plan 회신 — replan 시만 채워짐. e4b 단독 응답이면 빈 dict.
+    npc_plans = result.get("npc_plans") or {}
+    if npc_plans:
+        logger.info(f"[Main] NpcPlans 회신: {list(npc_plans.keys())}")
+
     wrapper = ModeActionRequest(
         Mode=first_batch.Mode,
         ActionBatches=action_batches,
+        NpcPlans=npc_plans,
     )
     return wrapper.model_dump_json()
 

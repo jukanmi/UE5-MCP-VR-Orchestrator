@@ -118,8 +118,8 @@ Current sentiment toward player: {sentiment}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 
-REFINE_SYSTEM_PROMPT = """You are a quality editor for NPC dialogue in a VR game.
-Your ONLY job: improve language style, fluency, and naturalness.
+REFINE_SYSTEM_PROMPT = """You are a quality editor and planner for NPC dialogue in a VR game.
+Your jobs: (1) improve language style/fluency, (2) emit a short forward plan per NPC.
 
 STRICT RULES:
 - Do NOT add any new facts, knowledge, or lore not already present.
@@ -127,13 +127,19 @@ STRICT RULES:
 - Preserve ALL [Mode:], [Facial:], [Action:] tags exactly as written.
 - Keep speech within "double quotes", emotions in (parentheses).
 - Max 2-3 sentences of speech per NPC.
-- If a response is already good, return it unchanged.
+
+PLAN (CRITICAL):
+- At the END of each NPC section, output EXACTLY ONE line:
+  [Plan: goal=<short goal> | steps=<step1>;<step2>;<step3>]
+- goal: one short phrase describing what this NPC is trying to achieve over the next few turns.
+- steps: 2-4 concrete beats separated by ';', ordered. These guide later lightweight dialogue.
+- The [Plan: ...] line is metadata, NOT spoken dialogue.
 
 Input format:
 === NPC: <id> ===
 <raw response>
 
-Output format: same section structure."""
+Output format: same section structure, each section ending with one [Plan: ...] line."""
 
 
 def load_persona(agent_id: str):
@@ -275,17 +281,39 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     return npc_id, raw_response
 
 
-async def _refine_responses(raw_responses: Dict[str, str]) -> Dict[str, str]:
+# [Plan: goal=... | steps=s1;s2;s3] 추출용. goal/steps 캡처, 라인 전체는 대사에서 제거.
+_PLAN_LINE_RE = re.compile(
+    r"\[Plan:\s*goal=(?P<goal>.*?)\s*\|\s*steps=(?P<steps>.*?)\]",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_plan_line(section_text: str) -> tuple[str, dict | None]:
+    """정제된 NPC 섹션에서 [Plan: ...] 라인을 분리.
+    반환: (plan 라인 제거된 대사, plan dict 또는 None)."""
+    m = _PLAN_LINE_RE.search(section_text)
+    if not m:
+        return section_text, None
+    goal = m.group("goal").strip()
+    steps = [s.strip() for s in m.group("steps").split(";") if s.strip()]
+    cleaned = _PLAN_LINE_RE.sub("", section_text).strip()
+    return cleaned, {"goal": goal, "steps": steps}
+
+
+async def _refine_responses(
+    raw_responses: Dict[str, str], player_id: str
+) -> tuple[Dict[str, str], Dict[str, dict]]:
     """
-    Stage 2: 12B 모델로 전체 NPC 응답 스타일 정제.
-    사실 추가 금지 — 스타일/유창성 향상만.
-    NPC 2개 이상일 때만 호출.
+    Stage 2: 12B 모델로 전체 NPC 응답 스타일 정제 + plan(goal/steps) 산출.
+    사실 추가 금지 — 스타일/유창성 향상만. 재계획(requires_replan=True) 경로에서만 호출.
+    단일 12B 호출로 정제와 plan 추출을 동시 수행 (토큰/지연 절약).
+    반환: (refined npc_id→대사, npc_plans npc_id→{goal, steps, relation_snapshot}).
     """
     sections = "\n\n".join(
         f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items()
     )
 
-    print(f"[Dialogue] Stage2 12B 정제 시작 ({len(raw_responses)}개 NPC)")
+    print(f"[Dialogue] Stage2 12B 정제+plan 시작 ({len(raw_responses)}개 NPC)")
     refined_text = None
     try:
         llm = get_llm(
@@ -299,23 +327,36 @@ async def _refine_responses(raw_responses: Dict[str, str]) -> Dict[str, str]:
             response.content if hasattr(response, "content") else str(response)
         )
         refined_text = refined_text.strip()
-        print(f"[Dialogue] Stage2 정제 완료 ({len(refined_text)} chars)")
+        print(f"[Dialogue] Stage2 정제+plan 완료 ({len(refined_text)} chars)")
     except Exception as e:
-        print(f"[Dialogue] Stage2 12B 오류, 원본 유지: {e}")
-        return raw_responses
+        print(f"[Dialogue] Stage2 12B 오류, 원본 유지·plan 생략: {e}")
+        return raw_responses, {}
 
-    # 섹션 구분자로 파싱
+    # 섹션 구분자로 파싱 + plan 라인 분리
     refined: Dict[str, str] = {}
+    npc_plans: Dict[str, dict] = {}
     for npc_id in raw_responses:
         pattern = rf"===\s*NPC:\s*{re.escape(npc_id)}\s*===\s*\n(.*?)(?===\s*NPC:|$)"
         m = re.search(pattern, refined_text, re.DOTALL | re.IGNORECASE)
-        if m:
-            refined[npc_id] = m.group(1).strip()
-        else:
+        section = m.group(1).strip() if m else raw_responses[npc_id]
+        if not m:
             print(f"[Dialogue] Stage2 파싱 실패 ({npc_id}), 원본 유지")
-            refined[npc_id] = raw_responses[npc_id]
 
-    return refined
+        dialogue_text, plan = _parse_plan_line(section)
+        refined[npc_id] = dialogue_text
+        if plan is not None:
+            # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
+            try:
+                relation = await db_manager.get_affinity(npc_id, player_id)
+                plan["relation_snapshot"] = relation.affinity_score
+            except Exception as e:
+                print(f"[Dialogue] plan affinity 조회 실패 ({npc_id}): {e}")
+                plan["relation_snapshot"] = 0
+            npc_plans[npc_id] = plan
+        else:
+            print(f"[Dialogue] Stage2 plan 라인 누락 ({npc_id})")
+
+    return refined, npc_plans
 
 
 async def dialogue_node(state: AgentState):
@@ -331,7 +372,9 @@ async def dialogue_node(state: AgentState):
         single = state.get("target_npc", "Elara")
         npcs = [single] if single else ["Elara"]
 
-    print(f"[Dialogue] 대상 NPC: {npcs}")
+    # 재계획 분기: False=e4b 단독 경량 루프(12B 스킵), True=풀 파이프라인+plan 산출.
+    requires_replan = state.get("requires_replan", True)
+    print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
     # Stage 1: 병렬 e4b 호출
     results = await asyncio.gather(
@@ -339,9 +382,18 @@ async def dialogue_node(state: AgentState):
     )
     raw_responses: Dict[str, str] = dict(results)
 
-    # Stage 2: 12B 정제 (멀티 NPC 시만)
-    if len(npcs) > 1:
-        raw_responses = await _refine_responses(raw_responses)
+    # Stage 2: 12B 정제+plan — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
+    npc_plans: Dict[str, dict] = {}
+    if requires_replan:
+        vr_context = state.get("vr_context")
+        player_id = (
+            vr_context.get("player_id", "Player")
+            if isinstance(vr_context, dict)
+            else getattr(vr_context, "player_id", "Player")
+        )
+        raw_responses, npc_plans = await _refine_responses(raw_responses, player_id)
+    else:
+        print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
 
     # 단일 NPC 호환: raw_response 도 채움
     single_npc = npcs[0]
@@ -350,6 +402,7 @@ async def dialogue_node(state: AgentState):
     return {
         "raw_responses": raw_responses,
         "raw_response": raw_response,
+        "npc_plans": npc_plans or None,
         "target_npc": single_npc,
         "current_speaker": "Dialogue",
         "next": "Interface_Output",

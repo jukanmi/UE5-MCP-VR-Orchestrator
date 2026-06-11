@@ -46,6 +46,14 @@ class AgentState(TypedDict):
     # 플레이어의 음성/제스처 명령. prompt 타입 Envelope의 payload에서 파싱됨.
     vr_context: Optional[GesPrompt]
 
+    # ── 계획 캐싱 (Multi-NPC Cached Planning) ──────────────────────
+    # requires_replan: C++ 이 perception/턴카운터로 판정. True=풀 파이프라인, False=e4b 단독.
+    requires_replan: bool
+    # current_plan: UE5 보관본 (replan=False 시 interface_input 이 컨텍스트로 주입). npc_id → plan.
+    current_plan: Optional[Dict[str, Any]]
+    # npc_plans: Stage2 산출 plan (replan=True 시만). main.py 가 ModeActionRequest.NpcPlans 로 회신.
+    npc_plans: Optional[Dict[str, Any]]
+
     # [신규] state_update 수신 시 캐시되는 최신 월드 상태
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시
     #      "현재 환경 컨텍스트"로 활용한다. 매 요청마다 덮어씌운다.

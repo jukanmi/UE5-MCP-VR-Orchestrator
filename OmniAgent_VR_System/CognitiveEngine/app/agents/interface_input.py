@@ -226,6 +226,24 @@ def interface_input_node(state: AgentState) -> dict:
             f". Recently FAILED actions (do NOT retry the same way): {fails}"
         )
 
+    # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
+    # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
+    # current_plan 은 npc_id → {goal, steps, ...}. target_npc 우선, 없으면 첫 항목.
+    current_plan = state.get("current_plan")
+    if current_plan and isinstance(current_plan, dict):
+        target = state.get("target_npc")
+        plan = current_plan.get(target) if target else None
+        if plan is None:
+            plan = next(iter(current_plan.values()), None)
+        if isinstance(plan, dict) and plan.get("goal"):
+            steps = plan.get("steps") or []
+            steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
+            natural_context += (
+                f". Current goal: {plan['goal']}."
+                f" Plan steps: {steps_str}."
+                " Stay consistent with this plan."
+            )
+
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
