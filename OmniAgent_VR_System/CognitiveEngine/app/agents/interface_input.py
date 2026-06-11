@@ -235,12 +235,11 @@ def interface_input_node(state: AgentState) -> dict:
         plan = None
         if target:
             # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
+            # 대상 NPC plan 이 없으면 주입 생략 — 타 NPC plan 오참조로 인한 행동 불일치 방지.
             target_lower = target.lower()
             plan = next(
                 (v for k, v in current_plan.items() if k.lower() == target_lower), None
             )
-        if plan is None:
-            plan = next(iter(current_plan.values()), None)
         if isinstance(plan, dict) and plan.get("goal"):
             steps = plan.get("steps") or []
             steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)

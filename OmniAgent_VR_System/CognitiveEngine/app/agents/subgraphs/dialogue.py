@@ -201,6 +201,8 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         vr_context.get("player_id", "Player")
         if isinstance(vr_context, dict)
         else getattr(vr_context, "player_id", "Player")
+        if vr_context
+        else "Player"
     )
 
     try:
@@ -390,6 +392,8 @@ async def dialogue_node(state: AgentState):
             vr_context.get("player_id", "Player")
             if isinstance(vr_context, dict)
             else getattr(vr_context, "player_id", "Player")
+            if vr_context
+            else "Player"
         )
         raw_responses, npc_plans = await _refine_responses(raw_responses, player_id)
     else:

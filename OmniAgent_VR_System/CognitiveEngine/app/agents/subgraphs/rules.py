@@ -279,6 +279,8 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
         vr_context.get("player_id", "Player")
         if isinstance(vr_context, dict)
         else getattr(vr_context, "player_id", "Player")
+        if vr_context
+        else "Player"
     )
     npc_id = batch.AgentID
 
