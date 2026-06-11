@@ -13,7 +13,9 @@
 ║                                  ↓             ↓                            ║
 ║                              Supervisor → Interface_Output                  ║
 ║                                  ↓             ↓                            ║
-║                              Supervisor →   Rules → END                     ║
+║                              Supervisor →   Rules → Supervisor              ║
+║                                                         ↓                   ║
+║                       END (정상/폴백) 또는 Dialogue (거부 1회 재시도)        ║
 ║                                                                              ║
 ║ NODES:                                                                       ║
 ║   • Interface_Input:  UE5 data → natural language                           ║
@@ -72,7 +74,9 @@ workflow.add_conditional_edges(
 # Each agent returns to Supervisor for orchestration
 workflow.add_edge("Dialogue", "Supervisor")
 workflow.add_edge("Interface_Output", "Supervisor")
-workflow.add_edge("Rules", END)
+# Rules 도 Supervisor 경유 — 거부(전 액션 기각) 시 1회 재시도/폴백 판정을 Supervisor 가 수행.
+# (과거 Rules→END 직결로 supervisor 4단계 재시도 분기가 데드코드였음)
+workflow.add_edge("Rules", "Supervisor")
 
 # Compile
 app_graph = workflow.compile()

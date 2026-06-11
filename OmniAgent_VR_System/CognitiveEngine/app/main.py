@@ -456,6 +456,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         facial_state=None,
         action_batch=None,
         target_npcs=[target_npc_from_payload] if target_npc_from_payload else [],
+        rules_retry_count=0,
         msg_id=envelope.msg_id,
         timestamp=envelope.timestamp,
         has_error=False,

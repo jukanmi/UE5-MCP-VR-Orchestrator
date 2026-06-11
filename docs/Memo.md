@@ -97,6 +97,8 @@
 - [x] normal NPC 대화 모델 e4b(thinking) 재검토 — `get_llm` ChatOllama `reasoning=False` 전역 적용으로 해소 (2026-06-12)
 - [x] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤. NPC 교체 호출 prompt eval 183ms→37ms 실측 (2026-06-12)
 - [x] core 모델 26b→`gemma4-12b` 교체 (OBLITERATED Q4_K_M 별칭, VRAM 16GB 적합) — llm_factory·main.py·debug.html·README 동시 수정 (2026-06-12)
+- [x] LangGraph Rules 거부 처리 복원 — Rules→Supervisor 엣지(데드코드였던 재시도 분기 활성화) + `rules_retry_count` 1회 제한, 소진 시 폴백 배치(빈 배치 UE5 전송 차단) (2026-06-12)
+- [x] failed_action_history LLM 주입 — interface_input 이 최근 3건을 natural_context 에 포함("do NOT retry the same way"), 반복 실패 차단 (2026-06-12)
 
 ## Handoff Notes
 

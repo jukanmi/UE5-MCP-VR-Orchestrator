@@ -204,6 +204,21 @@ def interface_input_node(state: AgentState) -> dict:
     if perceived_str not in ("Unknown", "None visible/audible"):
         natural_context += f", nearby: {perceived_str}"
 
+    # ── 실패 이력 주입 — UE5 action_failed 보고를 LLM 컨텍스트에 반영 ──
+    # WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
+    # 반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
+    # 최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행).
+    failed_history = state.get("failed_action_history") or []
+    if failed_history:
+        recent = failed_history[-3:]
+        fails = "; ".join(
+            f"{f.get('failed_action_type', 'Unknown')}"
+            f" by {f.get('executor_npc_id', 'unknown')}"
+            f" (reason: {f.get('reason', 'unknown')})"
+            for f in recent
+        )
+        natural_context += f". Recently FAILED actions (do NOT retry the same way): {fails}"
+
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱) ───────────────────────────

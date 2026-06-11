@@ -11,7 +11,7 @@
    Interface_Input → Dialogue                                                
    Dialogue → Interface_Output                                               
    Interface_Output → Rules                                                  
-   Rules → End (정상) 또는 Dialogue (거부 재시도)                            
+   Rules → End (정상) / Dialogue (거부 1회 재시도) / 폴백 End (재시도 소진)
                                                                               
  에러 숏컷 원칙 (청사진 요구사항):                                            
    - has_error=True → 어떤 노드에서든 즉시 End로 우회                        
@@ -100,7 +100,7 @@ def supervisor_node(state: AgentState) -> dict:
             "current_speaker": "Supervisor",
         }
 
-    # ── 4단계: Rules 이후 → End(정상) 또는 Dialogue(거부) ──────
+    # ── 4단계: Rules 이후 → End(정상) / Dialogue(거부 1회 재시도) / 폴백(재시도 소진) ──
     if current_speaker == "Rules":
         action_batch = state.get("action_batch")
 
@@ -111,10 +111,21 @@ def supervisor_node(state: AgentState) -> dict:
         )
 
         if is_rejected:
-            print("[Supervisor] Rules가 거부함, Dialogue 재시도...")
+            retry_count = state.get("rules_retry_count", 0)
+            if retry_count >= 1:
+                # 재시도 소진 — 빈 배치를 UE5 로 보내지 않고 안전 폴백으로 종료.
+                npc_id = state.get("target_npc", "Elara")
+                print(f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료")
+                return {
+                    "action_batch": _create_fallback_batch(npc_id),
+                    "next": "End",
+                }
+
+            print(f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)")
             return {
                 "next": "Dialogue",
                 "current_speaker": "Supervisor_Fallback",
+                "rules_retry_count": retry_count + 1,
                 "natural_context": (
                     "System: Your previous action was rejected by game rules. "
                     "Respond with speech only."

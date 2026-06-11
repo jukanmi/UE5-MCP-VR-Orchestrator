@@ -82,6 +82,8 @@ class AgentState(TypedDict):
     messages: Annotated[List[Any], add_messages]
 
     # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
+    # Rules 거부 시 Dialogue 재시도 횟수. 최대 1회 — 초과 시 폴백 배치로 종료(무한루프 차단).
+    rules_retry_count: int
     target_npcs: List[str]
     msg_id: str
     timestamp: float
