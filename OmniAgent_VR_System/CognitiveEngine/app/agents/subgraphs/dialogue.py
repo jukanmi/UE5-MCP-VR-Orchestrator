@@ -41,6 +41,15 @@ from ...utils import db_manager
 
 PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
 
+# fire-and-forget 메모리 기록 태스크 강한 참조 — 미보유 시 GC 가 실행 중 태스크 수거(무음 중단).
+_memory_write_tasks: set = set()
+
+
+def _on_memory_task_done(task) -> None:
+    _memory_write_tasks.discard(task)
+    if not task.cancelled() and task.exception():
+        print(f"[Dialogue] 메모리 기록 백그라운드 실패: {task.exception()}")
+
 
 # System Prompt for free-form response generation
 DIALOGUE_SYSTEM_PROMPT = """You are {name}, a {role}.
@@ -275,7 +284,14 @@ async def dialogue_node(state: AgentState):
     
     # [버그 수정] 삭제된 user_input 대신, 깔끔한 대사(clean_query)를 우선 기록하고 없으면 natural_context 기록
     memory_input = clean_query if clean_query else natural_context
-    await asyncio.to_thread(add_conversation, agent_id, memory_input, speech_for_memory)
+    # fire-and-forget — 메모리 기록은 응답 내용과 무관한데, 토큰 예산(1000) 도달 턴엔
+    # add_entry 내부 요약 LLM(e2b) 동기 호출이 응답 반환을 수 초 차단했음. 백그라운드 분리.
+    # 다음 턴이 직전 기록을 읽기 전에 write 가 끝나야 하는 순서 의존은 턴 간격(TTS 재생
+    # 수 초) >> write 시간이라 실질 문제 없음. 동시 쓰기는 ConversationMemory.lock 이 보호.
+    task = asyncio.create_task(
+        asyncio.to_thread(add_conversation, agent_id, memory_input, speech_for_memory))
+    _memory_write_tasks.add(task)
+    task.add_done_callback(_on_memory_task_done)
 
     return {
         "raw_response": raw_response,  # 태그 포함 원본 전달

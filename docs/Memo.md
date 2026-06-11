@@ -93,7 +93,7 @@
 ### 인지엔진 지연 최적화 (2026-06-12 분석)
 - [x] SLM Reflex raw few-shot 전환 — thinking 잘림(빈 응답→Scan 고정) 해소. 실측 warm 330ms, 적대 케이스 Attack 정상 (2026-06-12)
 - [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
-- [ ] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` await 를 fire-and-forget 으로 (토큰 예산 도달 턴 +수 초)
+- [x] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` fire-and-forget 분리, 백그라운드 착지 검증 (2026-06-12)
 - [ ] normal NPC 대화 모델 e4b(thinking) 재검토 — thinking 토큰이 num_predict 300 잠식
 - [ ] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤 (Ollama KV prefix 캐시 활용)
 - [ ] gemma4:12b 도입 시 26b 제거 (VRAM 16GB에 26b=17GB 미적합) — dialogue.py·main.py·debug.html 3곳 동시 수정
