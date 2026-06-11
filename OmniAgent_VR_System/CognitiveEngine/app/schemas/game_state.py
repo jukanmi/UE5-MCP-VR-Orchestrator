@@ -26,8 +26,4 @@ class Entity(BaseModel):
     rotation: Vector3D
     tags: List[str] = Field(default_factory=list)
 
-class GameState(BaseModel):
-    player_location: Vector3D
-    nearby_entities: List[Entity]
-    world_time: str
-    weather: str
+

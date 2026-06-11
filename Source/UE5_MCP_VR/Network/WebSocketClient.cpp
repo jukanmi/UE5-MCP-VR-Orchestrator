@@ -1,58 +1,121 @@
-// File: WebSocketClient.cpp
-// Purpose: Implementation of WebSocket logic.
-// Uses FWebSocketsModule to connect, send GesPrompt JSON, and receive ActionBatch JSON.
 #include "WebSocketClient.h"
 #include "WebSocketsModule.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
+#include "MCPJsonUtils.h"
+#include "JsonObjectConverter.h"
+#include "EnvelopeBuilder.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
+// --- UWebSocketClient ---
 
 void UWebSocketClient::Initialize(FString ServerURL)
 {
-    if (!FModuleManager::Get().IsModuleLoaded("WebSockets"))
+    // 인증은 MessageEnvelope에 포함된 auth_token으로 처리됨 — URL/헤더 JWT 주입 불필요.
+    CachedServerURL = ServerURL;
+
+    RetryCount = 0;
+
+    WebSocket = FModuleManager::Get().LoadModuleChecked<FWebSocketsModule>("WebSockets").CreateWebSocket(ServerURL, TEXT("ws"));
+
+    if (WebSocket.IsValid())
     {
-        FModuleManager::Get().LoadModule("WebSockets");
+        BindSocketEvents();
+        WebSocket->Connect();
     }
+}
 
-    WebSocket = FWebSocketsModule::Get().CreateWebSocket(ServerURL);
-
+void UWebSocketClient::BindSocketEvents()
+{
     WebSocket->OnConnected().AddUObject(this, &UWebSocketClient::OnConnected);
-    WebSocket->OnConnectionError().AddLambda([](const FString& Error) {
-        UE_LOG(LogTemp, Error, TEXT("WebSocket Error: %s"), *Error);
-    });
+    WebSocket->OnConnectionError().AddUObject(this, &UWebSocketClient::OnConnectionError);
     WebSocket->OnClosed().AddUObject(this, &UWebSocketClient::OnClosed);
     WebSocket->OnMessage().AddUObject(this, &UWebSocketClient::OnMessage);
-
-    WebSocket->Connect();
 }
 
-void UWebSocketClient::SendData(FString JsonData)
+void UWebSocketClient::TryReconnect()
 {
-    if (WebSocket && WebSocket->IsConnected())
+    if (RetryCount >= MaxRetryCount)
     {
-        WebSocket->Send(JsonData);
-    }
-}
-
-void UWebSocketClient::OnConnected()
-{
-    UE_LOG(LogTemp, Log, TEXT("WebSocket Connected to Cognitive Engine"));
-}
-
-void UWebSocketClient::OnClosed(int32 StatusCode, const FString& Reason, bool bWasClean)
-{
-    UE_LOG(LogTemp, Warning, TEXT("WebSocket Closed: %s"), *Reason);
-}
-
-void UWebSocketClient::OnMessage(const FString& Message)
-{
-    UE_LOG(LogTemp, Log, TEXT("Received ActionBatch: %s"), *Message);
-    if (IsInGameThread())
-    {
-        OnMessageReceived.Broadcast(Message);
-    }
-    else
-    {
-        AsyncTask(ENamedThreads::GameThread, [this, Message]()
+        UE_LOG(LogTemp, Error,
+            TEXT("[WebSocketClient] Max reconnect attempts (%d) exceeded. Switching to permanent Offline AI Mode."),
+            MaxRetryCount);
+        if (UWorld* World = GetWorld())
         {
-            OnMessageReceived.Broadcast(Message);
-        });
+            World->GetTimerManager().ClearTimer(ReconnectTimerHandle);
+        }
+        return;
+    }
+
+    const float Delay = FMath::Pow(2.f, static_cast<float>(RetryCount));
+    RetryCount++;
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[WebSocketClient] Retrying connection in %.1f seconds... (Attempt %d/%d)"),
+        Delay, RetryCount, MaxRetryCount);
+
+    if (UWorld* World = GetWorld())
+    {
+        TWeakObjectPtr<UWebSocketClient> WeakThis(this);
+        World->GetTimerManager().SetTimer(
+            ReconnectTimerHandle,
+            [this, WeakThis]()
+            {
+                if (!WeakThis.IsValid()) return;   // 재연결 타이머 발화 시 객체 GC 가드
+                if (WebSocket.IsValid() && WebSocket->IsConnected())
+                    WebSocket->Close();
+                WebSocket = FWebSocketsModule::Get().CreateWebSocket(CachedServerURL);
+                BindSocketEvents();
+                WebSocket->Connect();
+            },
+            Delay,
+            false
+        );
     }
 }
+
+void UNetworkClientBase::Initialize(const FString& InURL)
+{
+    TargetURL = InURL;
+    Socket = NewObject<UWebSocketClient>(this);
+    if (Socket)
+    {
+        Socket->OnMessageReceived.AddDynamic(this, &UNetworkClientBase::OnMessageReceivedHandler);
+        Socket->OnConnectionChanged.AddDynamic(this, &UNetworkClientBase::OnConnectionChangedHandler);
+        Socket->Initialize(TargetURL);
+    }
+}
+
+void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
+{
+    // Python StateUpdatePayload 스키마에 맞춰 snake_case로 직접 조립.
+    // FJsonObjectConverter는 camelCase를 만들어 Python과 호환되지 않음.
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("owner_agent_id"), StateData.OwnerAgentID);
+
+    const UEnum* ModeEnum = StaticEnum<ENPCBehaviorMode>();
+    const FString ModeStr = ModeEnum ? ModeEnum->GetNameStringByValue(static_cast<int64>(StateData.CurrentMode)) : TEXT("Common");
+    Payload->SetStringField(TEXT("current_mode"), ModeStr);
+
+    TSharedRef<FJsonObject> LocObj = MakeShared<FJsonObject>();
+    LocObj->SetNumberField(TEXT("x"), StateData.OwnerLocation.X);
+    LocObj->SetNumberField(TEXT("y"), StateData.OwnerLocation.Y);
+    LocObj->SetNumberField(TEXT("z"), StateData.OwnerLocation.Z);
+    Payload->SetObjectField(TEXT("owner_location"), LocObj);
+
+    Payload->SetStringField(TEXT("threat_level"), StateData.ThreatLevel);
+    Payload->SetBoolField(TEXT("in_cover"), StateData.bIsInCover);
+    Payload->SetBoolField(TEXT("line_of_sight"), StateData.bHasLineOfSight);
+
+    // perceived_targets는 비어있어도 OK (기본값 빈 배열)
+    Payload->SetArrayField(TEXT("perceived_targets"), TArray<TSharedPtr<FJsonValue>>{});
+
+    FString PayloadJson;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadJson);
+    FJsonSerializer::Serialize(Payload, Writer);
+
+    const FString Envelope = FEnvelopeBuilder::BuildStateUpdate(PayloadJson);
+    SendPrompt(Envelope);
+}
+
+

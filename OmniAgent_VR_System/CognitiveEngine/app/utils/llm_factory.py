@@ -1,44 +1,124 @@
-"""
-File: llm_factory.py
-Purpose: Centralized LLM Provider.
-Returns configured ChatOpenAI instance (gpt-4o-mini).
-Ensures API Key presence via python-dotenv.
-"""
 import os
+import re
+import json
+from typing import Optional
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama
 
-# Load .env from root of CognitiveEngine if mostly run from there, 
-# or rely on system env vars.
 load_dotenv()
 
-def get_llm(model_provider="google", temperature=0.0):
+# ==============================================================================
+# 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
+# ==============================================================================
+MODELS = {
+    # Ollama 로컬 모델 — Gemma 4
+    "gemma4":     "gemma4:26b",   # 메인 LLM (대화/추론)
+    "mid":        "qwen3:8b",     # 중간 품질 (high NPC용 — e4b보다 낫고 26b보다 빠름)
+    "gemma4_slm": "gemma4:e4b",   # 경량 구조화 모델 (JSON 추출 등)
+    "gemma4_31b": "gemma4:31b",   # 최고 품질 (고부하 작업 시)
+    "gemma4_e2b": "gemma4:e2b",   # 초경량 (지연 민감 구간)
+    # 기존 모델 (폴백 용도)
+    "qwen":     "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "qwen_slm": "qwen3:1.7b",
+    "llama":    "llama3.3:70b",
+    # OpenAI (API Key 필요)
+    "openai":   "gpt-4o-mini",
+}
+
+# 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
+DEFAULT_MODEL = "gemma4"
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+
+# ==============================================================================
+# 통합 LLM 팩토리 함수
+# get_llm / get_dialogue_llm을 통합 → 단일 인터페이스로 사용
+# ==============================================================================
+def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int = 150):
     """
-    Returns a configured LLM instance.
-    - model_provider="google": Uses Gemini/Gemma models (via ChatGoogleGenerativeAI).
-    - model_provider="openai": Uses GPT-5 Nano (via ChatOpenAI).
+    model_name:  "qwen" | "qwen_slm" | "llama" | "openai" | None (→ DEFAULT_MODEL)
+    temperature: 창의성 수준 (0.0 = 결정적, 1.0 = 창의적)
+    num_predict: 최대 출력 토큰 수 (대화용은 300, 구조화/요약용은 150)
     """
-    if model_provider == "google":
-        # Google GenAI (Gemma/Gemini)
-        # Note: Ensure langchain-google-genai is installed and GOOGLE_API_KEY is set.
-        # "gemini-2.0-flash" is a good placeholder for high-performance efficient models.
-        # If specifically Gemma 2 27b is available via API, change model name here.
-        return ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash", 
+    if model_name is None:
+        model_name = DEFAULT_MODEL
+
+    model_name = model_name.lower()
+
+    OLLAMA_MODELS = {"gemma4", "mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen", "qwen_slm", "llama"}
+    if model_name in OLLAMA_MODELS:
+        model_id = MODELS.get(model_name, MODELS["gemma4"])
+        print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
+        return ChatOllama(
+            model=model_id,
             temperature=temperature,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            convert_system_message_to_human=True
+            base_url=OLLAMA_BASE_URL,
+            num_ctx=2048,
+            num_predict=num_predict,
+            num_thread=8,
+            request_timeout=30.0,
+            keep_alive="5m",
         )
-    
-    elif model_provider == "openai":
-        # OpenAI (GPT-5 Nano)
+
+    elif model_name == "openai":
+        model_id = MODELS["openai"]
+        print(f"[LLM Factory] OpenAI 모델 사용: {model_id}")
         return ChatOpenAI(
-            model="gpt-5-nano",
+            model=model_id,
             temperature=temperature,
             api_key=os.getenv("OPENAI_API_KEY"),
-            max_retries=2
+            max_retries=2,
         )
-    
+
     else:
-        raise ValueError(f"Unknown model_provider: {model_provider}")
+        raise ValueError(
+            f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. "
+            f"선택 가능: {list(MODELS.keys()) + ['openai']}"
+        )
+
+
+# ==============================================================================
+# Ollama 직접 호출 유틸리티 (JSON 구조화 등 단발성 추론에 사용)
+# ==============================================================================
+def call_ollama_direct(prompt_text: str, extract_json: bool = True) -> Optional[str]:
+    """
+    경량 SLM(qwen_slm)을 사용해 단발성 텍스트/JSON 추론을 즉시 수행합니다.
+    - extract_json=True : 응답에서 JSON 블록을 자동으로 파싱/추출
+    - extract_json=False: 응답 전체 텍스트를 그대로 반환
+    """
+    try:
+        print("[LLM Factory] Ollama 직접 호출 (gemma4_slm 구조화 용도)...")
+        llm = get_llm("gemma4_slm", temperature=0.1)
+        response = llm.invoke(prompt_text)
+
+        output = response.content if hasattr(response, "content") else str(response)
+
+        if extract_json:
+            # ```json ... ``` 블록 우선 파싱
+            json_match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
+            if json_match:
+                extracted = json_match.group(1).strip()
+                print(f"[LLM Factory] JSON 추출 성공 ({len(extracted)} chars)")
+                return extracted
+
+            # 블록 없이 JSON 기호([ 또는 {)가 있는 경우 폴백
+            start_marks = [output.find('['), output.find('{')]
+            end_marks = [output.rfind(']'), output.rfind('}')]
+            
+            valid_starts = [i for i in start_marks if i != -1]
+            valid_ends = [i for i in end_marks if i != -1]
+            
+            if valid_starts and valid_ends:
+                idx_start = min(valid_starts)
+                idx_end = max(valid_ends) + 1
+                return output[idx_start:idx_end].strip()
+
+            print("[LLM Factory] 경고: JSON 블록 없음 → 원문 반환")
+
+        return output.strip()
+
+    except Exception as e:
+        print(f"[LLM Factory] 오류: {e}")
+        return None

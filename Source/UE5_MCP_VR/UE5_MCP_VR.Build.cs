@@ -8,12 +8,15 @@ public class UE5_MCP_VR : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "AIModule", "GameplayTasks", "NavigationSystem", "HTTP", "GameplayTags", "StateTreeModule", "GameplayStateTreeModule", "HeadMountedDisplay", "XRBase" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "JsonUtilities" });
 
+		// ASR 음성 입력 — 마이크 캡처 (Audio::FAudioCapture)
+		PrivateDependencyModuleNames.AddRange(new string[] { "AudioCapture", "AudioCaptureCore" });
+
 		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

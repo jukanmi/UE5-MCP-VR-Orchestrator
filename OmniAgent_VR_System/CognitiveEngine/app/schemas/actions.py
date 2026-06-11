@@ -1,54 +1,66 @@
-"""
-File: actions.py
-Purpose: Defines the 'ActionBatch' data contract for Engine Commands.
-Includes strict validation logic (e.g., Clamping damage values) to enforce game rules at the schema level.
-Also defines specific Action types like SpeakAction.
-"""
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional, Literal, Union, Any
+from pydantic import BaseModel, Field
+from typing import List, Literal, Dict
 import json
 import os
 
-# Load Shared Data Constants
-SHARED_DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../SharedData/world_constants.json"))
-try:
-    with open(SHARED_DATA_PATH, "r") as f:
-        WORLD_CONSTANTS = json.load(f)
-except FileNotFoundError:
-    print(f"WARNING: world_constants.json not found at {SHARED_DATA_PATH}. Using defaults.")
-    WORLD_CONSTANTS = {"MAX_DAMAGE": 100}
+NPCBehaviorMode = Literal[
+    "Combat",        # 전투 모드
+    "Social",        # 사교 모드
+    "Task",          # 상호작용/작업 모드
+    "Investigation", # 탐색/조사 모드
+    "Lifestyle",     # 생활/대기 모드
+    "Common",        # 공용/기본 액션 모드 (기본값)
+]
 
-class SpeakAction(BaseModel):
-    action_type: Literal["Speak"] = "Speak"
-    text: str
-    emotion: str = "Neutral"
-    target_listener: Optional[str] = None
+NPCFacialState = Literal[
+    "Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"
+]
+
+EAction = Literal[
+    "Idle", "Move", "Follow", "Wait", "Dialogue", "TurnTo", "Stop", "Scan", "UseItem", "Equip", "Unequip",
+    "Attack", "Block", "Dodge", "Flee", "SignalAllies",
+    "Trade", "Emote", "GiveItem", "Comfort", "HandObject",
+    "PickUp", "Drop", "Craft", "Repair",
+    "Investigate", "Track", "Scout",
+    "Sit", "Sleep", "Read", "Pray", "Dance", "Sing"
+]
+
+class GameAction(BaseModel):
+    """C++ FGameAction과 1:1 대응"""
+    ActionType: EAction = "Idle"
+    FacialState: NPCFacialState = "Neutral"
+    Parameters: Dict[str, str] = Field(default_factory=dict)
+
+class ActionBatch(BaseModel):
+    """C++ FActionBatch와 1:1 대응"""
+    AgentID: str
+    Mode: NPCBehaviorMode = "Common"
+    Actions: List[GameAction]
+
+class ModeActionRequest(BaseModel):
+    """C++ FModeActionRequest와 1:1 대응 (최상위 반환 객체)"""
+    Mode: NPCBehaviorMode = "Common"
+    ActionBatches: Dict[str, ActionBatch] = Field(default_factory=dict)
 
 class RejectResult(BaseModel):
     reason: str
     rejected: bool = True
 
-class GameAction(BaseModel):
-    action_type: Literal["Move", "Attack", "Interact", "Emote"]
-    target_id: Optional[str] = None
-    parameters: dict = Field(default_factory=dict)
-    
-    # Validation for Damage Clamping
-    @model_validator(mode='after')
-    def clamp_damage_values(self):
-        if self.action_type == "Attack":
-            params = self.parameters
-            if "damage" in params:
-                raw_damage = params["damage"]
-                max_dmg = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
-                
-                if isinstance(raw_damage, (int, float)) and raw_damage > max_dmg:
-                    print(f"WARNING: Clamping damage from {raw_damage} to {max_dmg}")
-                    self.parameters["damage"] = max_dmg
-        return self
+WORLD_CONSTANTS = {
+    "valid_npc_ids": ["Elara", "James", "Guard", "Merchant", "Blacksmith", "Player"],
+    "valid_location_ids": ["TownSquare", "Tavern", "Forest", "Castle"],
+    "WORLD_BOUNDS": {"x_min": -10000, "x_max": 10000, "y_min": -10000, "y_max": 10000, "z_min": -1000, "z_max": 2000},
+    "MAX_DAMAGE": 100,
+    "MAX_SPEED": 600,
+    "MAX_HEALTH": 100
+}
 
-class ActionBatch(BaseModel):
-    agent_id: str
-    # Using Union to allow both SpeakAction (specific) and GameAction (generic)
-    actions: List[Union[SpeakAction, GameAction]]
-    reasoning: Optional[str] = None
+# BT 카테고리 분류맵
+CATEGORY_ACTION_MAP = {
+    "Common": {"Idle", "Move", "Follow", "Wait", "Dialogue", "TurnTo", "Stop", "Scan", "UseItem", "Equip", "Unequip"},
+    "Combat": {"Attack", "Block", "Dodge", "Flee", "SignalAllies"},
+    "Social": {"Trade", "Emote", "GiveItem", "Comfort", "HandObject"},
+    "Task": {"PickUp", "Drop", "Craft", "Repair"},
+    "Investigation": {"Investigate", "Track", "Scout"},
+    "Lifestyle": {"Sit", "Sleep", "Clean", "Read", "Pray", "Dance", "Sing"}
+}

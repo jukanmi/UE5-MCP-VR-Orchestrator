@@ -25,6 +25,9 @@ Plugins/*/Intermediate/
 # Visul Studio Code
 .vscode/
 *.code-workspace
+*.agent/
+.vsconfig
+.github
 
 # ==============================================================================
 # PYTHON MCP SERVER & LANGGRAPH
@@ -47,6 +50,24 @@ __pycache__/
 *.sqlite
 *.db
 checkpoints.db
+*.safetensors
+**/personas/*
+**/knowledge/*
+
+#models
+**/models/*
+
+# TTS voice 파일·체크포인트 (자동 다운로드/생성, 모델 바이너리 대용량)
+OmniAgent_VR_System/TTSService/voices/
+OmniAgent_VR_System/TTSService/checkpoints_v2/
+OmniAgent_VR_System/TTSService/base_voices/
+OmniAgent_VR_System/TTSService/**/*.wav
+OmniAgent_VR_System/TTSService/**/*.mp3
+OmniAgent_VR_System/TTSService/**/*.flac
+OmniAgent_VR_System/TTSService/**/*.pth
+OmniAgent_VR_System/TTSService/**/*.onnx
+OmniAgent_VR_System/TTSService/**/*.ckpt
+
 
 # Jupyter Notebooks (if used for testing)
 .ipynb_checkpoints/
@@ -75,3 +96,42 @@ Desktop.ini
 *.docx
 *.txt
 tests/
+docs/
+
+# ==============================================================================
+# Obsidian
+# ==============================================================================
+.obsidian/
+**/*.canvas
+
+# ==============================================================================
+# FORMATTING
+# ==============================================================================
+.prettierrc
+.prettierignore
+
+# ==============================================================================
+# CLAUDE & OPENAI
+# ==============================================================================
+CLAUDE.md
+.claude/
+.claude/skills/
+.code-review-graph/
+
+# ==============================================================================
+# OCULUS / META TOOLS (37MB ovr-platform-util.exe 등)
+# ==============================================================================
+Content/Oculus/
+
+# ==============================================================================
+# EDITOR PER-USER SETTINGS (머신/사용자별)
+# ==============================================================================
+Config/DefaultEditorPerProjectUserSettings.ini
+
+# ==============================================================================
+# PYTHON CACHE / VENV
+# ==============================================================================
+__pycache__/
+*.pyc
+.venv/
+venv/
