@@ -95,7 +95,7 @@
 - [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
 - [x] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` fire-and-forget 분리, 백그라운드 착지 검증 (2026-06-12)
 - [x] normal NPC 대화 모델 e4b(thinking) 재검토 — `get_llm` ChatOllama `reasoning=False` 전역 적용으로 해소 (2026-06-12)
-- [ ] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤 (Ollama KV prefix 캐시 활용)
+- [x] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤. NPC 교체 호출 prompt eval 183ms→37ms 실측 (2026-06-12)
 - [x] core 모델 26b→`gemma4-12b` 교체 (OBLITERATED Q4_K_M 별칭, VRAM 16GB 적합) — llm_factory·main.py·debug.html·README 동시 수정 (2026-06-12)
 
 ## Handoff Notes

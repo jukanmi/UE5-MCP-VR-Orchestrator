@@ -51,15 +51,12 @@ def _on_memory_task_done(task) -> None:
         print(f"[Dialogue] 메모리 기록 백그라운드 실패: {task.exception()}")
 
 
-# System Prompt for free-form response generation
-DIALOGUE_SYSTEM_PROMPT = """You are {name}, a {role}.
-Personality traits: {traits}
-
-Recent memory: {memory}
-Current sentiment toward player: {sentiment}
-
-Relevant context: {rag_context}
-Conversation history: {chat_history}
+# System Prompt for free-form response generation.
+# 배치 규칙: 정적 블록(FORMAT/ACTIONS/EXAMPLES/RULES ~800토큰)을 앞에, 동적 블록
+# (페르소나·메모리·RAG·히스토리)을 뒤에 — Ollama 는 직전 요청과 공유하는 prefix 의
+# KV 캐시를 재사용하므로, NPC 가 바뀌어도 같은 모델 연속 호출이면 정적 블록의
+# prompt eval 을 통째로 건너뛴다. {name} 류 동적 값을 앞에 두면 캐시 전부 무효.
+DIALOGUE_SYSTEM_PROMPT = """You are an NPC in a VR game. Reply in character following the exact format below.
 
 RESPONSE FORMAT (CRITICAL - follow exactly):
 LINE 1: [Mode: <mode>] [Facial: <expression>]
@@ -114,7 +111,17 @@ RULES:
 - Speech in "quotes", tone in (parentheses)
 - Emit [Action:] tags for what you DO (0 if you only talk). Multiple allowed, one per line.
 - Use ONLY action Types from the list above. Pick the closest one; never invent a Type.
-- Stay in character. Max 2-3 sentences of speech."""
+- Stay in character. Max 2-3 sentences of speech.
+
+YOUR CHARACTER:
+You are {name}, a {role}.
+Personality traits: {traits}
+
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
+
+Relevant context: {rag_context}
+Conversation history: {chat_history}"""
 
 
 def load_persona(agent_id: str):
