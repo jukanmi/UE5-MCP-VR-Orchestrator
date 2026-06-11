@@ -11,6 +11,34 @@ class ASmartNPCAIController;
 class ASmartNPC;
 
 /**
+ * NPC 행동 계획 (Multi-NPC Cached Planning).
+ * [의도(Why)] "비싸게 계획 1회, 싸게 실행 N회". 풀 파이프라인(12B)이 산출한 plan 을 C++ 에
+ *  영속 저장하고, 재계획 불필요 시 이 plan 을 prompt 에 실어 e4b 단독 경량 루프로 대사를 전개한다.
+ *  Python Dict {goal, steps, relation_snapshot} 와 1:1 대응 (CLAUDE.md §1·§5 직렬화 정합).
+ */
+USTRUCT(BlueprintType)
+struct FNPCPlan
+{
+    GENERATED_BODY()
+
+    // 이 NPC 가 향후 몇 턴간 달성하려는 짧은 목표.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    FString Goal;
+
+    // 목표 달성을 위한 순서 있는 비트(beat) 목록.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    TArray<FString> Steps;
+
+    // 계획 수립 시점의 player 호감도 스냅샷 (affinity score 만 — 확정 결정).
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    int32 RelationSnapshot = 0;
+
+    // plan 이 실제로 수립되었는지 (빈 plan 과 구분). false 면 송신 시 current_plan 생략.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    bool bIsValid = false;
+};
+
+/**
  * NPC 상태 관리 컴포넌트 (NPC State Component).
  * [의도(Why)] NPC의 존재(속성, 상태, 감정) 자체를 하나의 컴포넌트로 응집시켜 액션(Action) 컴포넌트와의 결합도를 낮추고 재사용성을 극대화합니다.
  */
@@ -118,6 +146,62 @@ public:
     float ComputePerceptionDanger(float BaseDanger, const FString& TargetID) const
     {
         return BaseDanger * GetAffinityMultiplier(TargetID);
+    }
+
+    // --- Cached Planning (계획 캐싱) ---
+
+    // [소유권] 이 NPC 가 보관 중인 plan. Python 풀 파이프라인 응답(NpcPlans)으로 갱신,
+    //  e4b 경량 루프 prompt 빌드 시 current_plan 으로 송신. NPCStateComponent 단일 소유.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    FNPCPlan CurrentPlan;
+
+    // 마지막 재계획 이후 경과한 경량(e4b) 턴 수. ReplanTurnLimit 도달 시 강제 재계획.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    int32 TurnsSinceReplan = 0;
+
+    // 새 위협(danger ≥ 임계) 감지 시 SmartNPCAIController 가 세움 → 다음 prompt 에서 강제 재계획.
+    // 대화(prompt) 경로엔 실시간 perception danger 가 없으므로 perception 경로에서 미리 표시.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    bool bDangerReplanPending = false;
+
+    // 강제 재계획 턴 상한 (드리프트 방어). 디자이너 튜닝 노출.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
+    int32 ReplanTurnLimit = 5;
+
+    // 재계획 트리거 danger 임계 (SmartNPCAIController CombatDangerThreshold 와 정합).
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
+    float ReplanDangerThreshold = 0.5f;
+
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    const FNPCPlan& GetCurrentPlan() const { return CurrentPlan; }
+
+    // 재계획 응답 수신 시 호출 — plan 저장 + 턴 카운터·danger 플래그 리셋.
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    void SetCurrentPlan(const FNPCPlan& NewPlan)
+    {
+        CurrentPlan = NewPlan;
+        CurrentPlan.bIsValid = true;
+        TurnsSinceReplan = 0;
+        bDangerReplanPending = false;
+    }
+
+    // e4b 단독(경량) 턴 종료 시 호출 — 턴 카운터 +1.
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    void IncrementReplanTurn() { ++TurnsSinceReplan; }
+
+    // SmartNPCAIController 가 perception 에서 danger ≥ 임계 감지 시 호출 → 다음 prompt 강제 재계획.
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    void FlagDangerReplan() { bDangerReplanPending = true; }
+
+    /** 재계획 필요 판정: 보관 plan 없음 OR 위협 pending OR 즉시 danger ≥ 임계 OR 턴 상한 도달.
+     *  @param MaxPerceptionDanger 직전 perception 최고 위협도 (ComputePerceptionDanger 산출값). 0 가능. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    bool ShouldReplan(float MaxPerceptionDanger) const
+    {
+        return !CurrentPlan.bIsValid
+            || bDangerReplanPending
+            || MaxPerceptionDanger >= ReplanDangerThreshold
+            || TurnsSinceReplan >= ReplanTurnLimit;
     }
 
 protected:
