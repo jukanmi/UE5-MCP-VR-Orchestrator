@@ -90,7 +90,17 @@
 
 ---
 
+### 인지엔진 지연 최적화 (2026-06-12 분석)
+- [x] SLM Reflex raw few-shot 전환 — thinking 잘림(빈 응답→Scan 고정) 해소. 실측 warm 330ms, 적대 케이스 Attack 정상 (2026-06-12)
+- [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
+- [ ] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` await 를 fire-and-forget 으로 (토큰 예산 도달 턴 +수 초)
+- [ ] normal NPC 대화 모델 e4b(thinking) 재검토 — thinking 토큰이 num_predict 300 잠식
+- [ ] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤 (Ollama KV prefix 캐시 활용)
+- [ ] gemma4:12b 도입 시 26b 제거 (VRAM 16GB에 26b=17GB 미적합) — dialogue.py·main.py·debug.html 3곳 동시 수정
+
 ## Handoff Notes
+
+- **WS 메시지별 동시 처리 (2026-06-12)**: `websocket_llm_endpoint` 가 메시지마다 `asyncio.create_task` 로 분리 처리 — 응답 순서 비보장. prompt 는 msg_id, location_decision 은 request_gen 으로 수신 측 매칭이라 순서 의존 없음. 같은 소켓 동시 쓰기는 `_ws_send_lock` 으로 직렬화(TTS 푸시·디버그 명령 포함). stale 임계 10초는 유지 — 직렬화 큐잉이 원인이던 지연이 사라졌으므로 실측 후 하향 검토 가능.
 
 - **PR #9 Gemini 보류 항목 (2026-06-05)**: 티키타카 5라운드로 ~20건 반영했으나 아래는 의도적 보류 — 빌드/런타임 검증 필요, 크래시 아님(perf/동작). **How to apply**: UE 풀빌드 후 실측하며 판단. ① `ItemManager::GetItemsInRange` O(N×M) → 역참조 맵 / `StaticLoadObject` 동기로드 hitch → 비동기 로드. ② `NPCStateComponent::FlushEventReport` WaitingLLM 조기반환 시 지연 이벤트가 재flush 안 돼 영구대기 가능 — TacticalQueryState 해제 시 재처리 트리거 필요. ③ `VRPawn` ShotDirection 이 Grip 포즈 forward 인데 조준선은 Aim 포즈 — 무기 명중 방향 불일치. **player_id 는 오탐**(vr_context.player_id 정상, 건드리지 말 것).
 - **VR PCVR(Link) 결론 (2026-05-30)**: 현재 Quest Link(케이블 PCVR)로 개발 — 게임은 PC 실행, Quest는 디스플레이. **APK/사이드로딩/IP외부화 불필요**(서버도 PC, 127.0.0.1 OK). 타이틀바 `OpenXR Oculus`+Link 가 PCVR 증거. **How to apply**: 스탠드얼론(Quest 단독 언테더드)을 최종 타겟으로 확정하기 전엔 Memo "Quest 스탠드얼론 빌드" 항목 손대지 말 것. 확정 시 APK + IP외부화 + 모바일 성능 최적화 동반. VR 아바타 IK 자체는 완성·머지됨.

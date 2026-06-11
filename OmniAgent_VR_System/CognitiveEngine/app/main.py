@@ -88,6 +88,8 @@ _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
+# WS 송신 직렬화 — 메시지별 동시 처리 + TTS 푸시가 같은 소켓에 겹쳐 쓰는 것 방지.
+_ws_send_lock = asyncio.Lock()
 # fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
 _background_tasks: set = set()
 
@@ -116,11 +118,24 @@ async def websocket_llm_endpoint(websocket: WebSocket):
     _active_llm_ws = websocket
     logger.info("[Main] UE5 LLM 클라이언트 연결됨")
 
+    async def _process_and_send(raw_data: str) -> None:
+        # WHY 메시지별 태스크: 수신 루프에서 직렬 await 하면 대화 처리(수 초) 동안
+        # 후속 location_decision/emergency 가 큐에 묵혀 stale 드랍됨 (이전 임계 10초
+        # 상향이 이 증상의 우회책이었음). 응답 순서는 보장하지 않음 — prompt 는
+        # msg_id, location_decision 은 request_gen 으로 수신 측이 매칭하므로 무관.
+        response = await _process_llm_message(raw_data)
+        try:
+            async with _ws_send_lock:
+                await websocket.send_text(response)
+        except Exception as e:
+            logger.warning(f"[Main] WS 응답 전송 실패(연결 종료 추정): {e}")
+
     try:
         while True:
             raw_data = await websocket.receive_text()
-            response = await _process_llm_message(raw_data)
-            await websocket.send_text(response)
+            task = asyncio.create_task(_process_and_send(raw_data))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
@@ -189,19 +204,35 @@ _REFLEX_FACIAL: dict = {
     "Flee": "Fear", "SignalAllies": "Surprised", "Scan": "Surprised",
 }
 
+# Few-shot raw 프롬프트 — gemma e4b thinking 우회 (location_decision 과 동일 패턴).
+# chat template 경유 시 thinking 토큰이 num_predict 예산을 잠식해 response="" 로 잘림
+# (Memo 실측: num_predict=20 에서 done_reason="length" + 빈 응답).
+# raw=true + Answer: 프라이밍으로 다음 한 단어만 생성시킨다.
 _REFLEX_PROMPT = """\
-NPC '{agent_id}' detects a threat:
-- Target: {target_id} (Affinity: {affinity_score} [{affinity_tag}])
-- Sense: {sense}, Distance: {dist:.1f}m, Danger: {danger:.2f}
-{extra_lines}
+Task: choose one immediate reaction for an NPC detecting a threat.
+Actions: Attack, Block, Dodge, Flee, SignalAllies, Scan
+Rules: Hostile(affinity<=-30): Attack if close, Dodge/Block if taking damage. \
+Neutral: Scan to assess, SignalAllies if close. Friendly: Scan only.
 
-Action selection guidance:
-- Hostile target (affinity <= -30): Attack if close, Flee if low HP, Block/Dodge under attack
-- Neutral target (-29 ~ 29): Scan to assess, SignalAllies for backup
-- Friendly target: Scan only
+Example 1:
+Threat: target=Bandit affinity=-60(Hostile) sense=Sight dist=2.5m danger=0.90
+Answer: Attack
 
-Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
-Reply with ONLY the action name, e.g.: Attack"""
+Example 2:
+Threat: target=Player affinity=-45(Hostile) sense=Damage dist=1.2m danger=0.95
+Answer: Dodge
+
+Example 3:
+Threat: target=Wolf affinity=0(Neutral) sense=Hearing dist=18.0m danger=0.60
+Answer: Scan
+
+Example 4:
+Threat: target=Stranger affinity=-10(Neutral) sense=Sight dist=6.0m danger=0.75
+Answer: SignalAllies
+
+Example 5:
+Threat: target={target_id} affinity={affinity_score}({affinity_tag}) sense={sense} dist={dist:.1f}m danger={danger:.2f}{extra_lines}
+Answer:"""
 
 
 def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
@@ -214,7 +245,6 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     SLM 반사 행동 결정 (목표 500ms).
     LangGraph 없이 단일 경량 SLM 호출로 즉각 전투/회피 액션 생성.
     """
-    from .utils.llm_factory import get_llm
     from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
     from .utils import db_manager
 
@@ -248,13 +278,13 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     top_score = top_relation.affinity_score if top_relation else 0
     top_tag = top_relation.reputation_tag if top_relation else "Neutral"
 
+    # 한 줄 포맷 유지 — few-shot 예시와 형태가 어긋나면 모델이 형식을 깨기 쉬움.
     extra_lines = ""
     if len(perceptions) > 1:
-        others = [f"  - {p.target_id} ({p.sense_type}, dist {p.distance:.1f})" for p in perceptions[1:3]]
-        extra_lines = "Other threats:\n" + "\n".join(others)
+        others = [f"{p.target_id}({p.sense_type},{p.distance:.1f}m)" for p in perceptions[1:3]]
+        extra_lines = " others=" + ",".join(others)
 
     prompt = _REFLEX_PROMPT.format(
-        agent_id=agent_id,
         target_id=top.target_id,
         affinity_score=top_score,
         affinity_tag=top_tag,
@@ -267,9 +297,24 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
     action_type = "Scan"
     try:
-        llm = get_llm(model_name="gemma4_slm", temperature=0.3, num_predict=10)
-        raw = await asyncio.to_thread(llm.invoke, prompt)
-        raw_text = (raw.content if hasattr(raw, "content") else str(raw)).strip()
+        # Ollama 직접 호출 — raw=true 로 chat template(thinking 동반) 우회.
+        # location_decision 과 동일 패턴: 커넥션 풀 재사용 + stop=["\n"] 안전 마진.
+        import time as _t
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
+        body = {
+            "model": model_id,
+            "prompt": prompt,
+            "stream": False,
+            "raw": True,
+            "keep_alive": "5m",
+            "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
+        }
+        _llm_start = _t.perf_counter()
+        resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+        _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
+        raw_text = (resp.json().get("response") or "").strip()
+        logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
         tokens = raw_text.split()
         text = tokens[0] if tokens else ""
 
@@ -484,7 +529,8 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
         animation_metadata=AnimationMetadata(emotion=emotion),
     )
     try:
-        await _active_llm_ws.send_text(response.model_dump_json())
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(response.model_dump_json())
         logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
     except Exception as e:
         logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
@@ -767,7 +813,8 @@ async def api_npc_command(npc_id: str, req: NpcCommandRequest):
             )]
         )
         wrapper = ModeActionRequest(Mode=req.mode, ActionBatches={npc_id: batch})
-        await _active_llm_ws.send_text(wrapper.model_dump_json())
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(wrapper.model_dump_json())
         logger.info(f"[Debug] NPC 명령 전송: {npc_id} → {req.action_type}")
         return {"status": "ok", "npc_id": npc_id, "action": req.action_type}
     except Exception as e:
