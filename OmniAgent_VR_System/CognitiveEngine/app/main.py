@@ -372,6 +372,8 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         }
         _llm_start = _t.perf_counter()
         resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+        # HTTP 4xx/5xx 즉시 예외 → 잘못된 본문 파싱 대신 except 안전 폴백(Scan).
+        resp.raise_for_status()
         _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
         raw_text = (resp.json().get("response") or "").strip()
         logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
@@ -581,7 +583,10 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
         return _empty_batch_json()
 
-    # ── TTS 트리거: 각 NPC Dialogue 액션 순차 dispatch ─────────────────
+    # ── TTS 트리거: 각 NPC Dialogue 액션을 순서대로 dispatch ─────────────
+    # NOTE: dispatch 호출은 순차이나 _trigger_dialogue_audio 가 create_task 로
+    #       백그라운드 태스크를 띄우므로 실제 오디오 재생은 NPC 간 동시(중첩) 가능.
+    #       순차 재생이 필요하면 큐잉 도입 필요(별도 설계 결정).
     for npc_id, batch in action_batches.items():
         _trigger_dialogue_audio(batch, npc_id, envelope.msg_id)
 
@@ -799,6 +804,8 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         }
         _llm_start = _t.perf_counter()
         resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+        # HTTP 4xx/5xx 즉시 예외 → except 안전 폴백(Fast-Path).
+        resp.raise_for_status()
         _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
         raw_text = (resp.json().get("response") or "").strip()
         logger.info(

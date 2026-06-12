@@ -451,7 +451,8 @@ async def interface_output_node(state: AgentState):
     # 각 NPC의 persona traits 로드 (동기, 빠름)
     traits_map: Dict[str, list[str]] = {}
     for npc_id in raw_responses:
-        persona = load_persona(npc_id) or {}
+        # 동기 파일 I/O — 이벤트 루프 블로킹 방지 위해 스레드 오프로드.
+        persona = await asyncio.to_thread(load_persona, npc_id) or {}
         traits_map[npc_id] = persona.get("traits", [])
 
     # Stage 3: 병렬 구조화 (CPU-bound이므로 to_thread 사용)

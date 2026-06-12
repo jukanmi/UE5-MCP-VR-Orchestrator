@@ -186,7 +186,11 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     """
     natural_context = state.get("natural_context", "")
 
-    persona = load_persona(npc_id) or {"name": npc_id, "importance": "normal"}
+    # 동기 파일 I/O — 이벤트 루프 블로킹 방지 위해 스레드 오프로드(VR 실시간 latency).
+    persona = await asyncio.to_thread(load_persona, npc_id) or {
+        "name": npc_id,
+        "importance": "normal",
+    }
     persona_name = persona.get("name", npc_id)
     persona_role = persona.get("role", "Inhabitant")
     persona_traits = ", ".join(persona.get("traits", []))

@@ -228,7 +228,8 @@ def interface_input_node(state: AgentState) -> dict:
 
     # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
     # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
-    # current_plan 은 npc_id → {goal, steps, ...}. target_npc 우선, 없으면 첫 항목.
+    # current_plan 은 npc_id → {goal, steps, ...}. target_npc plan 만 주입,
+    # 없으면 주입 생략 — 첫 항목 폴백은 타 NPC plan 오참조 위험으로 의도적 제외.
     current_plan = state.get("current_plan")
     if current_plan and isinstance(current_plan, dict):
         target = state.get("target_npc")
@@ -286,6 +287,8 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
     from ..schemas.actions import WORLD_CONSTANTS
 
     valid_ids = WORLD_CONSTANTS.get("valid_npc_ids", [])
+    # lower→원본 ID 매핑 — C++ NPCMap 은 대소문자 구분, 원래 케이스 보존 필수.
+    id_map = {npc.lower(): npc for npc in valid_ids}
     known_npcs = (
         [npc.lower() for npc in valid_ids]
         if valid_ids
@@ -301,7 +304,8 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
     for npc in known_npcs:
         m = re.search(r"\b" + re.escape(npc) + r"\b", transcript_lower)
         if m:
-            hits.append((m.start(), npc.capitalize()))
+            # WORLD_CONSTANTS 원본 케이스 우선, 폴백 없으면 capitalize.
+            hits.append((m.start(), id_map.get(npc, npc.capitalize())))
     hits.sort(key=lambda x: x[0])
 
     # 중복 제거 (이름 기준, 순서 유지)
