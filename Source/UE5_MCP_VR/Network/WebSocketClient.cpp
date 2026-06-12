@@ -33,6 +33,15 @@ void UWebSocketClient::BindSocketEvents()
     WebSocket->OnMessage().AddUObject(this, &UWebSocketClient::OnMessage);
 }
 
+void UWebSocketClient::UnbindSocketEvents()
+{
+    if (!WebSocket.IsValid()) return;
+    WebSocket->OnConnected().Clear();
+    WebSocket->OnConnectionError().Clear();
+    WebSocket->OnClosed().Clear();
+    WebSocket->OnMessage().Clear();
+}
+
 void UWebSocketClient::TryReconnect()
 {
     if (RetryCount >= MaxRetryCount)
@@ -62,6 +71,9 @@ void UWebSocketClient::TryReconnect()
             [this, WeakThis]()
             {
                 if (!WeakThis.IsValid()) return;   // 재연결 타이머 발화 시 객체 GC 가드
+                // 구 소켓 이벤트 해제 후 Close — 미해제 시 Close 가 OnClosed 콜백을 발화시켜
+                // TryReconnect 재진입 → 방금 만든 새 소켓을 버리고 또 생성(재연결 폭주)
+                UnbindSocketEvents();
                 if (WebSocket.IsValid() && WebSocket->IsConnected())
                     WebSocket->Close();
                 WebSocket = FWebSocketsModule::Get().CreateWebSocket(CachedServerURL);

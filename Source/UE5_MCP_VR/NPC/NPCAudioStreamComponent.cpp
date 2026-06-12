@@ -94,6 +94,10 @@ void UNPCAudioStreamComponent::Stop()
     {
         WebSocket->OnMessage().Clear();
         WebSocket->OnClosed().Clear();
+        // OnConnected/OnConnectionError 도 해제 — 연결 진행 중 Stop() 호출 시
+        // 늦게 도착한 콜백이 파괴된 컴포넌트의 'this' 를 참조하는 것 방지
+        WebSocket->OnConnected().Clear();
+        WebSocket->OnConnectionError().Clear();
         if (WebSocket->IsConnected())
         {
             WebSocket->Close();

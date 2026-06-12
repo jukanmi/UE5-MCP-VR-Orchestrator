@@ -144,6 +144,10 @@ public:
 
     FTimerHandle ActionWatchdogTimer;
 
+    /** Flee 패닉(얼어붙기) 지연 타이머 — 액션 중단 시 ClearActiveActionState 가 취소.
+     *  로컬 핸들로 두면 중단 후에도 발화해 stale Flee 가 실행됨. */
+    FTimerHandle FleePanicTimer;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
 

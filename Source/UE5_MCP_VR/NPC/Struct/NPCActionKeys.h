@@ -19,6 +19,27 @@ namespace NPCActionKeys
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
 
+    // --- Action Parameter Keys (Parameters 내부) ---
+    // [주의] 현재 Python·C++ 어느 쪽도 이 키를 쓰지(write) 않음 — ExecuteInteraction 의
+    // 읽기 전용 예약 키. 송신측 구현 시 snake_case 통일 여부 결정 필요(§1).
+    inline const FString Key_Direction     = TEXT("Direction");
+    inline const FString Key_StartLocation = TEXT("StartLocation");
+    inline const FString Key_EndLocation   = TEXT("EndLocation");
+    inline const FString Key_GiveItemID    = TEXT("GiveItemID");
+    inline const FString Key_GiveAmount    = TEXT("GiveAmount");
+    inline const FString Key_GetItemID     = TEXT("GetItemID");
+    inline const FString Key_GetAmount     = TEXT("GetAmount");
+    inline const FString Key_Amount        = TEXT("Amount");
+    inline const FString Key_ItemIDs       = TEXT("ItemIDs");
+
+    // --- ActionBatch Protocol Keys (최상위 PascalCase — §1, MCPJsonUtils 파싱용) ---
+    inline const FString Proto_Mode          = TEXT("Mode");
+    inline const FString Proto_Actions       = TEXT("Actions");
+    inline const FString Proto_ActionType    = TEXT("ActionType");
+    inline const FString Proto_FacialState   = TEXT("FacialState");
+    inline const FString Proto_Parameters    = TEXT("Parameters");
+    inline const FString Proto_ActionBatches = TEXT("ActionBatches");
+
     // --- NpcAudioResponse Keys (Python → UE5, TTS 통합 계획서 §3) ---
     inline const FString Audio_Type             = TEXT("type");
     inline const FString Audio_TypeValue        = TEXT("npc_audio_response");

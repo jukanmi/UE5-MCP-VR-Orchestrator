@@ -1,4 +1,5 @@
 #include "NPCActionComponent.h"
+#include "../../Core/GameplayTagUtils.h"
 #include "../NPCStateComponent.h"
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
@@ -101,7 +102,8 @@ namespace
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
         {
-            NPC->GameplayTags.Reset();
+            // §6: 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
+            GameplayTagUtils::ResetAllStates(NPC->GameplayTags);
             NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
         }
     }
@@ -309,6 +311,7 @@ void UNPCActionComponent::ClearActiveActionState()
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
+        World->GetTimerManager().ClearTimer(FleePanicTimer); // 패닉 지연 Flee 도 함께 취소
     }
 }
 
@@ -635,22 +638,22 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
     // 위치: Python이 직접 보내는 경우는 없고, C++ 내부 주입(전술 쿼리 결과)만 존재 → Key_TargetLoc 단일 조회
     FVector Location = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc));
-    FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
+    FVector Direction = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_Direction));
     FString TextBody = Params.FindRef(NPCActionKeys::Key_Text);
 
     // Task, Social, Investigate 특수 파라미터 추출
-    FVector StartLocation = ParseVectorParam(Params.FindRef(TEXT("StartLocation")));
-    FVector EndLocation = ParseVectorParam(Params.FindRef(TEXT("EndLocation")));
-    
-    FString GiveItemID = Params.FindRef(TEXT("GiveItemID"));
-    int32 GiveAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GiveAmount"))));
-    FString GetItemID = Params.FindRef(TEXT("GetItemID"));
-    int32 GetAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GetAmount"))));
-    
-    int32 Amount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("Amount"))));
+    FVector StartLocation = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_StartLocation));
+    FVector EndLocation = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_EndLocation));
+
+    FString GiveItemID = Params.FindRef(NPCActionKeys::Key_GiveItemID);
+    int32 GiveAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_GiveAmount)));
+    FString GetItemID = Params.FindRef(NPCActionKeys::Key_GetItemID);
+    int32 GetAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_GetAmount)));
+
+    int32 Amount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_Amount)));
 
     TArray<FString> CraftItemIDs;
-    FString CraftItemsStr = Params.FindRef(TEXT("ItemIDs"));
+    FString CraftItemsStr = Params.FindRef(NPCActionKeys::Key_ItemIDs);
     if (CraftItemsStr.IsEmpty()) CraftItemsStr = ItemID;
     CraftItemsStr.ParseIntoArray(CraftItemIDs, TEXT(","), true);
 
@@ -674,16 +677,18 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Flee:
     {
         TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
-        auto DoFlee = [this, WeakThis, Location, TargetActor]() {
+        // TargetActor 도 약참조 — 1.5초 패닉 지연 중 대상 파괴 시 use-after-free 방지
+        TWeakObjectPtr<AActor> WeakTarget(TargetActor);
+        auto DoFlee = [this, WeakThis, Location, WeakTarget]() {
             if (!WeakThis.IsValid()) return;   // 지연 타이머 발화 시 컴포넌트 GC 가드(use-after-free)
             FVector FleeTarget = Location;
             if (FleeTarget.IsNearlyZero())
             {
                 // 위치 파라미터 없음 → EQS 전술 쿼리로 후퇴 위치 결정 시도.
                 TArray<FVector> EnemyLocs;
-                if (TargetActor)
+                if (AActor* Target = WeakTarget.Get())
                 {
-                    EnemyLocs.Add(TargetActor->GetActorLocation());
+                    EnemyLocs.Add(Target->GetActorLocation());
                 }
                 else if (ASmartNPCAIController* AICon = GetOwnerAIController())
                 {
@@ -721,9 +726,8 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Panic! 반사신경(%.1f) 부족으로 %.1f초간 얼어붙음!"), Agility, 1.5f);
             BaseEmotion(EFacialState::Fear);
-            // 1.5초 후 DoFlee 실행
-            FTimerHandle TimerHandle;
-            GetWorld()->GetTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda(DoFlee), 1.5f, false);
+            // 1.5초 후 DoFlee 실행 — 멤버 핸들 사용: ClearActiveActionState 가 중단 시 취소 가능
+            GetWorld()->GetTimerManager().SetTimer(FleePanicTimer, FTimerDelegate::CreateLambda(DoFlee), 1.5f, false);
         }
         else
         {

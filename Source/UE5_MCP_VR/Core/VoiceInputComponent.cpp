@@ -96,7 +96,11 @@ void UVoiceInputComponent::StartTalking()
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Voice] 마이크 캡처 스트림 오픈 실패"));
+        // 마이크 실패 시 토킹 상태·소켓 정리 — 방치하면 bTalking=true 로 굳어
+        // 다음 StartTalking 이 조기 리턴하고, 연결 중 소켓이 고스트로 남는다.
+        UE_LOG(LogTemp, Warning, TEXT("[Voice] 마이크 캡처 스트림 오픈 실패 — 음성 입력 중단"));
+        bTalking = false;
+        CloseSocket();
     }
 }
 

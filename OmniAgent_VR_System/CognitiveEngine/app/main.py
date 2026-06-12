@@ -728,7 +728,14 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     agent_id = payload_raw.get("agent_id", "unknown")
     candidates_raw = payload_raw.get("candidates", [])
     # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
-    request_gen = int(payload_raw.get("request_gen", 0))
+    # 비정상 값(문자열 등)이 와도 핸들러가 죽지 않도록 방어 — 0 이면 UE5 가 stale 로 드랍.
+    try:
+        request_gen = int(payload_raw.get("request_gen", 0))
+    except (TypeError, ValueError):
+        logger.warning(
+            f"[LocationDecision] request_gen 파싱 실패 — 0 으로 폴백: {payload_raw.get('request_gen')!r}"
+        )
+        request_gen = 0
 
     def _fast_path_fallback(reason: str) -> str:
         if not candidates_raw:
@@ -886,8 +893,10 @@ def _list_personas() -> list[dict]:
                         "traits": data.get("traits", []),
                     }
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                # persona YAML 파싱 실패를 무음 통과시키면 디버그 대시보드에서
+                # NPC 가 조용히 누락됨 — 원인 파일·사유 로깅
+                logger.warning(f"[Debug] persona 로드 실패 — {fpath}: {e}")
     return results
 
 

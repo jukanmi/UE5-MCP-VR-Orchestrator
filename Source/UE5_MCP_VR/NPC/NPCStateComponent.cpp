@@ -182,7 +182,13 @@ void UNPCStateComponent::FlushEventReport()
         }
     }
 
-    if (UNPCManager* Manager = OwnerNPC->GetGameInstance()->GetSubsystem<UNPCManager>())
+    // 월드 종료/레벨 전환 중 GetGameInstance() null 가능 — 체인 크래시 방지
+    UGameInstance* GI = OwnerNPC->GetGameInstance();
+    if (!GI)
+    {
+        return;
+    }
+    if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
     {
         // 단일 LLM WebSocket으로 emergency_report 전송.
         // Python 서버가 envelope 타입을 보고 내부에서 SLM Reflex/LLM 전략으로 자동 라우팅한다.

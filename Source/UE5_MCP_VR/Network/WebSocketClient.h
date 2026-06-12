@@ -20,9 +20,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
     void Initialize(FString ServerURL);
 
-    // 여러 Send 함수들을 하나로 통합
+    // 여러 Send 함수들을 하나로 통합. 미연결 시 메시지는 버려짐 — 경고 로그로 가시화.
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
-    void SendMessage(const FString& PayloadJson){if (IsConnected()) WebSocket->Send(PayloadJson);}
+    void SendMessage(const FString& PayloadJson)
+    {
+        if (IsConnected())
+        {
+            WebSocket->Send(PayloadJson);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[WebSocketClient] 미연결 상태 송신 시도 — 메시지 유실 (%d bytes)"), PayloadJson.Len());
+        }
+    }
 
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
     bool IsConnected() const {return WebSocket.IsValid() && WebSocket->IsConnected();}
@@ -46,6 +56,9 @@ private:
     FTimerHandle ReconnectTimerHandle;
 
     void BindSocketEvents();
+
+    /** 구 소켓의 모든 이벤트 바인딩 해제 — 재연결 시 stale 콜백 발화 방지. */
+    void UnbindSocketEvents();
     void OnMessage(const FString& Message){OnMessageReceived.Broadcast(Message);}
     void OnConnected(){RetryCount = 0; OnConnectionChanged.Broadcast(true);}
     void OnConnectionError(const FString& Error){OnConnectionChanged.Broadcast(false); TryReconnect();}

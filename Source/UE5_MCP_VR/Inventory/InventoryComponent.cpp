@@ -199,6 +199,16 @@ bool UInventoryComponent::HasItem(const FString& ItemID, int32 Amount)
             TotalCount += Slot.Count;
         }
     }
+    // 장착 중 아이템도 보유로 집계 — CalculateWeight 와 동일 기준.
+    // (장착만 하면 HasItem=false 가 되어 거래/퀘스트 판정이 어긋나는 문제 방지)
+    for (const auto& Pair : EquipmentSlots)
+    {
+        const FInventorySlot& Slot = Pair.Value;
+        if (!Slot.IsEmpty() && Slot.ItemData.ItemID == ItemID)
+        {
+            TotalCount += Slot.Count;
+        }
+    }
     return (TotalCount >= Amount);
 }
 
@@ -257,6 +267,22 @@ bool UInventoryComponent::RepairItem(const FString& ItemID, float Amount)
     int32 SlotIndex = GetSlotIndexByItemID(ItemID);
     if (SlotIndex == INDEX_NONE)
     {
+        // 인벤토리에 없으면 장비창 검색 — 장착 중인 아이템도 수리 가능해야 함
+        for (auto& Pair : EquipmentSlots)
+        {
+            FItemData& EquippedData = Pair.Value.ItemData;
+            if (EquippedData.IsValidItem() && EquippedData.ItemID == ItemID)
+            {
+                if (EquippedData.bHasDurability)
+                {
+                    EquippedData.RepairItem(Amount);
+                }
+                UE_LOG(LogTemp, Log, TEXT("[Inventory] Repaired (equipped) %s."), *EquippedData.DisplayName.ToString());
+                OnInventoryChanged.Broadcast();
+                return true;
+            }
+        }
+
         UE_LOG(LogTemp, Warning, TEXT("[Inventory] Repair Failed: Item %s not found in inventory."), *ItemID);
         return false;
     }
@@ -339,18 +365,20 @@ bool UInventoryComponent::UnequipItem(EEquipmentSlot TargetSlot)
     if (!EquipmentSlots.Contains(TargetSlot)) return false;
 
     FInventorySlot EquippedSlot = EquipmentSlots[TargetSlot];
-    
-    // 1. 인벤토리에 다시 반환 (무게 체크 생략)
-    if (!AddItem(EquippedSlot.ItemData, 1, false)) 
+
+    // 1. 인벤토리에 다시 반환 (무게 체크 생략) — Count 전량 반환.
+    //    EquipItem 이 현재 1개 고정이지만, 수량 하드코딩은 불변식 위반 시 아이템 증발/무게 드리프트.
+    if (!AddItem(EquippedSlot.ItemData, EquippedSlot.Count, false))
     {
          UE_LOG(LogTemp, Warning, TEXT("[Inventory] Unequip Failed: Inventory Full. Cannot unequip %s."), *EquippedSlot.ItemData.ItemID);
          return false;
     }
 
     EquipmentSlots.Remove(TargetSlot);
-    
+
     // 2. 무게 이중 계산 보정 (AddItem에서 올라간 무게 상쇄)
-    CurrentWeight -= (EquippedSlot.ItemData.Weight * 1.0f);
+    // Count 기준 — EquipItem 이 현재 1개 고정이지만 하드코딩 1.0f 는 불변식 위반 시 무게 드리프트
+    CurrentWeight -= (EquippedSlot.ItemData.Weight * static_cast<float>(EquippedSlot.Count));
 
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Unequipped Slot %d"), (int32)TargetSlot);
 
@@ -360,14 +388,25 @@ bool UInventoryComponent::UnequipItem(EEquipmentSlot TargetSlot)
 
 bool UInventoryComponent::UnequipItemByID(const FString& ItemID)
 {
+    // 키 먼저 확정 후 루프 밖에서 해제 — UnequipItem 이 EquipmentSlots 를 수정(Remove)하므로
+    // 순회 중 호출은 이터레이터 무효화 위험(현재는 즉시 return 으로 우연히 안전)
+    EEquipmentSlot FoundSlot = EEquipmentSlot::None;
+    bool bFound = false;
     for (const auto& Pair : EquipmentSlots)
     {
         if (Pair.Value.ItemData.IsValidItem() && Pair.Value.ItemData.ItemID == ItemID)
         {
-            return UnequipItem(Pair.Key);
+            FoundSlot = Pair.Key;
+            bFound = true;
+            break;
         }
     }
-    
+
+    if (bFound)
+    {
+        return UnequipItem(FoundSlot);
+    }
+
     UE_LOG(LogTemp, Warning, TEXT("[Inventory] Unequip Failed: Item %s is not equipped."), *ItemID);
     return false;
 }
