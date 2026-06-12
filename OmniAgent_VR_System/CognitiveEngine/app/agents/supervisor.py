@@ -109,7 +109,21 @@ def supervisor_node(state: AgentState) -> dict:
 
         # 거부 판정: action_batches 있으면 모든 배치가 비어야 거부, 없으면 단일 배치 기준
         if action_batches:
-            is_rejected = all(not b.Actions for b in action_batches.values())
+            empty_ids = [k for k, b in action_batches.items() if not b.Actions]
+            is_rejected = len(empty_ids) == len(action_batches)
+
+            # 부분 실패 — 일부 NPC 만 배치 전멸: 해당 NPC 에만 폴백 배치 주입 후 정상 종료.
+            # 전체 재시도(Dialogue 왕복)는 정상 NPC 응답까지 지연시키므로 전체 전멸 시에만.
+            if not is_rejected and empty_ids:
+                print(f"[Supervisor] ⚠️  부분 실패 — 폴백 배치 주입: {empty_ids}")
+                for npc in empty_ids:
+                    action_batches[npc] = _create_fallback_batch(npc)
+                first = next(iter(action_batches.values()), None)
+                return {
+                    "action_batches": action_batches,
+                    "action_batch": first,
+                    "next": "End",
+                }
         else:
             is_rejected = not action_batch or not action_batch.Actions
 

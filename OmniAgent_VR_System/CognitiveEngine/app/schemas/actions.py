@@ -126,5 +126,42 @@ CATEGORY_ACTION_MAP = {
     "Social": {"Trade", "Emote", "GiveItem", "Comfort", "HandObject"},
     "Task": {"PickUp", "Drop", "Craft", "Repair"},
     "Investigation": {"Investigate", "Track", "Scout"},
-    "Lifestyle": {"Sit", "Sleep", "Clean", "Read", "Pray", "Dance", "Sing"},
+    # "Clean" 제거됨 — EAction Literal/C++ enum 에 없는 죽은 항목이었음
+    "Lifestyle": {"Sit", "Sleep", "Read", "Pray", "Dance", "Sing"},
+}
+
+# 액션 → 카테고리 역조회 맵 (Rules 의 Mode 보정용)
+ACTION_CATEGORY: Dict[str, str] = {
+    action: cat for cat, actions in CATEGORY_ACTION_MAP.items() for action in actions
+}
+
+# 액션별 필수 파라미터 — C++ ExecuteInteraction(NPCActionComponent.cpp) 동작 기준.
+# 누락 시 C++ 가 무음 no-op 하거나(Follow/Attack/Track 등 if(!Target) return),
+# 원점(0,0,0)으로 걸어가는(PickUp/Investigate BaseMove(ZeroVector)) 액션만 등재.
+# 형식: 그룹 리스트 — 그룹 내 키는 OR(하나만 있으면 충족), 그룹 간은 AND.
+#   예: Trade = [("target_id",), ("give_item_id", "item")]
+#       → target_id 필수 AND (give_item_id 또는 item) 필수
+# item 그룹에 target_id 포함 이유: C++ 가 item 비면 target_id 를 ItemID 로 폴백(레거시 호환).
+ACTION_REQUIRED_PARAMS: Dict[str, list] = {
+    "Dialogue": [("text",)],
+    "Follow": [("target_id",)],
+    "TurnTo": [("target_id", "target_loc")],
+    "UseItem": [("item", "target_id")],
+    "Equip": [("item", "target_id")],
+    "Unequip": [("item", "target_id")],
+    "Attack": [("target_id",)],
+    "Trade": [("target_id",), ("give_item_id", "item")],
+    "GiveItem": [("target_id",), ("item",)],
+    "Comfort": [("target_id",)],
+    "HandObject": [("item", "target_id")],
+    "PickUp": [("target_loc",)],
+    "Drop": [("item", "target_id")],
+    "Craft": [("item_ids", "item", "target_id")],
+    "Repair": [("item", "target_id")],
+    "Investigate": [("target_loc",)],
+    "Track": [("target_id",)],
+    # target_loc 있으면 두 그룹 모두 충족, 없으면 start+end 둘 다 필요
+    "Scout": [("target_loc", "start_location"), ("target_loc", "end_location")],
+    # Idle/Move/Wait/Stop/Scan/Block/Dodge/Flee/SignalAllies/Emote/Lifestyle 류는
+    # C++ 폴백이 견고(EQS/기본방향/무대상 허용)하므로 필수 없음 — 등재 금지.
 }
