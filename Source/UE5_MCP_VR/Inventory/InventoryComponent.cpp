@@ -74,11 +74,17 @@ bool UInventoryComponent::AddItem(const FItemData& ItemData, int32 Amount, bool 
         float PartialWeightAdded = ItemData.Weight * static_cast<float>(Amount - RemainingAmount);
         CurrentWeight += PartialWeightAdded;
 
+        // 부분 추가라도 슬롯이 변했으면 알림
+        if (RemainingAmount < Amount)
+        {
+            OnInventoryChanged.Broadcast();
+        }
         return false;
     }
 
     // 전체 추가 성공
     CurrentWeight += TotalWeightToAdd;
+    OnInventoryChanged.Broadcast();
     return true;
 }
 
@@ -160,6 +166,12 @@ bool UInventoryComponent::RemoveItem(const FString& ItemID, int32 Amount)
 
     // 무게 갱신 방어 코드 적용
     CurrentWeight = FMath::Max(0.0f, CurrentWeight - WeightRemoved);
+
+    // 일부라도 제거됐으면 알림
+    if (RemainingToRemove < Amount)
+    {
+        OnInventoryChanged.Broadcast();
+    }
 
     return (RemainingToRemove == 0); // 요청 수량을 모두 제거했으면 참
 }
@@ -260,6 +272,7 @@ bool UInventoryComponent::RepairItem(const FString& ItemID, float Amount)
     CalculateWeight();
 
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Repaired %s."), *TargetItemData.DisplayName.ToString());
+    OnInventoryChanged.Broadcast();
     return true;
 }
 
@@ -317,6 +330,7 @@ bool UInventoryComponent::EquipItem(const FString& ItemID, EEquipmentSlot Target
     EquipmentSlots.Add(TargetSlot, NewEquipSlot);
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Equipped %s to Slot %d"), *ItemID, (int32)TargetSlot);
 
+    OnInventoryChanged.Broadcast();
     return true;
 }
 
@@ -339,7 +353,8 @@ bool UInventoryComponent::UnequipItem(EEquipmentSlot TargetSlot)
     CurrentWeight -= (EquippedSlot.ItemData.Weight * 1.0f);
 
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Unequipped Slot %d"), (int32)TargetSlot);
-    
+
+    OnInventoryChanged.Broadcast();
     return true;
 }
 

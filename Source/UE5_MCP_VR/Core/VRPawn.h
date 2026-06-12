@@ -16,6 +16,8 @@ class UMotionControllerComponent;
 class UAnimMontage;
 class USkeletalMeshComponent;
 class UVoiceInputComponent;
+class UInventoryComponent;
+class UPlayerHUDWidget;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
 UENUM(BlueprintType)
@@ -92,6 +94,18 @@ public:
     /** 음성 입력 — push-to-talk 마이크 캡처 → ASR → transcript → 대화. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
     UVoiceInputComponent* VoiceInput;
+
+    /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+    UInventoryComponent* Inventory;
+
+    /** HUD 위젯 클래스 — BP_VRPawn 에서 WBP 지정. 미지정 시 HUD 없음. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+    TSubclassOf<UPlayerHUDWidget> HUDWidgetClass;
+
+    /** 생성된 HUD 인스턴스 (런타임). */
+    UPROPERTY(BlueprintReadOnly, Category = "UI")
+    UPlayerHUDWidget* HUDWidget;
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)

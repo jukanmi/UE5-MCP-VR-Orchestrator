@@ -20,6 +20,9 @@
 #include "Engine/Engine.h"
 #include "VoiceInputComponent.h"
 #include "../NPC/Struct/NPCActionKeys.h"
+#include "../Inventory/InventoryComponent.h"
+#include "../UI/PlayerHUDWidget.h"
+#include "Blueprint/UserWidget.h"
 
 // ============================================================================
 // 생성자
@@ -70,6 +73,9 @@ AVRPawn::AVRPawn()
 
     // 음성 입력 컴포넌트
     VoiceInput = CreateDefaultSubobject<UVoiceInputComponent>(TEXT("VoiceInput"));
+
+    // 인벤토리 컴포넌트
+    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
@@ -139,6 +145,22 @@ void AVRPawn::BeginPlay()
 
     // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
     StartCalibration();
+
+    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만
+    if (HUDWidgetClass)
+    {
+        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            if (PC->IsLocalController())
+            {
+                HUDWidget = CreateWidget<UPlayerHUDWidget>(PC, HUDWidgetClass);
+                if (HUDWidget)
+                {
+                    HUDWidget->AddToViewport();
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -534,15 +556,15 @@ void AVRPawn::DetectNearbyNPC()
         }
     }
 
-    CurrentTargetNPCID = FoundID;
-
+    // 미발견 시 기존 타겟 유지 — 빈 값 덮어쓰기로 유효 대상이 소실되는 것 방지.
     if (!FoundID.IsEmpty())
     {
+        CurrentTargetNPCID = FoundID;
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] NPC 발견: %s"), *FoundID);
     }
     else
     {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 주변 NPC 없음"));
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 주변 NPC 없음 (기존 타겟 유지: %s)"), *CurrentTargetNPCID);
     }
 }
 

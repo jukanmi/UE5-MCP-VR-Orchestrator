@@ -17,6 +17,10 @@
 #include "Perception/AISense_Hearing.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 #include "GameFramework/PlayerStart.h"
+#include "VoiceInputComponent.h"
+#include "../Inventory/InventoryComponent.h"
+#include "../UI/PlayerHUDWidget.h"
+#include "Blueprint/UserWidget.h"
 
 // Sets default values
 AVRPlayerCharacter::AVRPlayerCharacter()
@@ -32,6 +36,12 @@ AVRPlayerCharacter::AVRPlayerCharacter()
         StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
         StimuliSource->RegisterWithPerceptionSystem();
     }
+
+    // 음성 입력 컴포넌트 — 헤드셋 없이 음성 대화 루프 테스트
+    VoiceInput = CreateDefaultSubobject<UVoiceInputComponent>(TEXT("VoiceInput"));
+
+    // 인벤토리 컴포넌트
+    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 }
 
 // Called when the game starts or when spawned
@@ -41,6 +51,18 @@ void AVRPlayerCharacter::BeginPlay()
 
     // 기본 대기 태그 부여
     AddStateTag(TAG_State_Idle);
+
+    // 음성 입력 — 대상/플레이어 공급자 + transcript 콜백 바인딩 (VRPawn 과 동일)
+    if (VoiceInput)
+    {
+        VoiceInput->ResolveTargetNpc = [this]()
+        {
+            if (CurrentDialogueTarget.IsEmpty()) DetectNearbyNPC();
+            return CurrentDialogueTarget;
+        };
+        VoiceInput->ResolvePlayerId = [this]() { return GetName(); };
+        VoiceInput->OnTranscriptReady.BindUObject(this, &AVRPlayerCharacter::HandleVoiceTranscript);
+    }
 
 	// 3. Enhanced Input Subsystem에 IMC 등록
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -55,6 +77,22 @@ void AVRPlayerCharacter::BeginPlay()
     }
 
     RefreshStats();
+
+    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만
+    if (HUDWidgetClass)
+    {
+        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            if (PC->IsLocalController())
+            {
+                HUDWidget = CreateWidget<UPlayerHUDWidget>(PC, HUDWidgetClass);
+                if (HUDWidget)
+                {
+                    HUDWidget->AddToViewport();
+                }
+            }
+        }
+    }
 }
 
 // Called every frame
@@ -96,10 +134,18 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::PerformAttack);
 		}
 
-		// Interact
+		// Interact — 카메라 조준 라인트레이스로 대화 대상 NPC 지정 (마우스 조준)
 		if (InteractAction)
 		{
-			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::DetectNearbyNPC);
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::DetectNPCByAim);
+		}
+
+		// Voice push-to-talk: 누름 시작 → 녹음, 뗌/취소 → 종료
+		if (VoiceInputAction)
+		{
+			EnhancedInputComponent->BindAction(VoiceInputAction, ETriggerEvent::Started,   this, &AVRPlayerCharacter::OnVoiceStart);
+			EnhancedInputComponent->BindAction(VoiceInputAction, ETriggerEvent::Completed, this, &AVRPlayerCharacter::OnVoiceStop);
+			EnhancedInputComponent->BindAction(VoiceInputAction, ETriggerEvent::Canceled,  this, &AVRPlayerCharacter::OnVoiceStop);
 		}
 	}
 }
@@ -183,15 +229,76 @@ void AVRPlayerCharacter::DetectNearbyNPC()
 		}
 	}
 
-	CurrentDialogueTarget = FoundNPCID;
-
-	if (bHit && FoundNPCID != "")
+	// 미발견 시 기존 타겟 유지 — 빈 값으로 덮어쓰면 조준/탐지 한 번 빗나간 것만으로
+	// 유효하던 대화 대상이 소실되어 다음 음성 발화가 폐기된다.
+	if (!FoundNPCID.IsEmpty())
 	{
+		CurrentDialogueTarget = FoundNPCID;
 		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] NPC 발견: %s"), *FoundNPCID);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 주변에 대화할 NPC가 없습니다."));
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 주변에 대화할 NPC가 없습니다. (기존 타겟 유지: %s)"), *CurrentDialogueTarget);
+	}
+}
+
+void AVRPlayerCharacter::DetectNPCByAim()
+{
+	if (!GetController()) return;
+
+	// 카메라 시점 기준 정면 라인트레이스 — 플랫스크린 마우스 조준으로 대화 대상 선택
+	FVector CameraLocation;
+	FRotator CameraRotation;
+	GetController()->GetPlayerViewPoint(CameraLocation, CameraRotation);
+
+	const FVector Start = CameraLocation;
+	const FVector End   = Start + CameraRotation.Vector() * 3000.f;
+
+	FHitResult Hit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params))
+	{
+		if (ASmartNPC* NPC = Cast<ASmartNPC>(Hit.GetActor()))
+		{
+			CurrentDialogueTarget = NPC->AgentID;
+			UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 조준 NPC 지정: %s"), *CurrentDialogueTarget);
+			DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Cyan, false, 1.0f, 0, 2.0f);
+			return;
+		}
+	}
+
+	// 조준 빗나감 — 근접 탐지로 폴백
+	UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 조준에 NPC 없음 — 근접 탐지 폴백"));
+	DetectNearbyNPC();
+}
+
+void AVRPlayerCharacter::OnVoiceStart(const FInputActionValue& Value)
+{
+	if (VoiceInput) VoiceInput->StartTalking();
+}
+
+void AVRPlayerCharacter::OnVoiceStop(const FInputActionValue& Value)
+{
+	if (VoiceInput) VoiceInput->StopTalking();
+}
+
+void AVRPlayerCharacter::HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript)
+{
+	// ASR transcript → 기존 단순 대화 경로 재사용. 대상은 ASR echo 우선, 없으면 현재 타겟.
+	const FString Target = TargetNpc.IsEmpty() ? CurrentDialogueTarget : TargetNpc;
+	if (Target.IsEmpty() || Transcript.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] Voice transcript 폐기 — target/transcript 비어있음"));
+		return;
+	}
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+		{
+			Manager->SendPlayerDialogue(PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
+		}
 	}
 }
 
