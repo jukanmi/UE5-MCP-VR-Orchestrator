@@ -296,11 +296,12 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
 
     transcript_lower = transcript.lower()
     # (등장 위치, 이름) 으로 정렬 — 발화 순서 보존.
-    hits = [
-        (transcript_lower.find(npc), npc.capitalize())
-        for npc in known_npcs
-        if npc in transcript_lower
-    ]
+    # 단어 경계(\b) 매칭 — "Guard" 가 "Guard Captain" 부분일치하는 오인 방지.
+    hits = []
+    for npc in known_npcs:
+        m = re.search(r"\b" + re.escape(npc) + r"\b", transcript_lower)
+        if m:
+            hits.append((m.start(), npc.capitalize()))
     hits.sort(key=lambda x: x[0])
 
     # 중복 제거 (이름 기준, 순서 유지)

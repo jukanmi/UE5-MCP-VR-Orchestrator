@@ -274,6 +274,10 @@ Threat: target=Stranger affinity=-10(Neutral) sense=Sight dist=6.0m danger=0.75
 Answer: SignalAllies
 
 Example 5:
+Threat: target=Goblin affinity=-70(Hostile) sense=Sight dist=8.0m danger=0.80 others=GoblinArcher(Sight,15.0m)
+Answer: Attack
+
+Example 6:
 Threat: target={target_id} affinity={affinity_score}({affinity_tag}) sense={sense} dist={dist:.1f}m danger={danger:.2f}{extra_lines}
 Answer:"""
 
@@ -515,10 +519,11 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     current_plan = prompt_payload.current_plan
     # current_plan 전체가 없거나, 대상 NPC 미상(None→supervisor 가 "Elara" 기본 사용),
     # 또는 대상 NPC plan 누락 시 강제 재계획 — 다른 NPC plan 오참조 방지.
+    # 대소문자 무시 — interface_input 의 plan 주입 조회와 정합(elara vs Elara).
     if not requires_replan and (
         not current_plan
         or not target_npc_from_payload
-        or target_npc_from_payload not in current_plan
+        or not any(k.lower() == target_npc_from_payload.lower() for k in current_plan)
     ):
         logger.info(
             "[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)"
