@@ -18,6 +18,12 @@
 - [ ] **스코어링 회귀 검증** (빌드 후): Perception 트리거 → EQS → LLM → Move 큐 주입 정상 경로. `[EQS Score]` Verbose 로그 값이 기존과 동일한지 (Eval* 시그니처 변경 — Dist/Cover 후보당 1회 계산으로 공유, 수식 자체는 불변).
 - [ ] **stale Fast-Path 검증** (Python 단독 가능): timestamp 10초 이상 지난 location_decision 전송 → `Stale location_decision → Fast-Path 폴백` 로그 + `location_decision_result` 응답(request_gen echo) 확인. UE5 측 WaitingLLM 즉시 해제·Event Report 게이트 미정지 확인.
 
+### Rules 액션 검증 강화 (2026-06-12 커밋 4679a52 — 런타임 검증 대기)
+- [ ] **필수 파라미터 제거 검증** (Python 단독 가능): 12B 가 `target_id` 없는 Attack/Follow/Track 생성 시 `[Rules] ❌ 필수 파라미터 누락 → 액션 제거` 로그. 배치 전멸 시 supervisor 1회 재시도 → 소진 시 폴백 Dialogue("...") 도달 확인.
+- [ ] **Mode 보정 검증**: `Mode=Combat` + Lifestyle 액션만 있는 응답 → `[Rules] 🔧 Mode 보정` 로그 + UE5 `BehaviorMode` 가 보정값으로 갱신되는지 (`[NPCAction] recv Mode=` 로그 대조).
+- [ ] **부분 실패 폴백 검증** (멀티 NPC): 한 NPC 만 배치 전멸 시 `[Supervisor] ⚠️ 부분 실패 — 폴백 배치 주입` 로그 + 해당 NPC 만 혼란 Dialogue, 나머지 NPC 정상 액션 지연 없이 수신.
+- [ ] **부수효과 모니터링**: 자연어 폴백 파서산 `PickUp`/`Investigate` 는 파라미터 없어 이제 제거됨 — "줍어/조사해" 발화 시 액션 누락 빈도 관찰. 잦으면 파서에서 NPC 현재 위치를 `target_loc` 으로 주입하는 보완 필요.
+
 ### Quest 스탠드얼론 빌드 — 보류 (현재 PCVR Link 로 개발/데모)
 **결정(2026-05-30)**: 현재 Quest Link(케이블 PCVR 스트리밍)로 개발·테스트 중 — 게임은 PC에서 돌고 Quest는 디스플레이. 이 모드에선 APK·사이드로딩·IP 외부화 전부 불필요(서버도 PC라 127.0.0.1 OK). 아래 항목은 **최종 타겟을 Quest 단독 구동으로 확정할 때만** 진행. 그땐 모바일 성능 최적화 숙제도 동반.
 - [ ] (스탠드얼론 확정 시) `Project → Package → Android (ASTC)` 빌드 → APK
