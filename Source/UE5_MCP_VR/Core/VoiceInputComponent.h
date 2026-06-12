@@ -46,6 +46,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ASR")
     FString Language = TEXT("KR");
 
+    /** 디버그용 — true 이면 StopTalking 시 Saved/VoiceCapture.wav 저장. 테스트 후 끌 것. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ASR|Debug")
+    bool bSaveDebugWav = false;
+
     /** transcript 확정 시 호출 — (PlayerId, TargetNpcId, Transcript). 폰이 바인딩. */
     DECLARE_DELEGATE_ThreeParams(FOnTranscriptReady, const FString&, const FString&, const FString&);
     FOnTranscriptReady OnTranscriptReady;
@@ -83,4 +87,8 @@ private:
     void SendStartIfReady();
     void HandleAsrMessage(const FString& Message);
     void CloseSocket();
+    void SaveDebugWav(const TArray<int16>& Pcm, int32 SampleRate);
+
+    // bSaveDebugWav 시 전체 PCM 누적 버퍼 (PcmLock 으로 보호)
+    TArray<int16> DebugPcmBuffer;
 };

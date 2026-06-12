@@ -23,6 +23,7 @@ PROTOCOL:
   - 리샘플: UE 는 네이티브 레이트로 보내고, 여기서 soxr 로 16kHz 변환(whisper 입력 규격).
   - partial(중간 결과)은 미구현 — end 시 final 단발. (M3 후보)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,8 +51,8 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-TARGET_SAMPLE_RATE = 16000   # whisper 입력 규격
-BYTES_PER_SAMPLE = 2         # pcm_s16le
+TARGET_SAMPLE_RATE = 16000  # whisper 입력 규격
+BYTES_PER_SAMPLE = 2  # pcm_s16le
 # end 누락 클라이언트의 무한 스트리밍 → OOM/DoS 방지. 48kHz·16bit·120초 ≈ 11.5MB 상한.
 MAX_AUDIO_BUF_BYTES = 48000 * BYTES_PER_SAMPLE * 120
 
@@ -78,8 +79,10 @@ async def lifespan(app: FastAPI):
     )
     t0 = time.perf_counter()
     try:
-        _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
-        logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter()-t0):.1f}s)")
+        _model = WhisperModel(
+            WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE
+        )
+        logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter() - t0):.1f}s)")
     except Exception as e:  # OOM/CUDA 미설치/다운로드 실패 — 서비스 기동은 유지, health 가 loading 반영
         logger.error(f"[ASR] 모델 로드 치명적 실패: {e}")
         _model = None
@@ -137,7 +140,13 @@ def _transcribe(pcm_bytes: bytes, sample_rate: int, language: Optional[str]) -> 
     segments, _info = _model.transcribe(
         audio,
         language=lang,
-        vad_filter=True,           # 무음/잡음 구간 제거
+        vad_filter=True,
+        vad_parameters={
+            "threshold": 0.3,  # 기본 0.5 → 낮출수록 작은 소리도 통과
+            "min_speech_duration_ms": 100,  # 기본 250
+            "min_silence_duration_ms": 100,  # 기본 2000
+            "speech_pad_ms": 200,  # 기본 400
+        },
         beam_size=5,
         condition_on_previous_text=False,
     )
@@ -164,10 +173,14 @@ async def ws_stream(websocket: WebSocket) -> None:
                 try:
                     data = json.loads(msg["text"])
                 except json.JSONDecodeError:
-                    await websocket.send_json({
-                        "type": "error", "request_id": request_id,
-                        "code": "BAD_JSON", "message": msg["text"][:80],
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "request_id": request_id,
+                            "code": "BAD_JSON",
+                            "message": msg["text"][:80],
+                        }
+                    )
                     continue
 
                 mtype = data.get("type")
@@ -177,9 +190,9 @@ async def ws_stream(websocket: WebSocket) -> None:
                     player_id = data.get("player_id") or player_id
                     try:
                         sample_rate = int(data.get("sample_rate") or TARGET_SAMPLE_RATE)
-                    except (TypeError, ValueError):   # 비숫자 문자열 → 연결끊김 방지
+                    except (TypeError, ValueError):  # 비숫자 문자열 → 연결끊김 방지
                         sample_rate = TARGET_SAMPLE_RATE
-                    if sample_rate <= 0:   # 0/음수 → ZeroDivision·resample 크래시 방지
+                    if sample_rate <= 0:  # 0/음수 → ZeroDivision·resample 크래시 방지
                         sample_rate = TARGET_SAMPLE_RATE
                     language = data.get("language")
                     started_at = time.perf_counter()
@@ -189,11 +202,15 @@ async def ws_stream(websocket: WebSocket) -> None:
                         f"[ASR] start request_id={request_id} target={target_npc_id} "
                         f"sr={sample_rate} lang={language}"
                     )
-                    await websocket.send_json({"type": "ready", "request_id": request_id})
+                    await websocket.send_json(
+                        {"type": "ready", "request_id": request_id}
+                    )
 
                 elif mtype == "end":
                     total_bytes = len(audio_buf)
-                    duration_audio_ms = int(total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000)
+                    duration_audio_ms = int(
+                        total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000
+                    )
                     t_rec = time.perf_counter()
                     async with _transcribe_lock:
                         transcript = await asyncio.to_thread(
@@ -203,32 +220,44 @@ async def ws_stream(websocket: WebSocket) -> None:
                     logger.info(
                         f"[ASR] end request_id={request_id} chunks={chunk_count} "
                         f"audio_ms={duration_audio_ms} infer_ms={infer_ms} "
-                        f"transcript=\"{transcript}\""
+                        f'transcript="{transcript}"'
                     )
-                    await websocket.send_json({
-                        "type": "final",
-                        "request_id": request_id,
-                        "target_npc_id": target_npc_id,
-                        "player_id": player_id,
-                        "transcript": transcript,
-                        "duration_ms": duration_audio_ms,
-                        "language": language or "KR",
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "final",
+                            "request_id": request_id,
+                            "target_npc_id": target_npc_id,
+                            "player_id": player_id,
+                            "transcript": transcript,
+                            "duration_ms": duration_audio_ms,
+                            "language": language or "KR",
+                        }
+                    )
                     break
                 else:
-                    await websocket.send_json({
-                        "type": "error", "request_id": request_id,
-                        "code": "UNKNOWN_TYPE", "message": str(mtype),
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "request_id": request_id,
+                            "code": "UNKNOWN_TYPE",
+                            "message": str(mtype),
+                        }
+                    )
 
             elif "bytes" in msg and msg["bytes"] is not None:
                 # 버퍼 상한 초과 시 중단 — end 미전송 무한 스트리밍 OOM/DoS 차단.
                 if len(audio_buf) + len(msg["bytes"]) > MAX_AUDIO_BUF_BYTES:
-                    logger.warning(f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단")
-                    await websocket.send_json({
-                        "type": "error", "request_id": request_id,
-                        "code": "BUFFER_OVERFLOW", "message": "audio buffer size limit exceeded",
-                    })
+                    logger.warning(
+                        f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단"
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "request_id": request_id,
+                            "code": "BUFFER_OVERFLOW",
+                            "message": "audio buffer size limit exceeded",
+                        }
+                    )
                     break
                 audio_buf += msg["bytes"]
                 chunk_count += 1
@@ -242,10 +271,14 @@ async def ws_stream(websocket: WebSocket) -> None:
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[ASR] 스트림 처리 실패: {e}")
         try:
-            await websocket.send_json({
-                "type": "error", "request_id": request_id,
-                "code": "INTERNAL", "message": str(e),
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "request_id": request_id,
+                    "code": "INTERNAL",
+                    "message": str(e),
+                }
+            )
         except Exception:
             pass
     finally:

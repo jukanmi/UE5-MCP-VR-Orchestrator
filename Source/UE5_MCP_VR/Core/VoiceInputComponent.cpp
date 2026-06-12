@@ -5,6 +5,8 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 UVoiceInputComponent::UVoiceInputComponent()
 {
@@ -30,6 +32,7 @@ void UVoiceInputComponent::StartTalking()
     {
         FScopeLock Lock(&PcmLock);
         PcmQueue.Reset();
+        DebugPcmBuffer.Reset();
     }
 
     // 1) WS 연결
@@ -52,6 +55,13 @@ void UVoiceInputComponent::StartTalking()
     {
         if (UVoiceInputComponent* StrongThis = WeakThis.Get())
         {
+            if (!StrongThis->bTalking)
+            {
+                // 연결 완료 전에 이미 뗀 빠른 탭 — start 없이 즉시 정리
+                UE_LOG(LogTemp, Log, TEXT("[Voice] ASR WS 연결됨 — 이미 발화 종료(빠른 탭), 소켓 정리"));
+                StrongThis->CloseSocket();
+                return;
+            }
             UE_LOG(LogTemp, Log, TEXT("[Voice] ASR WS 연결됨 — start 송신"));
             StrongThis->SendStartIfReady();
         }
@@ -62,6 +72,12 @@ void UVoiceInputComponent::StartTalking()
         {
             UE_LOG(LogTemp, Warning, TEXT("[Voice] ASR WS 연결오류 — %s"), *Error);
             StrongThis->bTalking = false;
+            if (StrongThis->AudioCapture.IsStreamOpen())
+            {
+                StrongThis->AudioCapture.StopStream();
+                StrongThis->AudioCapture.CloseStream();
+            }
+            StrongThis->SetComponentTickEnabled(false);
         }
     });
     Socket->OnMessage().AddLambda([WeakThis](const FString& Msg)
@@ -69,6 +85,26 @@ void UVoiceInputComponent::StartTalking()
         if (UVoiceInputComponent* StrongThis = WeakThis.Get())
         {
             StrongThis->HandleAsrMessage(Msg);
+        }
+    });
+    // 연결 수립 후 서버 측 종료 감지 — OnConnectionError 는 연결 실패 전용이라
+    // 미바인딩 시 발화 중 서버 사망이 무음 폐기됨(transcript 안 오는 원인 추적 불가).
+    // CloseSocket() 이 핸들러를 먼저 비우므로 여기 도달 = 의도치 않은 원격 종료.
+    Socket->OnClosed().AddLambda([WeakThis](int32 StatusCode, const FString& Reason, bool bWasClean)
+    {
+        if (UVoiceInputComponent* StrongThis = WeakThis.Get())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Voice] ASR WS 원격 종료 (code=%d clean=%d reason=%s) — 발화 폐기·캡처 정리"),
+                StatusCode, bWasClean ? 1 : 0, *Reason);
+            StrongThis->bTalking = false;
+            if (StrongThis->AudioCapture.IsStreamOpen())
+            {
+                StrongThis->AudioCapture.StopStream();
+                StrongThis->AudioCapture.CloseStream();
+            }
+            StrongThis->SetComponentTickEnabled(false);
+            StrongThis->bStartSent = false;
+            // Socket.Reset() 은 콜백 내 자기파괴 위험 — 다음 StartTalking 의 CloseSocket 이 정리.
         }
     });
     Socket->Connect();
@@ -79,6 +115,12 @@ void UVoiceInputComponent::StartTalking()
     if (AudioCapture.GetCaptureDeviceInfo(DevInfo) && DevInfo.PreferredSampleRate > 0)
     {
         StreamSampleRate = DevInfo.PreferredSampleRate;
+        UE_LOG(LogTemp, Log, TEXT("[Voice] 캡처 장치: %s  sr=%d  ch=%d"),
+            *DevInfo.DeviceName, DevInfo.PreferredSampleRate, DevInfo.InputChannels);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Voice] 캡처 장치 정보 조회 실패 — 기본값 사용"));
     }
 
     Audio::FAudioCaptureDeviceParams Params;
@@ -124,12 +166,26 @@ void UVoiceInputComponent::StopTalking()
     }
 
     SetComponentTickEnabled(false);
+
+    // 디버그 WAV 저장 (bSaveDebugWav 켜져있을 때만)
+    if (bSaveDebugWav)
+    {
+        TArray<int16> CaptureCopy;
+        {
+            FScopeLock Lock(&PcmLock);
+            CaptureCopy = DebugPcmBuffer;
+        }
+        SaveDebugWav(CaptureCopy, StreamSampleRate.load());
+    }
+
     // 소켓은 final 수신까지 열어둠 — HandleAsrMessage(final) 가 CloseSocket 호출.
 }
 
 void UVoiceInputComponent::SendStartIfReady()
 {
-    if (bStartSent || !Socket.IsValid() || !Socket->IsConnected()) return;
+    // !bTalking 가드: 연결 완료 전에 이미 뗀 빠른 탭 — start 만 보내고 오디오·end 없이
+    // 서버 세션을 타임아웃까지 고스트로 남기는 것 방지.
+    if (!bTalking || bStartSent || !Socket.IsValid() || !Socket->IsConnected()) return;
     bStartSent = true;
 
     const TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
@@ -162,7 +218,9 @@ void UVoiceInputComponent::HandleAudioGenerate(const float* InAudio, int32 NumFr
         }
         const float Mono = Sum / NumChannels;
         const int32 S = FMath::RoundToInt(FMath::Clamp(Mono, -1.f, 1.f) * 32767.f);
-        PcmQueue.Add(static_cast<int16>(S));
+        const int16 Sample = static_cast<int16>(S);
+        PcmQueue.Add(Sample);
+        if (bSaveDebugWav) DebugPcmBuffer.Add(Sample);
     }
 }
 
@@ -225,6 +283,11 @@ void UVoiceInputComponent::CloseSocket()
 {
     if (Socket.IsValid())
     {
+        // 핸들러 선해제 — 우리가 닫는 소켓의 OnClosed 가 "원격 종료" 경고로 오인되는 것 방지.
+        Socket->OnConnected().Clear();
+        Socket->OnConnectionError().Clear();
+        Socket->OnMessage().Clear();
+        Socket->OnClosed().Clear();
         if (Socket->IsConnected()) Socket->Close();
         Socket.Reset();
     }
@@ -240,4 +303,38 @@ void UVoiceInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
     CloseSocket();
     Super::EndPlay(EndPlayReason);
+}
+
+void UVoiceInputComponent::SaveDebugWav(const TArray<int16>& Pcm, int32 SampleRate)
+{
+    if (Pcm.IsEmpty()) return;
+
+    const int32 DataSize = Pcm.Num() * sizeof(int16);
+
+    TArray<uint8> Wav;
+    Wav.Reserve(44 + DataSize);
+
+    auto W4 = [&](const char* S) { Wav.Append(reinterpret_cast<const uint8*>(S), 4); };
+    auto WU32 = [&](uint32 V)    { Wav.Append(reinterpret_cast<const uint8*>(&V), 4); };
+    auto WU16 = [&](uint16 V)    { Wav.Append(reinterpret_cast<const uint8*>(&V), 2); };
+
+    W4("RIFF");
+    WU32(36 + DataSize);         // ChunkSize
+    W4("WAVE");
+    W4("fmt ");
+    WU32(16);                    // Subchunk1Size (PCM)
+    WU16(1);                     // AudioFormat: PCM
+    WU16(1);                     // NumChannels: mono
+    WU32(static_cast<uint32>(SampleRate));
+    WU32(static_cast<uint32>(SampleRate) * 2); // ByteRate
+    WU16(2);                     // BlockAlign
+    WU16(16);                    // BitsPerSample
+    W4("data");
+    WU32(DataSize);
+    Wav.Append(reinterpret_cast<const uint8*>(Pcm.GetData()), DataSize);
+
+    const FString Path = FPaths::ProjectSavedDir() / TEXT("VoiceCapture.wav");
+    FFileHelper::SaveArrayToFile(Wav, *Path);
+    UE_LOG(LogTemp, Log, TEXT("[Voice] 디버그 WAV 저장: %s  (%d samples @ %dHz, %.1fs)"),
+        *Path, Pcm.Num(), SampleRate, static_cast<float>(Pcm.Num()) / SampleRate);
 }
