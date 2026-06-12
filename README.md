@@ -96,7 +96,7 @@ UE5 ↔ Python 모든 메시지는 공통 래퍼로 포장된다.
 ## 주요 기술 특징
 
 - **StateTree AI**: BehaviorTree에서 마이그레이션 완료. `SmartNPCAIController`(ST schema) → `STTask_PrepareNextAction`(큐 Dequeue) → `STTask_ExecuteSmartAction`(실행). 비동기 액션 완료(이동 도착/몽타주 종료 콜백).
-- **로컬 LLM/SLM**: Ollama gemma4 라우팅(normal `e4b` / high `12b` / core `26b`). 클라우드 API 미사용.
+- **로컬 LLM/SLM**: Ollama 라우팅(normal `gemma4:e4b` / high `qwen3:8b` / core `gemma4-12b`). 클라우드 API 미사용.
 - **감정 TTS**: LLM `[Facial: Angry]` → emotion → OpenVoice ToneColorConverter zero-shot 음색. 0.2s 백오프 1회 재시도, 실패 시 자막 폴백, `[trace=msg_id]` 로그 체인.
 - **RAG 기억**: NPC별 FAISS 벡터스토어(로컬 `all-MiniLM-L6-v2`), `lore/persona/history` 카테고리. 지식 작성은 `knowledge_template/` 참조.
 - **엄격한 검증**: Pydantic V2로 LLM 출력 클램핑(데미지 등)·좌표 NaN 거부.
