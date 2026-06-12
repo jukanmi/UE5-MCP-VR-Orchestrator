@@ -1,19 +1,20 @@
 """
 
- File: envelope.py                                                           
- Role: JSON 통신 Envelope 스키마 정의 (UE5 ↔ Python 공통 규약)               
+File: envelope.py
+Role: JSON 통신 Envelope 스키마 정의 (UE5 ↔ Python 공통 규약)
 
- WHY (설계 의도):                                                             
-   UE5 → Python 간 모든 메시지는 '봉투(Envelope)' 형태로 감싸서 보낸다.     
-   이 봉투에는 인증, 순서 보장, 보안을 위한 메타데이터가 담겨 있으며,       
-   내부의 실제 데이터(payload)는 메시지 타입에 따라 구조가 달라진다.        
-                                                                              
- MESSAGE TYPE 분류:                                                           
-   • state_update : 주기적 NPC 상태 동기화 (LLM 호출 없이 캐싱만)           
-   • prompt       : 플레이어 음성/제스처 명령 (LLM 파이프라인 실행)          
-   • action_failed: Python이 내린 명령이 UE5에서 실패했음을 알리는 콜백     
+WHY (설계 의도):
+  UE5 → Python 간 모든 메시지는 '봉투(Envelope)' 형태로 감싸서 보낸다.
+  이 봉투에는 인증, 순서 보장, 보안을 위한 메타데이터가 담겨 있으며,
+  내부의 실제 데이터(payload)는 메시지 타입에 따라 구조가 달라진다.
+
+MESSAGE TYPE 분류:
+  • state_update : 주기적 NPC 상태 동기화 (LLM 호출 없이 캐싱만)
+  • prompt       : 플레이어 음성/제스처 명령 (LLM 파이프라인 실행)
+  • action_failed: Python이 내린 명령이 UE5에서 실패했음을 알리는 콜백
 
 """
+
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any, Dict, List
@@ -25,11 +26,11 @@ import time
 # WHY: 문자열 비교 대신 Enum을 사용해 오타로 인한 분기 오류를 원천 차단한다.
 # ─────────────────────────────────────────────────────────────────────────────
 class EEnvelopeType(str, Enum):
-    STATE_UPDATE  = "state_update"   # UE5 상태 주기 동기화
-    PROMPT        = "prompt"         # 플레이어 명령/대화
+    STATE_UPDATE = "state_update"  # UE5 상태 주기 동기화
+    PROMPT = "prompt"  # 플레이어 명령/대화
     ACTION_FAILED = "action_failed"  # UE5에서 명령 실행 실패 통보
-    EMERGENCY_REPORT = "emergency_report" # 긴급 이벤트 배치 전송
-    LOCATION_DECISION = "location_decision" # EQS 후보 → LLM 전술 위치 결정 요청
+    EMERGENCY_REPORT = "emergency_report"  # 긴급 이벤트 배치 전송
+    LOCATION_DECISION = "location_decision"  # EQS 후보 → LLM 전술 위치 결정 요청
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -38,12 +39,14 @@ class EEnvelopeType(str, Enum):
 #      타입 안전성을 보장하고 에러 발생 위치를 즉시 파악 가능하게 한다.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class PerceptionData(BaseModel):
     """순수 시각/청각 인지 정보 (FPerceptionData 대응)."""
+
     target_id: str
-    sense_type: str      # "Sight", "Hearing", "Other"
+    sense_type: str  # "Sight", "Hearing", "Other"
     distance: float
-    danger_score: float = 0.0 # C++ FPerceptionData.DangerScore 대응
+    danger_score: float = 0.0  # C++ FPerceptionData.DangerScore 대응
     in_line_of_sight: bool = False
     location: Dict[str, float]  # {"x", "y", "z"}
     activity_context: str = "Idle"
@@ -51,7 +54,8 @@ class PerceptionData(BaseModel):
 
 class EQSQueryResult(BaseModel):
     """EQS 공간 쿼리의 최적 좌표 결과 (상위 1~3개만 전송)."""
-    label: str              # e.g. "best_cover", "best_attack_pos"
+
+    label: str  # e.g. "best_cover", "best_attack_pos"
     x: float
     y: float
     z: float
@@ -63,10 +67,11 @@ class StateUpdatePayload(BaseModel):
     state_update 타입의 payload.
     WHY: UE5의 주기적 상태 스냅샷.
     """
-    owner_agent_id: str                         # C++ FGameStateData.OwnerAgentID
-    current_mode: str = "Common"                # C++ FGameStateData.CurrentMode
-    owner_location: Dict[str, float]            # {"x": float, "y": float, "z": float}
-    threat_level: str = "None"                  # "None", "Low", "Medium", "High"
+
+    owner_agent_id: str  # C++ FGameStateData.OwnerAgentID
+    current_mode: str = "Common"  # C++ FGameStateData.CurrentMode
+    owner_location: Dict[str, float]  # {"x": float, "y": float, "z": float}
+    threat_level: str = "None"  # "None", "Low", "Medium", "High"
     in_cover: bool = False
     line_of_sight: bool = False
     perceived_targets: List[PerceptionData] = Field(default_factory=list)
@@ -84,6 +89,7 @@ class PromptPayload(BaseModel):
     WHY: 플레이어가 VR에서 말하거나 제스처를 취할 때 전송되는 구조체.
          기존 GesPrompt를 Envelope 안의 payload로 감싸는 형태.
     """
+
     player_id: str
     voice_transcript: str
     target_npc_id: Optional[str] = None
@@ -91,6 +97,16 @@ class PromptPayload(BaseModel):
     player_location: Optional[Dict[str, float]] = None
     last_event: Optional[str] = None
     stats: Optional[Dict[str, float]] = None
+
+    # ── 계획 캐싱 (Multi-NPC Cached Planning) ──────────────────────
+    # WHY: 매 prompt 마다 12B 정제를 도는 낭비를 막는다. C++(UE5)이 perception/
+    #      턴 카운터로 재계획 필요 여부를 판정해 전달한다.
+    #   requires_replan=True  → 풀 파이프라인(e4b×N → 12B 정제+plan 산출)
+    #   requires_replan=False → e4b 단독 경량 루프, current_plan 컨텍스트만 주입
+    # 미지정 시 안전하게 풀 파이프라인(True) — 첫 턴/필드 누락 방어.
+    requires_replan: bool = True
+    # UE5 가 보관 중인 NPC별 plan (replan=False 시 e4b 컨텍스트 주입용). npc_id → plan 구조체.
+    current_plan: Optional[Dict[str, Any]] = None
 
 
 class ActionFailedPayload(BaseModel):
@@ -100,9 +116,10 @@ class ActionFailedPayload(BaseModel):
          ref_msg_id를 통해 '어떤 명령'이 실패했는지 추적하여
          다음 추론 시 동일한 실수를 반복하지 않도록 이력에 기록한다.
     """
-    failed_action_type: str         # 실패한 액션 종류 (e.g., "Move", "Attack")
-    reason: str                     # 실패 이유 (e.g., "PathNotFound", "TargetDead")
-    executor_npc_id: str            # 명령을 시도했던 NPC ID
+
+    failed_action_type: str  # 실패한 액션 종류 (e.g., "Move", "Attack")
+    reason: str  # 실패 이유 (e.g., "PathNotFound", "TargetDead")
+    executor_npc_id: str  # 명령을 시도했던 NPC ID
 
 
 class EmergencyReportPayload(BaseModel):
@@ -110,18 +127,20 @@ class EmergencyReportPayload(BaseModel):
     emergency_report 타입의 payload.
     WHY: NPC가 위험 상황이나 소음을 감지했을 때 즉각적인 대응을 위해 서버로 전송.
     """
-    agent_id: str                               # 이벤트를 감지한 주체 NPC ID
-    perceptions: List[PerceptionData]           # 감지된 이벤트 목록 (위험도순 정렬됨)
-    generated_at: float                         # 리포트 생성 시각 (UNIX)
+
+    agent_id: str  # 이벤트를 감지한 주체 NPC ID
+    perceptions: List[PerceptionData]  # 감지된 이벤트 목록 (위험도순 정렬됨)
+    generated_at: float  # 리포트 생성 시각 (UNIX)
 
 
 class LocationCandidate(BaseModel):
     """단일 전술 위치 후보 (C++ FLocationCandidate 대응)."""
-    id: str                  # e.g. "SAFE_0", "AGGRESSIVE_1"
-    category: str            # "SAFE" | "OPTIMAL" | "AGGRESSIVE"
+
+    id: str  # e.g. "SAFE_0", "AGGRESSIVE_1"
+    category: str  # "SAFE" | "OPTIMAL" | "AGGRESSIVE"
     dist_to_enemy: float
-    cover_rating: float      # 0 ~ 1
-    height_delta: float      # 양수 = NPC가 더 높음
+    cover_rating: float  # 0 ~ 1
+    height_delta: float  # 양수 = NPC가 더 높음
     score: float
 
 
@@ -131,10 +150,10 @@ class LocationDecisionPayload(BaseModel):
     WHY: C++ EQS가 후보 위치들을 스코어링한 뒤 최종 카테고리 선택을 LLM에 위임.
          LLM은 context_summary와 후보 목록을 보고 chosen_id 하나를 골라 반환한다.
     """
-    agent_id: str
-    context_summary: str             # "HP:45% Enemies:2 Aggr:60 Fear:30" 등 경량 요약
-    candidates: List[LocationCandidate]
 
+    agent_id: str
+    context_summary: str  # "HP:45% Enemies:2 Aggr:60 Fear:30" 등 경량 요약
+    candidates: List[LocationCandidate]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,6 +174,7 @@ class MessageEnvelope(BaseModel):
       type       : 메시지 목적 분류 (EEnvelopeType).
       payload    : 실제 데이터. type에 따라 구조가 다름.
     """
+
     protocol_version: int = 1
     msg_id: str
     ref_msg_id: Optional[str] = None  # action_failed가 아니면 None 가능

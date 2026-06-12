@@ -13,8 +13,10 @@ load_dotenv()
 # ==============================================================================
 MODELS = {
     # Ollama 로컬 모델 — Gemma 4
-    "gemma4":     "gemma4:26b",   # 메인 LLM (대화/추론)
-    "mid":        "qwen3:8b",     # 중간 품질 (high NPC용 — e4b보다 낫고 26b보다 빠름)
+    # 메인 LLM (대화/추론) — 26b(17GB)는 VRAM 16GB 미적합(CPU 오프로드)이라 12B Q4 로 교체.
+    # gemma4-12b 는 hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 의 ollama cp 별칭.
+    "gemma4":     "gemma4-12b",
+    "mid":        "qwen3:8b",     # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
     "gemma4_slm": "gemma4:e4b",   # 경량 구조화 모델 (JSON 추출 등)
     "gemma4_31b": "gemma4:31b",   # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",   # 초경량 (지연 민감 구간)
@@ -60,6 +62,10 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             num_thread=8,
             request_timeout=30.0,
             keep_alive="5m",
+            # think=false — gemma4/qwen3 계열은 thinking 모델이라 사고 토큰이
+            # num_predict 예산을 잠식해 content="" 로 잘림 (12B 실측: 200토큰 전부
+            # thinking, content 빈 문자열). 대화는 즉답만 필요.
+            reasoning=False,
         )
 
     elif model_name == "openai":

@@ -1,24 +1,25 @@
 """
 
- File: supervisor.py                                                         
- Role: ORCHESTRATOR (파이프라인 오케스트레이터)                               
+File: supervisor.py
+Role: ORCHESTRATOR (파이프라인 오케스트레이터)
 
- 핵심 역할 (변경 금지):                                                       
-   에이전트 간 라우팅 결정. 에러·폴백 처리로 파이프라인 완료를 보장한다.      
-                                                                              
- 라우팅 흐름:                                                                 
-   [Error/Empty] → 즉시 End (숏컷, LLM 호출 없음)                           
-   Interface_Input → Dialogue                                                
-   Dialogue → Interface_Output                                               
-   Interface_Output → Rules                                                  
-   Rules → End (정상) 또는 Dialogue (거부 재시도)                            
-                                                                              
- 에러 숏컷 원칙 (청사진 요구사항):                                            
-   - has_error=True → 어떤 노드에서든 즉시 End로 우회                        
-   - target_npcs가 비어있어서 처리 대상 없음 → End로 우회                   
-   → 불필요한 LLM 호출을 제거해 토큰·지연 비용 절감                          
+핵심 역할 (변경 금지):
+  에이전트 간 라우팅 결정. 에러·폴백 처리로 파이프라인 완료를 보장한다.
+
+라우팅 흐름:
+  [Error/Empty] → 즉시 End (숏컷, LLM 호출 없음)
+  Interface_Input → Dialogue
+  Dialogue → Interface_Output
+  Interface_Output → Rules
+  Rules → End (정상) / Dialogue (거부 1회 재시도) / 폴백 End (재시도 소진)
+
+에러 숏컷 원칙 (청사진 요구사항):
+  - has_error=True → 어떤 노드에서든 즉시 End로 우회
+  - target_npcs가 비어있어서 처리 대상 없음 → End로 우회
+  → 불필요한 LLM 호출을 제거해 토큰·지연 비용 절감
 
 """
+
 from typing import Literal
 from .state import AgentState
 from ..schemas.actions import ActionBatch, GameAction
@@ -100,21 +101,40 @@ def supervisor_node(state: AgentState) -> dict:
             "current_speaker": "Supervisor",
         }
 
-    # ── 4단계: Rules 이후 → End(정상) 또는 Dialogue(거부) ──────
+    # ── 4단계: Rules 이후 → End(정상) / Dialogue(거부 1회 재시도) / 폴백(재시도 소진) ──
     if current_speaker == "Rules":
+        # 멀티 NPC: action_batches 우선, 폴백으로 action_batch 단일
+        action_batches = state.get("action_batches") or {}
         action_batch = state.get("action_batch")
 
-        # ActionBatch 거부 판정: 액션 없음
-        is_rejected = (
-            not action_batch
-            or not action_batch.Actions
-        )
+        # 거부 판정: action_batches 있으면 모든 배치가 비어야 거부, 없으면 단일 배치 기준
+        if action_batches:
+            is_rejected = all(not b.Actions for b in action_batches.values())
+        else:
+            is_rejected = not action_batch or not action_batch.Actions
 
         if is_rejected:
-            print("[Supervisor] Rules가 거부함, Dialogue 재시도...")
+            retry_count = state.get("rules_retry_count", 0)
+            if retry_count >= 1:
+                # 재시도 소진 — 각 NPC에 폴백 배치 생성
+                npcs = state.get("target_npcs") or [state.get("target_npc", "Elara")]
+                print(
+                    f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료"
+                )
+                fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
+                return {
+                    "action_batches": fallback_batches,
+                    "action_batch": _create_fallback_batch(npcs[0]),
+                    "next": "End",
+                }
+
+            print(
+                f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)"
+            )
             return {
                 "next": "Dialogue",
                 "current_speaker": "Supervisor_Fallback",
+                "rules_retry_count": retry_count + 1,
                 "natural_context": (
                     "System: Your previous action was rejected by game rules. "
                     "Respond with speech only."
@@ -129,9 +149,9 @@ def supervisor_node(state: AgentState) -> dict:
     return {"next": "End"}
 
 
-def should_continue(state: AgentState) -> Literal[
-    "Interface_Input", "Dialogue", "Interface_Output", "Rules", "End"
-]:
+def should_continue(
+    state: AgentState,
+) -> Literal["Interface_Input", "Dialogue", "Interface_Output", "Rules", "End"]:
     """
     LangGraph 조건부 엣지 라우터.
 
@@ -151,9 +171,11 @@ def _create_fallback_batch(npc_id: str) -> ActionBatch:
     return ActionBatch(
         AgentID=npc_id,
         Mode="Common",
-        Actions=[GameAction(
-            ActionType="Dialogue",
-            FacialState="Surprised",
-            Parameters={"text": "...", "emotion": "Confused"},
-        )]
+        Actions=[
+            GameAction(
+                ActionType="Dialogue",
+                FacialState="Surprised",
+                Parameters={"text": "...", "emotion": "Confused"},
+            )
+        ],
     )

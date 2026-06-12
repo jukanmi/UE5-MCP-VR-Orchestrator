@@ -14,7 +14,7 @@ python -m uvicorn OmniAgent_VR_System.CognitiveEngine.app.main:app --port 8000
 - WebSocket: `ws://127.0.0.1:8000/ws/llm` (단일 채널 — emergency_report 는 내부에서 SLM Reflex 로 자동 라우팅)
 - 디버그 대시보드: `http://127.0.0.1:8000/debug`
 - 의존성: `pip install -r requirements.txt`
-- **LLM**: 로컬 Ollama (gemma4 `e4b`/`12b`/`26b` importance 라우팅). 클라우드 API 미사용.
+- **LLM**: 로컬 Ollama (`gemma4:e4b`/`qwen3:8b`/`gemma4-12b` importance 라우팅). 클라우드 API 미사용.
 
 ## LangGraph 파이프라인
 
@@ -58,7 +58,7 @@ prompt 수신
 
 ## 모델 라우팅
 
-`importance` → 모델: `normal` gemma4:e4b / `high` gemma4:12b / `core` gemma4:26b.
+`importance` → 모델: `normal` gemma4:e4b / `high` qwen3:8b / `core` gemma4-12b (= hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 별칭, `ollama cp` 로 생성).
 변경 시 `dialogue.py`·`main.py`·`debug.html` 세 곳을 함께 맞출 것 (Memo Handoff).
 gemma e/p 시리즈는 thinking 모델 — 단답이라도 `num_predict` 충분히 확보 또는 raw 모드 사용.
 

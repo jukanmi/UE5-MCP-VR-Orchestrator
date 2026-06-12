@@ -1,21 +1,32 @@
 import os
+
 os.environ["TORCH_DYNAMO_DISABLE"] = "1"
 
 import json
 import logging
-import random
 import traceback
 import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ValidationError
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from .schemas.envelope import MessageEnvelope, EEnvelopeType, PromptPayload, LocationDecisionPayload, EmergencyReportPayload
+from .schemas.envelope import (
+    MessageEnvelope,
+    EEnvelopeType,
+    PromptPayload,
+    LocationDecisionPayload,
+    EmergencyReportPayload,
+)
 from .schemas.vr_context import GesPrompt, GestureData
-from .schemas.actions import ActionBatch, ModeActionRequest, GameAction, EAction, NPCBehaviorMode, NPCFacialState
+from .schemas.actions import (
+    ActionBatch,
+    ModeActionRequest,
+    GameAction,
+    NPCBehaviorMode,
+)
 from .schemas.npc_audio import NpcAudioResponse, AudioStreamInfo, AnimationMetadata
 from .clients import tts_client
 from .agents.state import AgentState
@@ -36,23 +47,32 @@ logger.setLevel(logging.INFO)
 
 # SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
 # 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
-SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
+SLM_REFLEX_DANGER_THRESHOLD = float(
+    os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5")
+)
+
 
 async def _check_ollama_model() -> None:
     try:
-        import httpx, time as _t
+        import httpx
+        import time as _t
+
         # 끝 슬래시 방어 — 환경변수 OLLAMA_BASE_URL 이 "http://.../" 로 끝나면
         # `{base}/api/tags` 가 `//api/tags` 가 되어 Ollama 가 307 redirect 반환.
         ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
             if r.status_code != 200 or not r.text.strip():
-                logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
+                logger.warning(
+                    f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능"
+                )
                 return
             installed = [m["name"] for m in r.json().get("models", [])]
             required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
             if not any(required in m for m in installed):
-                logger.warning(f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능")
+                logger.warning(
+                    f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능"
+                )
                 return
             logger.info(f"[Startup] Ollama 기본 모델 확인 완료: {required}")
 
@@ -60,12 +80,21 @@ async def _check_ollama_model() -> None:
             # stale 처리되는 문제 해소. dummy raw 호출로 모델을 메모리에 로드.
             slm_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
             _t0 = _t.perf_counter()
-            warm = await client.post(f"{ollama_base}/api/generate", json={
-                "model": slm_id, "prompt": "warmup", "stream": False, "raw": True,
-                "keep_alive": "5m", "options": {"num_predict": 1},
-            })
+            warm = await client.post(
+                f"{ollama_base}/api/generate",
+                json={
+                    "model": slm_id,
+                    "prompt": "warmup",
+                    "stream": False,
+                    "raw": True,
+                    "keep_alive": "5m",
+                    "options": {"num_predict": 1},
+                },
+            )
             _dt = (_t.perf_counter() - _t0) * 1000.0
-            logger.info(f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}")
+            logger.info(
+                f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}"
+            )
     except Exception as e:
         logger.warning(f"[Startup] Ollama 모델 상태 확인 실패 (서버 미실행 가능): {e}")
 
@@ -80,6 +109,7 @@ async def lifespan(app: FastAPI):
     # --- Shutdown ---
     await db_manager.stop_background_sync()
 
+
 app = FastAPI(lifespan=lifespan)
 
 
@@ -88,6 +118,8 @@ _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
+# WS 송신 직렬화 — 메시지별 동시 처리 + TTS 푸시가 같은 소켓에 겹쳐 쓰는 것 방지.
+_ws_send_lock = asyncio.Lock()
 # fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
 _background_tasks: set = set()
 
@@ -99,6 +131,7 @@ _ollama_client = None
 def _get_ollama_client():
     global _ollama_client
     import httpx
+
     if _ollama_client is None or _ollama_client.is_closed:
         _ollama_client = httpx.AsyncClient(timeout=20.0)
     return _ollama_client
@@ -116,11 +149,24 @@ async def websocket_llm_endpoint(websocket: WebSocket):
     _active_llm_ws = websocket
     logger.info("[Main] UE5 LLM 클라이언트 연결됨")
 
+    async def _process_and_send(raw_data: str) -> None:
+        # WHY 메시지별 태스크: 수신 루프에서 직렬 await 하면 대화 처리(수 초) 동안
+        # 후속 location_decision/emergency 가 큐에 묵혀 stale 드랍됨 (이전 임계 10초
+        # 상향이 이 증상의 우회책이었음). 응답 순서는 보장하지 않음 — prompt 는
+        # msg_id, location_decision 은 request_gen 으로 수신 측이 매칭하므로 무관.
+        response = await _process_llm_message(raw_data)
+        try:
+            async with _ws_send_lock:
+                await websocket.send_text(response)
+        except Exception as e:
+            logger.warning(f"[Main] WS 응답 전송 실패(연결 종료 추정): {e}")
+
     try:
         while True:
             raw_data = await websocket.receive_text()
-            response = await _process_llm_message(raw_data)
-            await websocket.send_text(response)
+            task = asyncio.create_task(_process_and_send(raw_data))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
@@ -128,6 +174,7 @@ async def websocket_llm_endpoint(websocket: WebSocket):
         # 다중 클라이언트 레이스 방지 — 현재 끊기는 소켓이 활성 소켓일 때만 해제.
         if _active_llm_ws is websocket:
             _active_llm_ws = None
+
 
 async def _process_llm_message(raw_data: str) -> str:
     try:
@@ -146,7 +193,13 @@ async def _process_llm_message(raw_data: str) -> str:
         # 2~5초 묵혀짐 → 임계값 2초는 정상 패킷도 드랍. (2026-05-16 직접 측정)
         if is_stale_packet(envelope.timestamp, threshold_seconds=10.0):
             logger.warning(f"[Main] Stale 패킷 드랍. msg_id={envelope.msg_id}")
-            return json.dumps({"status": "dropped", "reason": "stale_packet", "msg_id": envelope.msg_id})
+            return json.dumps(
+                {
+                    "status": "dropped",
+                    "reason": "stale_packet",
+                    "msg_id": envelope.msg_id,
+                }
+            )
 
         # ── Step 4: 타입별 분기 ───────────────────────────────────────
         if envelope.type == EEnvelopeType.PROMPT:
@@ -157,7 +210,7 @@ async def _process_llm_message(raw_data: str) -> str:
 
         elif envelope.type == EEnvelopeType.ACTION_FAILED:
             return await _handle_action_failed(envelope)
-            
+
         elif envelope.type == EEnvelopeType.EMERGENCY_REPORT:
             return await _handle_emergency_report(envelope)
 
@@ -172,7 +225,7 @@ async def _process_llm_message(raw_data: str) -> str:
         logger.error(f"[Main] Envelope 스키마 검증 실패: \n{traceback.format_exc()}")
         return json.dumps({"error": "Schema validation failed", "detail": str(ve)})
 
-    except json.JSONDecodeError as je:
+    except json.JSONDecodeError:
         logger.error(f"[Main] JSON 파싱 실패: \n{traceback.format_exc()}")
         return json.dumps({"error": "Invalid JSON format"})
 
@@ -180,28 +233,53 @@ async def _process_llm_message(raw_data: str) -> str:
         logger.error(f"[Main] 예기치 않은 오류: \n{traceback.format_exc()}")
         return json.dumps({"error": "Internal server error", "detail": str(e)})
 
+
 # NOTE: 이전에 존재했던 @app.websocket("/ws/slm") 엔드포인트는 제거됨.
 # 모든 emergency_report는 /ws/llm으로 들어오고, _handle_emergency_report 내부에서
 # _handle_slm_reflex로 자동 라우팅됨 → 단일 채널로 통합.
 
 _REFLEX_FACIAL: dict = {
-    "Attack": "Angry", "Block": "Fear", "Dodge": "Surprised",
-    "Flee": "Fear", "SignalAllies": "Surprised", "Scan": "Surprised",
+    "Attack": "Angry",
+    "Block": "Fear",
+    "Dodge": "Surprised",
+    "Flee": "Fear",
+    "SignalAllies": "Surprised",
+    "Scan": "Surprised",
 }
 
+# Few-shot raw 프롬프트 — gemma e4b thinking 우회 (location_decision 과 동일 패턴).
+# chat template 경유 시 thinking 토큰이 num_predict 예산을 잠식해 response="" 로 잘림
+# (Memo 실측: num_predict=20 에서 done_reason="length" + 빈 응답).
+# raw=true + Answer: 프라이밍으로 다음 한 단어만 생성시킨다.
 _REFLEX_PROMPT = """\
-NPC '{agent_id}' detects a threat:
-- Target: {target_id} (Affinity: {affinity_score} [{affinity_tag}])
-- Sense: {sense}, Distance: {dist:.1f}m, Danger: {danger:.2f}
-{extra_lines}
+Task: choose one immediate reaction for an NPC detecting a threat.
+Actions: Attack, Block, Dodge, Flee, SignalAllies, Scan
+Rules: Hostile(affinity<=-30): Attack if close, Dodge/Block if taking damage. \
+Neutral: Scan to assess, SignalAllies if close. Friendly: Scan only.
 
-Action selection guidance:
-- Hostile target (affinity <= -30): Attack if close, Flee if low HP, Block/Dodge under attack
-- Neutral target (-29 ~ 29): Scan to assess, SignalAllies for backup
-- Friendly target: Scan only
+Example 1:
+Threat: target=Bandit affinity=-60(Hostile) sense=Sight dist=2.5m danger=0.90
+Answer: Attack
 
-Choose ONE immediate action: Attack, Block, Dodge, Flee, SignalAllies, Scan
-Reply with ONLY the action name, e.g.: Attack"""
+Example 2:
+Threat: target=Player affinity=-45(Hostile) sense=Damage dist=1.2m danger=0.95
+Answer: Dodge
+
+Example 3:
+Threat: target=Wolf affinity=0(Neutral) sense=Hearing dist=18.0m danger=0.60
+Answer: Scan
+
+Example 4:
+Threat: target=Stranger affinity=-10(Neutral) sense=Sight dist=6.0m danger=0.75
+Answer: SignalAllies
+
+Example 5:
+Threat: target=Goblin affinity=-70(Hostile) sense=Sight dist=8.0m danger=0.80 others=GoblinArcher(Sight,15.0m)
+Answer: Attack
+
+Example 6:
+Threat: target={target_id} affinity={affinity_score}({affinity_tag}) sense={sense} dist={dist:.1f}m danger={danger:.2f}{extra_lines}
+Answer:"""
 
 
 def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
@@ -214,7 +292,6 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     SLM 반사 행동 결정 (목표 500ms).
     LangGraph 없이 단일 경량 SLM 호출로 즉각 전투/회피 액션 생성.
     """
-    from .utils.llm_factory import get_llm
     from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
     from .utils import db_manager
 
@@ -222,10 +299,16 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     perceptions = payload.perceptions
 
     if not perceptions:
-        batch = ActionBatch(AgentID=agent_id, Mode="Combat", Actions=[
-            GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})
-        ])
-        return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
+        batch = ActionBatch(
+            AgentID=agent_id,
+            Mode="Combat",
+            Actions=[
+                GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})
+            ],
+        )
+        return ModeActionRequest(
+            Mode="Combat", ActionBatches={agent_id: batch}
+        ).model_dump_json()
 
     # 플레이어 적대 행동에 따른 호감도 감소.
     # danger_score >= 0.5 인 perception(공격/심한 위협)을 일으킨 대상에게 -5씩 감점.
@@ -237,24 +320,30 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
                 source_id=agent_id,
                 target_id=p.target_id,
                 score_delta=-5,
-                interaction_summary=f"Hostile {p.sense_type} (danger={p.danger_score:.2f})"
+                interaction_summary=f"Hostile {p.sense_type} (danger={p.danger_score:.2f})",
             )
             logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
 
     top = max(perceptions, key=lambda p: p.danger_score)
 
     # 가장 위협적인 대상의 현재 호감도 조회 (SLM 프롬프트와 폴백 로직에 사용)
-    top_relation = await db_manager.get_affinity(agent_id, top.target_id) if top.target_id else None
+    top_relation = (
+        await db_manager.get_affinity(agent_id, top.target_id)
+        if top.target_id
+        else None
+    )
     top_score = top_relation.affinity_score if top_relation else 0
     top_tag = top_relation.reputation_tag if top_relation else "Neutral"
 
+    # 한 줄 포맷 유지 — few-shot 예시와 형태가 어긋나면 모델이 형식을 깨기 쉬움.
     extra_lines = ""
     if len(perceptions) > 1:
-        others = [f"  - {p.target_id} ({p.sense_type}, dist {p.distance:.1f})" for p in perceptions[1:3]]
-        extra_lines = "Other threats:\n" + "\n".join(others)
+        others = [
+            f"{p.target_id}({p.sense_type},{p.distance:.1f}m)" for p in perceptions[1:3]
+        ]
+        extra_lines = " others=" + ",".join(others)
 
     prompt = _REFLEX_PROMPT.format(
-        agent_id=agent_id,
         target_id=top.target_id,
         affinity_score=top_score,
         affinity_tag=top_tag,
@@ -267,9 +356,27 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
     action_type = "Scan"
     try:
-        llm = get_llm(model_name="gemma4_slm", temperature=0.3, num_predict=10)
-        raw = await asyncio.to_thread(llm.invoke, prompt)
-        raw_text = (raw.content if hasattr(raw, "content") else str(raw)).strip()
+        # Ollama 직접 호출 — raw=true 로 chat template(thinking 동반) 우회.
+        # location_decision 과 동일 패턴: 커넥션 풀 재사용 + stop=["\n"] 안전 마진.
+        import time as _t
+
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
+        body = {
+            "model": model_id,
+            "prompt": prompt,
+            "stream": False,
+            "raw": True,
+            "keep_alive": "5m",
+            "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
+        }
+        _llm_start = _t.perf_counter()
+        resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+        # HTTP 4xx/5xx 즉시 예외 → 잘못된 본문 파싱 대신 except 안전 폴백(Scan).
+        resp.raise_for_status()
+        _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
+        raw_text = (resp.json().get("response") or "").strip()
+        logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
         tokens = raw_text.split()
         text = tokens[0] if tokens else ""
 
@@ -298,18 +405,24 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     batch = ActionBatch(
         AgentID=agent_id,
         Mode="Combat",
-        Actions=[GameAction(ActionType=action_type, FacialState=facial, Parameters=params)]
+        Actions=[
+            GameAction(ActionType=action_type, FacialState=facial, Parameters=params)
+        ],
     )
     result = ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch})
 
-    logger.info(f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})")
+    logger.info(
+        f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})"
+    )
     return result.model_dump_json()
 
 
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
     try:
         payload = envelope.parse_emergency_report_payload()
-        logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
+        logger.info(
+            f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}"
+        )
 
         # ── danger 게이트 ──────────────────────────────────────────────
         # SLM Reflex 는 "긴급 전투(0.5초 반사)" 용. 친화적/저위협(예: 호감도 높은
@@ -324,25 +437,29 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
             return _empty_batch_json()
 
         # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
-        logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
+        logger.info(
+            f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다."
+        )
         return await _handle_slm_reflex(payload)
 
     except Exception as e:
         logger.error(f"[Main] _handle_emergency_report 실행 중 치명적 오류: {e}")
         import traceback
+
         traceback.print_exc()
         return _empty_batch_json()
 
 
-def _trigger_dialogue_audio(final_action: Optional[ActionBatch],
-                            fallback_npc: Optional[str], trace_id: str) -> None:
+def _trigger_dialogue_audio(
+    final_action: Optional[ActionBatch], fallback_npc: Optional[str], trace_id: str
+) -> None:
     """ActionBatch 의 Dialogue 액션을 찾아 TTS dispatch 백그라운드 태스크 생성.
 
     Dialogue 없거나 대상 없으면 생략. 글자 없는 대사("...")는 bypass_tts(자막만 전송).
     """
     npc_id_for_audio = final_action.AgentID if final_action else fallback_npc
     dialogue_text: Optional[str] = None
-    dialogue_emotion: str = "Neutral"   # M3: Dialogue FacialState → TTS emotion
+    dialogue_emotion: str = "Neutral"  # M3: Dialogue FacialState → TTS emotion
     if final_action and final_action.Actions:
         for act in final_action.Actions:
             if act.ActionType == "Dialogue":
@@ -356,18 +473,22 @@ def _trigger_dialogue_audio(final_action: Optional[ActionBatch],
         logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
         return
     if not dialogue_text:
-        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
+        logger.info(
+            f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략"
+        )
         return
 
     # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
     has_speech = any(c.isalnum() for c in dialogue_text)
-    task = asyncio.create_task(_dispatch_npc_audio(
-        npc_id=npc_id_for_audio,
-        dialogue_text=dialogue_text,
-        emotion=dialogue_emotion,
-        trace_id=trace_id,
-        bypass_tts=not has_speech,
-    ))
+    task = asyncio.create_task(
+        _dispatch_npc_audio(
+            npc_id=npc_id_for_audio,
+            dialogue_text=dialogue_text,
+            emotion=dialogue_emotion,
+            trace_id=trace_id,
+            bypass_tts=not has_speech,
+        )
+    )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
@@ -382,7 +503,9 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     ges_prompt = GesPrompt(
         player_id=prompt_payload.player_id,
         voice_transcript=prompt_payload.voice_transcript,
-        gestures=[GestureData(**g) for g in prompt_payload.gestures] if prompt_payload.gestures else [],
+        gestures=[GestureData(**g) for g in prompt_payload.gestures]
+        if prompt_payload.gestures
+        else [],
         timestamp=envelope.timestamp,
         last_event=prompt_payload.last_event,
         stats=prompt_payload.stats,
@@ -390,6 +513,24 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     )
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
+
+    # ── 계획 캐싱 분기 파싱 + 방어 폴백 ────────────────────────────────
+    # replan=False 인데 보관 plan 이 없으면(첫 턴/유실) e4b 단독 루프가 줄 컨텍스트가
+    # 없으므로 강제로 풀 파이프라인(replan=True)으로 되돌려 plan 을 새로 생성한다.
+    requires_replan = prompt_payload.requires_replan
+    current_plan = prompt_payload.current_plan
+    # current_plan 전체가 없거나, 대상 NPC 미상(None→supervisor 가 "Elara" 기본 사용),
+    # 또는 대상 NPC plan 누락 시 강제 재계획 — 다른 NPC plan 오참조 방지.
+    # 대소문자 무시 — interface_input 의 plan 주입 조회와 정합(elara vs Elara).
+    if not requires_replan and (
+        not current_plan
+        or not target_npc_from_payload
+        or not any(k.lower() == target_npc_from_payload.lower() for k in current_plan)
+    ):
+        logger.info(
+            "[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)"
+        )
+        requires_replan = True
 
     async with _world_state_lock:
         world_snap = _cached_world_state
@@ -402,15 +543,21 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         vr_context=ges_prompt,
         cached_world_state=world_snap,
         failed_action_history=history_snap,
+        requires_replan=requires_replan,
+        current_plan=current_plan,
+        npc_plans=None,
         next="",
         current_speaker="",
         natural_context=None,
         raw_response=None,
+        raw_responses=None,
         target_npc=target_npc_from_payload,
         behavior_mode=None,
         facial_state=None,
         action_batch=None,
+        action_batches=None,
         target_npcs=[target_npc_from_payload] if target_npc_from_payload else [],
+        rules_retry_count=0,
         msg_id=envelope.msg_id,
         timestamp=envelope.timestamp,
         has_error=False,
@@ -425,26 +572,47 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         traceback.print_exc()
         return _empty_batch_json()
 
-    final_action: Optional[ActionBatch] = result.get("action_batch")
+    # 멀티 NPC: action_batches 우선, 없으면 단일 action_batch 호환
+    action_batches: dict = result.get("action_batches") or {}
+    if not action_batches:
+        single = result.get("action_batch")
+        if single:
+            action_batches = {single.AgentID: single}
 
-    # ── TTS 트리거 (M2) ──────────────────────────────────────────────────
-    # LLM 이 ActionBatch 에 Dialogue 액션을 넣으면 그 text 를 합성 요청(없으면 발화 안 함).
-    _trigger_dialogue_audio(final_action, target_npc_from_payload, envelope.msg_id)
-
-    if final_action:
-        logger.info(f"[Main] ActionBatch 생성 완료: agent_id={final_action.AgentID}")
-        wrapper = ModeActionRequest(
-            Mode=final_action.Mode,
-            ActionBatches={final_action.AgentID: final_action}
-        )
-        return wrapper.model_dump_json()
-    else:
+    if not action_batches:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
         return _empty_batch_json()
 
+    # ── TTS 트리거: 각 NPC Dialogue 액션을 순서대로 dispatch ─────────────
+    # NOTE: dispatch 호출은 순차이나 _trigger_dialogue_audio 가 create_task 로
+    #       백그라운드 태스크를 띄우므로 실제 오디오 재생은 NPC 간 동시(중첩) 가능.
+    #       순차 재생이 필요하면 큐잉 도입 필요(별도 설계 결정).
+    for npc_id, batch in action_batches.items():
+        _trigger_dialogue_audio(batch, npc_id, envelope.msg_id)
 
-async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
-                              trace_id: str = "", bypass_tts: bool = False) -> None:
+    logger.info(f"[Main] ActionBatch 생성 완료: {list(action_batches.keys())}")
+    first_batch = next(iter(action_batches.values()))
+
+    # 재계획 산출 plan 회신 — replan 시만 채워짐. e4b 단독 응답이면 빈 dict.
+    npc_plans = result.get("npc_plans") or {}
+    if npc_plans:
+        logger.info(f"[Main] NpcPlans 회신: {list(npc_plans.keys())}")
+
+    wrapper = ModeActionRequest(
+        Mode=first_batch.Mode,
+        ActionBatches=action_batches,
+        NpcPlans=npc_plans,
+    )
+    return wrapper.model_dump_json()
+
+
+async def _dispatch_npc_audio(
+    npc_id: str,
+    dialogue_text: str,
+    emotion: str,
+    trace_id: str = "",
+    bypass_tts: bool = False,
+) -> None:
     """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
 
     trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
@@ -454,7 +622,9 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
     if bypass_tts:
-        logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
+        logger.info(
+            f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}"
+        )
         info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
     else:
         try:
@@ -465,7 +635,9 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
                 trace_id=trace_id,
             )
         except tts_client.TTSError as e:
-            logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
+            logger.warning(
+                f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}"
+            )
             info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
     if _active_llm_ws is None:
@@ -484,11 +656,13 @@ async def _dispatch_npc_audio(npc_id: str, dialogue_text: str, emotion: str,
         animation_metadata=AnimationMetadata(emotion=emotion),
     )
     try:
-        await _active_llm_ws.send_text(response.model_dump_json())
-        logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(response.model_dump_json())
+        logger.info(
+            f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}"
+        )
     except Exception as e:
         logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
-
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:
@@ -498,18 +672,22 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
         state_payload = envelope.parse_state_update_payload()
         async with _world_state_lock:
             _cached_world_state = state_payload.model_dump()
-        logger.info(f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, "
-                    f"threat_level={state_payload.threat_level}")
+        logger.info(
+            f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, "
+            f"threat_level={state_payload.threat_level}"
+        )
 
         # 해당 NPC의 관계 데이터를 캐시에서 읽어 응답에 포함
         relations = db_manager.get_relations_from_cache(state_payload.owner_agent_id)
 
-        return json.dumps({
-            "status": "cached",
-            "msg_id": envelope.msg_id,
-            "agent_id": state_payload.owner_agent_id,
-            "relations": relations,
-        })
+        return json.dumps(
+            {
+                "status": "cached",
+                "msg_id": envelope.msg_id,
+                "agent_id": state_payload.owner_agent_id,
+                "relations": relations,
+            }
+        )
 
     except Exception as e:
         logger.error(f"[Main] state_update 파싱 실패: {e}")
@@ -545,7 +723,6 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         { "type": "location_decision_result",
           "payload": { "agent_id": "...", "chosen_id": "SAFE_0", "reason": "..." } }
     """
-    from .utils.llm_factory import get_llm
 
     payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
     agent_id = payload_raw.get("agent_id", "unknown")
@@ -559,26 +736,44 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             reason_str = "no_candidates"
         else:
             import random
-            sorted_candidates = sorted(candidates_raw, key=lambda c: c.get("score", 0), reverse=True)
+
+            sorted_candidates = sorted(
+                candidates_raw, key=lambda c: c.get("score", 0), reverse=True
+            )
             top_n = sorted_candidates[:3]
             roll = random.randint(1, 100)
 
             if roll > 40:  # 60% chance to act rationally
                 fallback_id = top_n[0].get("id", "OPTIMAL_0")
                 reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
-            else:          # 40% chance to panic
-                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", "OPTIMAL_0")
-                reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
+            else:  # 40% chance to panic
+                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get(
+                    "id", "OPTIMAL_0"
+                )
+                reason_str = (
+                    f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
+                )
 
-        logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})")
-        return json.dumps({
-            "type": "location_decision_result",
-            "payload": {"agent_id": agent_id, "chosen_id": fallback_id, "reason": reason_str, "request_gen": request_gen}
-        })
+        logger.info(
+            f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})"
+        )
+        return json.dumps(
+            {
+                "type": "location_decision_result",
+                "payload": {
+                    "agent_id": agent_id,
+                    "chosen_id": fallback_id,
+                    "reason": reason_str,
+                    "request_gen": request_gen,
+                },
+            }
+        )
 
     try:
         payload = LocationDecisionPayload(**(payload_raw))
-        logger.info(f"[LocationDecision] 수신: agent={payload.agent_id}, candidates={len(payload.candidates)}")
+        logger.info(
+            f"[LocationDecision] 수신: agent={payload.agent_id}, candidates={len(payload.candidates)}"
+        )
 
         if not payload.candidates:
             return _fast_path_fallback("no_candidates")
@@ -595,7 +790,8 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 
         # Ollama 직접 호출 — raw=true 로 chat template (thinking 동반) 우회.
         # langchain ChatOllama 는 raw 옵션 지원이 약해 httpx 로 직접 호출.
-        import httpx, time as _t
+        import time as _t
+
         ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
         model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
         body = {
@@ -608,13 +804,19 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         }
         _llm_start = _t.perf_counter()
         resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+        # HTTP 4xx/5xx 즉시 예외 → except 안전 폴백(Fast-Path).
+        resp.raise_for_status()
         _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
         raw_text = (resp.json().get("response") or "").strip()
-        logger.info(f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})")
+        logger.info(
+            f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})"
+        )
 
         tokens = raw_text.split()
         if not tokens:
-            logger.warning(f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path")
+            logger.warning(
+                f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path"
+            )
             return _fast_path_fallback("empty_llm_response")
         text = tokens[0].upper()
 
@@ -622,16 +824,27 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         chosen_id = next((vid for vid in valid_ids if vid.upper() == text), None)
 
         if not chosen_id:
-            logger.warning(f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path")
+            logger.warning(
+                f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path"
+            )
             return _fast_path_fallback("invalid_llm_response")
 
         reason = f"LLM chose {chosen_id} ({payload.context_summary})"
-        logger.info(f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}")
+        logger.info(
+            f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}"
+        )
 
-        return json.dumps({
-            "type": "location_decision_result",
-            "payload": {"agent_id": payload.agent_id, "chosen_id": chosen_id, "reason": reason, "request_gen": request_gen}
-        })
+        return json.dumps(
+            {
+                "type": "location_decision_result",
+                "payload": {
+                    "agent_id": payload.agent_id,
+                    "chosen_id": chosen_id,
+                    "reason": reason,
+                    "request_gen": request_gen,
+                },
+            }
+        )
 
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
@@ -663,14 +876,16 @@ def _list_personas() -> list[dict]:
             try:
                 with open(fpath, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
-                results.append({
-                    "npc_id": data.get("name", fname[:-5]),
-                    "file_path": fpath,
-                    "folder": subdir,
-                    "role": data.get("role", ""),
-                    "importance": data.get("importance", "normal"),
-                    "traits": data.get("traits", []),
-                })
+                results.append(
+                    {
+                        "npc_id": data.get("name", fname[:-5]),
+                        "file_path": fpath,
+                        "folder": subdir,
+                        "role": data.get("role", ""),
+                        "importance": data.get("importance", "normal"),
+                        "traits": data.get("traits", []),
+                    }
+                )
             except Exception:
                 pass
     return results
@@ -696,11 +911,19 @@ class AffinitySetRequest(BaseModel):
     score: int
     note: str = "debug_override"
 
+
 @app.post("/api/affinity")
 async def api_set_affinity(req: AffinitySetRequest):
-    rel = await db_manager.set_affinity_direct(req.source_id, req.target_id, req.score, req.note)
-    return {"status": "ok", "source_id": rel.source_id, "target_id": rel.target_id,
-            "affinity_score": rel.affinity_score, "reputation_tag": rel.reputation_tag}
+    rel = await db_manager.set_affinity_direct(
+        req.source_id, req.target_id, req.score, req.note
+    )
+    return {
+        "status": "ok",
+        "source_id": rel.source_id,
+        "target_id": rel.target_id,
+        "affinity_score": rel.affinity_score,
+        "reputation_tag": rel.reputation_tag,
+    }
 
 
 @app.delete("/api/affinity")
@@ -717,10 +940,13 @@ async def api_get_npcs():
 class ImportanceUpdateRequest(BaseModel):
     importance: str  # "normal" | "high" | "core"
 
+
 @app.put("/api/npcs/{npc_id}/importance")
 async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
     if req.importance not in ("normal", "high", "core"):
-        raise HTTPException(status_code=400, detail="importance must be normal, high, or core")
+        raise HTTPException(
+            status_code=400, detail="importance must be normal, high, or core"
+        )
 
     personas = _list_personas()
     target = next((p for p in personas if p["npc_id"].lower() == npc_id.lower()), None)
@@ -738,12 +964,17 @@ async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     if req.importance == "core":
-        llm_model = "gemma4:26b"
+        llm_model = "gemma4-12b"
     elif req.importance == "high":
         llm_model = "qwen3:8b"
     else:
         llm_model = "gemma4:e4b"
-    return {"status": "ok", "npc_id": npc_id, "importance": req.importance, "llm_model": llm_model}
+    return {
+        "status": "ok",
+        "npc_id": npc_id,
+        "importance": req.importance,
+        "llm_model": llm_model,
+    }
 
 
 class NpcCommandRequest(BaseModel):
@@ -752,22 +983,28 @@ class NpcCommandRequest(BaseModel):
     facial: str = "Neutral"
     params: dict = {}
 
+
 @app.post("/api/npc/{npc_id}/command")
 async def api_npc_command(npc_id: str, req: NpcCommandRequest):
     if not _active_llm_ws:
-        raise HTTPException(status_code=503, detail="UE5 연결 없음 (WebSocket disconnected)")
+        raise HTTPException(
+            status_code=503, detail="UE5 연결 없음 (WebSocket disconnected)"
+        )
     try:
         batch = ActionBatch(
             AgentID=npc_id,
             Mode=req.mode,
-            Actions=[GameAction(
-                ActionType=req.action_type,
-                FacialState=req.facial,
-                Parameters={k: str(v) for k, v in req.params.items()}
-            )]
+            Actions=[
+                GameAction(
+                    ActionType=req.action_type,
+                    FacialState=req.facial,
+                    Parameters={k: str(v) for k, v in req.params.items()},
+                )
+            ],
         )
         wrapper = ModeActionRequest(Mode=req.mode, ActionBatches={npc_id: batch})
-        await _active_llm_ws.send_text(wrapper.model_dump_json())
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(wrapper.model_dump_json())
         logger.info(f"[Debug] NPC 명령 전송: {npc_id} → {req.action_type}")
         return {"status": "ok", "npc_id": npc_id, "action": req.action_type}
     except Exception as e:
@@ -792,6 +1029,7 @@ async def api_debug_prompt(req: DebugPromptRequest):
     TTS dispatch 도 _handle_prompt 내부에서 함께 동작(활성 UE WS 있으면 음성 푸시)."""
     import uuid
     import time as _t
+
     env = MessageEnvelope(
         msg_id=str(uuid.uuid4()),
         # auth_token 은 WS 수신 루프에서만 검증됨. 디버그는 _handle_prompt 직접 호출이라

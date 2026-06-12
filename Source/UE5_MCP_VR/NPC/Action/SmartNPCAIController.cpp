@@ -199,6 +199,9 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     {
                         StateComp->RequestEventCognition(Perception);
 
+                        // 새 위협 → 다음 prompt 강제 재계획 표시 (Multi-NPC Cached Planning).
+                        StateComp->FlagDangerReplan();
+
                         if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                         {
                             TArray<FVector> EnemyLocs;
@@ -345,5 +348,7 @@ void ASmartNPCAIController::OnPerceptionTick()
     if (Perception.DangerScore >= CombatDangerThreshold)
     {
         StateComp->RequestEventCognition(Perception);
+        // 지속 위협 → 다음 prompt 강제 재계획 표시 (Multi-NPC Cached Planning).
+        StateComp->FlagDangerReplan();
     }
 }

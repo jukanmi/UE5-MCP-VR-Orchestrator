@@ -229,6 +229,38 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     Payload->SetStringField(TEXT("voice_transcript"), Text);
     Payload->SetStringField(TEXT("target_npc_id"), TargetNpcId);
 
+    // ── 계획 캐싱 분기 (Multi-NPC Cached Planning) ────────────────────────
+    // 대상 NPC 의 ShouldReplan 판정 → requires_replan 송신. 대화 경로엔 실시간 perception
+    // danger 가 없으므로 0 전달(턴 상한/plan 유무/danger pending 플래그로 판정).
+    // 재계획 불필요 시 보관 plan 을 current_plan(snake_case)으로 동봉 → e4b 단독 컨텍스트 주입.
+    bool bRequiresReplan = true;
+    if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+    {
+        if (UNPCStateComponent* StateComp = TargetNPC->GetStateComponent())
+        {
+            bRequiresReplan = StateComp->ShouldReplan(0.0f);
+            if (!bRequiresReplan)
+            {
+                const FNPCPlan& Plan = StateComp->GetCurrentPlan();
+                const TSharedRef<FJsonObject> PlanJson = MakeShared<FJsonObject>();
+                PlanJson->SetStringField(TEXT("goal"), Plan.Goal);
+                TArray<TSharedPtr<FJsonValue>> StepsArr;
+                for (const FString& Step : Plan.Steps)
+                {
+                    StepsArr.Add(MakeShared<FJsonValueString>(Step));
+                }
+                PlanJson->SetArrayField(TEXT("steps"), StepsArr);
+                PlanJson->SetNumberField(TEXT("relation_snapshot"), Plan.RelationSnapshot);
+
+                // current_plan: npc_id → plan (Python current_plan 구조와 정합).
+                const TSharedRef<FJsonObject> CurrentPlanJson = MakeShared<FJsonObject>();
+                CurrentPlanJson->SetObjectField(TargetNpcId, PlanJson);
+                Payload->SetObjectField(TEXT("current_plan"), CurrentPlanJson);
+            }
+        }
+    }
+    Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
+
     FString PayloadStr;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
     FJsonSerializer::Serialize(Payload, Writer);
@@ -375,6 +407,56 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                         AC->AbortTacticalQuery();
             }
             return;
+        }
+    }
+
+    // ── 계획 캐싱 회신 수신 (Multi-NPC Cached Planning) ──────────────────
+    // NpcPlans(PascalCase) 가 있으면 재계획 응답 → 해당 NPC 의 CurrentPlan 저장(턴 리셋).
+    // ActionBatches 에만 있고 NpcPlans 에 없는 NPC 는 e4b 단독(경량) 응답 → 턴 카운터 +1.
+    // 키: PascalCase 최상위(NpcPlans/ActionBatches), plan 내부 snake_case(goal/steps/relation_snapshot) — §1.
+    {
+        const TSharedPtr<FJsonObject>* NpcPlansObj = nullptr;
+        const bool bHasPlans = Root->TryGetObjectField(TEXT("NpcPlans"), NpcPlansObj);
+
+        const TSharedPtr<FJsonObject>* BatchesObj = nullptr;
+        if (Root->TryGetObjectField(TEXT("ActionBatches"), BatchesObj))
+        {
+            for (const auto& BatchPair : (*BatchesObj)->Values)
+            {
+                const FString& AgentID = BatchPair.Key;
+                ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID);
+                if (!NPC) { continue; }
+                UNPCStateComponent* StateComp = NPC->GetStateComponent();
+                if (!StateComp) { continue; }
+
+                const TSharedPtr<FJsonObject>* PlanObj = nullptr;
+                if (bHasPlans && (*NpcPlansObj)->TryGetObjectField(AgentID, PlanObj))
+                {
+                    FNPCPlan Plan;
+                    (*PlanObj)->TryGetStringField(TEXT("goal"), Plan.Goal);
+                    const TArray<TSharedPtr<FJsonValue>>* StepsArr = nullptr;
+                    if ((*PlanObj)->TryGetArrayField(TEXT("steps"), StepsArr))
+                    {
+                        for (const TSharedPtr<FJsonValue>& StepVal : *StepsArr)
+                        {
+                            FString Step;
+                            if (StepVal.IsValid() && StepVal->TryGetString(Step))
+                            {
+                                Plan.Steps.Add(Step);
+                            }
+                        }
+                    }
+                    (*PlanObj)->TryGetNumberField(TEXT("relation_snapshot"), Plan.RelationSnapshot);
+                    StateComp->SetCurrentPlan(Plan);
+                    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Plan 저장: %s goal=\"%s\" steps=%d"),
+                        *AgentID, *Plan.Goal, Plan.Steps.Num());
+                }
+                else
+                {
+                    // 경량 루프 응답 — 턴 누적 (ReplanTurnLimit 도달 시 다음 prompt 강제 재계획).
+                    StateComp->IncrementReplanTurn();
+                }
+            }
         }
     }
 

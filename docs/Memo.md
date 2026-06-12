@@ -90,7 +90,28 @@
 
 ---
 
+### 멀티 NPC 병렬 대화 파이프라인 (2026-06-12)
+- [x] Dialogue 3-Stage 멀티 NPC 전환 — Stage1: e4b×N 병렬(`asyncio.gather`, 지식 격리), Stage2: 12B×1 스타일 정제(NPC 2개↑ 시), Stage3: interface_output e4b 구조화. `state.py` `raw_responses`/`action_batches` Dict 필드 추가 (2026-06-12)
+- [x] interface_output async 전환 + `_correct_facial_contamination` — trait↔FacialState 모순(감정 수렴 오염) 결정론적 Python 보정 (2026-06-12)
+- [x] rules/supervisor/main 멀티 배치 대응 — `action_batches` Dict 루프 검증, 거부 판정/폴백 멀티화, `ModeActionRequest.ActionBatches` 다중 전송 (2026-06-12)
+- [x] interface_input 멀티 NPC 추출 — `_extract_target_npcs` 전체 매칭(등장순·중복제거·상한 3), Player 제외 (2026-06-12)
+- [ ] 멀티 NPC end-to-end 런타임 검증 — `OLLAMA_NUM_PARALLEL=3` 설정 후 2~3 NPC 동시 발화 실측
+
+### 인지엔진 지연 최적화 (2026-06-12 분석)
+- [x] SLM Reflex raw few-shot 전환 — thinking 잘림(빈 응답→Scan 고정) 해소. 실측 warm 330ms, 적대 케이스 Attack 정상 (2026-06-12)
+- [x] WS 메시지별 태스크 분리 — 대화 처리 중 location_decision/emergency 큐 묵힘 해소. `_ws_send_lock` 송신 직렬화 (2026-06-12)
+- [x] 대화 응답이 메모리 요약 LLM에 동기 차단 — `dialogue.py` `add_conversation` fire-and-forget 분리, 백그라운드 착지 검증 (2026-06-12)
+- [x] normal NPC 대화 모델 e4b(thinking) 재검토 — `get_llm` ChatOllama `reasoning=False` 전역 적용으로 해소 (2026-06-12)
+- [x] DIALOGUE_SYSTEM_PROMPT prefix 재배치 — 정적 규칙 앞 / 동적 페르소나 뒤. NPC 교체 호출 prompt eval 183ms→37ms 실측 (2026-06-12)
+- [x] core 모델 26b→`gemma4-12b` 교체 (OBLITERATED Q4_K_M 별칭, VRAM 16GB 적합) — llm_factory·main.py·debug.html·README 동시 수정 (2026-06-12)
+- [x] LangGraph Rules 거부 처리 복원 — Rules→Supervisor 엣지(데드코드였던 재시도 분기 활성화) + `rules_retry_count` 1회 제한, 소진 시 폴백 배치(빈 배치 UE5 전송 차단) (2026-06-12)
+- [x] failed_action_history LLM 주입 — interface_input 이 최근 3건을 natural_context 에 포함("do NOT retry the same way"), 반복 실패 차단 (2026-06-12)
+
 ## Handoff Notes
+
+- **멀티 NPC 병렬 설계 결정 (2026-06-12)**: 여러 NPC를 한 Dialogue 호출에 묶지 않고 NPC별 e4b 병렬 호출로 분리. **Why**: 단일 호출로 모든 페르소나·RAG를 같은 컨텍스트에 넣으면 ① 감정 수렴 ② **지식 누출**(A만 아는 비밀을 B가 발화) 오염 발생 — 지식 누출은 발화 귀속 추적이 불가능해 사후 교정 못 함. 병렬 별도 호출은 지식 격리가 구조적으로 보장됨. `asyncio.gather`라 순차 대비 지연 동일(단 Ollama가 큐 처리하면 직렬화 — `OLLAMA_NUM_PARALLEL=3` 필요, 미설정 시 기능은 동작하되 병렬 효과 없음). **How to apply**: ① Stage2 12B 정제는 "스타일만, 사실 추가 금지" 프롬프트 — 정제 단계서 지식 섞일까 우려되면 Stage2 스킵 가능(단일 NPC는 이미 스킵). ② 감정 수렴 오염은 `interface_output.py::TRAIT_EMOTION_MAP`로 결정론적 보정(Aggressive NPC가 Fear로 수렴→Angry 복원) — trait 맵에 없는 NPC는 보정 안 됨, 새 페르소나 trait 추가 시 맵 갱신. ③ 동시 NPC 상한 `MAX_TARGET_NPCS=3`(interface_input) — 토큰 폭발/오염 방지, 늘리면 12B 정제도 불안정. ④ 전 파이프라인 단일 NPC 호환 경로 유지(`action_batch`/`raw_response` 단수 필드 병행 채움) — 기존 emergency_report/SLM reflex 경로 안 깨짐.
+- **gemma4-12b 별칭 + thinking 비활성 (2026-06-12)**: core 대화 모델은 `gemma4-12b` — `ollama cp hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M gemma4-12b` 로 만든 로컬 별칭. Ollama 재설치 시 pull 후 cp 재실행 필요. `get_llm` 의 ChatOllama 에 `reasoning=False` 전역 적용 — 12B 실측에서 thinking 이 num_predict 200 전부 잠식해 content="" 발생, think=false 로 663ms 정상 응답. gemma4/qwen3 계열 전부 thinking 모델이라 대화 3티어 공통 적용. 비-thinking 모델(llama3.3 레거시 폴백)을 쓰게 되면 Ollama 가 think 파라미터 거부할 수 있음 — 그때 분기 추가. 26b 는 코드 참조만 제거, 디스크엔 잔존(17GB) — `ollama rm gemma4:26b` 는 사용자 판단.
+- **WS 메시지별 동시 처리 (2026-06-12)**: `websocket_llm_endpoint` 가 메시지마다 `asyncio.create_task` 로 분리 처리 — 응답 순서 비보장. prompt 는 msg_id, location_decision 은 request_gen 으로 수신 측 매칭이라 순서 의존 없음. 같은 소켓 동시 쓰기는 `_ws_send_lock` 으로 직렬화(TTS 푸시·디버그 명령 포함). stale 임계 10초는 유지 — 직렬화 큐잉이 원인이던 지연이 사라졌으므로 실측 후 하향 검토 가능.
 
 - **PR #9 Gemini 보류 항목 (2026-06-05)**: 티키타카 5라운드로 ~20건 반영했으나 아래는 의도적 보류 — 빌드/런타임 검증 필요, 크래시 아님(perf/동작). **How to apply**: UE 풀빌드 후 실측하며 판단. ① `ItemManager::GetItemsInRange` O(N×M) → 역참조 맵 / `StaticLoadObject` 동기로드 hitch → 비동기 로드. ② `NPCStateComponent::FlushEventReport` WaitingLLM 조기반환 시 지연 이벤트가 재flush 안 돼 영구대기 가능 — TacticalQueryState 해제 시 재처리 트리거 필요. ③ `VRPawn` ShotDirection 이 Grip 포즈 forward 인데 조준선은 Aim 포즈 — 무기 명중 방향 불일치. **player_id 는 오탐**(vr_context.player_id 정상, 건드리지 말 것).
 - **VR PCVR(Link) 결론 (2026-05-30)**: 현재 Quest Link(케이블 PCVR)로 개발 — 게임은 PC 실행, Quest는 디스플레이. **APK/사이드로딩/IP외부화 불필요**(서버도 PC, 127.0.0.1 OK). 타이틀바 `OpenXR Oculus`+Link 가 PCVR 증거. **How to apply**: 스탠드얼론(Quest 단독 언테더드)을 최종 타겟으로 확정하기 전엔 Memo "Quest 스탠드얼론 빌드" 항목 손대지 말 것. 확정 시 APK + IP외부화 + 모바일 성능 최적화 동반. VR 아바타 IK 자체는 완성·머지됨.

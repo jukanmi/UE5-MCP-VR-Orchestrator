@@ -29,6 +29,7 @@
 ║   never REMOVE or RENAME existing fields without migration plan.            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
 from langgraph.graph.message import add_messages
 from ..schemas.vr_context import GesPrompt
@@ -45,6 +46,14 @@ class AgentState(TypedDict):
     # 플레이어의 음성/제스처 명령. prompt 타입 Envelope의 payload에서 파싱됨.
     vr_context: Optional[GesPrompt]
 
+    # ── 계획 캐싱 (Multi-NPC Cached Planning) ──────────────────────
+    # requires_replan: C++ 이 perception/턴카운터로 판정. True=풀 파이프라인, False=e4b 단독.
+    requires_replan: bool
+    # current_plan: UE5 보관본 (replan=False 시 interface_input 이 컨텍스트로 주입). npc_id → plan.
+    current_plan: Optional[Dict[str, Any]]
+    # npc_plans: Stage2 산출 plan (replan=True 시만). main.py 가 ModeActionRequest.NpcPlans 로 회신.
+    npc_plans: Optional[Dict[str, Any]]
+
     # [신규] state_update 수신 시 캐시되는 최신 월드 상태
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시
     #      "현재 환경 컨텍스트"로 활용한다. 매 요청마다 덮어씌운다.
@@ -60,8 +69,11 @@ class AgentState(TypedDict):
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트
     natural_context: Optional[str]
 
-    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답
+    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답 (단일 NPC 호환)
     raw_response: Optional[str]
+
+    # [멀티 NPC] Dialogue Stage1/2 출력: npc_id → refined raw_response
+    raw_responses: Optional[Dict[str, str]]
 
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
@@ -75,13 +87,18 @@ class AgentState(TypedDict):
     current_speaker: str
 
     # ── 최종 출력 (Python → UE5) ─────────────────────────────────────
-    # Rules 검증 후 UE5로 전송할 ActionBatch
+    # Rules 검증 후 UE5로 전송할 ActionBatch (단일 NPC 호환)
     action_batch: Optional[ActionBatch]
+
+    # [멀티 NPC] Interface_Output Stage3 출력: npc_id → ActionBatch
+    action_batches: Optional[Dict[str, ActionBatch]]
 
     # ── LangGraph 메시지 히스토리 ────────────────────────────────────
     messages: Annotated[List[Any], add_messages]
 
     # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
+    # Rules 거부 시 Dialogue 재시도 횟수. 최대 1회 — 초과 시 폴백 배치로 종료(무한루프 차단).
+    rules_retry_count: int
     target_npcs: List[str]
     msg_id: str
     timestamp: float

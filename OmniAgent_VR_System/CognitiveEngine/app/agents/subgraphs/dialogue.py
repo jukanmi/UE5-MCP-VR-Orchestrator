@@ -1,36 +1,35 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ File: dialogue.py                                                           ║
-║ Role: CREATIVE RESPONSE GENERATOR (LLM #2 - Core Intelligence)             ║
+║ Role: CREATIVE RESPONSE GENERATOR (Multi-NPC 3-Stage Pipeline)             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
 ║   Generate natural, in-character NPC responses based on persona, context,   ║
 ║   and conversational history. Outputs free-form text with speech, actions,  ║
 ║   and emotions - NOT structured data.                                       ║
 ║                                                                              ║
-║ INPUT:  natural_context (str) - What player wants/said                      ║
-║ OUTPUT: raw_response (str) - Free-form NPC reaction                         ║
+║ PIPELINE (3-Stage):                                                          ║
+║   Stage 1: e4b × N 병렬 — NPC별 독립 호출 (지식 오염 없음)                 ║
+║   Stage 2: 12B × 1 정제 — 스타일 향상만, 사실 추가 금지 (NPC 2개 이상 시) ║
+║   Stage 3: interface_output.py 에서 ActionBatch 구조화                     ║
+║                                                                              ║
+║ INPUT:  target_npcs (List[str]), natural_context (str)                      ║
+║ OUTPUT: raw_responses (Dict[str, str])  npc_id → refined raw text          ║
 ║                                                                              ║
 ║ OUTPUT FORMAT (CRITICAL):                                                   ║
 ║   "Speech in quotes" (emotion in parentheses) *physical action in asterisks*║
 ║                                                                              ║
-║ PERSONA SYSTEM:                                                              ║
-║   - Loads YAML persona files (name, role, traits, memory)                   ║
-║   - Uses RAG for contextual knowledge retrieval                             ║
-║   - Maintains conversation history via memory_manager                       ║
-║                                                                              ║
 ║ LLM SELECTION:                                                               ║
-║   - High importance NPCs → Gemma 3 API (premium quality)                    ║
-║   - Normal NPCs → Ollama (qwen)                                             ║
-║                                                                              ║
-║ EXAMPLE:                                                                     ║
-║   IN:  "Player is pointing at door and asking to open it"                   ║
-║   OUT: "Of course! (cheerfully) *walks to door and opens it*"               ║
+║   Stage 1 — e4b (경량, 병렬 VRAM 효율)                                     ║
+║   Stage 2 — gemma4-12b (품질 정제, 단일 호출)                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+
 import yaml
 import os
-import json
+import re
+import asyncio
+from typing import Dict
 from ...utils.llm_factory import get_llm, call_ollama_direct
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
@@ -39,18 +38,20 @@ from ..state import AgentState
 from ...utils import db_manager
 
 
-PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
+PERSONAS_BASE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas"
+)
+
+_memory_write_tasks: set = set()
 
 
-# System Prompt for free-form response generation
-DIALOGUE_SYSTEM_PROMPT = """You are {name}, a {role}.
-Personality traits: {traits}
+def _on_memory_task_done(task) -> None:
+    _memory_write_tasks.discard(task)
+    if not task.cancelled() and task.exception():
+        print(f"[Dialogue] 메모리 기록 백그라운드 실패: {task.exception()}")
 
-Recent memory: {memory}
-Current sentiment toward player: {sentiment}
 
-Relevant context: {rag_context}
-Conversation history: {chat_history}
+DIALOGUE_SYSTEM_PROMPT = """You are an NPC in a VR game. Reply in character following the exact format below.
 
 RESPONSE FORMAT (CRITICAL - follow exactly):
 LINE 1: [Mode: <mode>] [Facial: <expression>]
@@ -105,36 +106,56 @@ RULES:
 - Speech in "quotes", tone in (parentheses)
 - Emit [Action:] tags for what you DO (0 if you only talk). Multiple allowed, one per line.
 - Use ONLY action Types from the list above. Pick the closest one; never invent a Type.
-- Stay in character. Max 2-3 sentences of speech."""
+- Stay in character. Max 2-3 sentences of speech.
+
+YOUR CHARACTER:
+You are {name}, a {role}.
+Personality traits: {traits}
+
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
+
+Relevant context: {rag_context}
+Conversation history: {chat_history}"""
+
+REFINE_SYSTEM_PROMPT = """You are a quality editor and planner for NPC dialogue in a VR game.
+Your jobs: (1) improve language style/fluency, (2) emit a short forward plan per NPC.
+
+STRICT RULES:
+- Do NOT add any new facts, knowledge, or lore not already present.
+- Do NOT change which NPC says what — preserve the === NPC: <id> === section headers exactly.
+- Preserve ALL [Mode:], [Facial:], [Action:] tags exactly as written.
+- Keep speech within "double quotes", emotions in (parentheses).
+- Max 2-3 sentences of speech per NPC.
+
+PLAN (CRITICAL):
+- At the END of each NPC section, output EXACTLY ONE line:
+  [Plan: goal=<short goal> | steps=<step1>;<step2>;<step3>]
+- goal: one short phrase describing what this NPC is trying to achieve over the next few turns.
+- steps: 2-4 concrete beats separated by ';', ordered. These guide later lightweight dialogue.
+- The [Plan: ...] line is metadata, NOT spoken dialogue.
+
+Input format:
+=== NPC: <id> ===
+<raw response>
+
+Output format: same section structure, each section ending with one [Plan: ...] line."""
 
 
 def load_persona(agent_id: str):
-    """
-    Load persona by agent_id.
-    Searches in core/ first, then generic/.
-    YAML이 없으면 generic/ 에 기본 파일을 자동 생성 후 반환.
-    """
     agent_lower = agent_id.lower()
     search_paths = [
         os.path.join(PERSONAS_BASE_PATH, "core", f"{agent_lower}.yaml"),
         os.path.join(PERSONAS_BASE_PATH, "generic", f"{agent_lower}.yaml"),
     ]
-
     for path in search_paths:
         if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
-
     return _create_persona(agent_id)
 
 
 def _create_persona(agent_id: str) -> dict:
-    """
-    알 수 없는 NPC용 기본 페르소나를 생성하고 generic/ 에 저장한다.
-    WHY: 등록되지 않은 NPC가 요청을 보낼 때 elara 페르소나로 응답하면
-         완전히 다른 인물이 대답하는 문제가 생긴다.
-         최소한의 정체성(이름, 중립 성격)을 부여해 일관성을 유지한다.
-    """
     persona = {
         "name": agent_id,
         "importance": "normal",
@@ -146,72 +167,69 @@ def _create_persona(agent_id: str) -> dict:
             "last_interaction_timestamp": 0,
         },
     }
-
     save_path = os.path.join(PERSONAS_BASE_PATH, "generic", f"{agent_id.lower()}.yaml")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     try:
-        with open(save_path, 'w', encoding='utf-8') as f:
+        with open(save_path, "w", encoding="utf-8") as f:
             yaml.dump(persona, f, allow_unicode=True, default_flow_style=False)
         print(f"[Dialogue] Persona '{agent_id}' not found → created: {save_path}")
     except Exception as e:
         print(f"[Dialogue] Persona 파일 생성 실패: {e}")
-
     return persona
 
 
-async def dialogue_node(state: AgentState):
+async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     """
-    Dialogue Agent (LLM #2).
-    
-    Generates free-form NPC response using persona and context.
-    Does NOT create ActionBatch — that's Interface Output's job.
-    
-    Input: AgentState with natural_context (str) and target_npc (str)
-    Output: AgentState with raw_response (str)
+    Stage 1: 단일 NPC에 대한 e4b 호출.
+    반환: (npc_id, raw_response)
+    지식 격리: 각 NPC의 persona/RAG/history를 독립적으로 로드.
     """
-    import asyncio
-    
     natural_context = state.get("natural_context", "")
-    target_npc = state.get("target_npc", "Elara")
-    
-    # Determine agent ID
-    agent_id = target_npc
 
-    # Load persona
-    persona = load_persona(agent_id) or {"name": agent_id, "importance": "normal"}
-    persona_name = persona.get('name', agent_id)
-    persona_role = persona.get('role', 'Inhabitant')
-    persona_traits = ', '.join(persona.get('traits', []))
-    
+    # 동기 파일 I/O — 이벤트 루프 블로킹 방지 위해 스레드 오프로드(VR 실시간 latency).
+    persona = await asyncio.to_thread(load_persona, npc_id) or {
+        "name": npc_id,
+        "importance": "normal",
+    }
+    persona_name = persona.get("name", npc_id)
+    persona_role = persona.get("role", "Inhabitant")
+    persona_traits = ", ".join(persona.get("traits", []))
+
     memory = persona.get("memory_summary", {})
-    memory_summary = '; '.join(memory.get('key_events', [])) if memory.get('key_events') else 'None'
-    
-    # --- Affinity DB 연동: 실제 대상(보통 Player)과의 호감도(Sentiment) 조회 ---
-    player_id = state.get("vr_context", {}).get("player_id", "Player") if isinstance(state.get("vr_context"), dict) else getattr(state.get("vr_context"), "player_id", "Player")
-    
-    # async 노드이므로 get_affinity 를 직접 await — nest_asyncio/run_until_complete 해킹 제거.
+    memory_summary = (
+        "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
+    )
+
+    vr_context = state.get("vr_context")
+    player_id = (
+        vr_context.get("player_id", "Player")
+        if isinstance(vr_context, dict)
+        else getattr(vr_context, "player_id", "Player")
+        if vr_context
+        else "Player"
+    )
+
     try:
-        relation = await db_manager.get_affinity(agent_id, player_id)
+        relation = await db_manager.get_affinity(npc_id, player_id)
         sentiment = f"{relation.reputation_tag} (Score: {relation.affinity_score})"
     except Exception as e:
-        print(f"[Dialogue] Failed to fetch affinity: {e}")
+        print(f"[Dialogue] Affinity 조회 실패 ({npc_id}): {e}")
         sentiment = memory.get("sentiment", "Neutral")
 
-    # Extract user input for RAG/memory
-    # [최적화] 메타데이터가 섞인 natural_context 대신 순수 대사(voice_transcript)만 추출하여 검색 품질 향상
-    vr_context = state.get("vr_context")
     clean_query = ""
     if vr_context:
-        if hasattr(vr_context, 'voice_transcript'):
+        if hasattr(vr_context, "voice_transcript"):
             clean_query = vr_context.voice_transcript
         elif isinstance(vr_context, dict):
             clean_query = vr_context.get("voice_transcript", "")
 
-    # Retrieve context via RAG and memory — RAG 임베딩/검색은 CPU 블로킹이라 스레드 오프로드.
-    rag_context = await asyncio.to_thread(retrieve_context, agent_id, clean_query, 3) if clean_query else ""
-    chat_history = get_conversation_context(agent_id, k=5)
+    rag_context = (
+        await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3)
+        if clean_query
+        else ""
+    )
+    chat_history = get_conversation_context(npc_id, k=5)
 
-    # Build system prompt with persona info
     system_content = DIALOGUE_SYSTEM_PROMPT.format(
         name=persona_name,
         role=persona_role,
@@ -219,67 +237,181 @@ async def dialogue_node(state: AgentState):
         memory=memory_summary,
         sentiment=sentiment,
         rag_context=rag_context if rag_context else "None",
-        chat_history=chat_history if chat_history else "No previous conversation"
+        chat_history=chat_history if chat_history else "No previous conversation",
     )
 
-    print(f"[Dialogue] Agent: {persona_name} | Context: '{natural_context[:60]}...'")
+    print(f"[Dialogue] Stage1 e4b: {persona_name} | '{natural_context[:50]}...'")
 
     raw_response = None
-
-    # --- LLM 선택 (importance에 따라 큐 또는 SLM 분기) ---
-    importance = persona.get('importance', 'normal')
-    
-    if importance == "core":
-        model_name = "gemma4"
-    elif importance == "high":
-        model_name = "mid"
-    else:
-        model_name = "gemma4_slm"
-    print(f"[Dialogue] 모델 선택: {model_name} (importance={importance})")
-    
     try:
-        llm = get_llm(model_name=model_name, temperature=0.7, num_predict=300)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "{system_msg}"),
-            ("human", "Context: {context}")
-        ])
-        response = await (prompt | llm).ainvoke({
-            "system_msg": system_content,
-            "context": natural_context
-        })
-        raw_response = response.content if hasattr(response, 'content') else str(response)
+        llm = get_llm(model_name="gemma4_slm", temperature=0.7, num_predict=300)
+        prompt = ChatPromptTemplate.from_messages(
+            [("system", "{system_msg}"), ("human", "Context: {context}")]
+        )
+        response = await (prompt | llm).ainvoke(
+            {"system_msg": system_content, "context": natural_context}
+        )
+        raw_response = (
+            response.content if hasattr(response, "content") else str(response)
+        )
         raw_response = raw_response.strip()
-        print(f"[Dialogue] 응답: '{raw_response[:80]}...'")
+        print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
-        print(f"[Dialogue] LLM 오류 ({model_name}): {e}")
-        # 폴백: call_ollama_direct 직접 호출
+        print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
         raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt, False)
         if raw_response:
             raw_response = raw_response.strip()
 
-    # 모든 방법 실패 시 기본 응답
     if not raw_response:
-        print("[Dialogue] 모든 LLM 실패, 기본 응답 사용")
+        print(f"[Dialogue] Stage1 실패 ({npc_id}), 기본 응답 사용")
         raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
 
-    # [Mode: X] [Facial: Y] 태그는 raw_response에 포함된 채로 전달.
-    # 왜: interface_output.py가 모든 구조화(structuring)를 책임지므로
-    # dialogue.py는 자연어 생성만 담당하고 파싱/변환은 하지 않는다.
-    import re
-
-    # 대화 기록 저장 (태그 제거 후 speech만 추출)
-    clean_for_memory = re.sub(r'\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?', '', raw_response, flags=re.IGNORECASE).strip()
+    # fire-and-forget 메모리 기록
+    clean_for_memory = re.sub(
+        r"\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?",
+        "",
+        raw_response,
+        flags=re.IGNORECASE,
+    ).strip()
     speech_parts = re.findall(r'"([^"]+)"', clean_for_memory)
     speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
-    
-    # [버그 수정] 삭제된 user_input 대신, 깔끔한 대사(clean_query)를 우선 기록하고 없으면 natural_context 기록
     memory_input = clean_query if clean_query else natural_context
-    await asyncio.to_thread(add_conversation, agent_id, memory_input, speech_for_memory)
+
+    task = asyncio.create_task(
+        asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory)
+    )
+    _memory_write_tasks.add(task)
+    task.add_done_callback(_on_memory_task_done)
+
+    return npc_id, raw_response
+
+
+# [Plan: goal=... | steps=s1;s2;s3] 추출용. goal/steps 캡처, 라인 전체는 대사에서 제거.
+_PLAN_LINE_RE = re.compile(
+    r"\[Plan:\s*goal=(?P<goal>.*?)\s*\|\s*steps=(?P<steps>.*?)\]",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_plan_line(section_text: str) -> tuple[str, dict | None]:
+    """정제된 NPC 섹션에서 [Plan: ...] 라인을 분리.
+    반환: (plan 라인 제거된 대사, plan dict 또는 None)."""
+    m = _PLAN_LINE_RE.search(section_text)
+    if not m:
+        return section_text, None
+    goal = m.group("goal").strip()
+    steps = [s.strip() for s in m.group("steps").split(";") if s.strip()]
+    cleaned = _PLAN_LINE_RE.sub("", section_text).strip()
+    return cleaned, {"goal": goal, "steps": steps}
+
+
+async def _refine_responses(
+    raw_responses: Dict[str, str], player_id: str
+) -> tuple[Dict[str, str], Dict[str, dict]]:
+    """
+    Stage 2: 12B 모델로 전체 NPC 응답 스타일 정제 + plan(goal/steps) 산출.
+    사실 추가 금지 — 스타일/유창성 향상만. 재계획(requires_replan=True) 경로에서만 호출.
+    단일 12B 호출로 정제와 plan 추출을 동시 수행 (토큰/지연 절약).
+    반환: (refined npc_id→대사, npc_plans npc_id→{goal, steps, relation_snapshot}).
+    """
+    sections = "\n\n".join(
+        f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items()
+    )
+
+    print(f"[Dialogue] Stage2 12B 정제+plan 시작 ({len(raw_responses)}개 NPC)")
+    refined_text = None
+    try:
+        llm = get_llm(
+            model_name="gemma4", temperature=0.3, num_predict=500 * len(raw_responses)
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [("system", REFINE_SYSTEM_PROMPT), ("human", "{sections}")]
+        )
+        response = await (prompt | llm).ainvoke({"sections": sections})
+        refined_text = (
+            response.content if hasattr(response, "content") else str(response)
+        )
+        refined_text = refined_text.strip()
+        print(f"[Dialogue] Stage2 정제+plan 완료 ({len(refined_text)} chars)")
+    except Exception as e:
+        print(f"[Dialogue] Stage2 12B 오류, 원본 유지·plan 생략: {e}")
+        return raw_responses, {}
+
+    # 섹션 구분자로 파싱 + plan 라인 분리
+    refined: Dict[str, str] = {}
+    npc_plans: Dict[str, dict] = {}
+    for npc_id in raw_responses:
+        pattern = rf"===\s*NPC:\s*{re.escape(npc_id)}\s*===\s*\n?(.*?)(?===\s*NPC:|$)"
+        m = re.search(pattern, refined_text, re.DOTALL | re.IGNORECASE)
+        section = m.group(1).strip() if m else raw_responses[npc_id]
+        if not m:
+            print(f"[Dialogue] Stage2 파싱 실패 ({npc_id}), 원본 유지")
+
+        dialogue_text, plan = _parse_plan_line(section)
+        refined[npc_id] = dialogue_text
+        if plan is not None:
+            # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
+            try:
+                relation = await db_manager.get_affinity(npc_id, player_id)
+                plan["relation_snapshot"] = relation.affinity_score
+            except Exception as e:
+                print(f"[Dialogue] plan affinity 조회 실패 ({npc_id}): {e}")
+                plan["relation_snapshot"] = 0
+            npc_plans[npc_id] = plan
+        else:
+            print(f"[Dialogue] Stage2 plan 라인 누락 ({npc_id})")
+
+    return refined, npc_plans
+
+
+async def dialogue_node(state: AgentState):
+    """
+    Dialogue Agent (3-Stage Multi-NPC).
+
+    Stage 1: e4b × N 병렬 (지식 격리, 각 NPC 독립 호출)
+    Stage 2: 12B × 1 정제 (NPC 2개 이상 시만)
+    Output:  raw_responses Dict[npc_id, str]
+    """
+    npcs = state.get("target_npcs") or []
+    if not npcs:
+        single = state.get("target_npc", "Elara")
+        npcs = [single] if single else ["Elara"]
+
+    # 재계획 분기: False=e4b 단독 경량 루프(12B 스킵), True=풀 파이프라인+plan 산출.
+    requires_replan = state.get("requires_replan", True)
+    print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
+
+    # Stage 1: 병렬 e4b 호출
+    results = await asyncio.gather(
+        *[_dialogue_single(state, npc_id) for npc_id in npcs]
+    )
+    raw_responses: Dict[str, str] = dict(results)
+
+    # Stage 2: 12B 정제+plan — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
+    npc_plans: Dict[str, dict] = {}
+    if requires_replan:
+        vr_context = state.get("vr_context")
+        player_id = (
+            vr_context.get("player_id", "Player")
+            if isinstance(vr_context, dict)
+            else getattr(vr_context, "player_id", "Player")
+            if vr_context
+            else "Player"
+        )
+        raw_responses, npc_plans = await _refine_responses(raw_responses, player_id)
+    else:
+        print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
+
+    # 단일 NPC 호환: raw_response 도 채움
+    single_npc = npcs[0]
+    raw_response = raw_responses.get(single_npc, "")
 
     return {
-        "raw_response": raw_response,  # 태그 포함 원본 전달
-        "target_npc": agent_id,        # C++ AgentID 원본 보존 (persona_name과 대소문자 다를 수 있음)
+        "raw_responses": raw_responses,
+        "raw_response": raw_response,
+        "npc_plans": npc_plans or None,
+        "target_npc": single_npc,
         "current_speaker": "Dialogue",
-        "next": "Interface_Output"
+        "next": "Interface_Output",
     }
