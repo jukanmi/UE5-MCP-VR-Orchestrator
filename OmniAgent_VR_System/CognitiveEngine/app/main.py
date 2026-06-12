@@ -192,6 +192,18 @@ async def _process_llm_message(raw_data: str) -> str:
         # 같은 이벤트루프에서 location_decision 처리 중이면 후속 패킷이 큐 대기로 자연스럽게
         # 2~5초 묵혀짐 → 임계값 2초는 정상 패킷도 드랍. (2026-05-16 직접 측정)
         if is_stale_packet(envelope.timestamp, threshold_seconds=10.0):
+            # location_decision 은 generic drop 으로 응답하면 UE5 라우팅에 잡히지 않아
+            # WaitingLLM 이 TacticalLLMTimeout 까지 유지되고 Event Report 게이트도
+            # 함께 막힘 → 드랍 대신 Fast-Path 폴백 결과를 돌려줘 즉시 해제.
+            if envelope.type == EEnvelopeType.LOCATION_DECISION:
+                logger.warning(
+                    f"[Main] Stale location_decision → Fast-Path 폴백. msg_id={envelope.msg_id}"
+                )
+                payload_raw = (
+                    envelope.payload if isinstance(envelope.payload, dict) else {}
+                )
+                return _location_decision_fast_path(payload_raw, "stale_packet")
+
             logger.warning(f"[Main] Stale 패킷 드랍. msg_id={envelope.msg_id}")
             return json.dumps(
                 {
@@ -713,6 +725,68 @@ Candidates: {candidate_ids}
 Answer:"""
 
 
+def _parse_request_gen(payload_raw: dict) -> int:
+    # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
+    # 비정상 값(문자열 등)이 와도 핸들러가 죽지 않도록 방어 — 0 이면 UE5 가 stale 로 드랍.
+    try:
+        return int(payload_raw.get("request_gen", 0))
+    except (TypeError, ValueError):
+        logger.warning(
+            f"[LocationDecision] request_gen 파싱 실패 — 0 으로 폴백: {payload_raw.get('request_gen')!r}"
+        )
+        return 0
+
+
+def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str:
+    """LLM 호출 없이 즉시 location_decision_result 를 생성하는 폴백 (Fast-Path).
+
+    WHY 모듈 레벨: 핸들러 내부 오류뿐 아니라 _process_llm_message 의 stale 패킷
+    경로에서도 호출된다. generic drop 응답은 UE5 의 location_decision_result
+    라우팅에 잡히지 않아 WaitingLLM 이 TacticalLLMTimeout 까지 유지되고, 그동안
+    Event Report 게이트(NPCStateComponent)도 함께 막히기 때문 — 폴백 결과를
+    돌려줘 즉시 해제한다.
+    """
+    agent_id = payload_raw.get("agent_id", "unknown")
+    candidates_raw = payload_raw.get("candidates", [])
+    request_gen = _parse_request_gen(payload_raw)
+
+    if not candidates_raw:
+        fallback_id = "OPTIMAL_0"
+        reason_str = "no_candidates"
+    else:
+        import random
+
+        sorted_candidates = sorted(
+            candidates_raw, key=lambda c: c.get("score", 0), reverse=True
+        )
+        top_n = sorted_candidates[:3]
+        roll = random.randint(1, 100)
+
+        if roll > 40:  # 60% chance to act rationally
+            fallback_id = top_n[0].get("id", "OPTIMAL_0")
+            reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
+        else:  # 40% chance to panic
+            fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get(
+                "id", "OPTIMAL_0"
+            )
+            reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
+
+    logger.info(
+        f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {fallback_reason})"
+    )
+    return json.dumps(
+        {
+            "type": "location_decision_result",
+            "payload": {
+                "agent_id": agent_id,
+                "chosen_id": fallback_id,
+                "reason": reason_str,
+                "request_gen": request_gen,
+            },
+        }
+    )
+
+
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     """
     location_decision 핸들러.
@@ -725,56 +799,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     """
 
     payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
-    agent_id = payload_raw.get("agent_id", "unknown")
-    candidates_raw = payload_raw.get("candidates", [])
-    # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
-    # 비정상 값(문자열 등)이 와도 핸들러가 죽지 않도록 방어 — 0 이면 UE5 가 stale 로 드랍.
-    try:
-        request_gen = int(payload_raw.get("request_gen", 0))
-    except (TypeError, ValueError):
-        logger.warning(
-            f"[LocationDecision] request_gen 파싱 실패 — 0 으로 폴백: {payload_raw.get('request_gen')!r}"
-        )
-        request_gen = 0
-
-    def _fast_path_fallback(reason: str) -> str:
-        if not candidates_raw:
-            fallback_id = "OPTIMAL_0"
-            reason_str = "no_candidates"
-        else:
-            import random
-
-            sorted_candidates = sorted(
-                candidates_raw, key=lambda c: c.get("score", 0), reverse=True
-            )
-            top_n = sorted_candidates[:3]
-            roll = random.randint(1, 100)
-
-            if roll > 40:  # 60% chance to act rationally
-                fallback_id = top_n[0].get("id", "OPTIMAL_0")
-                reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
-            else:  # 40% chance to panic
-                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get(
-                    "id", "OPTIMAL_0"
-                )
-                reason_str = (
-                    f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
-                )
-
-        logger.info(
-            f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})"
-        )
-        return json.dumps(
-            {
-                "type": "location_decision_result",
-                "payload": {
-                    "agent_id": agent_id,
-                    "chosen_id": fallback_id,
-                    "reason": reason_str,
-                    "request_gen": request_gen,
-                },
-            }
-        )
+    request_gen = _parse_request_gen(payload_raw)
 
     try:
         payload = LocationDecisionPayload(**(payload_raw))
@@ -783,7 +808,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         )
 
         if not payload.candidates:
-            return _fast_path_fallback("no_candidates")
+            return _location_decision_fast_path(payload_raw, "no_candidates")
 
         valid_ids = {c.id for c in payload.candidates}
 
@@ -824,7 +849,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             logger.warning(
                 f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path"
             )
-            return _fast_path_fallback("empty_llm_response")
+            return _location_decision_fast_path(payload_raw, "empty_llm_response")
         text = tokens[0].upper()
 
         # 유효한 ID인지 검증 (대소문자 무시)
@@ -834,7 +859,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             logger.warning(
                 f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path"
             )
-            return _fast_path_fallback("invalid_llm_response")
+            return _location_decision_fast_path(payload_raw, "invalid_llm_response")
 
         reason = f"LLM chose {chosen_id} ({payload.context_summary})"
         logger.info(
@@ -855,7 +880,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
-        return _fast_path_fallback("exception")
+        return _location_decision_fast_path(payload_raw, "exception")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

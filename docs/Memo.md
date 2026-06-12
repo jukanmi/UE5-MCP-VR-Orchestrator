@@ -13,6 +13,11 @@
 ### 🆕 다음 설계 작업
 - [ ] **대화 UI(ChatWidget) 부활** — 현재 응답은 화면 자막(AddOnScreenDebugMessage)뿐. WorldSpace ChatWidget 또는 자막 위젯으로 정식화.
 
+### EQS 파이프라인 수정 검증 (2026-06-12 커밋분 — 일괄 런타임 검증 대기)
+- [ ] **Failed 고착 제거 검증** (빌드 후): `TacticalPositionsQuery`+`DefaultMoveQuery` 둘 다 비운 NPC — `EQS 에셋 없음 → 쿨다운 후 재시도` Warning 후 쿨다운 경과 시 재시도되는지. 에셋 재할당 시 즉시 정상 복귀 확인.
+- [ ] **스코어링 회귀 검증** (빌드 후): Perception 트리거 → EQS → LLM → Move 큐 주입 정상 경로. `[EQS Score]` Verbose 로그 값이 기존과 동일한지 (Eval* 시그니처 변경 — Dist/Cover 후보당 1회 계산으로 공유, 수식 자체는 불변).
+- [ ] **stale Fast-Path 검증** (Python 단독 가능): timestamp 10초 이상 지난 location_decision 전송 → `Stale location_decision → Fast-Path 폴백` 로그 + `location_decision_result` 응답(request_gen echo) 확인. UE5 측 WaitingLLM 즉시 해제·Event Report 게이트 미정지 확인.
+
 ### Quest 스탠드얼론 빌드 — 보류 (현재 PCVR Link 로 개발/데모)
 **결정(2026-05-30)**: 현재 Quest Link(케이블 PCVR 스트리밍)로 개발·테스트 중 — 게임은 PC에서 돌고 Quest는 디스플레이. 이 모드에선 APK·사이드로딩·IP 외부화 전부 불필요(서버도 PC라 127.0.0.1 OK). 아래 항목은 **최종 타겟을 Quest 단독 구동으로 확정할 때만** 진행. 그땐 모바일 성능 최적화 숙제도 동반.
 - [ ] (스탠드얼론 확정 시) `Project → Package → Android (ASTC)` 빌드 → APK
