@@ -132,9 +132,7 @@ def supervisor_node(state: AgentState) -> dict:
             if retry_count >= 1:
                 # 재시도 소진 — 각 NPC에 폴백 배치 생성
                 npcs = state.get("target_npcs") or [state.get("target_npc", "Elara")]
-                print(
-                    f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료"
-                )
+                print(f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료")
                 fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
                 return {
                     "action_batches": fallback_batches,
@@ -142,16 +140,13 @@ def supervisor_node(state: AgentState) -> dict:
                     "next": "End",
                 }
 
-            print(
-                f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)"
-            )
+            print(f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)")
             return {
                 "next": "Dialogue",
                 "current_speaker": "Supervisor_Fallback",
                 "rules_retry_count": retry_count + 1,
                 "natural_context": (
-                    "System: Your previous action was rejected by game rules. "
-                    "Respond with speech only."
+                    "System: Your previous action was rejected by game rules. Respond with speech only."
                 ),
             }
 

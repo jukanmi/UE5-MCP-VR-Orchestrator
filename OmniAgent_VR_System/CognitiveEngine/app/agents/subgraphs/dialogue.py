@@ -40,9 +40,7 @@ from ...utils import db_manager
 from ...schemas.actions import DialogueResponse
 
 
-PERSONAS_BASE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas"
-)
+PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
 
 _memory_write_tasks: set = set()
 
@@ -254,9 +252,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     persona_traits = ", ".join(persona.get("traits", []))
 
     memory = persona.get("memory_summary", {})
-    memory_summary = (
-        "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
-    )
+    memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
     vr_context = state.get("vr_context")
     player_id = (
@@ -281,11 +277,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         elif isinstance(vr_context, dict):
             clean_query = vr_context.get("voice_transcript", "")
 
-    rag_context = (
-        await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3)
-        if clean_query
-        else ""
-    )
+    rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
     chat_history = get_conversation_context(npc_id, k=5)
 
     fmt_kwargs = dict(
@@ -309,9 +301,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
         # 획득한 DialogueResponse 를 기존 텍스트 포맷으로 직렬화 → 다운스트림 무변경.
         structured_llm = llm.with_structured_output(DialogueResponse)
-        prompt = ChatPromptTemplate.from_messages(
-            [("system", "{system_msg}"), ("human", "Context: {context}")]
-        )
+        prompt = ChatPromptTemplate.from_messages([("system", "{system_msg}"), ("human", "Context: {context}")])
         resp_obj = await (prompt | structured_llm).ainvoke(
             {"system_msg": structured_content, "context": natural_context}
         )
@@ -341,9 +331,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
     memory_input = clean_query if clean_query else natural_context
 
-    task = asyncio.create_task(
-        asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory)
-    )
+    task = asyncio.create_task(asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory))
     _memory_write_tasks.add(task)
     task.add_done_callback(_on_memory_task_done)
 
@@ -369,32 +357,22 @@ def _parse_plan_line(section_text: str) -> tuple[str, dict | None]:
     return cleaned, {"goal": goal, "steps": steps}
 
 
-async def _refine_responses(
-    raw_responses: Dict[str, str], player_id: str
-) -> tuple[Dict[str, str], Dict[str, dict]]:
+async def _refine_responses(raw_responses: Dict[str, str], player_id: str) -> tuple[Dict[str, str], Dict[str, dict]]:
     """
     Stage 2: 12B 모델로 전체 NPC 응답 스타일 정제 + plan(goal/steps) 산출.
     사실 추가 금지 — 스타일/유창성 향상만. 재계획(requires_replan=True) 경로에서만 호출.
     단일 12B 호출로 정제와 plan 추출을 동시 수행 (토큰/지연 절약).
     반환: (refined npc_id→대사, npc_plans npc_id→{goal, steps, relation_snapshot}).
     """
-    sections = "\n\n".join(
-        f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items()
-    )
+    sections = "\n\n".join(f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items())
 
     print(f"[Dialogue] Stage2 12B 정제+plan 시작 ({len(raw_responses)}개 NPC)")
     refined_text = None
     try:
-        llm = get_llm(
-            model_name="gemma4", temperature=0.3, num_predict=500 * len(raw_responses)
-        )
-        prompt = ChatPromptTemplate.from_messages(
-            [("system", REFINE_SYSTEM_PROMPT), ("human", "{sections}")]
-        )
+        llm = get_llm(model_name="gemma4", temperature=0.3, num_predict=500 * len(raw_responses))
+        prompt = ChatPromptTemplate.from_messages([("system", REFINE_SYSTEM_PROMPT), ("human", "{sections}")])
         response = await (prompt | llm).ainvoke({"sections": sections})
-        refined_text = (
-            response.content if hasattr(response, "content") else str(response)
-        )
+        refined_text = response.content if hasattr(response, "content") else str(response)
         refined_text = refined_text.strip()
         print(f"[Dialogue] Stage2 정제+plan 완료 ({len(refined_text)} chars)")
     except Exception as e:
@@ -446,9 +424,7 @@ async def dialogue_node(state: AgentState):
     print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
     # Stage 1: 병렬 e4b 호출
-    results = await asyncio.gather(
-        *[_dialogue_single(state, npc_id) for npc_id in npcs]
-    )
+    results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
     raw_responses: Dict[str, str] = dict(results)
 
     # Stage 2: 12B 정제+plan — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.

@@ -4,7 +4,6 @@ Purpose: Centralized world constants and game rules for the VR game.
 All agents reference these constants to ensure consistency.
 """
 
-
 # ============================================================================
 # MOVEMENT CONSTANTS
 # ============================================================================

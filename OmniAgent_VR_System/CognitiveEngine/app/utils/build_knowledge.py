@@ -14,6 +14,7 @@ Role: NPC RAG 지식 벡터스토어 (재)빌드 CLI.
     python -m app.utils.build_knowledge --agent skadi --force
     python -m app.utils.build_knowledge --list
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +32,8 @@ def discover_agents() -> List[str]:
     if not os.path.isdir(KNOWLEDGE_BASE_PATH):
         return []
     return sorted(
-        d for d in os.listdir(KNOWLEDGE_BASE_PATH)
+        d
+        for d in os.listdir(KNOWLEDGE_BASE_PATH)
         if os.path.isdir(os.path.join(KNOWLEDGE_BASE_PATH, d)) and d not in _EXCLUDE_DIRS
     )
 
@@ -63,8 +65,12 @@ def main() -> None:
     g.add_argument("--agent", help="특정 NPC id (예: skadi)")
     g.add_argument("--all", action="store_true", help="knowledge/ 의 모든 NPC 빌드")
     g.add_argument("--list", action="store_true", help="에이전트와 문서 수만 출력")
-    parser.add_argument("--use-cache", action="store_true", default=False,
-                        help="기존 벡터스토어 캐시가 있으면 재사용 (기본 False — CLI 실행 = 항상 재빌드)")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        default=False,
+        help="기존 벡터스토어 캐시가 있으면 재사용 (기본 False — CLI 실행 = 항상 재빌드)",
+    )
     args = parser.parse_args()
 
     agents = discover_agents()

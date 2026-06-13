@@ -85,12 +85,7 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
             pass
         # ② UE 형식 (X=100,Y=200,Z=0) 폴백 — literal_eval 로는 SyntaxError
         if not coords:
-            coords = {
-                k.lower(): float(v)
-                for k, v in re.findall(
-                    r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str
-                )
-            }
+            coords = {k.lower(): float(v) for k, v in re.findall(r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str)}
         if not coords:
             # 파싱 실패 → (0,0,0) 오판 대신 경계검증 생략(통과)
             return True
@@ -99,21 +94,9 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         # 파싱 자체 실패 시 경계검증 생략(통과)
         return True
 
-    x_ok = (
-        WORLD_BOUNDS.get("x_min", float("-inf"))
-        <= x
-        <= WORLD_BOUNDS.get("x_max", float("inf"))
-    )
-    y_ok = (
-        WORLD_BOUNDS.get("y_min", float("-inf"))
-        <= y
-        <= WORLD_BOUNDS.get("y_max", float("inf"))
-    )
-    z_ok = (
-        WORLD_BOUNDS.get("z_min", float("-inf"))
-        <= z
-        <= WORLD_BOUNDS.get("z_max", float("inf"))
-    )
+    x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
+    y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
+    z_ok = WORLD_BOUNDS.get("z_min", float("-inf")) <= z <= WORLD_BOUNDS.get("z_max", float("inf"))
 
     return x_ok and y_ok and z_ok
 
@@ -167,10 +150,7 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
 
     # ── [신규] 좌표 범위 검증 ───────────────────────────────────
     if not _is_target_loc_in_bounds(target_loc_str):
-        reason = (
-            f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 "
-            f"(action: {action.ActionType})"
-        )
+        reason = f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 (action: {action.ActionType})"
         print(f"[Rules] ❌ {reason}")
         return None, [reason]
 
@@ -249,9 +229,7 @@ def _validate_batch(batch: "ActionBatch") -> "ActionBatch":
         all_corrections.extend(corrections)
 
     if not validated_actions:
-        print(
-            f"[Rules] ❌ {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}"
-        )
+        print(f"[Rules] ❌ {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
         return batch
 
@@ -273,19 +251,12 @@ def _correct_mode_mismatch(batch: "ActionBatch") -> None:
     액션 카테고리와도 일치하지 않으면 Mode 를 다수 카테고리로 교정.
     Common 전용 배치는 Mode 유지 — Combat 모드 중 대사(Dialogue)는 정상이므로.
     """
-    non_common = [
-        cat
-        for a in batch.Actions
-        if (cat := ACTION_CATEGORY.get(a.ActionType, "Common")) != "Common"
-    ]
+    non_common = [cat for a in batch.Actions if (cat := ACTION_CATEGORY.get(a.ActionType, "Common")) != "Common"]
     if not non_common:
         return
     majority, _count = Counter(non_common).most_common(1)[0]
     if batch.Mode != majority and batch.Mode not in non_common:
-        print(
-            f"[Rules] 🔧 Mode 보정: {batch.Mode} → {majority} "
-            f"({batch.AgentID}, 액션 카테고리 불일치)"
-        )
+        print(f"[Rules] 🔧 Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
         batch.Mode = majority
 
 
@@ -378,9 +349,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
     if score_delta != 0:
         summary_str = ", ".join(interaction_summary)
-        print(
-            f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})"
-        )
+        print(f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
         # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
         db_manager.update_affinity_sync(
             source_id=npc_id,

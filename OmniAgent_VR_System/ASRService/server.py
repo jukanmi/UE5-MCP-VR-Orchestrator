@@ -79,9 +79,7 @@ async def lifespan(app: FastAPI):
     )
     t0 = time.perf_counter()
     try:
-        _model = WhisperModel(
-            WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE
-        )
+        _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
         logger.info(f"[ASR] 모델 로드 완료 ({(time.perf_counter() - t0):.1f}s)")
     except Exception as e:  # OOM/CUDA 미설치/다운로드 실패 — 서비스 기동은 유지, health 가 loading 반영
         logger.error(f"[ASR] 모델 로드 치명적 실패: {e}")
@@ -199,23 +197,16 @@ async def ws_stream(websocket: WebSocket) -> None:
                     audio_buf = bytearray()
                     chunk_count = 0
                     logger.info(
-                        f"[ASR] start request_id={request_id} target={target_npc_id} "
-                        f"sr={sample_rate} lang={language}"
+                        f"[ASR] start request_id={request_id} target={target_npc_id} sr={sample_rate} lang={language}"
                     )
-                    await websocket.send_json(
-                        {"type": "ready", "request_id": request_id}
-                    )
+                    await websocket.send_json({"type": "ready", "request_id": request_id})
 
                 elif mtype == "end":
                     total_bytes = len(audio_buf)
-                    duration_audio_ms = int(
-                        total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000
-                    )
+                    duration_audio_ms = int(total_bytes / (sample_rate * BYTES_PER_SAMPLE) * 1000)
                     t_rec = time.perf_counter()
                     async with _transcribe_lock:
-                        transcript = await asyncio.to_thread(
-                            _transcribe, bytes(audio_buf), sample_rate, language
-                        )
+                        transcript = await asyncio.to_thread(_transcribe, bytes(audio_buf), sample_rate, language)
                     infer_ms = int((time.perf_counter() - t_rec) * 1000)
                     logger.info(
                         f"[ASR] end request_id={request_id} chunks={chunk_count} "
@@ -247,9 +238,7 @@ async def ws_stream(websocket: WebSocket) -> None:
             elif "bytes" in msg and msg["bytes"] is not None:
                 # 버퍼 상한 초과 시 중단 — end 미전송 무한 스트리밍 OOM/DoS 차단.
                 if len(audio_buf) + len(msg["bytes"]) > MAX_AUDIO_BUF_BYTES:
-                    logger.warning(
-                        f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단"
-                    )
+                    logger.warning(f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단")
                     await websocket.send_json(
                         {
                             "type": "error",

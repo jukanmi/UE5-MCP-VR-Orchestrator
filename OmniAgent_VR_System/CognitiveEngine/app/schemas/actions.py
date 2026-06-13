@@ -81,17 +81,11 @@ class DialogueActionItem(BaseModel):
     Ollama structured output 이 34개 유효 액션만 생성 — 잘못된 Type 원천 차단.
     직렬화 시 빈 키는 [Action:] 태그에서 생략 (interface_output 매핑 기준)."""
 
-    type: EAction = Field(
-        description="Action to perform, e.g. Attack, Block, Move, GiveItem, Follow"
-    )
-    target: str = Field(
-        default="", description="Player, Self, Enemy or an NPC name; '' if none"
-    )
+    type: EAction = Field(description="Action to perform, e.g. Attack, Block, Move, GiveItem, Follow")
+    target: str = Field(default="", description="Player, Self, Enemy or an NPC name; '' if none")
     item: str = Field(default="", description="Item name; '' if none")
     loc: str = Field(default="", description="Location id; '' if none")
-    style: str = Field(
-        default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote"
-    )
+    style: str = Field(default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote")
 
 
 class DialogueResponse(BaseModel):
@@ -102,9 +96,7 @@ class DialogueResponse(BaseModel):
 
     mode: NPCBehaviorMode = Field(description="Behavior mode for this turn")
     facial: NPCFacialState = Field(description="Facial expression")
-    speech: str = Field(
-        description="What the NPC says out loud, 1-3 sentences, in character; never empty"
-    )
+    speech: str = Field(description="What the NPC says out loud, 1-3 sentences, in character; never empty")
     tone: str = Field(default="", description="Emotional tone of speech, e.g. furiously")
     actions: List[DialogueActionItem] = Field(
         description="Game actions the NPC performs now. ACT (Attack/Block/Dodge/Move/...) "
@@ -179,9 +171,7 @@ CATEGORY_ACTION_MAP = {
 }
 
 # 액션 → 카테고리 역조회 맵 (Rules 의 Mode 보정용)
-ACTION_CATEGORY: Dict[str, str] = {
-    action: cat for cat, actions in CATEGORY_ACTION_MAP.items() for action in actions
-}
+ACTION_CATEGORY: Dict[str, str] = {action: cat for cat, actions in CATEGORY_ACTION_MAP.items() for action in actions}
 
 # 액션별 필수 파라미터 — C++ ExecuteInteraction(NPCActionComponent.cpp) 동작 기준.
 # 누락 시 C++ 가 무음 no-op 하거나(Follow/Attack/Track 등 if(!Target) return),

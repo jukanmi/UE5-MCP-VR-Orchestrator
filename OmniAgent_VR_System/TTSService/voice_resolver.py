@@ -13,6 +13,7 @@ USAGE:
     meta = resolve_voice_meta("Skadi", "Happy")     # VoiceMeta(ref="Skadi_happy", lang="KR", speed=1.05)
     for npc_id, emotion, meta in list_voices(): ... # 부팅 pre-extract 용 (unique ref 만)
 """
+
 from __future__ import annotations
 
 import logging

@@ -149,9 +149,7 @@ def _ensure_silero_trust_sync() -> None:
 
 def _ensure_checkpoints_sync() -> None:
     converter_dir = CKPT_DIR / "converter"
-    if (converter_dir / "checkpoint.pth").exists() and (
-        converter_dir / "config.json"
-    ).exists():
+    if (converter_dir / "checkpoint.pth").exists() and (converter_dir / "config.json").exists():
         return
     import httpx
 
@@ -191,9 +189,7 @@ def _load_converter_sync() -> object:
     conv = ToneColorConverter(str(cfg), device=DEVICE)
     conv.load_ckpt(str(ckpt))
     _state.converter = conv
-    logger.info(
-        f"[TTS] converter 로드 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
-    )
+    logger.info(f"[TTS] converter 로드 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
     return conv
 
 
@@ -295,15 +291,11 @@ def _extract_target_se_sync(voice_id: str) -> object:
         try:
             target_se = torch.load(str(se_cache), map_location=DEVICE)
             _state.target_se_cache[voice_id] = target_se
-            logger.info(
-                f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}"
-            )
+            logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
             return target_se
         except Exception as e:
             # 손상/불완전 저장된 캐시 → 삭제 후 아래에서 재추출(서비스 전체 실패 방지).
-            logger.warning(
-                f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}"
-            )
+            logger.warning(f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}")
             try:
                 se_cache.unlink()
             except OSError:
@@ -321,18 +313,14 @@ def _extract_target_se_sync(voice_id: str) -> object:
     )
     torch.save(target_se, str(se_cache))
     _state.target_se_cache[voice_id] = target_se
-    logger.info(
-        f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
-    )
+    logger.info(f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
     return target_se
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 합성
 # ─────────────────────────────────────────────────────────────────────────────
-def _synthesize_sync(
-    text: str, voice_id: str, language: str, speed: Optional[float] = None
-) -> tuple[np.ndarray, int]:
+def _synthesize_sync(text: str, voice_id: str, language: str, speed: Optional[float] = None) -> tuple[np.ndarray, int]:
     melo = _load_melo_sync(language)
     speaker_id = _state.melo_speaker_ids[language]
     base_se = _load_base_se_sync(language)
@@ -428,21 +416,13 @@ async def lifespan(app: FastAPI):
                 await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
                 extracted.add(vmeta.ref)
             except Exception as e:
-                logger.warning(
-                    f"[TTS] target SE pre-extract 실패 npc={npc_id} emo={emo} ref={vmeta.ref}: {e}"
-                )
+                logger.warning(f"[TTS] target SE pre-extract 실패 npc={npc_id} emo={emo} ref={vmeta.ref}: {e}")
         logger.info(f"[TTS] pre-extract 완료 — refs={sorted(extracted)}")
         try:
             t0 = time.perf_counter()
-            await asyncio.to_thread(
-                _synthesize_sync, "준비 완료.", DEFAULT_VOICE_ID, "KR"
-            )
-            await asyncio.to_thread(
-                _synthesize_sync, "Warm up.", DEFAULT_VOICE_ID, "EN"
-            )
-            logger.info(
-                f"[TTS] pre-warm 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
-            )
+            await asyncio.to_thread(_synthesize_sync, "준비 완료.", DEFAULT_VOICE_ID, "KR")
+            await asyncio.to_thread(_synthesize_sync, "Warm up.", DEFAULT_VOICE_ID, "EN")
+            logger.info(f"[TTS] pre-warm 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
         except Exception as e:
             logger.warning(f"[TTS] pre-warm 실패 (계속 진행): {e}")
     except Exception as e:
@@ -469,9 +449,7 @@ app.add_middleware(
 async def synthesize(req: SynthesizeRequest) -> SynthesizeResponse:
     # 발원 trace_id(msg_id) 가 있으면 request_id 로 상속 — 이후 모든 WS 로그가
     # 같은 id 를 찍어 LLM↔TTS↔UE5 가 [trace=...] 한 줄로 꿰진다. 없으면 신규 생성.
-    request_id = (
-        f"tts_{req.trace_id}" if req.trace_id else f"tts_{uuid.uuid4().hex[:12]}"
-    )
+    request_id = f"tts_{req.trace_id}" if req.trace_id else f"tts_{uuid.uuid4().hex[:12]}"
     _pending[request_id] = req
     logger.info(
         f"[TTS][trace={req.trace_id or request_id}] 합성 등록 npc={req.voice_id} emo={req.emotion} text_len={len(req.text)}"
@@ -528,9 +506,7 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
 
     # 합성(producer) ↔ 송신(consumer) 분리: 문장 N+1 을 문장 N 재생 중 미리 합성.
     # 첫 음(TTFA)은 첫 문장 합성만 기다림 → 전체 발화 길이와 무관(긴 대사도 <600ms).
-    pcm_queue: asyncio.Queue = asyncio.Queue(
-        maxsize=2
-    )  # 백프레셔 — 합성 과도 선행 방지
+    pcm_queue: asyncio.Queue = asyncio.Queue(maxsize=2)  # 백프레셔 — 합성 과도 선행 방지
     producer: Optional[asyncio.Task] = None
     first_synth_ms = 0.0
 
@@ -539,9 +515,7 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
         for idx, sent in enumerate(sentences):
             ts = time.perf_counter()
             async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
-                native, native_sr = await asyncio.to_thread(
-                    _synthesize_sync, sent, voice_id, language, meta.speed
-                )
+                native, native_sr = await asyncio.to_thread(_synthesize_sync, sent, voice_id, language, meta.speed)
             dt = (time.perf_counter() - ts) * 1000.0
             if idx == 0:
                 first_synth_ms = dt
@@ -722,9 +696,7 @@ async def api_preview(body: PreviewBody) -> Response:
     voice_id = meta.ref or DEFAULT_VOICE_ID
     language = meta.lang or _detect_language(body.text)
     try:
-        audio, sr = await asyncio.to_thread(
-            _synthesize_sync, body.text, voice_id, language, meta.speed
-        )
+        audio, sr = await asyncio.to_thread(_synthesize_sync, body.text, voice_id, language, meta.speed)
     except Exception as e:
         logger.exception(f"[TTS][debug] preview 합성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -756,9 +728,7 @@ async def api_reload_voices() -> dict:
             await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
             extracted.append(vmeta.ref)
         except Exception as e:
-            failed.append(
-                {"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)}
-            )
+            failed.append({"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)})
     return {"extracted": extracted, "failed": failed}
 
 

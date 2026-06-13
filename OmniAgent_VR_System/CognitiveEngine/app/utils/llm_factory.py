@@ -15,17 +15,17 @@ MODELS = {
     # Ollama 로컬 모델 — Gemma 4
     # 메인 LLM (대화/추론) — 26b(17GB)는 VRAM 16GB 미적합(CPU 오프로드)이라 12B Q4 로 교체.
     # gemma4-12b 는 hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 의 ollama cp 별칭.
-    "gemma4":     "gemma4-12b",
-    "mid":        "qwen3:8b",     # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
-    "gemma4_slm": "gemma4:e4b",   # 경량 구조화 모델 (JSON 추출 등)
-    "gemma4_31b": "gemma4:31b",   # 최고 품질 (고부하 작업 시)
-    "gemma4_e2b": "gemma4:e2b",   # 초경량 (지연 민감 구간)
+    "gemma4": "gemma4-12b",
+    "mid": "qwen3:8b",  # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
+    "gemma4_slm": "gemma4:e4b",  # 경량 구조화 모델 (JSON 추출 등)
+    "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
+    "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 기존 모델 (폴백 용도)
-    "qwen":     "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "qwen": "huihui_ai/qwen3-vl-abliterated:8b-instruct",
     "qwen_slm": "qwen3:1.7b",
-    "llama":    "llama3.3:70b",
+    "llama": "llama3.3:70b",
     # OpenAI (API Key 필요)
-    "openai":   "gpt-4o-mini",
+    "openai": "gpt-4o-mini",
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
@@ -80,8 +80,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 
     else:
         raise ValueError(
-            f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. "
-            f"선택 가능: {list(MODELS.keys()) + ['openai']}"
+            f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. 선택 가능: {list(MODELS.keys()) + ['openai']}"
         )
 
 
@@ -110,12 +109,12 @@ def call_ollama_direct(prompt_text: str, extract_json: bool = True) -> Optional[
                 return extracted
 
             # 블록 없이 JSON 기호([ 또는 {)가 있는 경우 폴백
-            start_marks = [output.find('['), output.find('{')]
-            end_marks = [output.rfind(']'), output.rfind('}')]
-            
+            start_marks = [output.find("["), output.find("{")]
+            end_marks = [output.rfind("]"), output.rfind("}")]
+
             valid_starts = [i for i in start_marks if i != -1]
             valid_ends = [i for i in end_marks if i != -1]
-            
+
             if valid_starts and valid_ends:
                 idx_start = min(valid_starts)
                 idx_end = max(valid_ends) + 1

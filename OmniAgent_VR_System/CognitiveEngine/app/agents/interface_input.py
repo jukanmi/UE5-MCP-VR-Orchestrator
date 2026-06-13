@@ -141,9 +141,7 @@ def interface_input_node(state: AgentState) -> dict:
     # 탐지 즉시 has_error=True → Supervisor가 LLM 호출 없이 End로 숏컷
     is_injected, matched_pattern = _check_prompt_injection(transcript)
     if is_injected:
-        print(
-            f"[Interface Input] ⚠️  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'"
-        )
+        print(f"[Interface Input] ⚠️  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
         return {
             "has_error": True,
             "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",
@@ -182,11 +180,7 @@ def interface_input_node(state: AgentState) -> dict:
     # 임시로 none 처리합니다 (interface_input이 GesPrompt만 처리중이므로)
     perceived_str = "Unknown"
     state_payload = state.get("cached_world_state", {})
-    if (
-        state_payload
-        and isinstance(state_payload, dict)
-        and "perceived_targets" in state_payload
-    ):
+    if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
         targets = state_payload["perceived_targets"]
         if targets:
             pts = []
@@ -222,9 +216,7 @@ def interface_input_node(state: AgentState) -> dict:
             f" (reason: {f.get('reason', 'unknown')})"
             for f in recent
         )
-        natural_context += (
-            f". Recently FAILED actions (do NOT retry the same way): {fails}"
-        )
+        natural_context += f". Recently FAILED actions (do NOT retry the same way): {fails}"
 
     # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
     # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
@@ -238,16 +230,12 @@ def interface_input_node(state: AgentState) -> dict:
             # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
             # 대상 NPC plan 이 없으면 주입 생략 — 타 NPC plan 오참조로 인한 행동 불일치 방지.
             target_lower = target.lower()
-            plan = next(
-                (v for k, v in current_plan.items() if k.lower() == target_lower), None
-            )
+            plan = next((v for k, v in current_plan.items() if k.lower() == target_lower), None)
         if isinstance(plan, dict) and plan.get("goal"):
             steps = plan.get("steps") or []
             steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
             natural_context += (
-                f". Current goal: {plan['goal']}."
-                f" Plan steps: {steps_str}."
-                " Stay consistent with this plan."
+                f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
             )
 
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
@@ -290,9 +278,7 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
     # lower→원본 ID 매핑 — C++ NPCMap 은 대소문자 구분, 원래 케이스 보존 필수.
     id_map = {npc.lower(): npc for npc in valid_ids}
     known_npcs = (
-        [npc.lower() for npc in valid_ids]
-        if valid_ids
-        else ["elara", "james", "guard", "merchant", "blacksmith"]
+        [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "guard", "merchant", "blacksmith"]
     )
     # Player 는 발화 주체이지 대상 NPC 아님 — 제외 (없으면 Player 페르소나가 응답 생성).
     known_npcs = [npc for npc in known_npcs if npc != "player"]
