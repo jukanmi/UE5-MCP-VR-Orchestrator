@@ -370,6 +370,27 @@ def _float_to_pcm_s16le(audio: np.ndarray) -> bytes:
     return pcm.tobytes()
 
 
+# 문장 분리 — 문장단위 스트리밍 합성용. 종결부호/개행 뒤 분리, 짧은 조각은 병합(마이크로 합성 방지).
+_SENTENCE_MIN_LEN = 12  # 이보다 짧은 조각은 다음 문장과 합쳐 합성 호출 낭비 방지
+
+
+def _split_sentences(text: str) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    raw = re.split(r"(?<=[.!?。…！？\n])\s*", text)
+    parts = [p.strip() for p in raw if p and p.strip()]
+    if not parts:
+        return [text]
+    merged: list[str] = []
+    for p in parts:
+        if merged and len(merged[-1]) < _SENTENCE_MIN_LEN:
+            merged[-1] = f"{merged[-1]} {p}".strip()
+        else:
+            merged.append(p)
+    return merged
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Lifespan
 # ─────────────────────────────────────────────────────────────────────────────
@@ -471,42 +492,77 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
     language = req.language or meta.lang or _detect_language(req.text)
     target_sr = req.sample_rate or TARGET_SAMPLE_RATE
     started_at = time.perf_counter()
+    sentences = _split_sentences(req.text)
+    bytes_per_chunk = (target_sr * CHUNK_MS // 1000) * 2
+
+    # 합성(producer) ↔ 송신(consumer) 분리: 문장 N+1 을 문장 N 재생 중 미리 합성.
+    # 첫 음(TTFA)은 첫 문장 합성만 기다림 → 전체 발화 길이와 무관(긴 대사도 <600ms).
+    pcm_queue: asyncio.Queue = asyncio.Queue(maxsize=2)  # 백프레셔 — 합성 과도 선행 방지
+    producer: Optional[asyncio.Task] = None
+    first_synth_ms = 0.0
+
+    async def _produce() -> None:
+        nonlocal first_synth_ms
+        for idx, sent in enumerate(sentences):
+            ts = time.perf_counter()
+            native, native_sr = await asyncio.to_thread(
+                _synthesize_sync, sent, voice_id, language, meta.speed
+            )
+            dt = (time.perf_counter() - ts) * 1000.0
+            if idx == 0:
+                first_synth_ms = dt
+            logger.info(
+                f"[TTS] synth[{idx + 1}/{len(sentences)}] {dt:.0f}ms len={len(sent)} "
+                f"npc={req.voice_id} emo={emotion} ref={voice_id} lang={language} speed={meta.speed}"
+            )
+            pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
+            await pcm_queue.put(pcm)
+        await pcm_queue.put(None)  # 종료 센티넬
 
     try:
-        t0 = time.perf_counter()
-        audio_native, native_sr = await asyncio.to_thread(
-            _synthesize_sync, req.text, voice_id, language, meta.speed
-        )
-        infer_ms = (time.perf_counter() - t0) * 1000.0
-        logger.info(
-            f"[TTS] synth {infer_ms:.0f}ms text_len={len(req.text)} "
-            f"npc={req.voice_id} emo={emotion} ref={voice_id} lang={language} "
-            f"speed={meta.speed} samples={len(audio_native)} sr={native_sr}"
-        )
-
-        audio_16k = _resample_to_target(audio_native, native_sr, target_sr)
-        pcm_bytes = _float_to_pcm_s16le(audio_16k)
-        bytes_per_chunk = (target_sr * CHUNK_MS // 1000) * 2
-        total_chunks = max(1, math.ceil(len(pcm_bytes) / bytes_per_chunk))
-
-        for sequence in range(total_chunks):
-            start = sequence * bytes_per_chunk
-            chunk = pcm_bytes[start : start + bytes_per_chunk]
-            if not chunk:
+        producer = asyncio.create_task(_produce())
+        sequence = 0
+        leftover = b""
+        while True:
+            item = await pcm_queue.get()
+            if item is None:
                 break
-            is_last = sequence == total_chunks - 1
+            buf = leftover + item
+            off = 0
+            # 문장 경계 무시하고 연속 청크 송신 — 문장 사이 silence 방지(gapless).
+            while len(buf) - off >= bytes_per_chunk:
+                chunk = buf[off : off + bytes_per_chunk]
+                off += bytes_per_chunk
+                await websocket.send_json({
+                    "type": "audio_chunk",
+                    "request_id": request_id,
+                    "sequence": sequence,
+                    "sample_rate": target_sr,
+                    "channels": CHANNELS,
+                    "audio_base64": base64.b64encode(chunk).decode("ascii"),
+                    "is_last": False,
+                })
+                sequence += 1
+                await asyncio.sleep(CHUNK_MS / 1000.0)
+            leftover = buf[off:]
+
+        if leftover:  # 마지막 잔여 PCM
             await websocket.send_json({
                 "type": "audio_chunk",
                 "request_id": request_id,
                 "sequence": sequence,
                 "sample_rate": target_sr,
                 "channels": CHANNELS,
-                "audio_base64": base64.b64encode(chunk).decode("ascii"),
-                "is_last": is_last,
+                "audio_base64": base64.b64encode(leftover).decode("ascii"),
+                "is_last": True,
             })
-            await asyncio.sleep(CHUNK_MS / 1000.0)
+            sequence += 1
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            f"[TTS] stream 완료 sentences={len(sentences)} chunks={sequence} "
+            f"first_synth={first_synth_ms:.0f}ms total={elapsed_ms}ms text_len={len(req.text)}"
+        )
         await websocket.send_json({
             "type": "completed",
             "request_id": request_id,
@@ -524,6 +580,13 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
         except Exception:
             pass
     finally:
+        if producer is not None and not producer.done():
+            producer.cancel()
+        if producer is not None:
+            try:
+                await producer
+            except (asyncio.CancelledError, Exception):
+                pass
         try:
             await websocket.close()
         except Exception:
