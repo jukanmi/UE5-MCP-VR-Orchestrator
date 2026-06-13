@@ -128,7 +128,19 @@ class RejectResult(BaseModel):
 
 
 WORLD_CONSTANTS = {
-    "valid_npc_ids": ["Elara", "James", "Guard", "Merchant", "Blacksmith", "Player"],
+    # Self/Enemy 는 C++ ResolveActionTarget(STTask_ExecuteSmartAction.cpp)이 런타임
+    # 해석하는 센티넬 키워드(Self→자신, Enemy→BB perception 타겟). 구체 NPC ID 와 함께
+    # 화이트리스트에 포함 — 누락 시 Attack/Block target=Enemy 등이 Rules 에서 제거됨.
+    "valid_npc_ids": [
+        "Elara",
+        "James",
+        "Guard",
+        "Merchant",
+        "Blacksmith",
+        "Player",
+        "Self",
+        "Enemy",
+    ],
     "valid_location_ids": ["TownSquare", "Tavern", "Forest", "Castle"],
     "WORLD_BOUNDS": {
         "x_min": -10000,
