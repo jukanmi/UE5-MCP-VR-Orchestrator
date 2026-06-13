@@ -76,6 +76,42 @@ class ActionBatch(BaseModel):
     Actions: List[GameAction]
 
 
+class DialogueActionItem(BaseModel):
+    """Stage1 구조화 출력용 액션 항목. type 이 EAction Literal 이라
+    Ollama structured output 이 34개 유효 액션만 생성 — 잘못된 Type 원천 차단.
+    직렬화 시 빈 키는 [Action:] 태그에서 생략 (interface_output 매핑 기준)."""
+
+    type: EAction = Field(
+        description="Action to perform, e.g. Attack, Block, Move, GiveItem, Follow"
+    )
+    target: str = Field(
+        default="", description="Player, Self, Enemy or an NPC name; '' if none"
+    )
+    item: str = Field(default="", description="Item name; '' if none")
+    loc: str = Field(default="", description="Location id; '' if none")
+    style: str = Field(
+        default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote"
+    )
+
+
+class DialogueResponse(BaseModel):
+    """Stage1 e4b 구조화 출력 스키마. speech·actions 를 required(default 없음)로 둬
+    Ollama JSON 문법이 두 키를 강제 생성 — all-optional 이면 e4b 가 mode/facial 만
+    내고 빠져나가 speech·actions 가 비는 문제(실측 확인) 방지. 직렬화 후 기존
+    [Mode:][Facial:]"speech"[Action:] 텍스트로 재생 → 다운스트림 무변경."""
+
+    mode: NPCBehaviorMode = Field(description="Behavior mode for this turn")
+    facial: NPCFacialState = Field(description="Facial expression")
+    speech: str = Field(
+        description="What the NPC says out loud, 1-3 sentences, in character; never empty"
+    )
+    tone: str = Field(default="", description="Emotional tone of speech, e.g. furiously")
+    actions: List[DialogueActionItem] = Field(
+        description="Game actions the NPC performs now. ACT (Attack/Block/Dodge/Move/...) "
+        "when the situation calls for it; empty list ONLY if purely talking."
+    )
+
+
 class ModeActionRequest(BaseModel):
     """C++ FModeActionRequest와 1:1 대응 (최상위 반환 객체)"""
 

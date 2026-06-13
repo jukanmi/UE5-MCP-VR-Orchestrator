@@ -36,6 +36,7 @@ from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
 from ..state import AgentState
 from ...utils import db_manager
+from ...schemas.actions import DialogueResponse
 
 
 PERSONAS_BASE_PATH = os.path.join(
@@ -118,6 +119,30 @@ Current sentiment toward player: {sentiment}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 
+# 구조화 출력(with_structured_output) 전용 프롬프트. 텍스트 태그 포맷 대신 JSON 필드
+# (speech/actions)를 채우도록 지시 — 텍스트포맷용 DIALOGUE_SYSTEM_PROMPT 를 그대로 쓰면
+# e4b 가 스키마와 충돌해 speech/actions 를 비움(실측). 폴백(call_ollama_direct 자유텍스트)
+# 경로는 여전히 DIALOGUE_SYSTEM_PROMPT 사용.
+DIALOGUE_STRUCTURED_PROMPT = """You are {name}, a {role}, an NPC in a VR game.
+Personality traits: {traits}
+
+Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions.
+- speech: your spoken line, in character, 1-3 sentences (NEVER empty).
+- tone: emotional tone of the speech (e.g. warmly, furiously).
+- actions: list of game actions you perform RIGHT NOW. Each has a "type" plus optional
+  target/item/style. When threatened, ACT (Attack/Block/Dodge/Flee). When asked to follow,
+  Follow. When giving something, GiveItem. Empty list ONLY if you are purely talking.
+
+Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
+ Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
+ PickUp Drop Craft Repair Investigate Track Scout Sit Sleep Read Pray Dance Sing.
+Use ONLY a type from this list. target is one of: Player, Self, Enemy, or an NPC name.
+
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
+Relevant context: {rag_context}
+Conversation history: {chat_history}"""
+
 REFINE_SYSTEM_PROMPT = """You are a quality editor and planner for NPC dialogue in a VR game.
 Your jobs: (1) improve language style/fluency, (2) emit a short forward plan per NPC.
 
@@ -178,6 +203,33 @@ def _create_persona(agent_id: str) -> dict:
     return persona
 
 
+def _serialize_dialogue(obj: DialogueResponse) -> str:
+    """구조화 DialogueResponse → 기존 자유텍스트 포맷으로 직렬화.
+    interface_output 정규식이 그대로 파싱하도록 [Mode:][Facial:]"speech"[Action:]
+    형태 재생. 액션 태그 키(target/item/loc/style)는 _PARAM_KEY_MAP 기준."""
+    lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
+
+    speech = (obj.speech or "").strip()
+    if speech:
+        tone = (obj.tone or "").strip()
+        lines.append(f'"{speech}" ({tone})' if tone else f'"{speech}"')
+
+    for act in obj.actions:
+        parts = [act.type]
+        for key, val in (
+            ("target", act.target),
+            ("item", act.item),
+            ("loc", act.loc),
+            ("style", act.style),
+        ):
+            v = (val or "").strip()
+            if v:
+                parts.append(f"{key}={v}")
+        lines.append(f"[Action: {' '.join(parts)}]")
+
+    return "\n".join(lines)
+
+
 async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     """
     Stage 1: 단일 NPC에 대한 e4b 호출.
@@ -230,7 +282,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     )
     chat_history = get_conversation_context(npc_id, k=5)
 
-    system_content = DIALOGUE_SYSTEM_PROMPT.format(
+    fmt_kwargs = dict(
         name=persona_name,
         role=persona_role,
         traits=persona_traits,
@@ -239,22 +291,25 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         rag_context=rag_context if rag_context else "None",
         chat_history=chat_history if chat_history else "No previous conversation",
     )
+    # 구조화 호출용(JSON) + 폴백 자유텍스트용 프롬프트 각각 포맷.
+    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**fmt_kwargs)
+    system_content = DIALOGUE_SYSTEM_PROMPT.format(**fmt_kwargs)
 
     print(f"[Dialogue] Stage1 e4b: {persona_name} | '{natural_context[:50]}...'")
 
     raw_response = None
     try:
         llm = get_llm(model_name="gemma4_slm", temperature=0.7, num_predict=300)
+        # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
+        # 획득한 DialogueResponse 를 기존 텍스트 포맷으로 직렬화 → 다운스트림 무변경.
+        structured_llm = llm.with_structured_output(DialogueResponse)
         prompt = ChatPromptTemplate.from_messages(
             [("system", "{system_msg}"), ("human", "Context: {context}")]
         )
-        response = await (prompt | llm).ainvoke(
-            {"system_msg": system_content, "context": natural_context}
+        resp_obj = await (prompt | structured_llm).ainvoke(
+            {"system_msg": structured_content, "context": natural_context}
         )
-        raw_response = (
-            response.content if hasattr(response, "content") else str(response)
-        )
-        raw_response = raw_response.strip()
+        raw_response = _serialize_dialogue(resp_obj).strip()
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
         print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
