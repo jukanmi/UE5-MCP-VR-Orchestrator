@@ -29,6 +29,7 @@ import yaml
 import os
 import re
 import asyncio
+from functools import lru_cache
 from typing import Dict
 from ...utils.llm_factory import get_llm, call_ollama_direct
 from ...utils.rag_utils import retrieve_context
@@ -167,6 +168,11 @@ Input format:
 Output format: same section structure, each section ending with one [Plan: ...] line."""
 
 
+# persona 는 런타임 불변(_create_persona 만 최초 1회 기록, 이후 미수정) → 캐시.
+# e4b 5-step 루프에서 NPC 당 매 스텝 YAML 디스크 로드하던 것을 1회로 축소.
+# 호출부는 persona 를 읽기만(.get) 하므로 공유 dict 안전. 외부 파일 수정 시
+# 프로세스 재시작 필요(런타임 핫리로드 없음 — 현 설계상 무관).
+@lru_cache(maxsize=64)
 def load_persona(agent_id: str):
     agent_lower = agent_id.lower()
     search_paths = [
@@ -291,9 +297,9 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         rag_context=rag_context if rag_context else "None",
         chat_history=chat_history if chat_history else "No previous conversation",
     )
-    # 구조화 호출용(JSON) + 폴백 자유텍스트용 프롬프트 각각 포맷.
+    # 구조화 호출용(JSON) 프롬프트만 해피패스에서 포맷. 자유텍스트 폴백용
+    # system_content 는 except 경로에서만 필요 → lazy(아래 except 에서 포맷).
     structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**fmt_kwargs)
-    system_content = DIALOGUE_SYSTEM_PROMPT.format(**fmt_kwargs)
 
     print(f"[Dialogue] Stage1 e4b: {persona_name} | '{natural_context[:50]}...'")
 
@@ -313,6 +319,8 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
         print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
+        # 폴백 경로에서만 자유텍스트 프롬프트 포맷 (해피패스 낭비 제거).
+        system_content = DIALOGUE_SYSTEM_PROMPT.format(**fmt_kwargs)
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
         raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt, False)
         if raw_response:
