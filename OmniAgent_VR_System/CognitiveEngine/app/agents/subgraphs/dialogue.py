@@ -207,15 +207,34 @@ def _create_persona(agent_id: str) -> dict:
     return persona
 
 
+# e4b/llama.cpp byte-fallback 토큰(<0xEC><0xB3><0x87> 같은)이 출력에 새는 경우 — 연속
+# 바이트를 모아 UTF-8 로 재조합(예: "쳇"), 디코드 불가한 잔여만 제거.
+_BYTE_TOKEN_RUN_RE = re.compile(r"(?:<0[xX][0-9A-Fa-f]{2}>)+")
+
+
+def _decode_byte_tokens(text: str) -> str:
+    if "<0x" not in text and "<0X" not in text:
+        return text
+
+    def _repl(m: "re.Match") -> str:
+        hexes = re.findall(r"<0[xX]([0-9A-Fa-f]{2})>", m.group(0))
+        try:
+            return bytes(int(h, 16) for h in hexes).decode("utf-8")
+        except UnicodeDecodeError:
+            return ""  # 불완전/깨진 바이트열 → 제거
+
+    return _BYTE_TOKEN_RUN_RE.sub(_repl, text)
+
+
 def _serialize_dialogue(obj: DialogueResponse) -> str:
     """구조화 DialogueResponse → 기존 자유텍스트 포맷으로 직렬화.
     interface_output 정규식이 그대로 파싱하도록 [Mode:][Facial:]"speech"[Action:]
     형태 재생. 액션 태그 키(target/item/loc/style)는 _PARAM_KEY_MAP 기준."""
     lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
 
-    speech = (obj.speech or "").strip()
+    speech = _decode_byte_tokens((obj.speech or "").strip())
     if speech:
-        tone = (obj.tone or "").strip()
+        tone = _decode_byte_tokens((obj.tone or "").strip())
         lines.append(f'"{speech}" ({tone})' if tone else f'"{speech}"')
 
     for act in obj.actions:
@@ -314,7 +333,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
         raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt, False)
         if raw_response:
-            raw_response = raw_response.strip()
+            raw_response = _decode_byte_tokens(raw_response.strip())
 
     if not raw_response:
         print(f"[Dialogue] Stage1 실패 ({npc_id}), 기본 응답 사용")
