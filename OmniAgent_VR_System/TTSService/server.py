@@ -19,13 +19,13 @@ NOTES:
   - voices/ 는 _processed/ SE 캐시 및 레거시 reference 폴백 경로.
   - checkpoints_v2/ 가 없으면 첫 기동 시 HF 에서 자동 다운로드(~수백MB).
 """
+
 from __future__ import annotations
 
 import asyncio
 import base64
 import io
 import logging
-import math
 import os
 import re
 import tempfile
@@ -45,10 +45,8 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from .voice_resolver import (
-    VoiceMeta,
     list_voices,
     normalize_emotion,
-    resolve_voice,
     resolve_voice_meta,
 )
 
@@ -92,14 +90,18 @@ LANG_MAP = {
 # 상태
 # ─────────────────────────────────────────────────────────────────────────────
 class _ModelState:
-    converter: object = None                 # ToneColorConverter
-    melo_models: dict[str, object] = {}      # language → MeloTTS
+    converter: object = None  # ToneColorConverter
+    melo_models: dict[str, object] = {}  # language → MeloTTS
     melo_speaker_ids: dict[str, int] = {}
-    base_se: dict[str, object] = {}          # language → src SE tensor
+    base_se: dict[str, object] = {}  # language → src SE tensor
     target_se_cache: dict[str, object] = {}  # voice_id → tgt SE tensor
 
 
 _state = _ModelState()
+
+# 동시 NPC 합성 직렬화 — 공유 melo/openvoice 모델 thread-safety(GPU 도 어차피 직렬).
+# 문장 단위로 acquire/release 라 여러 NPC 스트림이 문장별로 공평하게 교차.
+_synth_lock = asyncio.Lock()
 _pending: dict[str, "SynthesizeRequest"] = {}
 
 
@@ -115,7 +117,7 @@ class SynthesizeRequest(BaseModel):
     sample_rate: int = TARGET_SAMPLE_RATE
     output_format: str = "pcm_s16le"
     language: Optional[str] = None
-    trace_id: str = ""   # 발원 msg_id 상속 → request_id 로 재사용, 로그 체인 통일
+    trace_id: str = ""  # 발원 msg_id 상속 → request_id 로 재사용, 로그 체인 통일
 
 
 class SynthesizeResponse(BaseModel):
@@ -133,6 +135,7 @@ def _ensure_silero_trust_sync() -> None:
     한 번 trust_repo=True 로 받아두면 캐시되어 이후 호출 정상."""
     try:
         import torch
+
         torch.hub.load(
             "snakers4/silero-vad",
             model="silero_vad",
@@ -146,7 +149,9 @@ def _ensure_silero_trust_sync() -> None:
 
 def _ensure_checkpoints_sync() -> None:
     converter_dir = CKPT_DIR / "converter"
-    if (converter_dir / "checkpoint.pth").exists() and (converter_dir / "config.json").exists():
+    if (converter_dir / "checkpoint.pth").exists() and (
+        converter_dir / "config.json"
+    ).exists():
         return
     import httpx
 
@@ -159,7 +164,9 @@ def _ensure_checkpoints_sync() -> None:
         for chunk in r.iter_bytes(1024 * 1024):
             buf.write(chunk)
     buf.seek(0)
-    logger.info(f"[TTS] zip 다운로드 완료 ({(time.perf_counter()-t0):.1f}s, {buf.getbuffer().nbytes/1e6:.0f}MB), 압축 해제 중...")
+    logger.info(
+        f"[TTS] zip 다운로드 완료 ({(time.perf_counter() - t0):.1f}s, {buf.getbuffer().nbytes / 1e6:.0f}MB), 압축 해제 중..."
+    )
     with zipfile.ZipFile(buf) as zf:
         zf.extractall(CKPT_DIR.parent)
     logger.info(f"[TTS] checkpoints_v2 준비 완료 → {CKPT_DIR}")
@@ -184,7 +191,9 @@ def _load_converter_sync() -> object:
     conv = ToneColorConverter(str(cfg), device=DEVICE)
     conv.load_ckpt(str(ckpt))
     _state.converter = conv
-    logger.info(f"[TTS] converter 로드 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")
+    logger.info(
+        f"[TTS] converter 로드 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
+    )
     return conv
 
 
@@ -286,11 +295,15 @@ def _extract_target_se_sync(voice_id: str) -> object:
         try:
             target_se = torch.load(str(se_cache), map_location=DEVICE)
             _state.target_se_cache[voice_id] = target_se
-            logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
+            logger.info(
+                f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}"
+            )
             return target_se
         except Exception as e:
             # 손상/불완전 저장된 캐시 → 삭제 후 아래에서 재추출(서비스 전체 실패 방지).
-            logger.warning(f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}")
+            logger.warning(
+                f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}"
+            )
             try:
                 se_cache.unlink()
             except OSError:
@@ -308,7 +321,9 @@ def _extract_target_se_sync(voice_id: str) -> object:
     )
     torch.save(target_se, str(se_cache))
     _state.target_se_cache[voice_id] = target_se
-    logger.info(f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")
+    logger.info(
+        f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
+    )
     return target_se
 
 
@@ -419,9 +434,15 @@ async def lifespan(app: FastAPI):
         logger.info(f"[TTS] pre-extract 완료 — refs={sorted(extracted)}")
         try:
             t0 = time.perf_counter()
-            await asyncio.to_thread(_synthesize_sync, "준비 완료.", DEFAULT_VOICE_ID, "KR")
-            await asyncio.to_thread(_synthesize_sync, "Warm up.", DEFAULT_VOICE_ID, "EN")
-            logger.info(f"[TTS] pre-warm 완료 ({(time.perf_counter()-t0)*1000:.0f}ms)")
+            await asyncio.to_thread(
+                _synthesize_sync, "준비 완료.", DEFAULT_VOICE_ID, "KR"
+            )
+            await asyncio.to_thread(
+                _synthesize_sync, "Warm up.", DEFAULT_VOICE_ID, "EN"
+            )
+            logger.info(
+                f"[TTS] pre-warm 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)"
+            )
         except Exception as e:
             logger.warning(f"[TTS] pre-warm 실패 (계속 진행): {e}")
     except Exception as e:
@@ -448,9 +469,13 @@ app.add_middleware(
 async def synthesize(req: SynthesizeRequest) -> SynthesizeResponse:
     # 발원 trace_id(msg_id) 가 있으면 request_id 로 상속 — 이후 모든 WS 로그가
     # 같은 id 를 찍어 LLM↔TTS↔UE5 가 [trace=...] 한 줄로 꿰진다. 없으면 신규 생성.
-    request_id = f"tts_{req.trace_id}" if req.trace_id else f"tts_{uuid.uuid4().hex[:12]}"
+    request_id = (
+        f"tts_{req.trace_id}" if req.trace_id else f"tts_{uuid.uuid4().hex[:12]}"
+    )
     _pending[request_id] = req
-    logger.info(f"[TTS][trace={req.trace_id or request_id}] 합성 등록 npc={req.voice_id} emo={req.emotion} text_len={len(req.text)}")
+    logger.info(
+        f"[TTS][trace={req.trace_id or request_id}] 합성 등록 npc={req.voice_id} emo={req.emotion} text_len={len(req.text)}"
+    )
     return SynthesizeResponse(
         request_id=request_id,
         ws_url=f"ws://127.0.0.1:8001/ws/tts/stream/{request_id}",
@@ -466,22 +491,28 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
     await websocket.accept()
     req = _pending.pop(request_id, None)
     if req is None:
-        await websocket.send_json({
-            "type": "error", "request_id": request_id,
-            "code": "NOT_FOUND",
-            "message": "request_id 미존재/소비됨",
-            "retryable": False,
-        })
+        await websocket.send_json(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "code": "NOT_FOUND",
+                "message": "request_id 미존재/소비됨",
+                "retryable": False,
+            }
+        )
         await websocket.close()
         return
 
     if _state.converter is None:
-        await websocket.send_json({
-            "type": "error", "request_id": request_id,
-            "code": "MODEL_NOT_LOADED",
-            "message": "OpenVoice converter 미로드",
-            "retryable": True,
-        })
+        await websocket.send_json(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "code": "MODEL_NOT_LOADED",
+                "message": "OpenVoice converter 미로드",
+                "retryable": True,
+            }
+        )
         await websocket.close()
         return
 
@@ -497,7 +528,9 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
 
     # 합성(producer) ↔ 송신(consumer) 분리: 문장 N+1 을 문장 N 재생 중 미리 합성.
     # 첫 음(TTFA)은 첫 문장 합성만 기다림 → 전체 발화 길이와 무관(긴 대사도 <600ms).
-    pcm_queue: asyncio.Queue = asyncio.Queue(maxsize=2)  # 백프레셔 — 합성 과도 선행 방지
+    pcm_queue: asyncio.Queue = asyncio.Queue(
+        maxsize=2
+    )  # 백프레셔 — 합성 과도 선행 방지
     producer: Optional[asyncio.Task] = None
     first_synth_ms = 0.0
 
@@ -505,9 +538,10 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
         nonlocal first_synth_ms
         for idx, sent in enumerate(sentences):
             ts = time.perf_counter()
-            native, native_sr = await asyncio.to_thread(
-                _synthesize_sync, sent, voice_id, language, meta.speed
-            )
+            async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
+                native, native_sr = await asyncio.to_thread(
+                    _synthesize_sync, sent, voice_id, language, meta.speed
+                )
             dt = (time.perf_counter() - ts) * 1000.0
             if idx == 0:
                 first_synth_ms = dt
@@ -533,29 +567,33 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
             while len(buf) - off >= bytes_per_chunk:
                 chunk = buf[off : off + bytes_per_chunk]
                 off += bytes_per_chunk
-                await websocket.send_json({
-                    "type": "audio_chunk",
-                    "request_id": request_id,
-                    "sequence": sequence,
-                    "sample_rate": target_sr,
-                    "channels": CHANNELS,
-                    "audio_base64": base64.b64encode(chunk).decode("ascii"),
-                    "is_last": False,
-                })
+                await websocket.send_json(
+                    {
+                        "type": "audio_chunk",
+                        "request_id": request_id,
+                        "sequence": sequence,
+                        "sample_rate": target_sr,
+                        "channels": CHANNELS,
+                        "audio_base64": base64.b64encode(chunk).decode("ascii"),
+                        "is_last": False,
+                    }
+                )
                 sequence += 1
                 await asyncio.sleep(CHUNK_MS / 1000.0)
             leftover = buf[off:]
 
         if leftover:  # 마지막 잔여 PCM
-            await websocket.send_json({
-                "type": "audio_chunk",
-                "request_id": request_id,
-                "sequence": sequence,
-                "sample_rate": target_sr,
-                "channels": CHANNELS,
-                "audio_base64": base64.b64encode(leftover).decode("ascii"),
-                "is_last": True,
-            })
+            await websocket.send_json(
+                {
+                    "type": "audio_chunk",
+                    "request_id": request_id,
+                    "sequence": sequence,
+                    "sample_rate": target_sr,
+                    "channels": CHANNELS,
+                    "audio_base64": base64.b64encode(leftover).decode("ascii"),
+                    "is_last": True,
+                }
+            )
             sequence += 1
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -563,20 +601,27 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
             f"[TTS] stream 완료 sentences={len(sentences)} chunks={sequence} "
             f"first_synth={first_synth_ms:.0f}ms total={elapsed_ms}ms text_len={len(req.text)}"
         )
-        await websocket.send_json({
-            "type": "completed",
-            "request_id": request_id,
-            "total_duration_ms": elapsed_ms,
-        })
+        await websocket.send_json(
+            {
+                "type": "completed",
+                "request_id": request_id,
+                "total_duration_ms": elapsed_ms,
+            }
+        )
     except WebSocketDisconnect:
         return
     except Exception as e:
         logger.exception(f"[TTS] 합성 실패: {e}")
         try:
-            await websocket.send_json({
-                "type": "error", "request_id": request_id,
-                "code": "MODEL_ERROR", "message": str(e), "retryable": False,
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "request_id": request_id,
+                    "code": "MODEL_ERROR",
+                    "message": str(e),
+                    "retryable": False,
+                }
+            )
         except Exception:
             pass
     finally:
@@ -599,8 +644,15 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
 _DEBUG_HTML_PATH = BASE_DIR / "debug.html"
 _VOICE_MAP_PATH = BASE_DIR / "voice_map.yaml"
 KNOWN_EMOTION_LIST = [
-    "Neutral", "Happy", "Sad", "Angry", "Fear",
-    "Surprised", "Disgusted", "Tired", "Pain",
+    "Neutral",
+    "Happy",
+    "Sad",
+    "Angry",
+    "Fear",
+    "Surprised",
+    "Disgusted",
+    "Tired",
+    "Pain",
 ]
 
 
@@ -634,7 +686,7 @@ async def debug_page() -> HTMLResponse:
 @app.get("/api/voice_map")
 async def api_get_voice_map() -> dict:
     import yaml
-    from .voice_resolver import _load_map
+
     try:
         data = yaml.safe_load(_VOICE_MAP_PATH.read_text(encoding="utf-8")) or {}
     except FileNotFoundError:
@@ -652,6 +704,7 @@ async def api_get_voice_map() -> dict:
 async def api_set_voice_map(body: VoiceMapBody) -> dict:
     import yaml
     from .voice_resolver import _load_map
+
     try:
         yaml_text = yaml.safe_dump(body.map, allow_unicode=True, sort_keys=False)
         _VOICE_MAP_PATH.write_text(yaml_text, encoding="utf-8")
@@ -691,6 +744,7 @@ async def api_preview(body: PreviewBody) -> Response:
 @app.post("/api/reload_voices")
 async def api_reload_voices() -> dict:
     from .voice_resolver import _load_map
+
     _load_map.cache_clear()
     _state.target_se_cache.clear()
     extracted: list[str] = []
@@ -702,7 +756,9 @@ async def api_reload_voices() -> dict:
             await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
             extracted.append(vmeta.ref)
         except Exception as e:
-            failed.append({"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)})
+            failed.append(
+                {"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)}
+            )
     return {"extracted": extracted, "failed": failed}
 
 
