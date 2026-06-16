@@ -11,15 +11,15 @@
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
-// WHY: STTask_PrepareNextAction이 Tick에서 폴링하기 위한 상태 머신.
+// WHY: 진행 중 여부로 신규 요청을 게이트하기 위한 상태 머신 (폴링 아님 — 결과는 ActionQueue 주입).
+// 터미널 상태(Failed/ResultReady)를 두지 않는다: != Idle 재시작 가드에 걸려 영구 고착되므로
+// 실패·완료 모두 즉시 Idle 복귀, 재시도 억제는 LastTacticalQueryTime 쿨다운이 담당.
 UENUM()
 enum class ETacticalQueryState : uint8
 {
     Idle,          // 쿼리 없음 (기본)
     WaitingEQS,    // EQS AllMatching 쿼리 실행 중
     WaitingLLM,    // EQS 완료, LLM 응답 대기 중
-    ResultReady,   // LLM 응답 수신, 결과 준비 완료
-    Failed,        // 실패 (EQS 없음 / LLM 오류 등)
 };
 
 // --- 전술적 이동 상태 Enum ---
@@ -98,7 +98,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* TacticalPositionsQuery;
 
-    // --- 전술 위치 결정 파이프라인 상태 (STTask가 폴링) ---
+    // --- 전술 위치 결정 파이프라인 상태 (진행 중 게이트용 — 결과는 ActionQueue 주입) ---
 
     ETacticalQueryState TacticalQueryState = ETacticalQueryState::Idle;
 
@@ -143,6 +143,10 @@ public:
     float MaxActionDuration = 15.f;
 
     FTimerHandle ActionWatchdogTimer;
+
+    /** Flee 패닉(얼어붙기) 지연 타이머 — 액션 중단 시 ClearActiveActionState 가 취소.
+     *  로컬 핸들로 두면 중단 후에도 발화해 stale Flee 가 실행됨. */
+    FTimerHandle FleePanicTimer;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
@@ -309,7 +313,7 @@ public:
 
     /** Perception 이벤트에서 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
      *  @param EnemyLocations  현재 인지된 적 위치 목록 (스코어링에 사용)
-     *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
+     *  완료 시 NotifyLocationDecisionReady가 Move 액션을 ActionQueue에 주입 후 Idle 복귀. */
     void StartTacticalQuery(const TArray<FVector>& EnemyLocations);
 
     /** Perception 이벤트에서 호출 — 쿨다운 & 상태 체크 후 전술 쿼리 시작.

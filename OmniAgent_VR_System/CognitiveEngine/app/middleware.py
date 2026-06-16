@@ -1,20 +1,21 @@
 """
 
- File: middleware.py                                                         
- Role: 메시지 수신 후 처리 전 실행되는 보안 및 무결성 검증 계층              
+File: middleware.py
+Role: 메시지 수신 후 처리 전 실행되는 보안 및 무결성 검증 계층
 
- WHY (설계 의도):                                                             
-   main.py의 WebSocket 핸들러가 직접 모든 검증 로직을 담으면                
-   코드가 비대해지고 테스트하기 어려워진다.                                  
-   이 파일은 "게이트키퍼" 역할로, 메시지가 파이프라인에 진입하기 전         
-   보안(인증), 무결성(타임스탬프), 이력(실패 기록) 검증을 전담한다.         
-                                                                              
- 책임:                                                                       
-   1. validate_auth_token   : Bearer 토큰이 환경변수와 일치하는지 확인      
-   2. is_stale_packet        : 오래된 패킷(Race Condition 원인)을 차단       
-   3. build_failed_event     : action_failed 이력 기록용 딕셔너리 생성      
+WHY (설계 의도):
+  main.py의 WebSocket 핸들러가 직접 모든 검증 로직을 담으면
+  코드가 비대해지고 테스트하기 어려워진다.
+  이 파일은 "게이트키퍼" 역할로, 메시지가 파이프라인에 진입하기 전
+  보안(인증), 무결성(타임스탬프), 이력(실패 기록) 검증을 전담한다.
+
+책임:
+  1. validate_auth_token   : Bearer 토큰이 환경변수와 일치하는지 확인
+  2. is_stale_packet        : 오래된 패킷(Race Condition 원인)을 차단
+  3. build_failed_event     : action_failed 이력 기록용 딕셔너리 생성
 
 """
+
 import os
 import time
 import logging
@@ -60,6 +61,7 @@ def validate_auth_token(token: str) -> bool:
         return False
 
     import hmac
+
     is_valid = hmac.compare_digest(token, _EXPECTED_AUTH_TOKEN)
     if not is_valid:
         logger.warning(f"[Auth] 잘못된 auth_token: '{token[:8]}...' (8자리 이후 생략)")
@@ -84,6 +86,7 @@ def is_stale_packet(packet_timestamp: float, threshold_seconds: float = 2.0) -> 
         False = 유효한 패킷 (처리 가능)
     """
     from datetime import datetime, timezone
+
     server_now = datetime.now(timezone.utc).timestamp()
     age_seconds = server_now - packet_timestamp
 
@@ -93,8 +96,7 @@ def is_stale_packet(packet_timestamp: float, threshold_seconds: float = 2.0) -> 
 
     if age_seconds > threshold_seconds:
         logger.warning(
-            f"[Middleware] Stale 패킷 감지: {age_seconds:.2f}초 지연 "
-            f"(임계값: {threshold_seconds}초). 드랍합니다."
+            f"[Middleware] Stale 패킷 감지: {age_seconds:.2f}초 지연 (임계값: {threshold_seconds}초). 드랍합니다."
         )
         return True
     return False
@@ -127,6 +129,7 @@ def build_failed_event(envelope: MessageEnvelope) -> Dict[str, Any]:
         logger.error(f"[Middleware] action_failed payload 파싱 실패: {parse_error}")
         # 파싱 실패 시에도 기본 정보는 기록하여 이력을 유지한다
         from datetime import datetime, timezone
+
         return {
             "ref_msg_id": envelope.ref_msg_id,
             "failed_action_type": "Unknown",
@@ -136,6 +139,7 @@ def build_failed_event(envelope: MessageEnvelope) -> Dict[str, Any]:
         }
 
     from datetime import datetime, timezone
+
     return {
         "ref_msg_id": envelope.ref_msg_id,
         "failed_action_type": failed_payload.failed_action_type,

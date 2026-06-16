@@ -59,7 +59,7 @@ namespace
     void ExtractActionParameters(TSharedPtr<FJsonObject> ActionObj, TMap<FString, FString>& OutParameters)
     {
         const TSharedPtr<FJsonObject>* ParamsObj;
-        if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj))
+        if (ActionObj->TryGetObjectField(NPCActionKeys::Proto_Parameters, ParamsObj))
         {
             for (const auto& ParamPair : (*ParamsObj)->Values)
             {
@@ -84,9 +84,9 @@ namespace
     {
         if (!ActionObj.IsValid()) return false;
 
-        TryParseEnumFromJson(ActionObj, TEXT("ActionType"), OutAction.ActionType);
+        TryParseEnumFromJson(ActionObj, NPCActionKeys::Proto_ActionType, OutAction.ActionType);
 
-        TryParseEnumFromJson(ActionObj, TEXT("FacialState"), OutAction.FacialState);
+        TryParseEnumFromJson(ActionObj, NPCActionKeys::Proto_FacialState, OutAction.FacialState);
 
         ExtractActionParameters(ActionObj, OutAction.Parameters);
         return true;
@@ -98,10 +98,10 @@ namespace
 
         OutBatch.AgentID = AgentID;
         
-        TryParseBehaviorMode(BatchObj, TEXT("Mode"), OutBatch.Mode);
+        TryParseBehaviorMode(BatchObj, NPCActionKeys::Proto_Mode, OutBatch.Mode);
 
         const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-        if (BatchObj->TryGetArrayField(TEXT("Actions"), ActionsArray))
+        if (BatchObj->TryGetArrayField(NPCActionKeys::Proto_Actions, ActionsArray))
         {
             for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
             {
@@ -118,14 +118,15 @@ namespace
 
 bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest)
 {
-    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches"))) return false;
+    if (!Root.IsValid() || !Root->HasField(NPCActionKeys::Proto_ActionBatches)) return false;
 
-    TryParseBehaviorMode(Root, TEXT("Mode"), OutRequest.Mode);
+    TryParseBehaviorMode(Root, NPCActionKeys::Proto_Mode, OutRequest.Mode);
 
-    TSharedPtr<FJsonObject> BatchesObj = Root->GetObjectField(TEXT("ActionBatches"));
-    if (BatchesObj.IsValid())
+    // TryGet 패턴 — ActionBatches 가 object 가 아닌 비정상 페이로드에서도 무음 통과(에러 로그 노이즈 방지)
+    const TSharedPtr<FJsonObject>* BatchesObjPtr = nullptr;
+    if (Root->TryGetObjectField(NPCActionKeys::Proto_ActionBatches, BatchesObjPtr) && BatchesObjPtr)
     {
-        for (const auto& Pair : BatchesObj->Values)
+        for (const auto& Pair : (*BatchesObjPtr)->Values)
         {
             FActionBatch NewBatch;
             if (TryExtractActionBatch(Pair.Key, Pair.Value->AsObject(), NewBatch))

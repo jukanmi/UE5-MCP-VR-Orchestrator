@@ -14,6 +14,7 @@ FIELDS:
   - audio_stream   : { mode:"websocket", url, sample_rate, channels }
   - animation_metadata : { emotion, gesture?, look_at_player? }
 """
+
 from __future__ import annotations
 
 from typing import Literal, Optional

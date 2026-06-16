@@ -29,6 +29,7 @@ import yaml
 import os
 import re
 import asyncio
+from functools import lru_cache
 from typing import Dict
 from ...utils.llm_factory import get_llm, call_ollama_direct
 from ...utils.rag_utils import retrieve_context
@@ -36,11 +37,10 @@ from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
 from ..state import AgentState
 from ...utils import db_manager
+from ...schemas.actions import DialogueResponse
 
 
-PERSONAS_BASE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas"
-)
+PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
 
 _memory_write_tasks: set = set()
 
@@ -118,6 +118,30 @@ Current sentiment toward player: {sentiment}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 
+# 구조화 출력(with_structured_output) 전용 프롬프트. 텍스트 태그 포맷 대신 JSON 필드
+# (speech/actions)를 채우도록 지시 — 텍스트포맷용 DIALOGUE_SYSTEM_PROMPT 를 그대로 쓰면
+# e4b 가 스키마와 충돌해 speech/actions 를 비움(실측). 폴백(call_ollama_direct 자유텍스트)
+# 경로는 여전히 DIALOGUE_SYSTEM_PROMPT 사용.
+DIALOGUE_STRUCTURED_PROMPT = """You are {name}, a {role}, an NPC in a VR game.
+Personality traits: {traits}
+
+Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions.
+- speech: your spoken line, in character, 1-3 sentences (NEVER empty).
+- tone: emotional tone of the speech (e.g. warmly, furiously).
+- actions: list of game actions you perform RIGHT NOW. Each has a "type" plus optional
+  target/item/style. When threatened, ACT (Attack/Block/Dodge/Flee). When asked to follow,
+  Follow. When giving something, GiveItem. Empty list ONLY if you are purely talking.
+
+Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
+ Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
+ PickUp Drop Craft Repair Investigate Track Scout Sit Sleep Read Pray Dance Sing.
+Use ONLY a type from this list. target is one of: Player, Self, Enemy, or an NPC name.
+
+Recent memory: {memory}
+Current sentiment toward player: {sentiment}
+Relevant context: {rag_context}
+Conversation history: {chat_history}"""
+
 REFINE_SYSTEM_PROMPT = """You are a quality editor and planner for NPC dialogue in a VR game.
 Your jobs: (1) improve language style/fluency, (2) emit a short forward plan per NPC.
 
@@ -142,6 +166,11 @@ Input format:
 Output format: same section structure, each section ending with one [Plan: ...] line."""
 
 
+# persona 는 런타임 불변(_create_persona 만 최초 1회 기록, 이후 미수정) → 캐시.
+# e4b 5-step 루프에서 NPC 당 매 스텝 YAML 디스크 로드하던 것을 1회로 축소.
+# 호출부는 persona 를 읽기만(.get) 하므로 공유 dict 안전. 외부 파일 수정 시
+# 프로세스 재시작 필요(런타임 핫리로드 없음 — 현 설계상 무관).
+@lru_cache(maxsize=64)
 def load_persona(agent_id: str):
     agent_lower = agent_id.lower()
     search_paths = [
@@ -178,6 +207,52 @@ def _create_persona(agent_id: str) -> dict:
     return persona
 
 
+# e4b/llama.cpp byte-fallback 토큰(<0xEC><0xB3><0x87> 같은)이 출력에 새는 경우 — 연속
+# 바이트를 모아 UTF-8 로 재조합(예: "쳇"), 디코드 불가한 잔여만 제거.
+_BYTE_TOKEN_RUN_RE = re.compile(r"(?:<0[xX][0-9A-Fa-f]{2}>)+")
+
+
+def _decode_byte_tokens(text: str) -> str:
+    if "<0x" not in text and "<0X" not in text:
+        return text
+
+    def _repl(m: "re.Match") -> str:
+        hexes = re.findall(r"<0[xX]([0-9A-Fa-f]{2})>", m.group(0))
+        try:
+            return bytes(int(h, 16) for h in hexes).decode("utf-8")
+        except UnicodeDecodeError:
+            return ""  # 불완전/깨진 바이트열 → 제거
+
+    return _BYTE_TOKEN_RUN_RE.sub(_repl, text)
+
+
+def _serialize_dialogue(obj: DialogueResponse) -> str:
+    """구조화 DialogueResponse → 기존 자유텍스트 포맷으로 직렬화.
+    interface_output 정규식이 그대로 파싱하도록 [Mode:][Facial:]"speech"[Action:]
+    형태 재생. 액션 태그 키(target/item/loc/style)는 _PARAM_KEY_MAP 기준."""
+    lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
+
+    speech = _decode_byte_tokens((obj.speech or "").strip())
+    if speech:
+        tone = _decode_byte_tokens((obj.tone or "").strip())
+        lines.append(f'"{speech}" ({tone})' if tone else f'"{speech}"')
+
+    for act in obj.actions:
+        parts = [act.type]
+        for key, val in (
+            ("target", act.target),
+            ("item", act.item),
+            ("loc", act.loc),
+            ("style", act.style),
+        ):
+            v = (val or "").strip()
+            if v:
+                parts.append(f"{key}={v}")
+        lines.append(f"[Action: {' '.join(parts)}]")
+
+    return "\n".join(lines)
+
+
 async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     """
     Stage 1: 단일 NPC에 대한 e4b 호출.
@@ -196,9 +271,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     persona_traits = ", ".join(persona.get("traits", []))
 
     memory = persona.get("memory_summary", {})
-    memory_summary = (
-        "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
-    )
+    memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
     vr_context = state.get("vr_context")
     player_id = (
@@ -223,14 +296,10 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         elif isinstance(vr_context, dict):
             clean_query = vr_context.get("voice_transcript", "")
 
-    rag_context = (
-        await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3)
-        if clean_query
-        else ""
-    )
+    rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
     chat_history = get_conversation_context(npc_id, k=5)
 
-    system_content = DIALOGUE_SYSTEM_PROMPT.format(
+    fmt_kwargs = dict(
         name=persona_name,
         role=persona_role,
         traits=persona_traits,
@@ -239,29 +308,32 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         rag_context=rag_context if rag_context else "None",
         chat_history=chat_history if chat_history else "No previous conversation",
     )
+    # 구조화 호출용(JSON) 프롬프트만 해피패스에서 포맷. 자유텍스트 폴백용
+    # system_content 는 except 경로에서만 필요 → lazy(아래 except 에서 포맷).
+    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**fmt_kwargs)
 
     print(f"[Dialogue] Stage1 e4b: {persona_name} | '{natural_context[:50]}...'")
 
     raw_response = None
     try:
         llm = get_llm(model_name="gemma4_slm", temperature=0.7, num_predict=300)
-        prompt = ChatPromptTemplate.from_messages(
-            [("system", "{system_msg}"), ("human", "Context: {context}")]
+        # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
+        # 획득한 DialogueResponse 를 기존 텍스트 포맷으로 직렬화 → 다운스트림 무변경.
+        structured_llm = llm.with_structured_output(DialogueResponse)
+        prompt = ChatPromptTemplate.from_messages([("system", "{system_msg}"), ("human", "Context: {context}")])
+        resp_obj = await (prompt | structured_llm).ainvoke(
+            {"system_msg": structured_content, "context": natural_context}
         )
-        response = await (prompt | llm).ainvoke(
-            {"system_msg": system_content, "context": natural_context}
-        )
-        raw_response = (
-            response.content if hasattr(response, "content") else str(response)
-        )
-        raw_response = raw_response.strip()
+        raw_response = _serialize_dialogue(resp_obj).strip()
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
         print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
+        # 폴백 경로에서만 자유텍스트 프롬프트 포맷 (해피패스 낭비 제거).
+        system_content = DIALOGUE_SYSTEM_PROMPT.format(**fmt_kwargs)
         cli_prompt = f"{system_content}\n\nContext: {natural_context}\n\nRespond in character now:"
         raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt, False)
         if raw_response:
-            raw_response = raw_response.strip()
+            raw_response = _decode_byte_tokens(raw_response.strip())
 
     if not raw_response:
         print(f"[Dialogue] Stage1 실패 ({npc_id}), 기본 응답 사용")
@@ -278,9 +350,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
     memory_input = clean_query if clean_query else natural_context
 
-    task = asyncio.create_task(
-        asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory)
-    )
+    task = asyncio.create_task(asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory))
     _memory_write_tasks.add(task)
     task.add_done_callback(_on_memory_task_done)
 
@@ -306,32 +376,22 @@ def _parse_plan_line(section_text: str) -> tuple[str, dict | None]:
     return cleaned, {"goal": goal, "steps": steps}
 
 
-async def _refine_responses(
-    raw_responses: Dict[str, str], player_id: str
-) -> tuple[Dict[str, str], Dict[str, dict]]:
+async def _refine_responses(raw_responses: Dict[str, str], player_id: str) -> tuple[Dict[str, str], Dict[str, dict]]:
     """
     Stage 2: 12B 모델로 전체 NPC 응답 스타일 정제 + plan(goal/steps) 산출.
     사실 추가 금지 — 스타일/유창성 향상만. 재계획(requires_replan=True) 경로에서만 호출.
     단일 12B 호출로 정제와 plan 추출을 동시 수행 (토큰/지연 절약).
     반환: (refined npc_id→대사, npc_plans npc_id→{goal, steps, relation_snapshot}).
     """
-    sections = "\n\n".join(
-        f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items()
-    )
+    sections = "\n\n".join(f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items())
 
     print(f"[Dialogue] Stage2 12B 정제+plan 시작 ({len(raw_responses)}개 NPC)")
     refined_text = None
     try:
-        llm = get_llm(
-            model_name="gemma4", temperature=0.3, num_predict=500 * len(raw_responses)
-        )
-        prompt = ChatPromptTemplate.from_messages(
-            [("system", REFINE_SYSTEM_PROMPT), ("human", "{sections}")]
-        )
+        llm = get_llm(model_name="gemma4", temperature=0.3, num_predict=500 * len(raw_responses))
+        prompt = ChatPromptTemplate.from_messages([("system", REFINE_SYSTEM_PROMPT), ("human", "{sections}")])
         response = await (prompt | llm).ainvoke({"sections": sections})
-        refined_text = (
-            response.content if hasattr(response, "content") else str(response)
-        )
+        refined_text = response.content if hasattr(response, "content") else str(response)
         refined_text = refined_text.strip()
         print(f"[Dialogue] Stage2 정제+plan 완료 ({len(refined_text)} chars)")
     except Exception as e:
@@ -383,9 +443,7 @@ async def dialogue_node(state: AgentState):
     print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
     # Stage 1: 병렬 e4b 호출
-    results = await asyncio.gather(
-        *[_dialogue_single(state, npc_id) for npc_id in npcs]
-    )
+    results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
     raw_responses: Dict[str, str] = dict(results)
 
     # Stage 2: 12B 정제+plan — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.

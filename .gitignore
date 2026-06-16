@@ -117,6 +117,7 @@ CLAUDE.md
 .claude/
 .claude/skills/
 .code-review-graph/
+.gstack/
 
 # ==============================================================================
 # OCULUS / META TOOLS (37MB ovr-platform-util.exe 등)

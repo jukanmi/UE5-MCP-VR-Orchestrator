@@ -109,7 +109,21 @@ def supervisor_node(state: AgentState) -> dict:
 
         # 거부 판정: action_batches 있으면 모든 배치가 비어야 거부, 없으면 단일 배치 기준
         if action_batches:
-            is_rejected = all(not b.Actions for b in action_batches.values())
+            empty_ids = [k for k, b in action_batches.items() if not b.Actions]
+            is_rejected = len(empty_ids) == len(action_batches)
+
+            # 부분 실패 — 일부 NPC 만 배치 전멸: 해당 NPC 에만 폴백 배치 주입 후 정상 종료.
+            # 전체 재시도(Dialogue 왕복)는 정상 NPC 응답까지 지연시키므로 전체 전멸 시에만.
+            if not is_rejected and empty_ids:
+                print(f"[Supervisor] ⚠️  부분 실패 — 폴백 배치 주입: {empty_ids}")
+                for npc in empty_ids:
+                    action_batches[npc] = _create_fallback_batch(npc)
+                first = next(iter(action_batches.values()), None)
+                return {
+                    "action_batches": action_batches,
+                    "action_batch": first,
+                    "next": "End",
+                }
         else:
             is_rejected = not action_batch or not action_batch.Actions
 
@@ -118,9 +132,7 @@ def supervisor_node(state: AgentState) -> dict:
             if retry_count >= 1:
                 # 재시도 소진 — 각 NPC에 폴백 배치 생성
                 npcs = state.get("target_npcs") or [state.get("target_npc", "Elara")]
-                print(
-                    f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료"
-                )
+                print(f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료")
                 fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
                 return {
                     "action_batches": fallback_batches,
@@ -128,16 +140,13 @@ def supervisor_node(state: AgentState) -> dict:
                     "next": "End",
                 }
 
-            print(
-                f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)"
-            )
+            print(f"[Supervisor] Rules가 거부함, Dialogue 재시도... (retry={retry_count + 1}/1)")
             return {
                 "next": "Dialogue",
                 "current_speaker": "Supervisor_Fallback",
                 "rules_retry_count": retry_count + 1,
                 "natural_context": (
-                    "System: Your previous action was rejected by game rules. "
-                    "Respond with speech only."
+                    "System: Your previous action was rejected by game rules. Respond with speech only."
                 ),
             }
 

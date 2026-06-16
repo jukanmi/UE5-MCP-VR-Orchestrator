@@ -8,6 +8,7 @@
 ║   2. 토큰 예산 초과 시 LLM 요약으로 오래된 메모리 압축                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+
 import os
 import json
 import threading
@@ -20,11 +21,10 @@ from .llm_factory import get_llm
 # ─────────────────────────────────────────────────────────────────────────────
 # 토큰 / 메모리 예산 설정
 # ─────────────────────────────────────────────────────────────────────────────
-MAX_TOKENS_PER_NPC = 1000       # NPC당 최대 토큰 예산 (RAG 메모리 500~1000)
-SUMMARIZE_THRESHOLD = 0.8       # 80% 도달 시 요약 트리거
-ENTRIES_TO_SUMMARIZE = 5        # 1회 요약 대상 최오래된 항목 수
-CHARS_PER_TOKEN = 4             # 토큰 추정 단위 (conservative)
-
+MAX_TOKENS_PER_NPC = 1000  # NPC당 최대 토큰 예산 (RAG 메모리 500~1000)
+SUMMARIZE_THRESHOLD = 0.8  # 80% 도달 시 요약 트리거
+ENTRIES_TO_SUMMARIZE = 5  # 1회 요약 대상 최오래된 항목 수
+CHARS_PER_TOKEN = 4  # 토큰 추정 단위 (conservative)
 
 
 # 메모리 파일 저장 경로
@@ -34,8 +34,9 @@ MEMORY_BASE_PATH = "app/agents/knowledge"
 @dataclass
 class MemoryEntry:
     """NPC와의 단일 대화 교환 기록."""
+
     timestamp: str
-    speaker: str        # "Player" 또는 NPC 이름
+    speaker: str  # "Player" 또는 NPC 이름
     content: str
     is_summary: bool = False
 
@@ -169,12 +170,15 @@ class ConversationMemory:
             for entry in existing_summaries + to_compress:
                 self.entries.remove(entry)
 
-            self.entries.insert(0, MemoryEntry(
-                timestamp=datetime.now().isoformat(),
-                speaker="[Summary]",
-                content=summary_text.strip(),
-                is_summary=True,
-            ))
+            self.entries.insert(
+                0,
+                MemoryEntry(
+                    timestamp=datetime.now().isoformat(),
+                    speaker="[Summary]",
+                    content=summary_text.strip(),
+                    is_summary=True,
+                ),
+            )
             print(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
         except Exception as e:
             print(f"[Memory] 요약 실패: {e}")

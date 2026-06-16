@@ -28,6 +28,9 @@ struct FInventorySlot
 
 // 장비 착용 부위 (Equipment Slots)는 이제 ItemDataAsset.h에 정의되어 있습니다.
 
+/** 인벤토리 내용 변경 알림 — 슬롯/장비/내구도 변동 시 브로드캐스트. HUD 등 UI가 바인딩. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
+
 /**
  * 범용 인벤토리 컴포넌트 (Generic Inventory Component).
  * - 슬롯(Slot) 기반의 인벤토리 시스템.
@@ -68,6 +71,10 @@ public:
     // 현재 총 무게 (kg)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|State")
     float CurrentWeight = 0.0f;
+
+    /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip/Repair 성공 시 브로드캐스트. */
+    UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
+    FOnInventoryChanged OnInventoryChanged;
 
 
     // --- Public API ---

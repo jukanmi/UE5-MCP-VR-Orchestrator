@@ -332,8 +332,12 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         if (UMCPJsonUtils::ParseNpcAudioResponseFromObject(
                 Root, NpcId, WsUrl, SampleRate, Channels, DialogueText, Emotion))
         {
-            if (ASmartNPC* NPC = NPCMap->GetValidNPC(NpcId))
+            if (ASmartNPC* NPC = NPCMap ? NPCMap->GetValidNPC(NpcId) : nullptr)
             {
+                // 머리 위 자막 — ws_url 있으면 음성 싱크(Started→표시/Completed→숨김),
+                // 없으면(TTS 실패) 즉시 표시 + 타이머 폴백.
+                NPC->ShowSubtitle(DialogueText, /*bWaitForAudio=*/!WsUrl.IsEmpty());
+
                 if (UNPCAudioStreamComponent* AudioComp = NPC->FindComponentByClass<UNPCAudioStreamComponent>())
                 {
                     if (!WsUrl.IsEmpty())
@@ -480,7 +484,17 @@ void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& Dialo
 {
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);
 
-    // ChatWidget 부재 시 응답 가시화 — 화면 자막(검증/디버그용)
+    // 머리 위 말풍선 — 액션 dialogue 경로(폴백: 즉시 표시 + 타이머).
+    // 같은 발화의 TTS(npc_audio_response)가 뒤따르면 ShowSubtitle 가 음성 싱크로 전환.
+    if (NPCMap)
+    {
+        if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
+        {
+            NPC->ShowSubtitle(DialogueText, /*bWaitForAudio=*/false);
+        }
+    }
+
+    // 응답 가시화 — 화면 자막(위젯과 병행, 검증/디버그용)
 #if !UE_BUILD_SHIPPING
     if (GEngine)
     {

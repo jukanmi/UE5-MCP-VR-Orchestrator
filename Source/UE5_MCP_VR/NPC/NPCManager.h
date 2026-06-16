@@ -18,7 +18,16 @@ class UE5_MCP_VR_API UNPCMap : public UObject
 
 public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void RegisterNPC(const FString& InAgentID, ASmartNPC* InNPC){ ActiveNPCs.Add(InAgentID, InNPC); };
+    void RegisterNPC(const FString& InAgentID, ASmartNPC* InNPC)
+    {
+        // nullptr/빈 ID 등록 차단 — 무효 엔트리는 FindRef 기반 조회 불변식을 깨뜨림
+        if (!InNPC || InAgentID.IsEmpty())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCMap] RegisterNPC 무시 — null NPC 또는 빈 AgentID (%s)"), *InAgentID);
+            return;
+        }
+        ActiveNPCs.Add(InAgentID, InNPC);
+    };
 
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void UnregisterNPC(const FString& InAgentID){ ActiveNPCs.Remove(InAgentID); };

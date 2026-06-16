@@ -198,3 +198,7 @@ class MessageEnvelope(BaseModel):
     def parse_emergency_report_payload(self) -> EmergencyReportPayload:
         """payload를 EmergencyReportPayload로 파싱. type이 emergency_report일 때만 호출할 것."""
         return EmergencyReportPayload(**self.payload)
+
+    def parse_location_decision_payload(self) -> LocationDecisionPayload:
+        """payload를 LocationDecisionPayload로 파싱. type이 location_decision일 때만 호출할 것."""
+        return LocationDecisionPayload(**self.payload)

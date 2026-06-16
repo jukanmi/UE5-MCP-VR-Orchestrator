@@ -18,6 +18,10 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
+#include "Components/WidgetComponent.h"
+#include "NPCAudioStreamComponent.h"
+#include "../UI/NPCDialogueWidget.h"
+#include "Camera/PlayerCameraManager.h"
 
 ASmartNPC::ASmartNPC()
 {
@@ -40,6 +44,15 @@ ASmartNPC::ASmartNPC()
         StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
         StimuliSource->RegisterWithPerceptionSystem();
     }
+
+    // 머리 위 대사 말풍선 (WorldSpace). WBP 클래스·정밀 위치는 BP 에서.
+    DialogueWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("DialogueWidget"));
+    DialogueWidgetComp->SetupAttachment(GetMesh());
+    DialogueWidgetComp->SetWidgetSpace(EWidgetSpace::World);
+    DialogueWidgetComp->SetDrawAtDesiredSize(true);
+    DialogueWidgetComp->SetRelativeLocation(FVector(0.f, 0.f, 110.f)); // 머리 위 기본값(에디터 튜닝)
+    DialogueWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    DialogueWidgetComp->SetVisibility(false);
 
     // --- AI NPC 회전 설정 ---
     // 기본 Character는 컨트롤러 Yaw를 따라 회전(bUseControllerRotationYaw=true)하고
@@ -71,7 +84,11 @@ void ASmartNPC::BeginPlay()
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
 
+    // 자막 싱크 — 자기 오디오 컴포넌트의 재생 시작/종료 델리게이트 1회 구독.
+    TryBindAudioSubtitle();
+
     // 디버그 표시 활성화된 NPC만 Tick 켜기 (대부분 NPC는 Tick 비용 0)
+    // 자막 표시 중에는 ApplySubtitle 가 Tick 을 따로 켠다(빌보드).
     SetActorTickEnabled(bShowAffinityOnScreen);
 }
 
@@ -290,6 +307,17 @@ void ASmartNPC::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
+    // 말풍선 빌보드 — 표시 중일 때만 플레이어 카메라 향해 Yaw 정렬(텍스트 직립 유지).
+    if (DialogueWidgetComp && DialogueWidgetComp->IsVisible())
+    {
+        if (APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))
+        {
+            const FVector ToCam = Cam->GetCameraLocation() - DialogueWidgetComp->GetComponentLocation();
+            const float Yaw = ToCam.Rotation().Yaw + 180.f; // 위젯 정면이 카메라를 향하도록
+            DialogueWidgetComp->SetWorldRotation(FRotator(0.f, Yaw, 0.f));
+        }
+    }
+
     if (!bShowAffinityOnScreen || !StateComponent) return;
 
     UWorld* World = GetWorld();
@@ -320,4 +348,96 @@ void ASmartNPC::Tick(float DeltaSeconds)
             nullptr, LineColor, 0.f, true, 0.9f);
         ++LineIdx;
     }
+}
+
+// === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
+
+void ASmartNPC::TryBindAudioSubtitle()
+{
+    if (bAudioSubtitleBound) return;
+
+    if (UNPCAudioStreamComponent* Audio = FindComponentByClass<UNPCAudioStreamComponent>())
+    {
+        Audio->OnAudioStarted.AddDynamic(this, &ASmartNPC::HandleSubtitleAudioStarted);
+        Audio->OnAudioCompleted.AddDynamic(this, &ASmartNPC::HandleSubtitleAudioCompleted);
+        bAudioSubtitleBound = true;
+    }
+}
+
+void ASmartNPC::ShowSubtitle(const FString& Text, bool bWaitForAudio)
+{
+    if (Text.IsEmpty()) return;
+
+    // 액션 dialogue 후 같은 발화의 TTS 가 뒤따라 오는 경우 — 같은 텍스트면 깜빡임 없이 이어감.
+    const bool bSameText = (Text == CurrentSubtitleText);
+    CurrentSubtitleText = Text;
+
+    // 늦게 첨부된 오디오 컴포넌트 대비 바인딩 재시도.
+    TryBindAudioSubtitle();
+
+    if (bWaitForAudio)
+    {
+        // 음성 시작(HandleSubtitleAudioStarted)이 표시를 맡는다.
+        bSubtitleWaitingForAudio = true;
+
+        // 같은 텍스트가 폴백으로 이미 보이는 중이면 유지, 아니면 텍스트만 세팅(숨김) 후 Started 대기.
+        const bool bAlreadyVisible = DialogueWidgetComp && DialogueWidgetComp->IsVisible();
+        ApplySubtitle(bSameText && bAlreadyVisible);
+
+        // 안전 상한 — 음성이 시작/완료되지 않아도(에러·끊김) 영구 표시 방지.
+        GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, SubtitleMaxDuration, false);
+        return;
+    }
+
+    // 즉시 표시 + 길이 비례 폴백 타이머.
+    bSubtitleWaitingForAudio = false;
+    ApplySubtitle(true);
+
+    const float Duration = SubtitleFallbackDuration + SubtitlePerCharDuration * Text.Len();
+    GetWorldTimerManager().ClearTimer(SubtitleHideTimer);
+    GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, Duration, false);
+}
+
+void ASmartNPC::HandleSubtitleAudioStarted()
+{
+    // 음성 재생 시작 — 대기 중이던 자막 표시.
+    if (CurrentSubtitleText.IsEmpty()) return;
+    bSubtitleWaitingForAudio = false;
+    ApplySubtitle(true);
+    // Completed 정상 도착 시 숨김. 누락(에러·끊김) 대비 안전 상한 갱신.
+    GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, SubtitleMaxDuration, false);
+}
+
+void ASmartNPC::HandleSubtitleAudioCompleted()
+{
+    HideSubtitle();
+}
+
+void ASmartNPC::HideSubtitle()
+{
+    bSubtitleWaitingForAudio = false;
+    GetWorldTimerManager().ClearTimer(SubtitleHideTimer);
+    CurrentSubtitleText.Reset();
+    ApplySubtitle(false);
+}
+
+void ASmartNPC::ApplySubtitle(bool bVisible)
+{
+    if (!DialogueWidgetComp) return;
+
+    // 위젯 오브젝트가 아직 생성 전이면(최초 표시) 강제 초기화. WBP 미지정 시 null 유지 — 디버그 자막 폴백.
+    if (!DialogueWidgetComp->GetUserWidgetObject())
+    {
+        DialogueWidgetComp->InitWidget();
+    }
+
+    if (UNPCDialogueWidget* W = Cast<UNPCDialogueWidget>(DialogueWidgetComp->GetUserWidgetObject()))
+    {
+        W->SetDialogue(AgentID, CurrentSubtitleText);
+    }
+
+    DialogueWidgetComp->SetVisibility(bVisible);
+
+    // 빌보드용 Tick — 표시 중에만. 숨김 시 디버그(호감도) 표시 설정값으로 복귀.
+    SetActorTickEnabled(bVisible || bShowAffinityOnScreen);
 }

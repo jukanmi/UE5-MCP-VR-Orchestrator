@@ -34,6 +34,7 @@
 ║   - New nodes require new conditional routes in should_continue()           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+
 from langgraph.graph import StateGraph, END
 from .agents.state import AgentState
 from .agents.supervisor import supervisor_node, should_continue
@@ -67,8 +68,8 @@ workflow.add_conditional_edges(
         "Dialogue": "Dialogue",
         "Interface_Output": "Interface_Output",
         "Rules": "Rules",
-        "End": END
-    }
+        "End": END,
+    },
 )
 
 # Each agent returns to Supervisor for orchestration

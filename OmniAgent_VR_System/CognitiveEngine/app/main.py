@@ -47,9 +47,7 @@ logger.setLevel(logging.INFO)
 
 # SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
 # 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
-SLM_REFLEX_DANGER_THRESHOLD = float(
-    os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5")
-)
+SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
 
 
 async def _check_ollama_model() -> None:
@@ -63,16 +61,12 @@ async def _check_ollama_model() -> None:
         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
             if r.status_code != 200 or not r.text.strip():
-                logger.warning(
-                    f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능"
-                )
+                logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
                 return
             installed = [m["name"] for m in r.json().get("models", [])]
             required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
             if not any(required in m for m in installed):
-                logger.warning(
-                    f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능"
-                )
+                logger.warning(f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능")
                 return
             logger.info(f"[Startup] Ollama 기본 모델 확인 완료: {required}")
 
@@ -92,9 +86,7 @@ async def _check_ollama_model() -> None:
                 },
             )
             _dt = (_t.perf_counter() - _t0) * 1000.0
-            logger.info(
-                f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}"
-            )
+            logger.info(f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}")
     except Exception as e:
         logger.warning(f"[Startup] Ollama 모델 상태 확인 실패 (서버 미실행 가능): {e}")
 
@@ -192,6 +184,14 @@ async def _process_llm_message(raw_data: str) -> str:
         # 같은 이벤트루프에서 location_decision 처리 중이면 후속 패킷이 큐 대기로 자연스럽게
         # 2~5초 묵혀짐 → 임계값 2초는 정상 패킷도 드랍. (2026-05-16 직접 측정)
         if is_stale_packet(envelope.timestamp, threshold_seconds=10.0):
+            # location_decision 은 generic drop 으로 응답하면 UE5 라우팅에 잡히지 않아
+            # WaitingLLM 이 TacticalLLMTimeout 까지 유지되고 Event Report 게이트도
+            # 함께 막힘 → 드랍 대신 Fast-Path 폴백 결과를 돌려줘 즉시 해제.
+            if envelope.type == EEnvelopeType.LOCATION_DECISION:
+                logger.warning(f"[Main] Stale location_decision → Fast-Path 폴백. msg_id={envelope.msg_id}")
+                payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
+                return _location_decision_fast_path(payload_raw, "stale_packet")
+
             logger.warning(f"[Main] Stale 패킷 드랍. msg_id={envelope.msg_id}")
             return json.dumps(
                 {
@@ -302,13 +302,9 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         batch = ActionBatch(
             AgentID=agent_id,
             Mode="Combat",
-            Actions=[
-                GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})
-            ],
+            Actions=[GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})],
         )
-        return ModeActionRequest(
-            Mode="Combat", ActionBatches={agent_id: batch}
-        ).model_dump_json()
+        return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
 
     # 플레이어 적대 행동에 따른 호감도 감소.
     # danger_score >= 0.5 인 perception(공격/심한 위협)을 일으킨 대상에게 -5씩 감점.
@@ -327,20 +323,14 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     top = max(perceptions, key=lambda p: p.danger_score)
 
     # 가장 위협적인 대상의 현재 호감도 조회 (SLM 프롬프트와 폴백 로직에 사용)
-    top_relation = (
-        await db_manager.get_affinity(agent_id, top.target_id)
-        if top.target_id
-        else None
-    )
+    top_relation = await db_manager.get_affinity(agent_id, top.target_id) if top.target_id else None
     top_score = top_relation.affinity_score if top_relation else 0
     top_tag = top_relation.reputation_tag if top_relation else "Neutral"
 
     # 한 줄 포맷 유지 — few-shot 예시와 형태가 어긋나면 모델이 형식을 깨기 쉬움.
     extra_lines = ""
     if len(perceptions) > 1:
-        others = [
-            f"{p.target_id}({p.sense_type},{p.distance:.1f}m)" for p in perceptions[1:3]
-        ]
+        others = [f"{p.target_id}({p.sense_type},{p.distance:.1f}m)" for p in perceptions[1:3]]
         extra_lines = " others=" + ",".join(others)
 
     prompt = _REFLEX_PROMPT.format(
@@ -405,24 +395,18 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     batch = ActionBatch(
         AgentID=agent_id,
         Mode="Combat",
-        Actions=[
-            GameAction(ActionType=action_type, FacialState=facial, Parameters=params)
-        ],
+        Actions=[GameAction(ActionType=action_type, FacialState=facial, Parameters=params)],
     )
     result = ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch})
 
-    logger.info(
-        f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})"
-    )
+    logger.info(f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})")
     return result.model_dump_json()
 
 
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
     try:
         payload = envelope.parse_emergency_report_payload()
-        logger.info(
-            f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}"
-        )
+        logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
         # ── danger 게이트 ──────────────────────────────────────────────
         # SLM Reflex 는 "긴급 전투(0.5초 반사)" 용. 친화적/저위협(예: 호감도 높은
@@ -437,9 +421,7 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
             return _empty_batch_json()
 
         # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
-        logger.info(
-            f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다."
-        )
+        logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
         return await _handle_slm_reflex(payload)
 
     except Exception as e:
@@ -450,9 +432,7 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         return _empty_batch_json()
 
 
-def _trigger_dialogue_audio(
-    final_action: Optional[ActionBatch], fallback_npc: Optional[str], trace_id: str
-) -> None:
+def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: Optional[str], trace_id: str) -> None:
     """ActionBatch 의 Dialogue 액션을 찾아 TTS dispatch 백그라운드 태스크 생성.
 
     Dialogue 없거나 대상 없으면 생략. 글자 없는 대사("...")는 bypass_tts(자막만 전송).
@@ -473,9 +453,7 @@ def _trigger_dialogue_audio(
         logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
         return
     if not dialogue_text:
-        logger.info(
-            f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략"
-        )
+        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
         return
 
     # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
@@ -503,9 +481,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     ges_prompt = GesPrompt(
         player_id=prompt_payload.player_id,
         voice_transcript=prompt_payload.voice_transcript,
-        gestures=[GestureData(**g) for g in prompt_payload.gestures]
-        if prompt_payload.gestures
-        else [],
+        gestures=[GestureData(**g) for g in prompt_payload.gestures] if prompt_payload.gestures else [],
         timestamp=envelope.timestamp,
         last_event=prompt_payload.last_event,
         stats=prompt_payload.stats,
@@ -527,9 +503,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         or not target_npc_from_payload
         or not any(k.lower() == target_npc_from_payload.lower() for k in current_plan)
     ):
-        logger.info(
-            "[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)"
-        )
+        logger.info("[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)")
         requires_replan = True
 
     async with _world_state_lock:
@@ -622,9 +596,7 @@ async def _dispatch_npc_audio(
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
     if bypass_tts:
-        logger.info(
-            f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}"
-        )
+        logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
         info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
     else:
         try:
@@ -635,9 +607,7 @@ async def _dispatch_npc_audio(
                 trace_id=trace_id,
             )
         except tts_client.TTSError as e:
-            logger.warning(
-                f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}"
-            )
+            logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
             info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
     if _active_llm_ws is None:
@@ -658,9 +628,7 @@ async def _dispatch_npc_audio(
     try:
         async with _ws_send_lock:
             await _active_llm_ws.send_text(response.model_dump_json())
-        logger.info(
-            f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}"
-        )
+        logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
     except Exception as e:
         logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
 
@@ -673,8 +641,7 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
         async with _world_state_lock:
             _cached_world_state = state_payload.model_dump()
         logger.info(
-            f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, "
-            f"threat_level={state_payload.threat_level}"
+            f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, threat_level={state_payload.threat_level}"
         )
 
         # 해당 NPC의 관계 데이터를 캐시에서 읽어 응답에 포함
@@ -713,6 +680,60 @@ Candidates: {candidate_ids}
 Answer:"""
 
 
+def _parse_request_gen(payload_raw: dict) -> int:
+    # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
+    # 비정상 값(문자열 등)이 와도 핸들러가 죽지 않도록 방어 — 0 이면 UE5 가 stale 로 드랍.
+    try:
+        return int(payload_raw.get("request_gen", 0))
+    except (TypeError, ValueError):
+        logger.warning(f"[LocationDecision] request_gen 파싱 실패 — 0 으로 폴백: {payload_raw.get('request_gen')!r}")
+        return 0
+
+
+def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str:
+    """LLM 호출 없이 즉시 location_decision_result 를 생성하는 폴백 (Fast-Path).
+
+    WHY 모듈 레벨: 핸들러 내부 오류뿐 아니라 _process_llm_message 의 stale 패킷
+    경로에서도 호출된다. generic drop 응답은 UE5 의 location_decision_result
+    라우팅에 잡히지 않아 WaitingLLM 이 TacticalLLMTimeout 까지 유지되고, 그동안
+    Event Report 게이트(NPCStateComponent)도 함께 막히기 때문 — 폴백 결과를
+    돌려줘 즉시 해제한다.
+    """
+    agent_id = payload_raw.get("agent_id", "unknown")
+    candidates_raw = payload_raw.get("candidates", [])
+    request_gen = _parse_request_gen(payload_raw)
+
+    if not candidates_raw:
+        fallback_id = "OPTIMAL_0"
+        reason_str = "no_candidates"
+    else:
+        import random
+
+        sorted_candidates = sorted(candidates_raw, key=lambda c: c.get("score", 0), reverse=True)
+        top_n = sorted_candidates[:3]
+        roll = random.randint(1, 100)
+
+        if roll > 40:  # 60% chance to act rationally
+            fallback_id = top_n[0].get("id", "OPTIMAL_0")
+            reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
+        else:  # 40% chance to panic
+            fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", "OPTIMAL_0")
+            reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
+
+    logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {fallback_reason})")
+    return json.dumps(
+        {
+            "type": "location_decision_result",
+            "payload": {
+                "agent_id": agent_id,
+                "chosen_id": fallback_id,
+                "reason": reason_str,
+                "request_gen": request_gen,
+            },
+        }
+    )
+
+
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     """
     location_decision 핸들러.
@@ -725,58 +746,14 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     """
 
     payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
-    agent_id = payload_raw.get("agent_id", "unknown")
-    candidates_raw = payload_raw.get("candidates", [])
-    # UE5 가 보낸 EQS 요청 세대 번호 — 응답에 그대로 echo. UE5 는 stale 응답 차단에 사용.
-    request_gen = int(payload_raw.get("request_gen", 0))
-
-    def _fast_path_fallback(reason: str) -> str:
-        if not candidates_raw:
-            fallback_id = "OPTIMAL_0"
-            reason_str = "no_candidates"
-        else:
-            import random
-
-            sorted_candidates = sorted(
-                candidates_raw, key=lambda c: c.get("score", 0), reverse=True
-            )
-            top_n = sorted_candidates[:3]
-            roll = random.randint(1, 100)
-
-            if roll > 40:  # 60% chance to act rationally
-                fallback_id = top_n[0].get("id", "OPTIMAL_0")
-                reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
-            else:  # 40% chance to panic
-                fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get(
-                    "id", "OPTIMAL_0"
-                )
-                reason_str = (
-                    f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
-                )
-
-        logger.info(
-            f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {reason})"
-        )
-        return json.dumps(
-            {
-                "type": "location_decision_result",
-                "payload": {
-                    "agent_id": agent_id,
-                    "chosen_id": fallback_id,
-                    "reason": reason_str,
-                    "request_gen": request_gen,
-                },
-            }
-        )
+    request_gen = _parse_request_gen(payload_raw)
 
     try:
         payload = LocationDecisionPayload(**(payload_raw))
-        logger.info(
-            f"[LocationDecision] 수신: agent={payload.agent_id}, candidates={len(payload.candidates)}"
-        )
+        logger.info(f"[LocationDecision] 수신: agent={payload.agent_id}, candidates={len(payload.candidates)}")
 
         if not payload.candidates:
-            return _fast_path_fallback("no_candidates")
+            return _location_decision_fast_path(payload_raw, "no_candidates")
 
         valid_ids = {c.id for c in payload.candidates}
 
@@ -808,31 +785,23 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         resp.raise_for_status()
         _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
         raw_text = (resp.json().get("response") or "").strip()
-        logger.info(
-            f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})"
-        )
+        logger.info(f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})")
 
         tokens = raw_text.split()
         if not tokens:
-            logger.warning(
-                f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path"
-            )
-            return _fast_path_fallback("empty_llm_response")
+            logger.warning(f"[LocationDecision] LLM 빈 응답 agent={payload.agent_id} → Fast-Path")
+            return _location_decision_fast_path(payload_raw, "empty_llm_response")
         text = tokens[0].upper()
 
         # 유효한 ID인지 검증 (대소문자 무시)
         chosen_id = next((vid for vid in valid_ids if vid.upper() == text), None)
 
         if not chosen_id:
-            logger.warning(
-                f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path"
-            )
-            return _fast_path_fallback("invalid_llm_response")
+            logger.warning(f"[LocationDecision] LLM 응답 '{text}'이 유효한 ID 아님 → Fast-Path")
+            return _location_decision_fast_path(payload_raw, "invalid_llm_response")
 
         reason = f"LLM chose {chosen_id} ({payload.context_summary})"
-        logger.info(
-            f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}"
-        )
+        logger.info(f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}")
 
         return json.dumps(
             {
@@ -848,7 +817,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
-        return _fast_path_fallback("exception")
+        return _location_decision_fast_path(payload_raw, "exception")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -886,8 +855,10 @@ def _list_personas() -> list[dict]:
                         "traits": data.get("traits", []),
                     }
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                # persona YAML 파싱 실패를 무음 통과시키면 디버그 대시보드에서
+                # NPC 가 조용히 누락됨 — 원인 파일·사유 로깅
+                logger.warning(f"[Debug] persona 로드 실패 — {fpath}: {e}")
     return results
 
 
@@ -914,9 +885,7 @@ class AffinitySetRequest(BaseModel):
 
 @app.post("/api/affinity")
 async def api_set_affinity(req: AffinitySetRequest):
-    rel = await db_manager.set_affinity_direct(
-        req.source_id, req.target_id, req.score, req.note
-    )
+    rel = await db_manager.set_affinity_direct(req.source_id, req.target_id, req.score, req.note)
     return {
         "status": "ok",
         "source_id": rel.source_id,
@@ -944,9 +913,7 @@ class ImportanceUpdateRequest(BaseModel):
 @app.put("/api/npcs/{npc_id}/importance")
 async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
     if req.importance not in ("normal", "high", "core"):
-        raise HTTPException(
-            status_code=400, detail="importance must be normal, high, or core"
-        )
+        raise HTTPException(status_code=400, detail="importance must be normal, high, or core")
 
     personas = _list_personas()
     target = next((p for p in personas if p["npc_id"].lower() == npc_id.lower()), None)
@@ -987,9 +954,7 @@ class NpcCommandRequest(BaseModel):
 @app.post("/api/npc/{npc_id}/command")
 async def api_npc_command(npc_id: str, req: NpcCommandRequest):
     if not _active_llm_ws:
-        raise HTTPException(
-            status_code=503, detail="UE5 연결 없음 (WebSocket disconnected)"
-        )
+        raise HTTPException(status_code=503, detail="UE5 연결 없음 (WebSocket disconnected)")
     try:
         batch = ActionBatch(
             AgentID=npc_id,

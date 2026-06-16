@@ -1,4 +1,5 @@
 #include "NPCActionComponent.h"
+#include "../../Core/GameplayTagUtils.h"
 #include "../NPCStateComponent.h"
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
@@ -101,7 +102,8 @@ namespace
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
         {
-            NPC->GameplayTags.Reset();
+            // §6: 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
+            GameplayTagUtils::ResetAllStates(NPC->GameplayTags);
             NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
         }
     }
@@ -309,6 +311,7 @@ void UNPCActionComponent::ClearActiveActionState()
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
+        World->GetTimerManager().ClearTimer(FleePanicTimer); // 패닉 지연 Flee 도 함께 취소
     }
 }
 
@@ -635,22 +638,22 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
     // 위치: Python이 직접 보내는 경우는 없고, C++ 내부 주입(전술 쿼리 결과)만 존재 → Key_TargetLoc 단일 조회
     FVector Location = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc));
-    FVector Direction = ParseVectorParam(Params.FindRef(TEXT("Direction")));
+    FVector Direction = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_Direction));
     FString TextBody = Params.FindRef(NPCActionKeys::Key_Text);
 
     // Task, Social, Investigate 특수 파라미터 추출
-    FVector StartLocation = ParseVectorParam(Params.FindRef(TEXT("StartLocation")));
-    FVector EndLocation = ParseVectorParam(Params.FindRef(TEXT("EndLocation")));
-    
-    FString GiveItemID = Params.FindRef(TEXT("GiveItemID"));
-    int32 GiveAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GiveAmount"))));
-    FString GetItemID = Params.FindRef(TEXT("GetItemID"));
-    int32 GetAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("GetAmount"))));
-    
-    int32 Amount = FMath::Max(1, FCString::Atoi(*Params.FindRef(TEXT("Amount"))));
+    FVector StartLocation = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_StartLocation));
+    FVector EndLocation = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_EndLocation));
+
+    FString GiveItemID = Params.FindRef(NPCActionKeys::Key_GiveItemID);
+    int32 GiveAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_GiveAmount)));
+    FString GetItemID = Params.FindRef(NPCActionKeys::Key_GetItemID);
+    int32 GetAmount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_GetAmount)));
+
+    int32 Amount = FMath::Max(1, FCString::Atoi(*Params.FindRef(NPCActionKeys::Key_Amount)));
 
     TArray<FString> CraftItemIDs;
-    FString CraftItemsStr = Params.FindRef(TEXT("ItemIDs"));
+    FString CraftItemsStr = Params.FindRef(NPCActionKeys::Key_ItemIDs);
     if (CraftItemsStr.IsEmpty()) CraftItemsStr = ItemID;
     CraftItemsStr.ParseIntoArray(CraftItemIDs, TEXT(","), true);
 
@@ -674,16 +677,18 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Flee:
     {
         TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
-        auto DoFlee = [this, WeakThis, Location, TargetActor]() {
+        // TargetActor 도 약참조 — 1.5초 패닉 지연 중 대상 파괴 시 use-after-free 방지
+        TWeakObjectPtr<AActor> WeakTarget(TargetActor);
+        auto DoFlee = [this, WeakThis, Location, WeakTarget]() {
             if (!WeakThis.IsValid()) return;   // 지연 타이머 발화 시 컴포넌트 GC 가드(use-after-free)
             FVector FleeTarget = Location;
             if (FleeTarget.IsNearlyZero())
             {
                 // 위치 파라미터 없음 → EQS 전술 쿼리로 후퇴 위치 결정 시도.
                 TArray<FVector> EnemyLocs;
-                if (TargetActor)
+                if (AActor* Target = WeakTarget.Get())
                 {
-                    EnemyLocs.Add(TargetActor->GetActorLocation());
+                    EnemyLocs.Add(Target->GetActorLocation());
                 }
                 else if (ASmartNPCAIController* AICon = GetOwnerAIController())
                 {
@@ -721,9 +726,8 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] Panic! 반사신경(%.1f) 부족으로 %.1f초간 얼어붙음!"), Agility, 1.5f);
             BaseEmotion(EFacialState::Fear);
-            // 1.5초 후 DoFlee 실행
-            FTimerHandle TimerHandle;
-            GetWorld()->GetTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda(DoFlee), 1.5f, false);
+            // 1.5초 후 DoFlee 실행 — 멤버 핸들 사용: ClearActiveActionState 가 중단 시 취소 가능
+            GetWorld()->GetTimerManager().SetTimer(FleePanicTimer, FTimerDelegate::CreateLambda(DoFlee), 1.5f, false);
         }
         else
         {
@@ -950,12 +954,13 @@ namespace
         return static_cast<float>(BlockedCount) / Enemies.Num();
     }
 
+    // Dist/Cover는 호출 측이 후보당 1회 계산해 전달 — Cover(LineTrace)를 스코어러마다
+    // 재계산하면 후보 수 × 적 수 × 3배 트레이스가 발생하므로 시그니처에서 차단.
+
     /** Safe 스코어: 멀수록, 엄폐할수록, HP 낮을수록 가중치 */
-    float EvalSafeScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+    float EvalSafeScore(float Dist, float Cover, float HpPct,
         float DistScale, float CoverBonus, float LOSPenalty, float LowHpBonus)
     {
-        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
-        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
         float Score = FMath::Min(Dist / 1500.f, 1.f) * DistScale;
         Score += Cover * CoverBonus;
@@ -965,11 +970,9 @@ namespace
     }
 
     /** Aggressive 스코어: 가까울수록, LOS 있을수록 */
-    float EvalAggressiveScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float HpPct,
+    float EvalAggressiveScore(float Dist, float Cover, float HpPct,
         float DistScale, float LOSBonus, float CoverPenalty, float HpBonus)
     {
-        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
-        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
         float Score = (1.f - FMath::Min(Dist / 1500.f, 1.f)) * DistScale;
         Score += bLOS ? LOSBonus : 0.f;
@@ -979,11 +982,9 @@ namespace
     }
 
     /** Optimal 스코어: 중간 거리 + LOS + 적당한 엄폐 */
-    float EvalOptimalScore(const FVector& Loc, const TArray<FVector>& Enemies, UWorld* World, const AActor* Querier, float,
+    float EvalOptimalScore(float Dist, float Cover,
         float IdealDist, float DistRange, float CoverBonus, float LOSBonus)
     {
-        const float Dist  = CalcDistToNearestEnemy(Loc, Enemies);
-        const float Cover = CalcCoverRating(Loc, Enemies, World, Querier);
         const bool bLOS   = (Cover < 0.5f);
         const float DistScore = FMath::Max(0.f, 2.f - FMath::Abs(Dist - IdealDist) / FMath::Max(DistRange, 1.f));
         return DistScore + Cover * CoverBonus + (bLOS ? LOSBonus : 0.f);
@@ -1016,8 +1017,12 @@ void UNPCActionComponent::StartTacticalQuery(const TArray<FVector>& EnemyLocatio
     UEnvQuery* QueryAsset = TacticalPositionsQuery ? TacticalPositionsQuery : DefaultMoveQuery;
     if (!QueryAsset)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] StartTacticalQuery - EQS 에셋 없음 → Failed"));
-        TacticalQueryState = ETacticalQueryState::Failed;
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] StartTacticalQuery - EQS 에셋 없음 → 쿨다운 후 재시도"));
+        // 상태는 Idle 유지(아직 변경 전) — 쿨다운만 갱신해 트리거 폭주 없이 재시도 허용.
+        if (UWorld* World = GetWorld())
+        {
+            LastTacticalQueryTime = World->GetTimeSeconds();
+        }
         return;
     }
 
@@ -1128,11 +1133,14 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     {
         const FVector Loc = Result->GetItemAsLocation(i);
 
-        const float SafeScore  = EvalSafeScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+        const float Dist  = CalcDistToNearestEnemy(Loc, CachedEnemyLocations);
+        const float Cover = CalcCoverRating(Loc, CachedEnemyLocations, World, Owner);
+
+        const float SafeScore  = EvalSafeScore(Dist, Cover, HpPct,
             Score_SafeDistScale * FearMult, Score_CoverBonus * FearMult, Score_LOSPenalty, Score_LowHpFleeBonus * FearMult);
-        const float AggrScore  = EvalAggressiveScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+        const float AggrScore  = EvalAggressiveScore(Dist, Cover, HpPct,
             Score_AggrDistScale * AggrMult, Score_AggrLOSBonus * AggrMult, Score_AggrCoverPenalty, Score_AggrHpBonus * AggrMult);
-        const float OptScore   = EvalOptimalScore(Loc, CachedEnemyLocations, World, Owner, HpPct,
+        const float OptScore   = EvalOptimalScore(Dist, Cover,
             Score_OptIdealDist, Score_OptDistRange, Score_OptCoverBonus, Score_OptLOSBonus);
 
         UE_LOG(LogTemp, Verbose,
@@ -1149,8 +1157,8 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
         Cand.Category       = BestCat;
         Cand.Location       = Loc;
         Cand.Score          = BestScore;
-        Cand.DistanceToEnemy = CalcDistToNearestEnemy(Loc, CachedEnemyLocations);
-        Cand.CoverRating    = CalcCoverRating(Loc, CachedEnemyLocations, World, Owner);
+        Cand.DistanceToEnemy = Dist;
+        Cand.CoverRating    = Cover;
         Cand.HeightDelta    = CachedEnemyLocations.IsEmpty() ? 0.f
             : Loc.Z - CachedEnemyLocations[0].Z;
         AllCandidates.Add(Cand);
@@ -1176,7 +1184,8 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
 
     if (Pruned.IsEmpty())
     {
-        TacticalQueryState = ETacticalQueryState::Failed;
+        // 쿨다운은 StartTacticalQuery에서 이미 갱신됨 — Idle 복귀만으로 재시도 게이트 충분.
+        TacticalQueryState = ETacticalQueryState::Idle;
         return;
     }
 
@@ -1258,12 +1267,12 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
         }
         else
         {
-            TacticalQueryState = ETacticalQueryState::Failed;
+            TacticalQueryState = ETacticalQueryState::Idle; // NPCManager 없음 — 고착 방지
         }
     }
     else
     {
-        TacticalQueryState = ETacticalQueryState::Failed;
+        TacticalQueryState = ETacticalQueryState::Idle; // World 없음 — 고착 방지
     }
 }
 
@@ -1296,7 +1305,7 @@ void UNPCActionComponent::NotifyLocationDecisionReady(const FString& ChosenCandi
         }
         else
         {
-            TacticalQueryState = ETacticalQueryState::Failed;
+            TacticalQueryState = ETacticalQueryState::Idle; // 후보 맵 비어있음 — 고착 방지
             return;
         }
     }

@@ -11,6 +11,7 @@ USAGE:
     info = await tts_client.synthesize(text="...", voice_id="ko_guard_01")
     # info = {"request_id": "...", "ws_url": "ws://...", "sample_rate": 16000, "channels": 1}
 """
+
 from __future__ import annotations
 
 import asyncio

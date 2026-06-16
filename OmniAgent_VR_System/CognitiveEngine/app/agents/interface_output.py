@@ -63,9 +63,7 @@ TRAIT_DEFAULT_FACIAL: dict[str, str] = {
 }
 
 
-def _correct_facial_contamination(
-    action: GameAction, persona_traits: list[str]
-) -> GameAction:
+def _correct_facial_contamination(action: GameAction, persona_traits: list[str]) -> GameAction:
     """
     FacialState가 persona traits와 모순이면 결정론적으로 교체.
     e.g. Aggressive NPC 가 Fear 로 수렴 → Angry 로 복원.
@@ -75,9 +73,7 @@ def _correct_facial_contamination(
         forbidden = TRAIT_EMOTION_MAP.get(trait, set())
         if current in forbidden:
             replacement = TRAIT_DEFAULT_FACIAL.get(trait, "Neutral")
-            print(
-                f"[Interface Output] 오염 보정: {current} → {replacement} (trait={trait})"
-            )
+            print(f"[Interface Output] 오염 보정: {current} → {replacement} (trait={trait})")
             action.FacialState = replacement
             break
     return action
@@ -185,9 +181,7 @@ def _parse_action_tags(raw_response: str, facial_state: str) -> list:
             continue
         canon = _VALID_ACTIONS_LOWER.get(tmatch.group(1).lower())
         if not canon:
-            print(
-                f"[Interface Output] 알 수 없는 Action Type 무시: {tmatch.group(1)!r}"
-            )
+            print(f"[Interface Output] 알 수 없는 Action Type 무시: {tmatch.group(1)!r}")
             continue
         params = {}
         for k, v in re.findall(r'(\w+)\s*=\s*("[^"]*"|\S+)', body):
@@ -195,9 +189,7 @@ def _parse_action_tags(raw_response: str, facial_state: str) -> list:
             val = v.strip('"').strip()
             if key and val:
                 params[key] = val
-        out.append(
-            GameAction(ActionType=canon, FacialState=facial_state, Parameters=params)
-        )
+        out.append(GameAction(ActionType=canon, FacialState=facial_state, Parameters=params))
     return out
 
 
@@ -236,9 +228,7 @@ def _normalize_emotion(emotion_text: str) -> str:
     return "Neutral"
 
 
-def _parse_natural_action(
-    text: str, behavior_mode: str = "Common"
-) -> Optional[GameAction]:
+def _parse_natural_action(text: str, behavior_mode: str = "Common") -> Optional[GameAction]:
     text_lower = text.lower()
     KEYWORD_ACTION_MAP = [
         (
@@ -295,10 +285,7 @@ def _parse_natural_action(
                 Parameters={k: str(v) for k, v in params.items()},
             )
 
-    if any(
-        word in text_lower
-        for word in ["웃", "smile", "laugh", "nod", "bow", "wave", "손"]
-    ):
+    if any(word in text_lower for word in ["웃", "smile", "laugh", "nod", "bow", "wave", "손"]):
         if "bow" in text_lower or "인사" in text_lower:
             gesture = "Bow"
         elif "wave" in text_lower or "손" in text_lower:
@@ -307,9 +294,7 @@ def _parse_natural_action(
             gesture = "Nod"
         else:
             gesture = "Smile"
-        return GameAction(
-            ActionType="Emote", FacialState="Neutral", Parameters={"gesture": gesture}
-        )
+        return GameAction(ActionType="Emote", FacialState="Neutral", Parameters={"gesture": gesture})
 
     return None
 
@@ -326,9 +311,7 @@ def _regex_fallback_parse(
     speech_matches = re.findall(r'"([^"]+)"', raw_response)
     if speech_matches:
         emotion_matches = re.findall(r"\(([^)]+)\)", raw_response)
-        paren_emotion = (
-            _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
-        )
+        paren_emotion = _normalize_emotion(emotion_matches[0]) if emotion_matches else "Neutral"
         emotion = facial_state if facial_state != "Neutral" else paren_emotion
         actions.append(
             GameAction(
@@ -359,9 +342,7 @@ def _regex_fallback_parse(
                 actions.append(parsed)
 
     if not actions:
-        clean_text = re.sub(
-            r"\[Action:\s*[^\]]+\]", "", raw_response, flags=re.IGNORECASE
-        )
+        clean_text = re.sub(r"\[Action:\s*[^\]]+\]", "", raw_response, flags=re.IGNORECASE)
         clean_text = re.sub(r"[*()]", "", clean_text).strip()
         if clean_text:
             actions.append(
@@ -389,9 +370,7 @@ def _create_empty_batch(npc_id: str) -> ActionBatch:
     )
 
 
-def _structure_single(
-    npc_id: str, refined_text: str, persona_traits: list[str]
-) -> ActionBatch:
+def _structure_single(npc_id: str, refined_text: str, persona_traits: list[str]) -> ActionBatch:
     """
     Stage 3: 단일 NPC refined_text → ActionBatch.
     regex 파싱 + Python FacialState 오염 보정.
@@ -399,17 +378,13 @@ def _structure_single(
     if not refined_text:
         return _create_empty_batch(npc_id)
 
-    behavior_mode, facial_state, clean_response, parse_ok = _parse_mode_and_facial(
-        refined_text
-    )
+    behavior_mode, facial_state, clean_response, parse_ok = _parse_mode_and_facial(refined_text)
     if not parse_ok:
         print(f"[Interface Output] Mode/Facial 태그 누락 ({npc_id}), fallback 사용")
 
     tag_actions = _parse_action_tags(refined_text, facial_state)
 
-    batch = _regex_fallback_parse(
-        clean_response, npc_id, behavior_mode, facial_state, tag_actions
-    )
+    batch = _regex_fallback_parse(clean_response, npc_id, behavior_mode, facial_state, tag_actions)
 
     if not batch.Actions:
         batch = _create_empty_batch(npc_id)
@@ -457,18 +432,12 @@ async def interface_output_node(state: AgentState):
 
     # Stage 3: 병렬 구조화 (CPU-bound이므로 to_thread 사용)
     async def _structure_async(npc_id: str, text: str) -> tuple[str, ActionBatch]:
-        batch = await asyncio.to_thread(
-            _structure_single, npc_id, text, traits_map.get(npc_id, [])
-        )
+        batch = await asyncio.to_thread(_structure_single, npc_id, text, traits_map.get(npc_id, []))
         return npc_id, batch
 
-    results = await asyncio.gather(
-        *[_structure_async(npc_id, text) for npc_id, text in raw_responses.items()]
-    )
+    results = await asyncio.gather(*[_structure_async(npc_id, text) for npc_id, text in raw_responses.items()])
 
-    action_batches: Dict[str, ActionBatch] = {
-        npc_id: batch for npc_id, batch in results
-    }
+    action_batches: Dict[str, ActionBatch] = {npc_id: batch for npc_id, batch in results}
     print(f"[Interface Output] 구조화 완료: {list(action_batches.keys())}")
 
     # 단일 NPC 호환: action_batch 도 채움

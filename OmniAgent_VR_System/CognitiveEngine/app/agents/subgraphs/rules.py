@@ -20,8 +20,16 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+from collections import Counter
+
 from ..state import AgentState
-from ...schemas.actions import ActionBatch, GameAction, WORLD_CONSTANTS
+from ...schemas.actions import (
+    ACTION_CATEGORY,
+    ACTION_REQUIRED_PARAMS,
+    ActionBatch,
+    GameAction,
+    WORLD_CONSTANTS,
+)
 from ...utils import db_manager
 
 
@@ -77,12 +85,7 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
             pass
         # ② UE 형식 (X=100,Y=200,Z=0) 폴백 — literal_eval 로는 SyntaxError
         if not coords:
-            coords = {
-                k.lower(): float(v)
-                for k, v in re.findall(
-                    r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str
-                )
-            }
+            coords = {k.lower(): float(v) for k, v in re.findall(r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str)}
         if not coords:
             # 파싱 실패 → (0,0,0) 오판 대신 경계검증 생략(통과)
             return True
@@ -91,23 +94,30 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         # 파싱 자체 실패 시 경계검증 생략(통과)
         return True
 
-    x_ok = (
-        WORLD_BOUNDS.get("x_min", float("-inf"))
-        <= x
-        <= WORLD_BOUNDS.get("x_max", float("inf"))
-    )
-    y_ok = (
-        WORLD_BOUNDS.get("y_min", float("-inf"))
-        <= y
-        <= WORLD_BOUNDS.get("y_max", float("inf"))
-    )
-    z_ok = (
-        WORLD_BOUNDS.get("z_min", float("-inf"))
-        <= z
-        <= WORLD_BOUNDS.get("z_max", float("inf"))
-    )
+    x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
+    y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
+    z_ok = WORLD_BOUNDS.get("z_min", float("-inf")) <= z <= WORLD_BOUNDS.get("z_max", float("inf"))
 
     return x_ok and y_ok and z_ok
+
+
+def _missing_required_group(action: "GameAction") -> str | None:
+    """
+    ACTION_REQUIRED_PARAMS 기준 필수 파라미터 충족 검사.
+
+    왜 필요한가: 필수 키 누락 액션은 C++ 에서 무음 no-op(Follow/Attack/Track 등)
+    또는 원점(0,0,0) 이동 버그(PickUp/Investigate)로 이어짐. 서버 단 선제 제거.
+
+    Returns: 미충족 그룹의 키 목록 문자열, 모두 충족이면 None
+    """
+    groups = ACTION_REQUIRED_PARAMS.get(action.ActionType)
+    if not groups:
+        return None
+    params = action.Parameters or {}
+    for group in groups:
+        if not any(params.get(k) is not None and str(params.get(k)).strip() != "" for k in group):
+            return " | ".join(group)
+    return None
 
 
 def validate_and_clamp_action(action: "GameAction") -> tuple:
@@ -125,6 +135,13 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
     target_id = params.get("target_id")
     target_loc_str = params.get("target_loc")
 
+    # ── 필수 파라미터 검증 ──────────────────────────────────────
+    missing = _missing_required_group(action)
+    if missing:
+        reason = f"{action.ActionType} 필수 파라미터 누락 ({missing}) → 액션 제거"
+        print(f"[Rules] ❌ {reason}")
+        return None, [reason]
+
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
     if not _is_target_id_valid(target_id):
         reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
@@ -133,10 +150,7 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
 
     # ── [신규] 좌표 범위 검증 ───────────────────────────────────
     if not _is_target_loc_in_bounds(target_loc_str):
-        reason = (
-            f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 "
-            f"(action: {action.ActionType})"
-        )
+        reason = f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 (action: {action.ActionType})"
         print(f"[Rules] ❌ {reason}")
         return None, [reason]
 
@@ -215,19 +229,35 @@ def _validate_batch(batch: "ActionBatch") -> "ActionBatch":
         all_corrections.extend(corrections)
 
     if not validated_actions:
-        print(
-            f"[Rules] ❌ {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}"
-        )
+        print(f"[Rules] ❌ {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
         return batch
 
     batch.Actions = validated_actions
+    _correct_mode_mismatch(batch)
     if all_corrections:
         summary = "; ".join(all_corrections)
         print(f"[Rules] ✅ {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
     else:
         print(f"[Rules] ✅ {batch.AgentID} 검증 통과")
     return batch
+
+
+def _correct_mode_mismatch(batch: "ActionBatch") -> None:
+    """
+    Mode↔액션 카테고리 불일치 보정 (액션 제거 아님 — 덜 파괴적).
+
+    규칙: 비-Common 액션들의 다수 카테고리가 Mode 와 다르고, Mode 가 어떤
+    액션 카테고리와도 일치하지 않으면 Mode 를 다수 카테고리로 교정.
+    Common 전용 배치는 Mode 유지 — Combat 모드 중 대사(Dialogue)는 정상이므로.
+    """
+    non_common = [cat for a in batch.Actions if (cat := ACTION_CATEGORY.get(a.ActionType, "Common")) != "Common"]
+    if not non_common:
+        return
+    majority, _count = Counter(non_common).most_common(1)[0]
+    if batch.Mode != majority and batch.Mode not in non_common:
+        print(f"[Rules] 🔧 Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
+        batch.Mode = majority
 
 
 def rules_node(state: AgentState) -> dict:
@@ -319,9 +349,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
     if score_delta != 0:
         summary_str = ", ".join(interaction_summary)
-        print(
-            f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})"
-        )
+        print(f"[Rules] 🎯 Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
         # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
         db_manager.update_affinity_sync(
             source_id=npc_id,

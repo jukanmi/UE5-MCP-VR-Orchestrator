@@ -29,7 +29,7 @@ prompt 수신
 ```
 
 - **SLM Reflex**: `emergency_report`(danger ≥ 0.5)는 LangGraph 우회, 단일 경량 SLM 호출로 0.5초 내 전투/회피 ActionBatch 생성 (`main.py::_handle_slm_reflex`).
-- **location_decision**: EQS 후보(SAFE/OPTIMAL/AGGRESSIVE) 중 택일을 few-shot raw 프롬프트로 빠르게 결정 (`main.py::_handle_location_decision`).
+- **location_decision**: EQS 후보(SAFE/OPTIMAL/AGGRESSIVE) 중 택일을 few-shot raw 프롬프트로 빠르게 결정 (`main.py::_handle_location_decision`). LLM 실패·stale 패킷도 드랍하지 않고 `_location_decision_fast_path` 폴백 결과(`location_decision_result` + request_gen echo)를 반환 — generic drop 응답은 UE5 가 라우팅하지 못해 WaitingLLM 이 타임아웃까지 고착되기 때문.
 - **TTS 트리거**: Dialogue 액션의 `text` + `FacialState` → `_trigger_dialogue_audio` → TTSService 합성 요청, `NpcAudioResponse(ws_url)` 를 UE5 로 푸시.
 
 ## 핵심 모듈

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Engine/TimerHandle.h"
 #include "../Core/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
 
 #include "SmartNPC.generated.h"
@@ -13,6 +14,8 @@ class UAIPerceptionComponent;
 class UAIPerceptionStimuliSourceComponent;
 class UStateTree;
 class UBlackboardData;
+class UWidgetComponent;
+class UNPCAudioStreamComponent;
 struct FActionBatch;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
@@ -86,8 +89,32 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Perception")
 	UAIPerceptionStimuliSourceComponent* StimuliSource;
 
+    // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
+    /** NPC 머리 위 대사 말풍선. WBP 클래스·정밀 위치는 BP 에서 지정. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Dialogue")
+    UWidgetComponent* DialogueWidgetComp;
 
+    /** TTS 음성 없이 표시할 때 기본 노출 시간(초). 텍스트 길이에 비례 가산. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
+    float SubtitleFallbackDuration = 4.0f;
+
+    /** 글자당 추가 노출 시간(초) — 긴 대사 더 오래. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
+    float SubtitlePerCharDuration = 0.05f;
+
+    /** 음성 싱크 모드 안전 상한(초) — Completed 누락(스트림 에러·소켓 끊김) 시 강제 숨김. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
+    float SubtitleMaxDuration = 15.0f;
+
+    /** 머리 위 말풍선에 대사 표시. bWaitForAudio=true 면 텍스트만 세팅하고 TTS 음성 시작 시 표시,
+     *  false 면 즉시 표시 + 폴백 타이머 후 숨김. 동일 발화 재요청은 깜빡임 없이 이어붙임. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
+    void ShowSubtitle(const FString& Text, bool bWaitForAudio);
+
+    /** 말풍선 숨김 + 텍스트 클리어. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
+    void HideSubtitle();
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -147,6 +174,24 @@ public:
 
 private:
     void DestroyAfterDeath();
+
+    // --- Dialogue Subtitle 내부 ---
+    UFUNCTION()
+    void HandleSubtitleAudioStarted();
+    UFUNCTION()
+    void HandleSubtitleAudioCompleted();
+
+    /** NPCAudioStreamComponent 델리게이트 1회 바인딩(재바인딩 누수 방지). */
+    void TryBindAudioSubtitle();
+
+    /** 위젯에 현재 텍스트 적용 + 가시성 설정. 표시 중에만 빌보드용 Tick. */
+    void ApplySubtitle(bool bVisible);
+
+    /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
+    FString CurrentSubtitleText;
+    bool bSubtitleWaitingForAudio = false;
+    bool bAudioSubtitleBound = false;
+    FTimerHandle SubtitleHideTimer;
 
 public:
 

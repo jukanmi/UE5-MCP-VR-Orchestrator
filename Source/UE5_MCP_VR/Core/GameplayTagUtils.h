@@ -28,4 +28,11 @@ namespace GameplayTagUtils
             Container.RemoveTag(Tag);
         }
     }
+
+    /** 컨테이너 전체 초기화 — 상태 일괄 리셋(StopAllActions 등) 전용.
+     *  직접 Container.Reset() 호출 금지 — 리셋 정책 변경 시 이 한 곳만 수정. */
+    inline void ResetAllStates(FGameplayTagContainer& Container)
+    {
+        Container.Reset();
+    }
 }

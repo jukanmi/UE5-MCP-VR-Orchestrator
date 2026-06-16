@@ -1,0 +1,19 @@
+# Python 코드 양식 고정 (ruff).
+# .claude/hooks/format_py.py 가 편집 시 `ruff format`+`ruff check --fix` 자동 적용 →
+# 이 설정으로 출력이 결정적이 되어 Claude 편집마다 양식이 바뀌던 churn 차단.
+# IDE 도 이 파일을 자동 인식(VS Code ruff 확장 등). config 위치는 repo 루트 — 하위 모든 .py 에 적용.
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "Intermediate", "Binaries", "Saved", "DerivedDataCache"]
+
+[tool.ruff.format]
+# 포맷 규칙 명시 고정 (ruff 버전 올라도 드리프트 방지).
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"          # 기존 LF/CRLF 보존 — 줄끝 churn 안 만듦
+docstring-code-format = false
+
+[tool.ruff.lint]
+# 기본 규칙(E,F)만 — 공격적 import 재정렬/리네임 없이 안정.
+select = ["E4", "E7", "E9", "F"]
