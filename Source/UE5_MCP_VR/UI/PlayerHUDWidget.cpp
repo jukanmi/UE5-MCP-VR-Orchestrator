@@ -25,7 +25,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
     Super::NativeTick(MyGeometry, InDeltaTime);
 
     // 폰이 늦게 소유되거나 리스폰으로 교체될 수 있어 매 틱 보정.
-    if (!OwnerPawn)
+    if (!IsValid(OwnerPawn))
     {
         OwnerPawn = GetOwningPlayerPawn();
         bInventoryDelegateBound = false;  // 리스폰 시 새 폰에 재바인딩 보장
