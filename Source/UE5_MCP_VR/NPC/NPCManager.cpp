@@ -332,7 +332,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         if (UMCPJsonUtils::ParseNpcAudioResponseFromObject(
                 Root, NpcId, WsUrl, SampleRate, Channels, DialogueText, Emotion))
         {
-            if (ASmartNPC* NPC = NPCMap->GetValidNPC(NpcId))
+            if (ASmartNPC* NPC = NPCMap ? NPCMap->GetValidNPC(NpcId) : nullptr)
             {
                 // 머리 위 자막 — ws_url 있으면 음성 싱크(Started→표시/Completed→숨김),
                 // 없으면(TTS 실패) 즉시 표시 + 타이머 폴백.

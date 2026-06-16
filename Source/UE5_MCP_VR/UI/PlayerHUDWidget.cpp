@@ -28,6 +28,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
     if (!OwnerPawn)
     {
         OwnerPawn = GetOwningPlayerPawn();
+        bInventoryDelegateBound = false;  // 리스폰 시 새 폰에 재바인딩 보장
         TryBindInventoryDelegate(); // 폰이 늦게 잡힌 경우 바인딩 재시도
     }
 

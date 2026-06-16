@@ -66,7 +66,8 @@ def _load_whisper():
 def transcribe_one(wav_path: Path) -> str:
     """단일 WAV → 전사 문자열(공백 정리). 실패 시 RuntimeError."""
     model = _load_whisper()
-    kwargs = {"fp16": True}
+    is_cpu = hasattr(model, "device") and model.device.type == "cpu"
+    kwargs = {"fp16": not is_cpu}
     if WHISPER_LANG:
         kwargs["language"] = WHISPER_LANG
     result = model.transcribe(str(wav_path), **kwargs)
@@ -122,7 +123,7 @@ def _block_bounds(lines: list[str]) -> tuple[int, int]:
     """ref_texts: 블록의 [헤더 다음 줄, 블록 끝(배타)) 인덱스. 없으면 (-1,-1)."""
     start = -1
     for i, ln in enumerate(lines):
-        if re.match(r"^ref_texts:\s*$", ln):
+        if re.match(r"^ref_texts:\s*(?:#.*)?$", ln):
             start = i
             break
     if start == -1:
@@ -130,7 +131,7 @@ def _block_bounds(lines: list[str]) -> tuple[int, int]:
     end = len(lines)
     for j in range(start + 1, len(lines)):
         ln = lines[j]
-        if not ln.strip():
+        if not ln.strip() or ln.strip().startswith("#"):
             continue
         # 들여쓰기 없는(최상위) 줄 = 블록 종료
         if not ln.startswith((" ", "\t")):
@@ -162,10 +163,7 @@ def apply_fills(map_path: Path, fills: dict[str, str]) -> list[str]:
 
         # 1) 블록 내 기존 키 치환
         key_re = {
-            s: re.compile(
-                rf'^(?P<indent>\s+){re.escape(s)}\s*:\s*(?P<val>"(?:[^"\\]|\\.)*"|\'[^\']*\'|)\s*(?P<comment>#.*)?$'
-            )
-            for s in fills
+            s: re.compile(rf"^(?P<indent>\s+){re.escape(s)}\s*:\s*(?P<val>[^#]*)(?P<comment>#.*)?$") for s in fills
         }
         for idx in range(blk_start, blk_end):
             for stem in list(remaining):

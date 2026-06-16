@@ -432,6 +432,8 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
                 )
                 pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
                 await pcm_queue.put(pcm)
+        except Exception as e:
+            await pcm_queue.put(e)  # consumer 가 raise 해 WS except 블록으로 전달
         finally:
             await pcm_queue.put(None)  # 예외/취소 시에도 consumer 를 항상 해제
 
@@ -443,6 +445,8 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
             item = await pcm_queue.get()
             if item is None:
                 break
+            if isinstance(item, Exception):
+                raise item
             buf = leftover + item
             off = 0
             # 문장 경계 무시하고 연속 청크 송신 — 문장 사이 silence 방지(gapless).
@@ -463,6 +467,8 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
                 sequence += 1
                 await asyncio.sleep(CHUNK_MS / 1000.0)
             leftover = buf[off:]
+
+        await producer  # 예외가 있으면 여기서 re-raise
 
         if leftover:  # 마지막 잔여 PCM
             await websocket.send_json(
