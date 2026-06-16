@@ -1,23 +1,31 @@
 """
 File: OmniAgent_VR_System/TTSService/server.py
-Role: OpenVoice v2 + MeloTTS base 기반 로컬 TTS 서비스 (M2 → M3 voice diversity).
+Role: CosyVoice2-0.5B 기반 로컬 TTS 서비스 (zero-shot 음색 복제).
 
 WHY:
-  - MeloTTS 단독은 한국어 native 발음 OK 이나 화자 다양성 ❌ (KR 1명, EN 5명).
-  - OpenVoice v2 는 MeloTTS base 출력에 tone color converter 를 얹어
-    6~10초 reference WAV 로 임의 화자 음색 복제. NPC 마다 고유 음성.
-  - License: MIT (상업 OK).
+  - 구 MeloTTS+OpenVoice 2단계(base wav→tone-color 변환)는 reference 원본과 음색
+    유사도 한계. CosyVoice2 zero-shot 은 reference WAV+전사(prompt_text)로 직접 합성
+    → 한국어 네이티브, 유사도 우위.
+  - Windows 는 pynini(텍스트 정규화) 휠 부재로 구동 불가 → 본 서비스는 WSL2(Linux)
+    에서 구동. Windows 의 CognitiveEngine/UE5 는 127.0.0.1:8001 로 그대로 접속
+    (WSL2 localhost 포워딩). 프로토콜·포트 불변.
 
-PROTOCOL (M1 호환 — UE5 측 변경 없음).
+PROTOCOL (구버전과 동일 — UE5/CognitiveEngine 무변경):
+  - REST  POST /v1/tts/synthesize → {request_id, ws_url, sample_rate, channels}
+  - WS    /ws/tts/stream/{request_id} → audio_chunk(pcm_s16le, 16kHz mono) 스트림
 
 NOTES:
-  - 청크 포맷: pcm_s16le, 16kHz mono.
-  - 흐름: MeloTTS(text→base wav) → ToneColorConverter(base se → target se 변환) → 결과 wav.
-  - voice_id (NPC AgentID) → resolve_voice_meta() → ref/lang/speed 메타.
-  - reference WAV 는 base_voices/<ref>.wav (사람 큐레이션 원본).
-  - 없으면 첫 사용 시 MeloTTS KR 샘플 자동 생성 → base_voices/<ref>.wav (이후 재사용).
-  - voices/ 는 _processed/ SE 캐시 및 레거시 reference 폴백 경로.
-  - checkpoints_v2/ 가 없으면 첫 기동 시 HF 에서 자동 다운로드(~수백MB).
+  - CosyVoice2 출력은 24kHz → _resample_to_target 으로 16kHz 변환 후 송신.
+  - voice_id(NPC ref) → base_voices/<ref>.wav prompt + voice_map ref_texts[ref] prompt_text.
+  - 모델/리포/체크포인트는 WSL 홈(~/) 에. 환경변수:
+      COSYVOICE_REPO       (기본 ~/CosyVoice)
+      COSYVOICE_MODEL_DIR  (기본 ~/models/CosyVoice2-0.5B)
+      CV_USE_GPU           (기본 1)
+      CV_FP16              (기본 0)
+      CV_TEXT_FRONTEND     (기본 1)   합성 텍스트 정규화 on/off
+      CV_AUTO_TRANSCRIBE   (기본 1)   기동 시 빈 ref_texts whisper 자동 전사
+      CV_BASE_VOICES_DIR   (기본 TTSService/base_voices)
+      CV_VOICES_DIR        (기본 TTSService/voices)  레거시 ref 폴백
 """
 
 from __future__ import annotations
@@ -28,11 +36,9 @@ import io
 import logging
 import os
 import re
-import tempfile
-import threading
+import sys
 import time
 import uuid
-import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -44,6 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
+from .ref_transcriber import fill_missing_ref_texts
 from .voice_resolver import (
     list_voices,
     normalize_emotion,
@@ -61,45 +68,47 @@ logging.basicConfig(
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
-USE_GPU = os.getenv("OV_USE_GPU", "1") == "1"
+USE_GPU = os.getenv("CV_USE_GPU", "1") == "1"
 DEVICE = "cuda" if USE_GPU else "cpu"
 TARGET_SAMPLE_RATE = 16000
 CHUNK_MS = 100
 CHANNELS = 1
-SPEED = float(os.getenv("OV_SPEED", "1.0"))
+FP16 = os.getenv("CV_FP16", "0") == "1"
+# CosyVoice2 text normalization(wetext) 적용 여부. 한국어는 정규화 대상이 적지만
+# 기본 파이프라인(True) 유지. 합성 오류 시 0 으로 끌 수 있게 노출.
+TEXT_FRONTEND = os.getenv("CV_TEXT_FRONTEND", "1") == "1"
+# 서버 기동 시 base_voices WAV 의 빈 ref_texts 를 whisper 로 자동 전사·기록.
+AUTO_TRANSCRIBE = os.getenv("CV_AUTO_TRANSCRIBE", "1") == "1"
 
 BASE_DIR = Path(__file__).parent
-CKPT_DIR = Path(os.getenv("OV_CKPT_DIR", str(BASE_DIR / "checkpoints_v2")))
-VOICES_DIR = Path(os.getenv("OV_VOICES_DIR", str(BASE_DIR / "voices")))
-# 사람이 큐레이션한 reference WAV 원본. 없으면 첫 사용 시 MeloTTS KR 로 자동 생성.
-BASE_VOICES_DIR = Path(os.getenv("OV_BASE_VOICES_DIR", str(BASE_DIR / "base_voices")))
-CKPT_ZIP_URL = "https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip"
+# 사람이 큐레이션한 reference WAV 원본. CosyVoice2 prompt 로 사용.
+BASE_VOICES_DIR = Path(os.getenv("CV_BASE_VOICES_DIR", str(BASE_DIR / "base_voices")))
+VOICES_DIR = Path(os.getenv("CV_VOICES_DIR", str(BASE_DIR / "voices")))  # 레거시 ref 폴백 경로
 
-DEFAULT_VOICE_ID = os.getenv("OV_DEFAULT_VOICE_ID", "Skadi")
+COSYVOICE_REPO = Path(os.getenv("COSYVOICE_REPO", str(Path.home() / "CosyVoice")))
+COSYVOICE_MODEL_DIR = Path(os.getenv("COSYVOICE_MODEL_DIR", str(Path.home() / "models" / "CosyVoice2-0.5B")))
 
-_HANGUL_RE = re.compile(r"[가-힯ᄀ-ᇿ㄰-㆏]")
+DEFAULT_VOICE_ID = os.getenv("CV_DEFAULT_VOICE_ID", "Skadi")
 
-# 언어 코드 매핑: MeloTTS / OpenVoice base SE 파일명
-LANG_MAP = {
-    "KR": {"melo_key": "KR", "base_se": "kr.pth"},
-    "EN": {"melo_key": "EN-Default", "base_se": "en-newest.pth"},
-}
+# CosyVoice 리포 + Matcha-TTS 서브모듈을 import 경로에 추가(PYTHONPATH 미설정 대비).
+for _p in (COSYVOICE_REPO, COSYVOICE_REPO / "third_party" / "Matcha-TTS"):
+    sp = str(_p)
+    if _p.exists() and sp not in sys.path:
+        sys.path.insert(0, sp)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 상태
 # ─────────────────────────────────────────────────────────────────────────────
 class _ModelState:
-    converter: object = None  # ToneColorConverter
-    melo_models: dict[str, object] = {}  # language → MeloTTS
-    melo_speaker_ids: dict[str, int] = {}
-    base_se: dict[str, object] = {}  # language → src SE tensor
-    target_se_cache: dict[str, object] = {}  # voice_id → tgt SE tensor
+    cosyvoice: object = None  # CosyVoice2
+    sample_rate: int = 24000  # 모델 로드 후 실제값으로 갱신
+    prompt_cache: dict[str, object] = {}  # ref_stem → 절대경로 str (CosyVoice frontend 가 내부에서 재로드)
 
 
 _state = _ModelState()
 
-# 동시 NPC 합성 직렬화 — 공유 melo/openvoice 모델 thread-safety(GPU 도 어차피 직렬).
+# 동시 NPC 합성 직렬화 — 공유 모델 thread-safety(GPU 도 어차피 직렬).
 # 문장 단위로 acquire/release 라 여러 NPC 스트림이 문장별로 공평하게 교차.
 _synth_lock = asyncio.Lock()
 _pending: dict[str, "SynthesizeRequest"] = {}
@@ -116,7 +125,7 @@ class SynthesizeRequest(BaseModel):
     pitch: float = 0.0
     sample_rate: int = TARGET_SAMPLE_RATE
     output_format: str = "pcm_s16le"
-    language: Optional[str] = None
+    language: Optional[str] = None  # 호환 유지(미사용 — CosyVoice2 자동 다국어)
     trace_id: str = ""  # 발원 msg_id 상속 → request_id 로 재사용, 로그 체인 통일
 
 
@@ -128,231 +137,113 @@ class SynthesizeResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Checkpoint 다운로드
-# ─────────────────────────────────────────────────────────────────────────────
-def _ensure_silero_trust_sync() -> None:
-    """torch.hub 가 snakers4/silero-vad 신뢰 확인 프롬프트를 띄움 → 비대화형 EOF.
-    한 번 trust_repo=True 로 받아두면 캐시되어 이후 호출 정상."""
-    try:
-        import torch
-
-        torch.hub.load(
-            "snakers4/silero-vad",
-            model="silero_vad",
-            trust_repo=True,
-            verbose=False,
-        )
-        logger.info("[TTS] silero-vad trust 캐시 완료")
-    except Exception as e:
-        logger.warning(f"[TTS] silero-vad trust 사전 호출 실패 (계속 진행): {e}")
-
-
-def _ensure_checkpoints_sync() -> None:
-    converter_dir = CKPT_DIR / "converter"
-    if (converter_dir / "checkpoint.pth").exists() and (converter_dir / "config.json").exists():
-        return
-    import httpx
-
-    CKPT_DIR.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"[TTS] checkpoints_v2 다운로드: {CKPT_ZIP_URL}")
-    t0 = time.perf_counter()
-    with httpx.stream("GET", CKPT_ZIP_URL, timeout=600.0, follow_redirects=True) as r:
-        r.raise_for_status()
-        buf = io.BytesIO()
-        for chunk in r.iter_bytes(1024 * 1024):
-            buf.write(chunk)
-    buf.seek(0)
-    logger.info(
-        f"[TTS] zip 다운로드 완료 ({(time.perf_counter() - t0):.1f}s, {buf.getbuffer().nbytes / 1e6:.0f}MB), 압축 해제 중..."
-    )
-    with zipfile.ZipFile(buf) as zf:
-        zf.extractall(CKPT_DIR.parent)
-    logger.info(f"[TTS] checkpoints_v2 준비 완료 → {CKPT_DIR}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 모델 로드
 # ─────────────────────────────────────────────────────────────────────────────
-def _detect_language(text: str) -> str:
-    return "KR" if _HANGUL_RE.search(text) else "EN"
+def _load_wav_soundfile(wav, target_sr):
+    """CosyVoice load_wav 대체 — torchaudio.load(=torchaudio 2.11 torchcodec 강제) 회피.
 
-
-def _load_converter_sync() -> object:
-    if _state.converter is not None:
-        return _state.converter
-    from openvoice.api import ToneColorConverter
-
-    cfg = CKPT_DIR / "converter" / "config.json"
-    ckpt = CKPT_DIR / "converter" / "checkpoint.pth"
-    logger.info(f"[TTS] ToneColorConverter 로드 (device={DEVICE})")
-    t0 = time.perf_counter()
-    conv = ToneColorConverter(str(cfg), device=DEVICE)
-    conv.load_ckpt(str(ckpt))
-    _state.converter = conv
-    logger.info(f"[TTS] converter 로드 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
-    return conv
-
-
-def _load_melo_sync(language: str) -> object:
-    cached = _state.melo_models.get(language)
-    if cached is not None:
-        return cached
-    from melo.api import TTS
-
-    info = LANG_MAP[language]
-    logger.info(f"[TTS] MeloTTS base 로드: {language}")
-    t0 = time.perf_counter()
-    model = TTS(language=language, device=DEVICE)
-    spk2id = model.hps.data.spk2id
-    key = info["melo_key"] if info["melo_key"] in spk2id else next(iter(spk2id.keys()))
-    _state.melo_models[language] = model
-    _state.melo_speaker_ids[language] = spk2id[key]
-    dt = time.perf_counter() - t0
-    logger.info(
-        f"[TTS] MeloTTS {language} 로드 완료 ({dt:.1f}s) "
-        f"sr={model.hps.data.sampling_rate} speakers={list(spk2id.keys())} key='{key}'"
-    )
-    return model
-
-
-def _load_base_se_sync(language: str) -> object:
-    cached = _state.base_se.get(language)
-    if cached is not None:
-        return cached
+    torchcodec 휠은 CUDA13/특정 ffmpeg 요구로 cu128 환경에서 미적재 → soundfile 로 직접
+    로드. 원본과 동일 산출: mono [1,T] tensor @target_sr.
+    """
     import torch
+    import torchaudio
 
-    se_path = CKPT_DIR / "base_speakers" / "ses" / LANG_MAP[language]["base_se"]
-    se = torch.load(str(se_path), map_location=DEVICE)
-    _state.base_se[language] = se
-    return se
+    audio, sr = sf.read(str(wav), dtype="float32")
+    if audio.ndim > 1:  # 멀티채널 → mono
+        audio = audio.mean(axis=1)
+    t = torch.from_numpy(audio).unsqueeze(0)  # [1, T]
+    if int(sr) != int(target_sr):
+        t = torchaudio.transforms.Resample(orig_freq=int(sr), new_freq=int(target_sr))(t)
+    return t
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Target SE 추출 (NPC 별 reference WAV → embedding)
-# ─────────────────────────────────────────────────────────────────────────────
-def _gen_reference_wav_from_melo_sync(voice_id: str) -> Path:
-    """reference WAV 가 없으면 MeloTTS KR base 로 6초 샘플 자동 생성 → base_voices/."""
-    BASE_VOICES_DIR.mkdir(parents=True, exist_ok=True)
-    out = BASE_VOICES_DIR / f"{voice_id}.wav"
-    if out.exists():
-        return out
-    model = _load_melo_sync("KR")
-    speaker_id = _state.melo_speaker_ids["KR"]
-    text = (
-        "안녕하세요. 저는 새로운 음성 시스템의 기준 샘플입니다. "
-        "이 목소리를 바탕으로 다양한 캐릭터의 음색이 만들어집니다."
-    )
-    logger.info(f"[TTS] reference WAV 자동 생성: {voice_id} (MeloTTS KR base) → {out}")
-    model.tts_to_file(text, speaker_id, str(out), speed=1.0)
-    return out
+def _patch_load_wav() -> None:
+    """frontend 가 import 바인딩한 load_wav 까지 교체(torchcodec 우회)."""
+    import cosyvoice.cli.frontend as _fe
+    import cosyvoice.utils.file_utils as _fu
+
+    _fu.load_wav = _load_wav_soundfile
+    _fe.load_wav = _load_wav_soundfile
+
+
+def _load_model_sync() -> object:
+    if _state.cosyvoice is not None:
+        return _state.cosyvoice
+    from cosyvoice.cli.cosyvoice import CosyVoice2
+
+    _patch_load_wav()  # CosyVoice2 import(frontend 포함) 후 패치
+
+    if not COSYVOICE_MODEL_DIR.exists():
+        raise RuntimeError(
+            f"CosyVoice2 모델 디렉터리 없음: {COSYVOICE_MODEL_DIR} "
+            f"(huggingface FunAudioLLM/CosyVoice2-0.5B 다운로드 필요)"
+        )
+    logger.info(f"[TTS] CosyVoice2 로드 (model={COSYVOICE_MODEL_DIR} fp16={FP16})")
+    t0 = time.perf_counter()
+    model = CosyVoice2(str(COSYVOICE_MODEL_DIR), load_jit=False, load_trt=False, fp16=FP16)
+    _state.cosyvoice = model
+    _state.sample_rate = int(getattr(model, "sample_rate", 24000))
+    logger.info(f"[TTS] CosyVoice2 로드 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms) sr={_state.sample_rate}")
+    return model
 
 
 REF_EXTS = (".wav", ".mp3", ".flac", ".ogg", ".m4a")
 
 
-def _find_reference_wav(voice_id: str) -> Optional[Path]:
-    """base_voices/<voice_id>.{wav,mp3,flac,ogg,m4a} 우선, 레거시 voices/ 폴백.
-
-    NOTE: mp3/m4a 디코딩은 librosa(audioread) 경유 → ffmpeg 설치 필요.
-    """
+def _find_reference_wav(ref: str) -> Optional[Path]:
+    """base_voices/<ref>.{wav,mp3,...} 우선, 레거시 voices/ 폴백."""
     for d in (BASE_VOICES_DIR, VOICES_DIR):
         for ext in REF_EXTS:
-            p = d / f"{voice_id}{ext}"
+            p = d / f"{ref}{ext}"
             if p.exists():
                 return p
     return None
 
 
-_se_extract_lock = threading.Lock()
+def _resolve_prompt_path(ref: str) -> str:
+    """ref → base_voices/<ref>.wav 절대경로 검증·캐시.
 
-
-def _load_target_se_sync(voice_id: str) -> object:
-    cached = _state.target_se_cache.get(voice_id)
+    이 CosyVoice 버전의 inference_zero_shot/cross_lingual 은 prompt_wav 로 **파일 경로**
+    를 받아 frontend 가 내부에서 16k(token/spk)·24k(feat) 로 재로드한다(텐서 아님).
+    """
+    cached = _state.prompt_cache.get(ref)
     if cached is not None:
         return cached
-    # 동일 voice_id 동시 추출 시 torch.save 파일 손상/레이스 방지 — 추출·캐싱 직렬화.
-    with _se_extract_lock:
-        cached = _state.target_se_cache.get(voice_id)
-        if cached is not None:
-            return cached
-        return _extract_target_se_sync(voice_id)
-
-
-def _extract_target_se_sync(voice_id: str) -> object:
-    import torch
-
-    ref_wav = _find_reference_wav(voice_id)
+    ref_wav = _find_reference_wav(ref)
     if ref_wav is None:
-        ref_wav = _gen_reference_wav_from_melo_sync(voice_id)
-
-    # 디스크 SE 캐시 — 매 부팅 재추출 방지. ref WAV 가 캐시보다 새 것일 때만 재추출.
-    se_cache = VOICES_DIR / "_processed" / f"{voice_id}.se.pth"
-    if se_cache.exists() and se_cache.stat().st_mtime >= ref_wav.stat().st_mtime:
-        try:
-            target_se = torch.load(str(se_cache), map_location=DEVICE)
-            _state.target_se_cache[voice_id] = target_se
-            logger.info(f"[TTS] target SE 캐시 로드(재사용): {voice_id} ← {se_cache.name}")
-            return target_se
-        except Exception as e:
-            # 손상/불완전 저장된 캐시 → 삭제 후 아래에서 재추출(서비스 전체 실패 방지).
-            logger.warning(f"[TTS] target SE 캐시 로드 실패(손상 가능성), 재추출 진행: {e}")
-            try:
-                se_cache.unlink()
-            except OSError:
-                pass
-
-    from openvoice import se_extractor
-
-    conv = _load_converter_sync()
-    logger.info(f"[TTS] target SE 추출(신규/변경): {voice_id} ← {ref_wav.name}")
-    t0 = time.perf_counter()
-    # get_se 가 target_dir 에 저장 시도 → 먼저 디렉터리 보장(FileNotFoundError 방지).
-    se_cache.parent.mkdir(parents=True, exist_ok=True)
-    target_se, _audio_name = se_extractor.get_se(
-        str(ref_wav), conv, vad=True, target_dir=str(VOICES_DIR / "_processed")
-    )
-    torch.save(target_se, str(se_cache))
-    _state.target_se_cache[voice_id] = target_se
-    logger.info(f"[TTS] target SE 추출·디스크 캐시 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
-    return target_se
+        raise RuntimeError(f"reference WAV 없음: {ref} (base_voices/{ref}.wav)")
+    path = str(ref_wav.resolve())
+    _state.prompt_cache[ref] = path
+    logger.info(f"[TTS] prompt 경로: {ref} ← {ref_wav.name}")
+    return path
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 합성
 # ─────────────────────────────────────────────────────────────────────────────
-def _synthesize_sync(text: str, voice_id: str, language: str, speed: Optional[float] = None) -> tuple[np.ndarray, int]:
-    melo = _load_melo_sync(language)
-    speaker_id = _state.melo_speaker_ids[language]
-    base_se = _load_base_se_sync(language)
-    target_se = _load_target_se_sync(voice_id)
-    conv = _load_converter_sync()
+def _synthesize_sync(text: str, ref: str, ref_text: Optional[str], speed: float = 1.0) -> tuple[np.ndarray, int]:
+    """CosyVoice2 zero-shot 합성 → (mono float32, sample_rate=24000).
 
-    eff_speed = SPEED if speed is None else float(speed)
+    ref_text 있으면 inference_zero_shot(전사 기반, 유사도↑), 없으면 inference_cross_lingual.
+    """
+    model = _load_model_sync()
+    prompt_path = _resolve_prompt_path(ref)
+    eff_speed = float(speed) if speed is not None else 1.0
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        src_path = f.name
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        out_path = f.name
-    try:
-        melo.tts_to_file(text, speaker_id, src_path, speed=eff_speed)
-        conv.convert(
-            audio_src_path=src_path,
-            src_se=base_se,
-            tgt_se=target_se,
-            output_path=out_path,
-            message="@MyShell",  # 빈 문자열은 watermark broadcast 에러 — 더미 토큰 필수
+    if ref_text:
+        gen = model.inference_zero_shot(
+            text, ref_text, prompt_path, stream=False, speed=eff_speed, text_frontend=TEXT_FRONTEND
         )
-        audio, sr = sf.read(out_path, dtype="float32")
-    finally:
-        for p in (src_path, out_path):
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
+    else:
+        gen = model.inference_cross_lingual(
+            text, prompt_path, stream=False, speed=eff_speed, text_frontend=TEXT_FRONTEND
+        )
 
-    if audio.ndim > 1:
-        audio = audio[:, 0]
-    return audio.astype(np.float32), int(sr)
+    chunks = [d["tts_speech"].cpu().numpy().reshape(-1) for d in gen]
+    if not chunks:
+        return np.zeros(0, dtype=np.float32), _state.sample_rate
+    audio = np.concatenate(chunks).astype(np.float32)
+    return audio, _state.sample_rate
 
 
 def _resample_to_target(audio: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
@@ -397,31 +288,47 @@ def _split_sentences(text: str) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Lifespan
 # ─────────────────────────────────────────────────────────────────────────────
+async def _bg_transcribe_refs() -> None:
+    """빈 ref_texts whisper 전사(백그라운드). 완료 시 map 캐시 무효화로 즉시 반영."""
+    try:
+        res = await asyncio.to_thread(fill_missing_ref_texts)
+        if res.get("filled"):
+            from .voice_resolver import _load_map
+
+            _load_map.cache_clear()
+            logger.info(f"[TTS] ref_texts 자동 전사 기록: {list(res['filled'])}")
+        if res.get("failed"):
+            logger.warning(f"[TTS] 전사 실패: {res['failed']}")
+    except Exception as e:
+        logger.warning(f"[TTS] 자동 전사 단계 건너뜀: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        await asyncio.to_thread(_ensure_checkpoints_sync)
-        await asyncio.to_thread(_ensure_silero_trust_sync)
-        await asyncio.to_thread(_load_converter_sync)
-        await asyncio.to_thread(_load_melo_sync, "KR")
-        await asyncio.to_thread(_load_melo_sync, "EN")
-        await asyncio.to_thread(_load_base_se_sync, "KR")
-        await asyncio.to_thread(_load_base_se_sync, "EN")
-        # voice_map.npcs × emotion 의 모든 unique ref → target SE 사전 추출
-        extracted: set[str] = set()
+        await asyncio.to_thread(_load_model_sync)
+        # base_voices WAV 의 빈 ref_texts 자동 전사 — whisper 첫 다운로드(~3GB)가 부팅을
+        # 막지 않게 백그라운드 task 로. 완료 시 map 캐시 무효화해 이후 요청에 반영.
+        if AUTO_TRANSCRIBE:
+            asyncio.create_task(_bg_transcribe_refs())
+        # voice_map 의 unique ref prompt 사전 캐시
+        cached: set[str] = set()
         for npc_id, emo, vmeta in list_voices():
-            if vmeta.ref in extracted:
+            if vmeta.ref in cached:
                 continue
             try:
-                await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
-                extracted.add(vmeta.ref)
+                await asyncio.to_thread(_resolve_prompt_path, vmeta.ref)
+                cached.add(vmeta.ref)
             except Exception as e:
-                logger.warning(f"[TTS] target SE pre-extract 실패 npc={npc_id} emo={emo} ref={vmeta.ref}: {e}")
-        logger.info(f"[TTS] pre-extract 완료 — refs={sorted(extracted)}")
+                logger.warning(f"[TTS] prompt pre-load 실패 npc={npc_id} emo={emo} ref={vmeta.ref}: {e}")
+        logger.info(f"[TTS] prompt pre-load 완료 — refs={sorted(cached)}")
+        # pre-warm — 첫 합성 지연 흡수
         try:
             t0 = time.perf_counter()
-            await asyncio.to_thread(_synthesize_sync, "준비 완료.", DEFAULT_VOICE_ID, "KR")
-            await asyncio.to_thread(_synthesize_sync, "Warm up.", DEFAULT_VOICE_ID, "EN")
+            warm_meta = resolve_voice_meta(DEFAULT_VOICE_ID, "Neutral")
+            await asyncio.to_thread(
+                _synthesize_sync, "준비 완료.", warm_meta.ref, warm_meta.ref_text, warm_meta.speed or 1.0
+            )
             logger.info(f"[TTS] pre-warm 완료 ({(time.perf_counter() - t0) * 1000:.0f}ms)")
         except Exception as e:
             logger.warning(f"[TTS] pre-warm 실패 (계속 진행): {e}")
@@ -430,7 +337,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="TTSService-OpenVoice", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="TTSService-CosyVoice2", version="0.7.0", lifespan=lifespan)
 
 # CognitiveEngine(8000) debug 페이지에서 cross-origin 으로 /api/preview 호출 허용.
 app.add_middleware(
@@ -481,13 +388,13 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
         await websocket.close()
         return
 
-    if _state.converter is None:
+    if _state.cosyvoice is None:
         await websocket.send_json(
             {
                 "type": "error",
                 "request_id": request_id,
                 "code": "MODEL_NOT_LOADED",
-                "message": "OpenVoice converter 미로드",
+                "message": "CosyVoice2 미로드",
                 "retryable": True,
             }
         )
@@ -496,36 +403,37 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
 
     emotion = normalize_emotion(req.emotion)
     meta = resolve_voice_meta(req.voice_id, emotion)
-    voice_id = meta.ref or DEFAULT_VOICE_ID
-    # 우선순위: 요청 language > voice_map meta lang > 텍스트 자동감지
-    language = req.language or meta.lang or _detect_language(req.text)
+    ref = meta.ref or DEFAULT_VOICE_ID
+    speed = meta.speed if meta.speed is not None else 1.0
     target_sr = req.sample_rate or TARGET_SAMPLE_RATE
     started_at = time.perf_counter()
     sentences = _split_sentences(req.text)
     bytes_per_chunk = (target_sr * CHUNK_MS // 1000) * 2
 
     # 합성(producer) ↔ 송신(consumer) 분리: 문장 N+1 을 문장 N 재생 중 미리 합성.
-    # 첫 음(TTFA)은 첫 문장 합성만 기다림 → 전체 발화 길이와 무관(긴 대사도 <600ms).
+    # 첫 음(TTFA)은 첫 문장 합성만 기다림 → 전체 발화 길이와 무관.
     pcm_queue: asyncio.Queue = asyncio.Queue(maxsize=2)  # 백프레셔 — 합성 과도 선행 방지
     producer: Optional[asyncio.Task] = None
     first_synth_ms = 0.0
 
     async def _produce() -> None:
         nonlocal first_synth_ms
-        for idx, sent in enumerate(sentences):
-            ts = time.perf_counter()
-            async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
-                native, native_sr = await asyncio.to_thread(_synthesize_sync, sent, voice_id, language, meta.speed)
-            dt = (time.perf_counter() - ts) * 1000.0
-            if idx == 0:
-                first_synth_ms = dt
-            logger.info(
-                f"[TTS] synth[{idx + 1}/{len(sentences)}] {dt:.0f}ms len={len(sent)} "
-                f"npc={req.voice_id} emo={emotion} ref={voice_id} lang={language} speed={meta.speed}"
-            )
-            pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
-            await pcm_queue.put(pcm)
-        await pcm_queue.put(None)  # 종료 센티넬
+        try:
+            for idx, sent in enumerate(sentences):
+                ts = time.perf_counter()
+                async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
+                    native, native_sr = await asyncio.to_thread(_synthesize_sync, sent, ref, meta.ref_text, speed)
+                dt = (time.perf_counter() - ts) * 1000.0
+                if idx == 0:
+                    first_synth_ms = dt
+                logger.info(
+                    f"[TTS] synth[{idx + 1}/{len(sentences)}] {dt:.0f}ms len={len(sent)} "
+                    f"npc={req.voice_id} emo={emotion} ref={ref} speed={speed} zs={bool(meta.ref_text)}"
+                )
+                pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
+                await pcm_queue.put(pcm)
+        finally:
+            await pcm_queue.put(None)  # 예외/취소 시에도 consumer 를 항상 해제
 
     try:
         producer = asyncio.create_task(_produce())
@@ -668,7 +576,7 @@ async def api_get_voice_map() -> dict:
     return {
         "map": data,
         "refs_on_disk": _refs_on_disk(),
-        "cached_targets": sorted(_state.target_se_cache.keys()),
+        "cached_targets": sorted(_state.prompt_cache.keys()),  # 캐시된 prompt ref
         "known_emotions": KNOWN_EMOTION_LIST,
         "base_voices_dir": str(BASE_VOICES_DIR),
     }
@@ -690,54 +598,80 @@ async def api_set_voice_map(body: VoiceMapBody) -> dict:
 
 @app.post("/api/preview")
 async def api_preview(body: PreviewBody) -> Response:
-    if _state.converter is None:
-        raise HTTPException(status_code=503, detail="OpenVoice converter 미로드")
+    if _state.cosyvoice is None:
+        raise HTTPException(status_code=503, detail="CosyVoice2 미로드")
     meta = resolve_voice_meta(body.npc_id, body.emotion)
-    voice_id = meta.ref or DEFAULT_VOICE_ID
-    language = meta.lang or _detect_language(body.text)
+    ref = meta.ref or DEFAULT_VOICE_ID
+    speed = meta.speed if meta.speed is not None else 1.0
     try:
-        audio, sr = await asyncio.to_thread(_synthesize_sync, body.text, voice_id, language, meta.speed)
+        async with _synth_lock:  # 공유 모델 정합성 — ws_stream producer 와 동일 직렬화
+            audio, sr = await asyncio.to_thread(_synthesize_sync, body.text, ref, meta.ref_text, speed)
     except Exception as e:
         logger.exception(f"[TTS][debug] preview 합성 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="synthesis failed — see server log")
     buf = io.BytesIO()
     sf.write(buf, audio, sr, format="WAV", subtype="PCM_16")
     return Response(
         content=buf.getvalue(),
         media_type="audio/wav",
         headers={
-            "X-Voice-Ref": voice_id,
-            "X-Voice-Lang": language,
-            "X-Voice-Speed": str(meta.speed if meta.speed is not None else SPEED),
+            "X-Voice-Ref": ref,
+            "X-Voice-Lang": (meta.lang or "auto"),
+            "X-Voice-Speed": str(speed),
         },
     )
 
 
 @app.post("/api/reload_voices")
 async def api_reload_voices() -> dict:
+    """voice_map 재로드 + prompt 캐시 재구축(reference WAV 교체 반영)."""
     from .voice_resolver import _load_map
 
     _load_map.cache_clear()
-    _state.target_se_cache.clear()
-    extracted: list[str] = []
+    _state.prompt_cache.clear()
+    cached: list[str] = []
     failed: list[dict] = []
     for npc_id, emo, vmeta in list_voices():
-        if vmeta.ref in extracted:
+        if vmeta.ref in cached:
             continue
         try:
-            await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
-            extracted.append(vmeta.ref)
+            await asyncio.to_thread(_resolve_prompt_path, vmeta.ref)
+            cached.append(vmeta.ref)
         except Exception as e:
             failed.append({"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)})
-    return {"extracted": extracted, "failed": failed}
+    return {"extracted": cached, "failed": failed}
+
+
+class TranscribeBody(BaseModel):
+    force: bool = False  # True 면 기존 전사도 재전사(덮어쓰기). 기본은 빈칸만.
+
+
+@app.post("/api/transcribe_refs")
+async def api_transcribe_refs(body: TranscribeBody = TranscribeBody()) -> dict:
+    """base_voices WAV 의 빈 ref_texts 를 whisper 전사로 채움(force=True 면 전체 재전사).
+
+    기록 후 voice_map 캐시 + prompt 캐시 재구축해 즉시 반영(서버 재기동 불필요).
+    """
+    res = await asyncio.to_thread(fill_missing_ref_texts, None, None, body.force)
+    if res.get("filled") or body.force:
+        from .voice_resolver import _load_map
+
+        _load_map.cache_clear()
+        _state.prompt_cache.clear()
+        for npc_id, emo, vmeta in list_voices():
+            try:
+                await asyncio.to_thread(_resolve_prompt_path, vmeta.ref)
+            except Exception as e:
+                logger.warning(f"[TTS] transcribe 후 prompt 재로드 실패 ref={vmeta.ref}: {e}")
+    return res
 
 
 @app.get("/health")
 async def health() -> dict:
     return {
-        "status": "ok" if _state.converter is not None else "model_not_loaded",
-        "service": "tts-openvoice",
+        "status": "ok" if _state.cosyvoice is not None else "model_not_loaded",
+        "service": "tts-cosyvoice2",
         "device": DEVICE,
-        "loaded_languages": list(_state.melo_models.keys()),
-        "cached_voices": list(_state.target_se_cache.keys()),
+        "sample_rate": _state.sample_rate,
+        "cached_voices": list(_state.prompt_cache.keys()),
     }
