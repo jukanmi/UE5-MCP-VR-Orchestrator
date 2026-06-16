@@ -24,12 +24,21 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
 
-    // 폰이 늦게 소유되거나 리스폰으로 교체될 수 있어 매 틱 보정.
-    if (!IsValid(OwnerPawn))
+    // 폰이 늦게 소유되거나 리스폰/빙의 전환으로 교체될 수 있어 매 틱 보정.
+    APawn* CurrentPawn = GetOwningPlayerPawn();
+    if (CurrentPawn != OwnerPawn)
     {
-        OwnerPawn = GetOwningPlayerPawn();
-        bInventoryDelegateBound = false;  // 리스폰 시 새 폰에 재바인딩 보장
-        TryBindInventoryDelegate(); // 폰이 늦게 잡힌 경우 바인딩 재시도
+        // 구 폰 유효 시 인벤토리 델리게이트 해제 — Unpossess 후 빙의 전환 누수 방지
+        if (IsValid(OwnerPawn))
+        {
+            if (UInventoryComponent* OldInv = OwnerPawn->FindComponentByClass<UInventoryComponent>())
+            {
+                OldInv->OnInventoryChanged.RemoveDynamic(this, &UPlayerHUDWidget::RequestInventoryRefresh);
+            }
+        }
+        OwnerPawn = CurrentPawn;
+        bInventoryDelegateBound = false;
+        TryBindInventoryDelegate();
     }
 
     if (HealthBar)

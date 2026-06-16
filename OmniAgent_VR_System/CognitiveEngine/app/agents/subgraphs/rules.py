@@ -115,7 +115,7 @@ def _missing_required_group(action: "GameAction") -> str | None:
         return None
     params = action.Parameters or {}
     for group in groups:
-        if not any(str(params.get(k) or "").strip() for k in group):
+        if not any(params.get(k) is not None and str(params.get(k)).strip() != "" for k in group):
             return " | ".join(group)
     return None
 
