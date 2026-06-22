@@ -1,10 +1,11 @@
 import os
 import re
-import json
-from typing import Optional
+from typing import Optional, Type
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+import httpx
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -82,6 +83,44 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
         raise ValueError(
             f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. 선택 가능: {list(MODELS.keys()) + ['openai']}"
         )
+
+
+# ==============================================================================
+# Ollama 직접 구조화 호출 (format=schema) — langchain with_structured_output 우회
+# ==============================================================================
+# WHY: langchain with_structured_output 은 e4b 구조화에서 warm avg ~3500ms(분산 1.2~8s)
+#      오버헤드 발생(실측). 동일 JSON 스키마를 Ollama /api/chat 의 format 으로 직접 주면
+#      ~1200ms(안정) — 2.9배. grammar 강제(필드 required)는 동일하게 보장.
+async def ollama_structured(
+    system: str,
+    user: str,
+    schema_model: Type[BaseModel],
+    *,
+    model_name: str = "gemma4_slm",
+    temperature: float = 0.7,
+    num_predict: int = 300,
+    num_ctx: int = 2048,
+    timeout: float = 60.0,
+) -> BaseModel:
+    """Ollama /api/chat 직접 호출 → schema_model 인스턴스 반환.
+    format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제."""
+    model_id = MODELS.get(model_name, MODELS["gemma4"])
+    body = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "format": schema_model.model_json_schema(),
+        "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
+        "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body)
+        resp.raise_for_status()
+        content = resp.json()["message"]["content"]
+    return schema_model.model_validate_json(content)
 
 
 # ==============================================================================

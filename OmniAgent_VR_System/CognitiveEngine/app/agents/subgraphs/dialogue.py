@@ -31,7 +31,7 @@ import re
 import asyncio
 from functools import lru_cache
 from typing import Dict
-from ...utils.llm_factory import get_llm, call_ollama_direct
+from ...utils.llm_factory import get_llm, call_ollama_direct, ollama_structured
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from langchain_core.prompts import ChatPromptTemplate
@@ -316,13 +316,16 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
 
     raw_response = None
     try:
-        llm = get_llm(model_name="gemma4_slm", temperature=0.7, num_predict=300)
         # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
+        # Ollama format 직접 호출(langchain with_structured_output 우회) — 실측 2.9배 빠름.
         # 획득한 DialogueResponse 를 기존 텍스트 포맷으로 직렬화 → 다운스트림 무변경.
-        structured_llm = llm.with_structured_output(DialogueResponse)
-        prompt = ChatPromptTemplate.from_messages([("system", "{system_msg}"), ("human", "Context: {context}")])
-        resp_obj = await (prompt | structured_llm).ainvoke(
-            {"system_msg": structured_content, "context": natural_context}
+        resp_obj = await ollama_structured(
+            structured_content,
+            f"Context: {natural_context}",
+            DialogueResponse,
+            model_name="gemma4_slm",
+            temperature=0.7,
+            num_predict=300,
         )
         raw_response = _serialize_dialogue(resp_obj).strip()
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
