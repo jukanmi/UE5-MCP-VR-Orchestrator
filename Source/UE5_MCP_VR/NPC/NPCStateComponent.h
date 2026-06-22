@@ -172,10 +172,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
     int32 ReplanTurnLimit = 10;
 
-    // 재계획 트리거 danger 임계 (SmartNPCAIController CombatDangerThreshold 와 정합).
-    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
-    float ReplanDangerThreshold = 0.5f;
-
     // plan 갱신 통지 — 머리 위 plan 위젯(WBP)이 GetStateComponent()->OnPlanUpdated 바인딩.
     UPROPERTY(BlueprintAssignable, Category = "NPC|Plan")
     FOnPlanUpdated OnPlanUpdated;
@@ -202,14 +198,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     void FlagDangerReplan() { bDangerReplanPending = true; }
 
-    /** 재계획 필요 판정: 보관 plan 없음 OR 위협 pending OR 즉시 danger ≥ 임계 OR 턴 상한 도달.
-     *  @param MaxPerceptionDanger 직전 perception 최고 위협도 (ComputePerceptionDanger 산출값). 0 가능. */
+    /** 재계획 필요 판정: 보관 plan 없음 OR 위협 pending OR 턴 상한 도달.
+     *  danger 트리거는 SmartNPCAIController 가 CombatDangerThreshold 판정 후 FlagDangerReplan()
+     *  으로 bDangerReplanPending 을 세우는 경로로 들어옴(여기서 danger 값 직접 비교 안 함). */
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
-    bool ShouldReplan(float MaxPerceptionDanger) const
+    bool ShouldReplan() const
     {
         return !CurrentPlan.bIsValid
             || bDangerReplanPending
-            || MaxPerceptionDanger >= ReplanDangerThreshold
             || TurnsSinceReplan >= ReplanTurnLimit;
     }
 

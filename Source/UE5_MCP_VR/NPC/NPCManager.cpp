@@ -230,15 +230,15 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     Payload->SetStringField(TEXT("target_npc_id"), TargetNpcId);
 
     // ── 계획 캐싱 분기 (Multi-NPC Cached Planning) ────────────────────────
-    // 대상 NPC 의 ShouldReplan 판정 → requires_replan 송신. 대화 경로엔 실시간 perception
-    // danger 가 없으므로 0 전달(턴 상한/plan 유무/danger pending 플래그로 판정).
+    // 대상 NPC 의 ShouldReplan 판정 → requires_replan 송신.
+    // 턴 상한/plan 유무/danger pending 플래그로 판정 (danger 는 perception 경로의 FlagDangerReplan 경유).
     // 재계획 불필요 시 보관 plan 을 current_plan(snake_case)으로 동봉 → e4b 단독 컨텍스트 주입.
     bool bRequiresReplan = true;
     if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
     {
         if (UNPCStateComponent* StateComp = TargetNPC->GetStateComponent())
         {
-            bRequiresReplan = StateComp->ShouldReplan(0.0f);
+            bRequiresReplan = StateComp->ShouldReplan();
             if (!bRequiresReplan)
             {
                 const FNPCPlan& Plan = StateComp->GetCurrentPlan();
