@@ -128,11 +128,17 @@ def resolve_voice_meta(npc_id: Optional[str], emotion: Optional[str] = None) -> 
     if speed is None:
         speed = npc_speed
 
+    inline_ref_text = emo_entry.get("ref_text")
+    if inline_ref_text is not None:
+        resolved_ref_text = str(inline_ref_text).strip() or None
+    else:
+        resolved_ref_text = _resolve_ref_text(data, ref)
+
     return VoiceMeta(
         ref=ref,
         lang=str(npc_lang).upper() if npc_lang else None,
         speed=float(speed) if speed is not None else None,
-        ref_text=_resolve_ref_text(data, ref),
+        ref_text=resolved_ref_text,
     )
 
 
