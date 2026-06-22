@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Engine/TimerHandle.h"
 #include "../Core/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
+#include "NPCStateComponent.h"  // FNPCPlan (OnPlanUpdated 핸들러 시그니처용)
 
 #include "SmartNPC.generated.h"
 
@@ -187,6 +188,14 @@ private:
     /** 위젯에 현재 텍스트 적용 + 가시성 설정. 표시 중에만 빌보드용 Tick. */
     void ApplySubtitle(bool bVisible);
 
+    // --- Plan 갱신 로그 ---
+    /** NPCStateComponent::OnPlanUpdated 구독 핸들러 — plan 갱신 로그 출력. */
+    UFUNCTION()
+    void HandlePlanUpdated(const FNPCPlan& NewPlan);
+
+    /** OnPlanUpdated 1회 바인딩(재바인딩 누수 방지). */
+    bool bPlanUpdatedBound = false;
+
     /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
     FString CurrentSubtitleText;
     bool bSubtitleWaitingForAudio = false;
@@ -197,6 +206,10 @@ public:
 
     UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
     void Debug_PrintAffinity();
+
+    /** 더미 plan 주입 → 머리 위 plan HUD 동작 검증 (파이프라인 없이). */
+    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
+    void Debug_TestPlanHUD();
 
     /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")

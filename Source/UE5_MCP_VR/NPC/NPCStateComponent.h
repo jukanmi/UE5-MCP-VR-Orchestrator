@@ -38,6 +38,9 @@ struct FNPCPlan
     bool bIsValid = false;
 };
 
+// plan 갱신 시 브로드캐스트 — 머리 위 plan 위젯(WBP)이 바인딩해 Goal 갱신. SetCurrentPlan 에서만 발화.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPlanUpdated, const FNPCPlan&, NewPlan);
+
 /**
  * NPC 상태 관리 컴포넌트 (NPC State Component).
  * [의도(Why)] NPC의 존재(속성, 상태, 감정) 자체를 하나의 컴포넌트로 응집시켜 액션(Action) 컴포넌트와의 결합도를 낮추고 재사용성을 극대화합니다.
@@ -165,12 +168,17 @@ public:
     bool bDangerReplanPending = false;
 
     // 강제 재계획 턴 상한 (드리프트 방어). 디자이너 튜닝 노출.
+    // 5→10: warm 루프(e4b 단독) 구간을 늘려 12B 재계획 빈도 절반으로 — 지연 최적화.
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
-    int32 ReplanTurnLimit = 5;
+    int32 ReplanTurnLimit = 10;
 
     // 재계획 트리거 danger 임계 (SmartNPCAIController CombatDangerThreshold 와 정합).
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
     float ReplanDangerThreshold = 0.5f;
+
+    // plan 갱신 통지 — 머리 위 plan 위젯(WBP)이 GetStateComponent()->OnPlanUpdated 바인딩.
+    UPROPERTY(BlueprintAssignable, Category = "NPC|Plan")
+    FOnPlanUpdated OnPlanUpdated;
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     const FNPCPlan& GetCurrentPlan() const { return CurrentPlan; }
@@ -183,6 +191,7 @@ public:
         CurrentPlan.bIsValid = true;
         TurnsSinceReplan = 0;
         bDangerReplanPending = false;
+        OnPlanUpdated.Broadcast(CurrentPlan);
     }
 
     // e4b 단독(경량) 턴 종료 시 호출 — 턴 카운터 +1.

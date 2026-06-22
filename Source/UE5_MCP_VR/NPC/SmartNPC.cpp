@@ -87,6 +87,13 @@ void ASmartNPC::BeginPlay()
     // 자막 싱크 — 자기 오디오 컴포넌트의 재생 시작/종료 델리게이트 1회 구독.
     TryBindAudioSubtitle();
 
+    // 계획 갱신 구독 — plan 산출 시 로그 알림. 1회 바인딩.
+    if (StateComponent && !bPlanUpdatedBound)
+    {
+        StateComponent->OnPlanUpdated.AddDynamic(this, &ASmartNPC::HandlePlanUpdated);
+        bPlanUpdatedBound = true;
+    }
+
     // 디버그 표시 활성화된 NPC만 Tick 켜기 (대부분 NPC는 Tick 비용 0)
     // 자막 표시 중에는 ApplySubtitle 가 Tick 을 따로 켠다(빌보드).
     SetActorTickEnabled(bShowAffinityOnScreen);
@@ -256,6 +263,20 @@ bool ASmartNPC::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase
     const FString OtherID = ICharacterBase::Execute_GetEntityID(Other.GetObject());
     // AffinityHostileThreshold 이하면 적대 관계
     return StateComponent->GetAffinityMultiplier(OtherID) >= 1.0f;
+}
+
+void ASmartNPC::Debug_TestPlanHUD()
+{
+    if (!StateComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] %s: StateComponent 없음"), *AgentID);
+        return;
+    }
+
+    FNPCPlan Test;
+    Test.Goal = TEXT("DEBUG TEST PLAN");
+    Test.Steps = { TEXT("step1"), TEXT("step2") };
+    StateComponent->SetCurrentPlan(Test); // → OnPlanUpdated.Broadcast → HandlePlanUpdated 로그
 }
 
 void ASmartNPC::Debug_PrintAffinity()
@@ -440,4 +461,12 @@ void ASmartNPC::ApplySubtitle(bool bVisible)
 
     // 빌보드용 Tick — 표시 중에만. 숨김 시 디버그(호감도) 표시 설정값으로 복귀.
     SetActorTickEnabled(bVisible || bShowAffinityOnScreen);
+}
+
+// === Plan 갱신 로그 알림 ===
+
+void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
+{
+    UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] %s: plan 갱신 goal=\"%s\" steps=%d"),
+        *AgentID, *NewPlan.Goal, NewPlan.Steps.Num());
 }

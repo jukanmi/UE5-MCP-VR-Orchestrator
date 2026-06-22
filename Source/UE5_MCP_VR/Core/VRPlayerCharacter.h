@@ -168,6 +168,10 @@ public:
 	UFUNCTION(Exec)
 	void SendNPCDialogue(const FString& Text);
 
+	/** 콘솔: PIE NPC 에 더미 plan 주입 → 머리 위 plan HUD 검증. 예: TestPlanHUD Moca */
+	UFUNCTION(Exec)
+	void TestPlanHUD(const FString& AgentID);
+
 	// --- Death / Respawn ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
 	float RespawnDelay = 5.0f;
