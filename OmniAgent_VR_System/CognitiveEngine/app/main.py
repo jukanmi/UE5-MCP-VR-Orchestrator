@@ -640,7 +640,7 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
         state_payload = envelope.parse_state_update_payload()
         async with _world_state_lock:
             _cached_world_state = state_payload.model_dump()
-        logger.info(
+        logger.debug(
             f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, threat_level={state_payload.threat_level}"
         )
 
