@@ -53,7 +53,7 @@
 <body>
 
 <h1>TTS Voice Debug</h1>
-<p class="subtitle">http://127.0.0.1:8001/debug — CosyVoice2 · voice_map 편집 / 합성 미리듣기 / prompt 재로드</p>
+<p class="subtitle">http://127.0.0.1:8001/debug — voice_map 편집 / 합성 미리듣기 / target SE 재추출</p>
 
 <div class="toast" id="toast"></div>
 
@@ -62,8 +62,7 @@
   <div class="section-title">
     미리듣기 합성
     <button class="btn-reload" onclick="loadAll()">↻ 새로고침</button>
-    <button class="btn-reload" onclick="reloadVoices()">⟲ prompt 재로드</button>
-    <button class="btn-reload" onclick="transcribeRefs()">📝 빈 전사 채우기</button>
+    <button class="btn-reload" onclick="reloadVoices()">⟲ target SE 재추출</button>
   </div>
   <div class="preview-grid">
     <label>NPC<select id="pvNpc"></select></label>
@@ -131,7 +130,7 @@ async function api(path, opts={}) {
 function refMarker(ref) {
   return STATE.refs.has(ref)
     ? `<span class="ref-ok" title="base_voices/${ref}.wav 존재">●</span>`
-    : `<span class="ref-miss" title="WAV 없음 — base_voices/에 추가 필요(CosyVoice2 는 자동생성 안 함)">○</span>`;
+    : `<span class="ref-miss" title="WAV 없음 — 첫 사용 시 자동 생성됨">○</span>`;
 }
 
 function emoOptions(selected) {
@@ -197,7 +196,7 @@ function render() {
   document.getElementById("refsList").innerHTML = "디스크 ref: " + (
     [...STATE.refs].sort().map(r => `<span class="ref-ok">${r}</span>`).join(", ") || "(없음)"
   );
-  document.getElementById("cacheList").innerHTML = "캐시된 prompt: " + (
+  document.getElementById("cacheList").innerHTML = "캐시된 target SE: " + (
     [...STATE.cached].sort().map(r => `<span class="ref-ok">${r}</span>`).join(", ") || "(없음)"
   );
 }
@@ -300,7 +299,7 @@ async function saveMap() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ map: STATE.map }),
     });
-    showToast("voice_map.yaml 저장 완료 — '⟲ prompt 재로드' 또는 재기동으로 적용");
+    showToast("voice_map.yaml 저장 완료 — 'target SE 재추출' 또는 재기동으로 적용");
   } catch (e) {
     showToast("저장 실패: " + e.message, true);
   }
@@ -336,35 +335,14 @@ async function preview() {
 }
 
 async function reloadVoices() {
-  showToast("prompt 재로드 시작...");
+  showToast("target SE 재추출 시작...");
   try {
     const r = await api("/api/reload_voices", { method: "POST" });
     const data = await r.json();
-    showToast(`prompt 재로드 완료: ${data.extracted.length}개 (실패 ${data.failed.length})`);
+    showToast(`재추출 완료: ${data.extracted.length}개 (실패 ${data.failed.length})`);
     loadAll();
   } catch (e) {
     showToast("재추출 실패: " + e.message, true);
-  }
-}
-
-async function transcribeRefs() {
-  showToast("빈 ref_texts whisper 전사 중... (최초 1회 모델 다운로드로 지연 가능)");
-  try {
-    const r = await api("/api/transcribe_refs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force: false }),
-    });
-    const data = await r.json();
-    const n = Object.keys(data.filled || {}).length;
-    if (data.skipped_no_target) {
-      showToast("채울 빈칸 없음 (이미 전부 작성됨)");
-    } else {
-      showToast(`전사 기록 ${n}개 (실패 ${(data.failed || []).length})`);
-    }
-    loadAll();
-  } catch (e) {
-    showToast("전사 실패: " + e.message, true);
   }
 }
 

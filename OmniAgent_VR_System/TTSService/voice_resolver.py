@@ -53,9 +53,6 @@ class VoiceMeta:
     ref: str
     lang: Optional[str] = None
     speed: Optional[float] = None
-    # CosyVoice2 zero-shot prompt_text — reference WAV 의 전사. 최상위 ref_texts[ref] 에서 채움.
-    # None 이면 server 가 inference_cross_lingual(전사 없는) 경로로 폴백.
-    ref_text: Optional[str] = None
 
 
 def _coerce_npc_entry(value, top_default: str) -> dict:
@@ -108,11 +105,11 @@ def resolve_voice_meta(npc_id: Optional[str], emotion: Optional[str] = None) -> 
     data = _load_map()
     top_default = _top_default()
     if not npc_id:
-        return VoiceMeta(ref=top_default, ref_text=_resolve_ref_text(data, top_default))
+        return VoiceMeta(ref=top_default)
 
     npcs = data.get("npcs", {}) or {}
     if npc_id not in npcs:
-        return VoiceMeta(ref=top_default, ref_text=_resolve_ref_text(data, top_default))
+        return VoiceMeta(ref=top_default)
 
     npc = _coerce_npc_entry(npcs[npc_id], top_default=top_default)
     npc_ref = str(npc.get("default_ref") or top_default)
@@ -128,27 +125,11 @@ def resolve_voice_meta(npc_id: Optional[str], emotion: Optional[str] = None) -> 
     if speed is None:
         speed = npc_speed
 
-    inline_ref_text = emo_entry.get("ref_text")
-    if inline_ref_text is not None:
-        resolved_ref_text = str(inline_ref_text).strip() or None
-    else:
-        resolved_ref_text = _resolve_ref_text(data, ref)
-
     return VoiceMeta(
         ref=ref,
         lang=str(npc_lang).upper() if npc_lang else None,
         speed=float(speed) if speed is not None else None,
-        ref_text=resolved_ref_text,
     )
-
-
-def _resolve_ref_text(data: dict, ref: str) -> Optional[str]:
-    """최상위 ref_texts[ref] → CosyVoice2 zero-shot prompt_text. 없으면 None(cross_lingual 폴백)."""
-    rt = (data.get("ref_texts") or {}).get(ref)
-    if rt is None:
-        return None
-    rt = str(rt).strip()
-    return rt or None
 
 
 def resolve_voice(npc_id: Optional[str], emotion: Optional[str] = None) -> str:
