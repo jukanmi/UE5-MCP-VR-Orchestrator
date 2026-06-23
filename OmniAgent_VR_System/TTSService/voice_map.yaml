@@ -45,15 +45,15 @@ npcs:
     lang: KR
     speed: 1.0
     emotions:
-      Neutral:   { ref: Moca,         speed: 1.0  }
-      Happy:     { ref: Moca_happy,   speed: 1.05 }
-      Sad:       { ref: Moca_sad,     speed: 0.92 }
-      Angry:     { ref: Moca_angry,   speed: 1.08 }
-      Fear:      { ref: Moca_fear,    speed: 1.10 }
-      Surprised: { ref: Moca_happy,   speed: 1.10 }
-      Disgusted: { ref: Moca_angry,   speed: 0.95 }
-      Tired:     { ref: Moca_sad,     speed: 0.88 }
-      Pain:      { ref: Moca_sad,     speed: 0.95 }
+      Neutral:   { ref: Moca,          speed: 1.0  }
+      Happy:     { ref: Moca_happy,    speed: 1.05 }
+      Sad:       { ref: Moca_sad,      speed: 0.92 }
+      Angry:     { ref: Moca_angry,    speed: 1.08 }
+      Fear:      { ref: Moca_fear,     speed: 1.10 }
+      Surprised: { ref: Moca_surprise, speed: 1.10 }   # 독립 녹음
+      Disgusted: { ref: Moca_disgust,  speed: 0.95 }   # 독립 녹음
+      Tired:     { ref: Moca_tired,    speed: 0.88 }   # 독립 녹음
+      Pain:      { ref: Moca_pain,     speed: 0.95 }   # 독립 녹음
   # 예시:
   # Guard_01:
   #   default_ref: guard_male
