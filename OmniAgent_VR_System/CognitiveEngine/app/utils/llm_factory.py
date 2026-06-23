@@ -54,6 +54,10 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
+        # keep_alive: 12B core(gemma4)는 replan 때만 쓰는 8GB 모델 → idle squat 방지로 30s 단축
+        # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).
+        # e4b 등 hot-loop 경량 모델은 5m 유지(매 턴 사용, 콜드 재로드 회피).
+        keep_alive = "30s" if model_name == "gemma4" else "5m"
         return ChatOllama(
             model=model_id,
             temperature=temperature,
@@ -62,7 +66,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             num_predict=num_predict,
             num_thread=8,
             request_timeout=30.0,
-            keep_alive="5m",
+            keep_alive=keep_alive,
             # think=false — gemma4/qwen3 계열은 thinking 모델이라 사고 토큰이
             # num_predict 예산을 잠식해 content="" 로 잘림 (12B 실측: 200토큰 전부
             # thinking, content 빈 문자열). 대화는 즉답만 필요.
@@ -114,6 +118,8 @@ async def ollama_structured(
         "stream": False,
         "format": schema_model.model_json_schema(),
         "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
+        # 12B core 는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
+        "keep_alive": "30s" if model_name == "gemma4" else "5m",
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
     async with httpx.AsyncClient(timeout=timeout) as client:
