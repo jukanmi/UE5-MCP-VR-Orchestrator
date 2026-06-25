@@ -486,6 +486,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         last_event=prompt_payload.last_event,
         stats=prompt_payload.stats,
         player_location=prompt_payload.player_location,
+        npc_inventory=prompt_payload.npc_inventory,
     )
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
@@ -572,10 +573,15 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     if npc_plans:
         logger.info(f"[Main] NpcPlans 회신: {list(npc_plans.keys())}")
 
+    plan_achieved = result.get("plan_achieved") or {}
+    if plan_achieved:
+        logger.info(f"[Main] PlanAchieved 회신: {[k for k, v in plan_achieved.items() if v]}")
+
     wrapper = ModeActionRequest(
         Mode=first_batch.Mode,
         ActionBatches=action_batches,
         NpcPlans=npc_plans,
+        PlanAchieved=plan_achieved,
     )
     return wrapper.model_dump_json()
 
@@ -870,6 +876,268 @@ async def debug_dashboard():
     return HTMLResponse(content="<h1>debug.html not found</h1>", status_code=404)
 
 
+@app.get("/test_chat", response_class=HTMLResponse)
+async def test_chat_page():
+    """UE5 없이 NPC 대화 파이프라인 테스트 — 브라우저 채팅 UI."""
+    html = r"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NPC Chat Test</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex;flex-direction:column}
+header{background:#16213e;padding:12px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #0f3460}
+header h1{font-size:15px;color:#a8dadc}
+select,input[type=text],textarea{background:#0f3460;color:#e0e0e0;border:1px solid #457b9d;border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit}
+select{cursor:pointer}
+#main{flex:1;display:flex;overflow:hidden}
+#left{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#inv-panel{width:240px;background:#13182b;border-left:1px solid #0f3460;padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+#inv-panel h2{font-size:12px;color:#a8dadc;text-transform:uppercase;letter-spacing:.5px}
+#inv-panel .hint{font-size:10px;color:#667}
+#inv-edit{width:100%;height:140px;resize:vertical;line-height:1.5}
+#inv-list{display:flex;flex-direction:column;gap:4px}
+.inv-item{background:#0f3460;border:1px solid #1d3557;border-radius:5px;padding:5px 8px;font-size:12px;display:flex;justify-content:space-between}
+.inv-item .cnt{color:#8ecae6}
+.inv-empty{font-size:11px;color:#556;font-style:italic}
+#chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.bubble{max-width:72%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5}
+.user{align-self:flex-end;background:#457b9d;color:#fff;border-bottom-right-radius:3px}
+.npc{align-self:flex-start;background:#16213e;border:1px solid #0f3460;border-bottom-left-radius:3px}
+.npc-name{font-size:11px;color:#a8dadc;margin-bottom:4px;font-weight:600}
+.speech{margin-bottom:6px}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
+.mode-badge{background:#0f3460;color:#a8dadc}
+.facial-badge{background:#1d3557;color:#e0e0e0}
+.plan-achieved{background:#1b4332;color:#95d5b2}
+.actions{font-size:11px;color:#8ecae6;margin-bottom:4px}
+.actions span{display:inline-block;background:#0d1b2a;border:1px solid #1d3557;border-radius:4px;padding:1px 6px;margin:2px 2px 0 0}
+.plan-toggle{font-size:11px;color:#a8dadc;cursor:pointer;text-decoration:underline;user-select:none}
+.plan-body{display:none;margin-top:6px;font-size:11px;background:#0a1628;border-left:2px solid #457b9d;padding:6px 10px;border-radius:0 4px 4px 0}
+.plan-body.open{display:block}
+.plan-goal{color:#a8dadc;margin-bottom:4px}
+.plan-steps li{color:#b0bec5;margin-left:14px;margin-top:2px}
+.thinking{align-self:flex-start;color:#555;font-size:12px;font-style:italic;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+footer{background:#16213e;padding:10px 16px;display:flex;gap:8px;border-top:1px solid #0f3460}
+#input{flex:1;height:38px}
+#send{background:#457b9d;color:#fff;border:none;border-radius:6px;padding:0 18px;cursor:pointer;font-size:13px}
+#send:hover{background:#5a9ab5}
+#send:disabled{background:#2a4a5e;cursor:not-allowed}
+</style>
+</head>
+<body>
+<header>
+  <h1>NPC Chat Test</h1>
+  <select id="npc">
+    <option value="Moca">Moca</option>
+    <option value="Skadi">Skadi</option>
+    <option value="Elara">Elara</option>
+    <option value="James">James</option>
+  </select>
+  <span style="font-size:11px;color:#666">UE5 연결 불필요 · TTS 없음</span>
+</header>
+<div id="main">
+  <div id="left">
+    <div id="chat"></div>
+    <footer>
+      <input type="text" id="input" placeholder="플레이어 발화 입력..." autocomplete="off">
+      <button id="send">전송</button>
+    </footer>
+  </div>
+  <div id="inv-panel">
+    <h2>상대 인벤토리</h2>
+    <div class="hint">UE5 미연결 — 모의 입력.<br>한 줄에 하나: <b>이름 x수량</b></div>
+    <textarea id="inv-edit" placeholder="붕대 x3&#10;물약 x1&#10;검"></textarea>
+    <div class="hint">NPC별로 따로 저장됨. 전송 시 함께 보냄.</div>
+    <div id="inv-list"></div>
+  </div>
+</div>
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const send = document.getElementById('send');
+const npcSel = document.getElementById('npc');
+const invEdit = document.getElementById('inv-edit');
+const invList = document.getElementById('inv-list');
+
+// NPC별 인벤토리 텍스트 보관 (브라우저 메모리).
+const invStore = {};
+
+// "이름 x수량" / "이름" 라인 → [{id,name,count}]
+function parseInventory(text) {
+  const items = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    const m = t.match(/^(.*?)(?:\s*[x×]\s*(\d+))?$/i);
+    const name = (m ? m[1] : t).trim();
+    if (!name) continue;
+    const count = m && m[2] ? parseInt(m[2]) : 1;
+    items.push({id: name, name: name, count: count});
+  }
+  return items;
+}
+
+function renderInvList() {
+  const items = parseInventory(invEdit.value);
+  if (items.length === 0) {
+    invList.innerHTML = '<div class="inv-empty">빈 손</div>';
+    return;
+  }
+  invList.innerHTML = items.map(it =>
+    `<div class="inv-item"><span>${it.name}</span><span class="cnt">×${it.count}</span></div>`
+  ).join('');
+}
+
+function loadInvForNpc(npcId) {
+  invEdit.value = invStore[npcId] || '';
+  renderInvList();
+}
+
+invEdit.addEventListener('input', () => {
+  invStore[npcSel.value] = invEdit.value;
+  renderInvList();
+});
+npcSel.addEventListener('change', () => loadInvForNpc(npcSel.value));
+
+function appendUser(text) {
+  const b = document.createElement('div');
+  b.className = 'bubble user';
+  b.textContent = text;
+  chat.appendChild(b);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendThinking() {
+  const b = document.createElement('div');
+  b.className = 'thinking';
+  b.id = 'thinking';
+  b.textContent = '⏳ NPC 생각 중...';
+  chat.appendChild(b);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeThinking() {
+  const t = document.getElementById('thinking');
+  if (t) t.remove();
+}
+
+function appendNPC(npcId, data) {
+  const batch = data.ActionBatches && data.ActionBatches[npcId];
+  if (!batch) { appendError('ActionBatch 없음'); return; }
+
+  let speech = '', emotion = 'Neutral';
+  const actionTags = [];
+  for (const act of batch.Actions || []) {
+    if (act.ActionType === 'Dialogue') {
+      speech = act.Parameters.text || '';
+      emotion = act.Parameters.emotion || 'Neutral';
+    } else {
+      let tag = act.ActionType;
+      if (act.Parameters.target) tag += ':' + act.Parameters.target;
+      if (act.Parameters.item) tag += '(' + act.Parameters.item + ')';
+      actionTags.push(tag);
+    }
+  }
+
+  const mode = batch.Mode || 'Common';
+  const plan = (data.NpcPlans || {})[npcId];
+  const planAchieved = (data.PlanAchieved || {})[npcId];
+
+  const b = document.createElement('div');
+  b.className = 'bubble npc';
+
+  let html = `<div class="npc-name">${npcId}</div>`;
+  html += `<div class="speech">${speech || '...'}</div>`;
+  html += `<div class="badges">`;
+  html += `<span class="badge mode-badge">${mode}</span>`;
+  html += `<span class="badge facial-badge">${emotion}</span>`;
+  if (planAchieved) html += `<span class="badge plan-achieved">✓ Plan 달성</span>`;
+  html += `</div>`;
+
+  if (actionTags.length > 0) {
+    html += `<div class="actions">`;
+    for (const t of actionTags) html += `<span>${t}</span>`;
+    html += `</div>`;
+  }
+
+  if (plan) {
+    const uid = 'plan_' + Date.now();
+    html += `<span class="plan-toggle" onclick="togglePlan('${uid}')">📋 Plan 보기</span>`;
+    html += `<div class="plan-body" id="${uid}">`;
+    html += `<div class="plan-goal">🎯 ${plan.goal || ''}</div>`;
+    if (plan.steps && plan.steps.length > 0) {
+      html += '<ul class="plan-steps">';
+      for (const s of plan.steps) html += `<li>${s}</li>`;
+      html += '</ul>';
+    }
+    html += '</div>';
+  }
+
+  b.innerHTML = html;
+  chat.appendChild(b);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendError(msg) {
+  const b = document.createElement('div');
+  b.className = 'bubble npc';
+  b.style.borderColor = '#e63946';
+  b.textContent = '❌ ' + msg;
+  chat.appendChild(b);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+window.togglePlan = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+};
+
+async function sendMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+  const npcId = npcSel.value;
+  input.value = '';
+  send.disabled = true;
+  appendUser(text);
+  appendThinking();
+  try {
+    const invItems = parseInventory(invStore[npcId] || '');
+    const res = await fetch('/api/debug/prompt', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        npc_id: npcId, text: text, player_id: 'TestPlayer',
+        npc_inventory: invItems.length ? invItems : null,
+      }),
+    });
+    const data = await res.json();
+    removeThinking();
+    if (!res.ok) { appendError(data.detail || res.statusText); return; }
+    appendNPC(npcId, data);
+  } catch(e) {
+    removeThinking();
+    appendError(e.message);
+  } finally {
+    send.disabled = false;
+    input.focus();
+  }
+}
+
+send.addEventListener('click', sendMessage);
+input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) sendMessage(); });
+loadInvForNpc(npcSel.value);
+input.focus();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 @app.get("/api/affinity")
 async def api_get_affinity():
     rows = await db_manager.get_all_affinity()
@@ -985,6 +1253,8 @@ class DebugPromptRequest(BaseModel):
     npc_id: str
     text: str
     player_id: str = "Debug_Player"
+    # 테스트용 모의 인벤토리 — UE5 없이 NPC 보유 아이템 시뮬레이트. [{id,name,count}, ...].
+    npc_inventory: Optional[list] = None
 
 
 @app.post("/api/debug/prompt")
@@ -1006,6 +1276,8 @@ async def api_debug_prompt(req: DebugPromptRequest):
             "player_id": req.player_id,
             "voice_transcript": req.text,
             "target_npc_id": req.npc_id,
+            # 모의 인벤토리를 npc_id 키로 래핑 (PromptPayload.npc_inventory 구조와 정합).
+            "npc_inventory": {req.npc_id: req.npc_inventory} if req.npc_inventory else None,
         },
     )
     try:

@@ -102,6 +102,11 @@ class DialogueResponse(BaseModel):
         description="Game actions the NPC performs now. ACT (Attack/Block/Dodge/Move/...) "
         "when the situation calls for it; empty list ONLY if purely talking."
     )
+    plan_achieved: bool = Field(
+        default=False,
+        description="True if the NPC's current plan goal has been achieved or completed based on this dialogue turn. "
+        "Check the [Plan: goal=...] in context; set True only when the goal is clearly fulfilled.",
+    )
 
 
 class ModeActionRequest(BaseModel):
@@ -112,6 +117,8 @@ class ModeActionRequest(BaseModel):
     # 재계획(replan) 시 산출된 NPC별 plan 회신 — npc_id → {goal, steps, relation_snapshot}.
     # e4b 단독(경량) 응답이면 비워둠. UE5 가 수신 시 NPCStateComponent::CurrentPlan 에 저장.
     NpcPlans: Dict[str, Dict] = Field(default_factory=dict)
+    # e4b Stage1 이 plan 달성 감지 시 per-NPC true. UE5 가 수신 시 FlagPlanAchieved() 호출.
+    PlanAchieved: Dict[str, bool] = Field(default_factory=dict)
 
 
 class RejectResult(BaseModel):

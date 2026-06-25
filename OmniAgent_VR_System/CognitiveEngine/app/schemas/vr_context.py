@@ -46,3 +46,6 @@ class GesPrompt(BaseModel):
     stats: Optional[Dict[str, float]] = None  # e.g. {"hp": 80, "agility": 0.9}
 
     player_location: Optional[Vector3D] = None  # Player's world location for "come here" commands
+
+    # 대화 대상 NPC 인벤토리 — npc_id → [{id,name,desc,count,...}]. Stage1 컨텍스트 주입용.
+    npc_inventory: Optional[Dict[str, list]] = None

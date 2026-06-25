@@ -107,10 +107,12 @@ RULES:
 - Emit [Action:] tags for what you DO (0 if you only talk). Multiple allowed, one per line.
 - Use ONLY action Types from the list above. Pick the closest one; never invent a Type.
 - Stay in character. Max 2-3 sentences of speech.
+- ALWAYS reply in Korean (한국어로만 답변).
 
 YOUR CHARACTER:
 You are {name}, a {role}.
 Personality traits: {traits}
+Items you currently hold: {inventory} (only give/use items you actually have)
 
 Recent memory: {memory}
 Current sentiment toward player: {sentiment}
@@ -125,17 +127,25 @@ Conversation history: {chat_history}"""
 DIALOGUE_STRUCTURED_PROMPT = """You are {name}, a {role}, an NPC in a VR game.
 Personality traits: {traits}
 
-Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions.
-- speech: your spoken line, in character, 1-3 sentences (NEVER empty).
+Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions, plan_achieved.
+- speech: your spoken line, in character, 1-3 sentences in Korean (NEVER empty, ALWAYS Korean).
 - tone: emotional tone of the speech (e.g. warmly, furiously).
-- actions: list of game actions you perform RIGHT NOW. Each has a "type" plus optional
-  target/item/style. When threatened, ACT (Attack/Block/Dodge/Flee). When asked to follow,
-  Follow. When giving something, GiveItem. Empty list ONLY if you are purely talking.
+- actions: list of game actions you perform RIGHT NOW. MANDATORY examples:
+    player says "follow me" / "나 따라와" → actions=[{{"type":"Follow","target":"Player"}}]
+    player asks you to move somewhere → actions=[{{"type":"Move","target":"<loc>"}}]
+    combat situation → actions=[{{"type":"Attack","target":"Enemy"}}]
+    give item → actions=[{{"type":"GiveItem","target":"Player","item":"<item>"}}]
+  Empty list ONLY if you are purely talking with NO physical action implied.
+- plan_achieved: true ONLY if the current plan goal is clearly completed this turn; otherwise false.
 
 Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
  Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
  PickUp Drop Craft Repair Investigate Track Scout Sit Sleep Read Pray Dance Sing.
 Use ONLY a type from this list. target is one of: Player, Self, Enemy, or an NPC name.
+
+YOUR inventory (items you currently hold): {inventory}
+ - Only GiveItem/HandObject/UseItem/Equip an item that is in YOUR inventory above.
+ - If asked for an item you do NOT have, say so — do NOT emit a give/use action for it.
 
 Recent memory: {memory}
 Current sentiment toward player: {sentiment}
@@ -151,6 +161,7 @@ STRICT RULES:
 - Preserve ALL [Mode:], [Facial:], [Action:] tags exactly as written.
 - Keep speech within "double quotes", emotions in (parentheses).
 - Max 2-3 sentences of speech per NPC.
+- ALL speech must be in Korean (한국어로만 작성).
 
 PLAN (CRITICAL):
 - At the END of each NPC section, output EXACTLY ONE line:
@@ -253,7 +264,7 @@ def _serialize_dialogue(obj: DialogueResponse) -> str:
     return "\n".join(lines)
 
 
-async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
+async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bool]:
     """
     Stage 1: 단일 NPC에 대한 e4b 호출.
     반환: (npc_id, raw_response)
@@ -299,6 +310,23 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
     chat_history = get_conversation_context(npc_id, k=5)
 
+    # NPC 인벤토리 — UE5 가 prompt 마다 동적 전송(npc_id → items). 없으면 "None".
+    # 주입 목적: NPC 가 보유 아이템만 GiveItem/HandObject 하도록 근거 제공.
+    inv_items = []
+    if vr_context:
+        inv_map = (
+            vr_context.get("npc_inventory")
+            if isinstance(vr_context, dict)
+            else getattr(vr_context, "npc_inventory", None)
+        ) or {}
+        inv_items = inv_map.get(npc_id, []) or []
+    if inv_items:
+        inventory_str = ", ".join(
+            f"{it.get('name', it.get('id', '?'))}×{it.get('count', 1)}" for it in inv_items
+        )
+    else:
+        inventory_str = "None (empty-handed)"
+
     fmt_kwargs = dict(
         name=persona_name,
         role=persona_role,
@@ -307,6 +335,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
         sentiment=sentiment,
         rag_context=rag_context if rag_context else "None",
         chat_history=chat_history if chat_history else "No previous conversation",
+        inventory=inventory_str,
     )
     # 구조화 호출용(JSON) 프롬프트만 해피패스에서 포맷. 자유텍스트 폴백용
     # system_content 는 except 경로에서만 필요 → lazy(아래 except 에서 포맷).
@@ -315,6 +344,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     print(f"[Dialogue] Stage1 e4b: {persona_name} | '{natural_context[:50]}...'")
 
     raw_response = None
+    plan_achieved = False
     try:
         # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
         # Ollama format 직접 호출(langchain with_structured_output 우회) — 실측 2.9배 빠름.
@@ -328,6 +358,9 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
             num_predict=300,
         )
         raw_response = _serialize_dialogue(resp_obj).strip()
+        plan_achieved = bool(getattr(resp_obj, "plan_achieved", False))
+        if plan_achieved:
+            print(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
         print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
@@ -357,13 +390,16 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str]:
     _memory_write_tasks.add(task)
     task.add_done_callback(_on_memory_task_done)
 
-    return npc_id, raw_response
+    return npc_id, raw_response, plan_achieved
 
 
-# [Plan: goal=... | steps=s1;s2;s3] 추출용. goal/steps 캡처, 라인 전체는 대사에서 제거.
+# [Plan: ...] 추출용 — 12B 출력 형식 두 가지 모두 처리:
+#   명세:  [Plan: goal=<목표> | steps=s1;s2;s3]
+#   실제:  [Plan: Goal: <목표>; Steps: s1, s2, s3]
+# goal/steps 구분자: `|` 또는 `;`, 키워드: `goal=`·`Goal:` / `steps=`·`Steps:`
 _PLAN_LINE_RE = re.compile(
-    r"\[Plan:\s*goal=(?P<goal>.*?)\s*\|\s*steps=(?P<steps>.*?)\]",
-    re.IGNORECASE | re.DOTALL,
+    r"\[Plan:\s*(?:goal=|Goal:\s*)(?P<goal>[^\];|]+?)\s*[;|]\s*(?:steps=|Steps:\s*)(?P<steps>[^\]]+)\]",
+    re.IGNORECASE,
 )
 
 
@@ -374,7 +410,8 @@ def _parse_plan_line(section_text: str) -> tuple[str, dict | None]:
     if not m:
         return section_text, None
     goal = m.group("goal").strip()
-    steps = [s.strip() for s in m.group("steps").split(";") if s.strip()]
+    # 구분자: `;` 또는 `,` 모두 허용 (12B 가 양쪽 모두 사용)
+    steps = [s.strip() for s in re.split(r"[;,]", m.group("steps")) if s.strip()]
     cleaned = _PLAN_LINE_RE.sub("", section_text).strip()
     return cleaned, {"goal": goal, "steps": steps}
 
@@ -447,7 +484,8 @@ async def dialogue_node(state: AgentState):
 
     # Stage 1: 병렬 e4b 호출
     results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
-    raw_responses: Dict[str, str] = dict(results)
+    raw_responses: Dict[str, str] = {r[0]: r[1] for r in results}
+    plan_achieved_map: Dict[str, bool] = {r[0]: r[2] for r in results}
 
     # Stage 2: 12B 정제+plan — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
     npc_plans: Dict[str, dict] = {}
@@ -472,6 +510,7 @@ async def dialogue_node(state: AgentState):
         "raw_responses": raw_responses,
         "raw_response": raw_response,
         "npc_plans": npc_plans or None,
+        "plan_achieved": plan_achieved_map or None,
         "target_npc": single_npc,
         "current_speaker": "Dialogue",
         "next": "Interface_Output",

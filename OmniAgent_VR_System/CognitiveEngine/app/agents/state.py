@@ -53,6 +53,8 @@ class AgentState(TypedDict):
     current_plan: Optional[Dict[str, Any]]
     # npc_plans: Stage2 산출 plan (replan=True 시만). main.py 가 ModeActionRequest.NpcPlans 로 회신.
     npc_plans: Optional[Dict[str, Any]]
+    # plan_achieved: e4b Stage1 이 plan 달성 감지 시 per-NPC true. main.py 가 PlanAchieved 로 회신.
+    plan_achieved: Optional[Dict[str, bool]]
 
     # [신규] state_update 수신 시 캐시되는 최신 월드 상태
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시

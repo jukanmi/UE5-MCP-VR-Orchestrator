@@ -199,8 +199,11 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     {
                         StateComp->RequestEventCognition(Perception);
 
-                        // 새 위협 → 다음 prompt 강제 재계획 표시 (Multi-NPC Cached Planning).
-                        StateComp->FlagDangerReplan();
+                        // Combat 첫 진입 시만 재계획 표시 — 이미 Combat 중이면 기존 plan 유지.
+                        if (StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat)
+                        {
+                            StateComp->FlagDangerReplan();
+                        }
 
                         if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                         {
@@ -348,7 +351,10 @@ void ASmartNPCAIController::OnPerceptionTick()
     if (Perception.DangerScore >= CombatDangerThreshold)
     {
         StateComp->RequestEventCognition(Perception);
-        // 지속 위협 → 다음 prompt 강제 재계획 표시 (Multi-NPC Cached Planning).
-        StateComp->FlagDangerReplan();
+        // Combat 첫 진입 시만 재계획 — 이미 Combat 중 지속 tick 은 무시(plan 폭주 방지).
+        if (StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat)
+        {
+            StateComp->FlagDangerReplan();
+        }
     }
 }

@@ -1,6 +1,7 @@
 #include "NPCManager.h"
 #include "SmartNPC.h"
 #include "NPCStateComponent.h"
+#include "NPCInventoryComponent.h"
 #include "NPCAudioStreamComponent.h"
 #include "../Network/MCPJsonUtils.h"
 #include "../Network/EnvelopeBuilder.h"
@@ -258,6 +259,21 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
                 Payload->SetObjectField(TEXT("current_plan"), CurrentPlanJson);
             }
         }
+
+        // ── NPC 인벤토리 동봉 — npc_inventory: { npc_id: [items] } (Python PromptPayload 정합).
+        // 아이템 획득/소모가 즉시 반영되도록 매 prompt 마다 동적 전송. LLM 이 보유 아이템만 GiveItem.
+        if (UNPCInventoryComponent* InvComp = TargetNPC->GetInventoryComponent())
+        {
+            const FString InvJson = InvComp->GetInventoryJson();  // "[{id,name,...}, ...]"
+            TArray<TSharedPtr<FJsonValue>> InvArr;
+            const TSharedRef<TJsonReader<>> InvReader = TJsonReaderFactory<>::Create(InvJson);
+            if (FJsonSerializer::Deserialize(InvReader, InvArr))
+            {
+                const TSharedRef<FJsonObject> InvObj = MakeShared<FJsonObject>();
+                InvObj->SetArrayField(TargetNpcId, InvArr);
+                Payload->SetObjectField(TEXT("npc_inventory"), InvObj);
+            }
+        }
     }
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
@@ -415,12 +431,15 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     }
 
     // ── 계획 캐싱 회신 수신 (Multi-NPC Cached Planning) ──────────────────
-    // NpcPlans(PascalCase) 가 있으면 재계획 응답 → 해당 NPC 의 CurrentPlan 저장(턴 리셋).
-    // ActionBatches 에만 있고 NpcPlans 에 없는 NPC 는 e4b 단독(경량) 응답 → 턴 카운터 +1.
-    // 키: PascalCase 최상위(NpcPlans/ActionBatches), plan 내부 snake_case(goal/steps/relation_snapshot) — §1.
+    // NpcPlans(PascalCase) 가 있으면 재계획 응답 → 해당 NPC 의 CurrentPlan 저장.
+    // PlanAchieved(PascalCase) 가 있으면 e4b 가 plan 달성 감지 → FlagPlanAchieved() → 다음 턴 재계획.
+    // 키: PascalCase 최상위(NpcPlans/ActionBatches/PlanAchieved), plan 내부 snake_case — §1.
     {
         const TSharedPtr<FJsonObject>* NpcPlansObj = nullptr;
         const bool bHasPlans = Root->TryGetObjectField(TEXT("NpcPlans"), NpcPlansObj);
+
+        const TSharedPtr<FJsonObject>* PlanAchievedObj = nullptr;
+        const bool bHasPlanAchieved = Root->TryGetObjectField(TEXT("PlanAchieved"), PlanAchievedObj);
 
         const TSharedPtr<FJsonObject>* BatchesObj = nullptr;
         if (Root->TryGetObjectField(TEXT("ActionBatches"), BatchesObj))
@@ -455,10 +474,16 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                     UE_LOG(LogTemp, Log, TEXT("[NPCManager] Plan 저장: %s goal=\"%s\" steps=%d"),
                         *AgentID, *Plan.Goal, Plan.Steps.Num());
                 }
-                else
+
+                // e4b plan 달성 신호 — 다음 턴 강제 재계획(새 plan 생성).
+                if (bHasPlanAchieved)
                 {
-                    // 경량 루프 응답 — 턴 누적 (ReplanTurnLimit 도달 시 다음 prompt 강제 재계획).
-                    StateComp->IncrementReplanTurn();
+                    bool bAchieved = false;
+                    if ((*PlanAchievedObj)->TryGetBoolField(AgentID, bAchieved) && bAchieved)
+                    {
+                        StateComp->FlagPlanAchieved();
+                        UE_LOG(LogTemp, Log, TEXT("[NPCManager] Plan 달성 감지: %s → 다음 턴 재계획"), *AgentID);
+                    }
                 }
             }
         }

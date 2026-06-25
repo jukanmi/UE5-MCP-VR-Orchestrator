@@ -158,19 +158,15 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
     FNPCPlan CurrentPlan;
 
-    // 마지막 재계획 이후 경과한 경량(e4b) 턴 수. ReplanTurnLimit 도달 시 강제 재계획.
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
-    int32 TurnsSinceReplan = 0;
-
     // 새 위협(danger ≥ 임계) 감지 시 SmartNPCAIController 가 세움 → 다음 prompt 에서 강제 재계획.
-    // 대화(prompt) 경로엔 실시간 perception danger 가 없으므로 perception 경로에서 미리 표시.
+    // Combat 첫 진입 시만 세움 — 이미 Combat 중이면 무시(연속 perception tick 재계획 폭주 방지).
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
     bool bDangerReplanPending = false;
 
-    // 강제 재계획 턴 상한 (드리프트 방어). 디자이너 튜닝 노출.
-    // 5→10: warm 루프(e4b 단독) 구간을 늘려 12B 재계획 빈도 절반으로 — 지연 최적화.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Plan")
-    int32 ReplanTurnLimit = 10;
+    // e4b Stage1 이 plan goal 달성 감지 시 세움 → 다음 prompt 강제 재계획(새 plan 생성).
+    // SetCurrentPlan 호출 시 자동 리셋.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    bool bPlanAchievedPending = false;
 
     // plan 갱신 통지 — 머리 위 plan 위젯(WBP)이 GetStateComponent()->OnPlanUpdated 바인딩.
     UPROPERTY(BlueprintAssignable, Category = "NPC|Plan")
@@ -179,34 +175,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     const FNPCPlan& GetCurrentPlan() const { return CurrentPlan; }
 
-    // 재계획 응답 수신 시 호출 — plan 저장 + 턴 카운터·danger 플래그 리셋.
+    // 재계획 응답 수신 시 호출 — plan 저장 + danger·achieved 플래그 리셋.
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     void SetCurrentPlan(const FNPCPlan& NewPlan)
     {
         CurrentPlan = NewPlan;
         CurrentPlan.bIsValid = true;
-        TurnsSinceReplan = 0;
         bDangerReplanPending = false;
+        bPlanAchievedPending = false;
         OnPlanUpdated.Broadcast(CurrentPlan);
     }
-
-    // e4b 단독(경량) 턴 종료 시 호출 — 턴 카운터 +1.
-    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
-    void IncrementReplanTurn() { ++TurnsSinceReplan; }
 
     // SmartNPCAIController 가 perception 에서 danger ≥ 임계 감지 시 호출 → 다음 prompt 강제 재계획.
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     void FlagDangerReplan() { bDangerReplanPending = true; }
 
-    /** 재계획 필요 판정: 보관 plan 없음 OR 위협 pending OR 턴 상한 도달.
-     *  danger 트리거는 SmartNPCAIController 가 CombatDangerThreshold 판정 후 FlagDangerReplan()
-     *  으로 bDangerReplanPending 을 세우는 경로로 들어옴(여기서 danger 값 직접 비교 안 함). */
+    // e4b 가 plan 달성 감지 시 NPCManager 가 호출 → 다음 prompt 강제 재계획(새 plan 생성).
+    UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
+    void FlagPlanAchieved() { bPlanAchievedPending = true; }
+
+    /** 재계획 필요 판정: plan 없음 OR 전투 전환 감지 OR e4b plan 달성 신호.
+     *  시간 기반(TurnsSinceReplan) 강제 재계획 제거 — plan 있으면 e4b 단독 유지. */
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     bool ShouldReplan() const
     {
         return !CurrentPlan.bIsValid
             || bDangerReplanPending
-            || TurnsSinceReplan >= ReplanTurnLimit;
+            || bPlanAchievedPending;
     }
 
 protected:
