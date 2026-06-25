@@ -11,6 +11,7 @@
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
+#include "GameFramework/ForceFeedbackEffect.h"
 #include "DrawDebugHelpers.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
@@ -498,6 +499,18 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
             DmgEvent.ShotDirection = MotionControllerRight->GetForwardVector();
             DmgEvent.DamageTypeClass = UDamageType::StaticClass();
             HitActor->TakeDamage(AttackDamage, DmgEvent, GetController(), this);
+
+            // 명중 순간 오른손 컨트롤러 럼블. 에셋 미할당 시 no-op.
+            if (HitForceFeedbackEffect)
+            {
+                if (APlayerController* PC = Cast<APlayerController>(GetController()))
+                {
+                    FForceFeedbackParameters FFParams;
+                    FFParams.bLooping = false;
+                    PC->ClientPlayForceFeedback(HitForceFeedbackEffect, FFParams);
+                }
+            }
+
             DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Red, false, 1.f, 0, 2.f);
             return;
         }

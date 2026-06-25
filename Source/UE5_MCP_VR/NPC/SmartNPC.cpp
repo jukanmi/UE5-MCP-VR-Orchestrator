@@ -22,6 +22,28 @@
 #include "NPCAudioStreamComponent.h"
 #include "../UI/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Engine/DamageEvents.h"
+
+// UE5 Mannequin(X_Bot) 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
+static EBodyPartType BoneToBodyPart(FName Bone)
+{
+    const FString B = Bone.ToString().ToLower();
+    if (B.IsEmpty()) return EBodyPartType::Torso;
+    if (B.Contains(TEXT("head")) || B.Contains(TEXT("neck"))) return EBodyPartType::Head;
+    if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("clavicle")))
+        return EBodyPartType::Torso;
+    return EBodyPartType::Limb;  // upperarm/lowerarm/hand/thigh/calf/foot
+}
+
+static float BodyPartMultiplier(EBodyPartType P)
+{
+    switch (P)
+    {
+        case EBodyPartType::Head: return 2.0f;
+        case EBodyPartType::Limb: return 0.75f;
+        default:                  return 1.0f;  // Torso
+    }
+}
 
 ASmartNPC::ASmartNPC()
 {
@@ -158,7 +180,14 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 
     if (StateComponent)
     {
-        StateComponent->ApplyDamage(ActualDamage);
+        // [의도(Why)] 히트스캔이 채운 본 이름으로 부위를 식별해 부위별 데미지 배율을 적용.
+        float Multiplier = 1.0f;
+        if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+        {
+            const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
+            Multiplier = BodyPartMultiplier(BoneToBodyPart(Pt.HitInfo.BoneName));
+        }
+        StateComponent->ApplyDamage(ActualDamage, Multiplier);
 
         if (!StateComponent->GetAttributes().Resources.IsAlive())
         {

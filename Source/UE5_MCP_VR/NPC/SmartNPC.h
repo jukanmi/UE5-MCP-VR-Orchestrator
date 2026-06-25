@@ -21,6 +21,15 @@ struct FActionBatch;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
 
+// [의도(Why)] 히트스캔이 채워주는 본 이름을 부위로 분류해 부위별 데미지 배율을 적용하기 위함.
+UENUM(BlueprintType)
+enum class EBodyPartType : uint8
+{
+    Torso  UMETA(DisplayName="몸통"),   // 배율 1.0 (기본·본 미식별 폴백)
+    Head   UMETA(DisplayName="머리"),   // 배율 2.0
+    Limb   UMETA(DisplayName="사지"),   // 배율 0.75
+};
+
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPC
 {

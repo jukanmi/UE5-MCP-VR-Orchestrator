@@ -173,6 +173,10 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
+    // 공격 명중 시 오른손 컨트롤러 럼블. BP_VRPawn 에서 UForceFeedbackEffect 에셋 할당.
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    TObjectPtr<class UForceFeedbackEffect> HitForceFeedbackEffect;
+
     // ============================================================================
     // 자세 시스템 (HMD Z 높이 기반)
     // ============================================================================

@@ -114,7 +114,7 @@ public:
     bool TryReflexAction(int32 Difficulty);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
-    float ApplyDamage(float DamageAmount);
+    float ApplyDamage(float DamageAmount, float Multiplier = 1.0f);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void RequestEventCognition(const FPerceptionData& Perception);
