@@ -833,8 +833,9 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 import os
 import yaml
 
-_DEBUG_HTML_PATH = os.path.join(os.path.dirname(__file__), "debug.html")
-_TEST_CHAT_HTML_PATH = os.path.join(os.path.dirname(__file__), "test_chat.html")
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+_DEBUG_HTML_PATH = os.path.join(_STATIC_DIR, "debug.html")
+_TEST_CHAT_HTML_PATH = os.path.join(_STATIC_DIR, "test_chat.html")
 _PERSONAS_BASE = os.path.join(os.path.dirname(__file__), "agents", "personas")
 
 
