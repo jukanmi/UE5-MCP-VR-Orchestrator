@@ -142,7 +142,10 @@ async def ollama_structured(
     client = _get_structured_client()
     resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
     resp.raise_for_status()
-    content = resp.json()["message"]["content"]
+    # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
+    content = (resp.json().get("message") or {}).get("content")
+    if not content:
+        raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
     return schema_model.model_validate_json(content)
 
 

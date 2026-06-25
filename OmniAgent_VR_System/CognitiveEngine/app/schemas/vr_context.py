@@ -5,7 +5,7 @@ Combines Voice Transcript with Gesture Data to enable deictic resolution (interp
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from .game_state import Vector3D
 
 
@@ -48,4 +48,5 @@ class GesPrompt(BaseModel):
     player_location: Optional[Vector3D] = None  # Player's world location for "come here" commands
 
     # 대화 대상 NPC 인벤토리 — npc_id → [{id,name,desc,count,...}]. Stage1 컨텍스트 주입용.
-    npc_inventory: Optional[Dict[str, list]] = None
+    # 타입은 PromptPayload.npc_inventory 와 일치(일관성).
+    npc_inventory: Optional[Dict[str, List[Dict[str, Any]]]] = None
