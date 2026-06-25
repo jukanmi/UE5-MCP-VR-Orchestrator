@@ -156,18 +156,28 @@ def _ensure_checkpoints_sync() -> None:
     CKPT_DIR.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"[TTS] checkpoints_v2 다운로드: {CKPT_ZIP_URL}")
     t0 = time.perf_counter()
-    with httpx.stream("GET", CKPT_ZIP_URL, timeout=600.0, follow_redirects=True) as r:
-        r.raise_for_status()
-        buf = io.BytesIO()
-        for chunk in r.iter_bytes(1024 * 1024):
-            buf.write(chunk)
-    buf.seek(0)
-    logger.info(
-        f"[TTS] zip 다운로드 완료 ({(time.perf_counter() - t0):.1f}s, {buf.getbuffer().nbytes / 1e6:.0f}MB), 압축 해제 중..."
-    )
-    with zipfile.ZipFile(buf) as zf:
-        zf.extractall(CKPT_DIR.parent)
-    logger.info(f"[TTS] checkpoints_v2 준비 완료 → {CKPT_DIR}")
+    # 수백 MB zip 을 RAM(BytesIO) 대신 임시 디스크 파일로 스트리밍 — 메모리 절약.
+    # delete=False + 수동 unlink: Windows 는 열린 핸들 재오픈 불가라 close 후 ZipFile 오픈.
+    tmp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    try:
+        nbytes = 0
+        with httpx.stream("GET", CKPT_ZIP_URL, timeout=600.0, follow_redirects=True) as r:
+            r.raise_for_status()
+            for chunk in r.iter_bytes(1024 * 1024):
+                nbytes += tmp_zip.write(chunk)
+        tmp_zip.close()
+        logger.info(
+            f"[TTS] zip 다운로드 완료 ({(time.perf_counter() - t0):.1f}s, {nbytes / 1e6:.0f}MB), 압축 해제 중..."
+        )
+        with zipfile.ZipFile(tmp_zip.name) as zf:
+            zf.extractall(CKPT_DIR.parent)
+        logger.info(f"[TTS] checkpoints_v2 준비 완료 → {CKPT_DIR}")
+    finally:
+        tmp_zip.close()
+        try:
+            os.unlink(tmp_zip.name)
+        except OSError:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

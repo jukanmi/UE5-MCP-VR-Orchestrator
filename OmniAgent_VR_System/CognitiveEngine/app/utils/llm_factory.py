@@ -12,6 +12,18 @@ load_dotenv()
 # ollama_structured 반환 타입 제네릭 — 호출 측이 캐스팅·getattr 없이 필드 직접 접근.
 T = TypeVar("T", bound=BaseModel)
 
+# ollama_structured 전용 전역 httpx 클라이언트 — 커넥션 풀 재사용(매 호출 TCP 핸드셰이크 회피).
+# lazy init: 첫 호출 이벤트루프에 바인딩(서버 단일 루프 가정). 프로세스 수명 = client 수명.
+_structured_client: Optional["httpx.AsyncClient"] = None
+
+
+def _get_structured_client() -> "httpx.AsyncClient":
+    global _structured_client
+    if _structured_client is None:
+        _structured_client = httpx.AsyncClient()
+    return _structured_client
+
+
 # ==============================================================================
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
 # ==============================================================================
@@ -125,10 +137,12 @@ async def ollama_structured(
         "keep_alive": "30s" if model_name == "gemma4" else "5m",
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body)
-        resp.raise_for_status()
-        content = resp.json()["message"]["content"]
+    # 매 호출 새 AsyncClient 생성 = TCP 핸드셰이크 오버헤드(멀티 NPC 동시 시 가중).
+    # 모듈 전역 client 재사용으로 커넥션 풀 유지. timeout 은 호출별 post 인자로 전달.
+    client = _get_structured_client()
+    resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
+    resp.raise_for_status()
+    content = resp.json()["message"]["content"]
     return schema_model.model_validate_json(content)
 
 
