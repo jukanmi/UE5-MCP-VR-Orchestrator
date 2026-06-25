@@ -107,6 +107,9 @@ class PromptPayload(BaseModel):
     requires_replan: bool = True
     # UE5 가 보관 중인 NPC별 plan (replan=False 시 e4b 컨텍스트 주입용). npc_id → plan 구조체.
     current_plan: Optional[Dict[str, Any]] = None
+    # 대화 대상 NPC 들의 인벤토리 — UE5 NPCInventoryComponent::GetInventoryJson() 동적 산출.
+    # npc_id → [{id,name,desc,count,weight}, ...]. LLM 컨텍스트 주입용(GiveItem/HandObject 근거).
+    npc_inventory: Optional[Dict[str, List[Dict[str, Any]]]] = None
 
 
 class ActionFailedPayload(BaseModel):

@@ -325,6 +325,36 @@ void AVRPlayerCharacter::SendNPCDialogue(const FString& Text)
 	}
 }
 
+void AVRPlayerCharacter::TestPlanHUD(const FString& AgentID)
+{
+	FString Target = AgentID;
+	if (Target.IsEmpty())
+	{
+		if (CurrentDialogueTarget.IsEmpty()) { DetectNearbyNPC(); }
+		Target = CurrentDialogueTarget;
+	}
+	if (Target.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] TestPlanHUD 실패 — 대상 NPC 없음"));
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	UNPCManager* Manager = GI ? GI->GetSubsystem<UNPCManager>() : nullptr;
+	ASmartNPC* NPC = Manager ? Manager->GetNPCById(Target) : nullptr;
+	if (!NPC || !NPC->GetStateComponent())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] TestPlanHUD 실패 — NPC '%s' 미발견(PIE 미등록?)"), *Target);
+		return;
+	}
+
+	FNPCPlan Test;
+	Test.Goal = TEXT("DEBUG TEST PLAN");
+	Test.Steps = { TEXT("step1"), TEXT("step2") };
+	NPC->GetStateComponent()->SetCurrentPlan(Test); // → Broadcast → HandlePlanUpdated → HUD (PIE 인스턴스)
+	UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] TestPlanHUD 주입 완료 — %s"), *Target);
+}
+
 void AVRPlayerCharacter::PerformAttack()
 {
 	if (!GetController()) return;

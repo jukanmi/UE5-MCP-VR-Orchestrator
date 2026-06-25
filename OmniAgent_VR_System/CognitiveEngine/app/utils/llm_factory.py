@@ -1,12 +1,28 @@
 import os
 import re
-import json
-from typing import Optional
+from typing import Optional, Type, TypeVar
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+import httpx
+from pydantic import BaseModel
 
 load_dotenv()
+
+# ollama_structured 반환 타입 제네릭 — 호출 측이 캐스팅·getattr 없이 필드 직접 접근.
+T = TypeVar("T", bound=BaseModel)
+
+# ollama_structured 전용 전역 httpx 클라이언트 — 커넥션 풀 재사용(매 호출 TCP 핸드셰이크 회피).
+# lazy init: 첫 호출 이벤트루프에 바인딩(서버 단일 루프 가정). 프로세스 수명 = client 수명.
+_structured_client: Optional["httpx.AsyncClient"] = None
+
+
+def _get_structured_client() -> "httpx.AsyncClient":
+    global _structured_client
+    if _structured_client is None:
+        _structured_client = httpx.AsyncClient()
+    return _structured_client
+
 
 # ==============================================================================
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
@@ -53,6 +69,10 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
+        # keep_alive: 12B core(gemma4)는 replan 때만 쓰는 8GB 모델 → idle squat 방지로 30s 단축
+        # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).
+        # e4b 등 hot-loop 경량 모델은 5m 유지(매 턴 사용, 콜드 재로드 회피).
+        keep_alive = "30s" if model_name == "gemma4" else "5m"
         return ChatOllama(
             model=model_id,
             temperature=temperature,
@@ -61,7 +81,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             num_predict=num_predict,
             num_thread=8,
             request_timeout=30.0,
-            keep_alive="5m",
+            keep_alive=keep_alive,
             # think=false — gemma4/qwen3 계열은 thinking 모델이라 사고 토큰이
             # num_predict 예산을 잠식해 content="" 로 잘림 (12B 실측: 200토큰 전부
             # thinking, content 빈 문자열). 대화는 즉답만 필요.
@@ -82,6 +102,51 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
         raise ValueError(
             f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. 선택 가능: {list(MODELS.keys()) + ['openai']}"
         )
+
+
+# ==============================================================================
+# Ollama 직접 구조화 호출 (format=schema) — langchain with_structured_output 우회
+# ==============================================================================
+# WHY: langchain with_structured_output 은 e4b 구조화에서 warm avg ~3500ms(분산 1.2~8s)
+#      오버헤드 발생(실측). 동일 JSON 스키마를 Ollama /api/chat 의 format 으로 직접 주면
+#      ~1200ms(안정) — 2.9배. grammar 강제(필드 required)는 동일하게 보장.
+async def ollama_structured(
+    system: str,
+    user: str,
+    schema_model: Type[T],
+    *,
+    model_name: str = "gemma4_slm",
+    temperature: float = 0.7,
+    num_predict: int = 300,
+    num_ctx: int = 2048,
+    timeout: float = 60.0,
+) -> T:
+    """Ollama /api/chat 직접 호출 → schema_model 인스턴스 반환.
+    format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제."""
+    model_id = MODELS.get(model_name, MODELS["gemma4"])
+    body = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "format": schema_model.model_json_schema(),
+        "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
+        # 12B core 는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
+        "keep_alive": "30s" if model_name == "gemma4" else "5m",
+        "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
+    }
+    # 매 호출 새 AsyncClient 생성 = TCP 핸드셰이크 오버헤드(멀티 NPC 동시 시 가중).
+    # 모듈 전역 client 재사용으로 커넥션 풀 유지. timeout 은 호출별 post 인자로 전달.
+    client = _get_structured_client()
+    resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
+    resp.raise_for_status()
+    # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
+    content = (resp.json().get("message") or {}).get("content")
+    if not content:
+        raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
+    return schema_model.model_validate_json(content)
 
 
 # ==============================================================================

@@ -1504,6 +1504,7 @@ void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
         InventoryComponent->EquipItem(ItemID);
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 제시: %s"), *ItemID);
     }
+    else { UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음(제시): %s"), *ItemID); }
 }
 
 // ==========================================

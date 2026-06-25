@@ -486,6 +486,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         last_event=prompt_payload.last_event,
         stats=prompt_payload.stats,
         player_location=prompt_payload.player_location,
+        npc_inventory=prompt_payload.npc_inventory,
     )
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
@@ -572,10 +573,15 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
     if npc_plans:
         logger.info(f"[Main] NpcPlans 회신: {list(npc_plans.keys())}")
 
+    plan_achieved = result.get("plan_achieved") or {}
+    if plan_achieved:
+        logger.info(f"[Main] PlanAchieved 회신: {[k for k, v in plan_achieved.items() if v]}")
+
     wrapper = ModeActionRequest(
         Mode=first_batch.Mode,
         ActionBatches=action_batches,
         NpcPlans=npc_plans,
+        PlanAchieved=plan_achieved,
     )
     return wrapper.model_dump_json()
 
@@ -640,7 +646,7 @@ async def _handle_state_update(envelope: MessageEnvelope) -> str:
         state_payload = envelope.parse_state_update_payload()
         async with _world_state_lock:
             _cached_world_state = state_payload.model_dump()
-        logger.info(
+        logger.debug(
             f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, threat_level={state_payload.threat_level}"
         )
 
@@ -827,7 +833,9 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 import os
 import yaml
 
-_DEBUG_HTML_PATH = os.path.join(os.path.dirname(__file__), "debug.html")
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+_DEBUG_HTML_PATH = os.path.join(_STATIC_DIR, "debug.html")
+_TEST_CHAT_HTML_PATH = os.path.join(_STATIC_DIR, "test_chat.html")
 _PERSONAS_BASE = os.path.join(os.path.dirname(__file__), "agents", "personas")
 
 
@@ -868,6 +876,15 @@ async def debug_dashboard():
         with open(_DEBUG_HTML_PATH, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>debug.html not found</h1>", status_code=404)
+
+
+@app.get("/test_chat", response_class=HTMLResponse)
+async def test_chat_page():
+    """UE5 없이 NPC 대화 파이프라인 테스트 — 브라우저 채팅 UI."""
+    if os.path.exists(_TEST_CHAT_HTML_PATH):
+        with open(_TEST_CHAT_HTML_PATH, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>test_chat.html not found</h1>", status_code=404)
 
 
 @app.get("/api/affinity")
@@ -985,6 +1002,8 @@ class DebugPromptRequest(BaseModel):
     npc_id: str
     text: str
     player_id: str = "Debug_Player"
+    # 테스트용 모의 인벤토리 — UE5 없이 NPC 보유 아이템 시뮬레이트. [{id,name,count}, ...].
+    npc_inventory: Optional[list] = None
 
 
 @app.post("/api/debug/prompt")
@@ -1006,6 +1025,8 @@ async def api_debug_prompt(req: DebugPromptRequest):
             "player_id": req.player_id,
             "voice_transcript": req.text,
             "target_npc_id": req.npc_id,
+            # 모의 인벤토리를 npc_id 키로 래핑 (PromptPayload.npc_inventory 구조와 정합).
+            "npc_inventory": {req.npc_id: req.npc_inventory} if req.npc_inventory else None,
         },
     )
     try:

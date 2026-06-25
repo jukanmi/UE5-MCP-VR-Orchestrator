@@ -1,4 +1,4 @@
-# NPC AgentID × emotion → CosyVoice2 음성 메타 매핑.
+# NPC AgentID × emotion → OpenVoice 음성 메타 매핑.
 #
 # 감정 enum (C++ EFacialState · interface_output.py::_normalize_emotion 와 정합):
 #   Neutral | Happy | Sad | Angry | Fear | Surprised | Disgusted | Tired | Pain
@@ -25,41 +25,6 @@
 
 default: Skadi
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CosyVoice2 zero-shot prompt_text — base_voices/<ref>.wav 가 "실제로 말하는 문장" 전사.
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 편집 방법:
-#   1) base_voices/<ref>.wav 를 실제 캐릭터 녹음으로 교체 (5~15s, 단일화자, 깨끗)
-#   2) 그 녹음이 말하는 문장을 아래 "" 안에 정확히 받아적기 (오디오와 1:1 일치 필수)
-#   3) 서버 재기동 또는 POST /api/reload_voices → prompt 캐시 갱신
-#
-# 규칙:
-#   - ref 당 1줄. 여러 NPC/emotion 이 같은 ref 공유 시 중복 정의 불필요.
-#   - 전사가 오디오와 불일치하면 클로닝 품질 하락(발음 뭉개짐).
-#   - "" (빈 문자열)이면 server 가 inference_cross_lingual 폴백(전사 없이 동작, 품질 소폭↓).
-#
-# ⚠️ prompt 누설 주의: prompt_text 가 audio 에 "없는 꼬리 단어"를 포함하면 그 단어가
-#    생성음 맨 앞에 새어나옴(예: audio 는 "…지원을 하" 에서 끊겼는데 전사는 "…하거든요"
-#    → 모든 출력 앞에 "거든요" 누설). 자동 whisper 전사는 잘린 어미를 흔한 형태로
-#    "환각 완성"하므로 반드시 audio 가 실제로 끝나는 지점까지만 남기고 뒤를 지울 것.
-#    text 가 audio 보다 짧은 건 안전, 긴 건 위험.
-#    근본 해결: 완결된 한 문장(숫자·전문용어 적은 ~5~8s)을 깔끔히 녹음해 쓰는 것.
-#
-# ⚠️ 현재 Moca.wav 만 실제 녹음. 나머지 9개는 미작성(빈칸) → 실제 WAV+전사로 채울 것.
-ref_texts:
-  # --- Moca (실제 녹음 ✓) ---
-  Moca: "엘키론을 할 수 있는 13 이벤트를 22일부터 26일 9시부터 미리 그때 다운로드 받아놓으면 좋을 때 디스코드 연동을 지원을 하"
-  Moca_happy: ""   # TODO: base_voices/Moca_happy.wav 실제 녹음+전사
-  Moca_sad:   ""   # TODO: base_voices/Moca_sad.wav 실제 녹음+전사
-  Moca_angry: ""   # TODO: base_voices/Moca_angry.wav 실제 녹음+전사
-  Moca_fear:  ""   # TODO: base_voices/Moca_fear.wav 실제 녹음+전사
-  # --- Skadi (전부 미작성) ---
-  Skadi:       ""  # TODO: base_voices/Skadi.wav 실제 녹음+전사
-  Skadi_happy: ""  # TODO: base_voices/Skadi_happy.wav 실제 녹음+전사
-  Skadi_sad:   ""  # TODO: base_voices/Skadi_sad.wav 실제 녹음+전사
-  Skadi_angry: ""  # TODO: base_voices/Skadi_angry.wav 실제 녹음+전사
-  Skadi_fear:  ""  # TODO: base_voices/Skadi_fear.wav 실제 녹음+전사
-
 npcs:
   Skadi:
     default_ref: Skadi
@@ -80,15 +45,15 @@ npcs:
     lang: KR
     speed: 1.0
     emotions:
-      Neutral:   { ref: Moca,         speed: 1.0  }
-      Happy:     { ref: Moca_happy,   speed: 1.05 }
-      Sad:       { ref: Moca_sad,     speed: 0.92 }
-      Angry:     { ref: Moca_angry,   speed: 1.08 }
-      Fear:      { ref: Moca_fear,    speed: 1.10 }
-      Surprised: { ref: Moca_happy,   speed: 1.10 }
-      Disgusted: { ref: Moca_angry,   speed: 0.95 }
-      Tired:     { ref: Moca_sad,     speed: 0.88 }
-      Pain:      { ref: Moca_sad,     speed: 0.95 }
+      Neutral:   { ref: Moca,          speed: 1.0  }
+      Happy:     { ref: Moca_happy,    speed: 1.05 }
+      Sad:       { ref: Moca_sad,      speed: 0.92 }
+      Angry:     { ref: Moca_angry,    speed: 1.08 }
+      Fear:      { ref: Moca_fear,     speed: 1.10 }
+      Surprised: { ref: Moca_surprise, speed: 1.10 }   # 독립 녹음
+      Disgusted: { ref: Moca_disgust,  speed: 0.95 }   # 독립 녹음
+      Tired:     { ref: Moca_tired,    speed: 0.88 }   # 독립 녹음
+      Pain:      { ref: Moca_pain,     speed: 0.95 }   # 독립 녹음
   # 예시:
   # Guard_01:
   #   default_ref: guard_male

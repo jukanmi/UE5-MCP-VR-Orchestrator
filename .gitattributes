@@ -1,0 +1,2 @@
+# WSL2 에서 실행되는 셸 스크립트는 LF 강제 — CRLF 면 bash 가 '\r' 에러로 기동 실패.
+*.sh text eol=lf
