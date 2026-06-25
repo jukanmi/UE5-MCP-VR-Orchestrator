@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Optional, Type
+from typing import Optional, Type, TypeVar
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
@@ -8,6 +8,9 @@ import httpx
 from pydantic import BaseModel
 
 load_dotenv()
+
+# ollama_structured 반환 타입 제네릭 — 호출 측이 캐스팅·getattr 없이 필드 직접 접근.
+T = TypeVar("T", bound=BaseModel)
 
 # ==============================================================================
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
@@ -98,14 +101,14 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 async def ollama_structured(
     system: str,
     user: str,
-    schema_model: Type[BaseModel],
+    schema_model: Type[T],
     *,
     model_name: str = "gemma4_slm",
     temperature: float = 0.7,
     num_predict: int = 300,
     num_ctx: int = 2048,
     timeout: float = 60.0,
-) -> BaseModel:
+) -> T:
     """Ollama /api/chat 직접 호출 → schema_model 인스턴스 반환.
     format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제."""
     model_id = MODELS.get(model_name, MODELS["gemma4"])

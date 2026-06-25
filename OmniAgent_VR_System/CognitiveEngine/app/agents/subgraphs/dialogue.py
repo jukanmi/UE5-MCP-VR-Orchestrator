@@ -321,9 +321,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bo
         ) or {}
         inv_items = inv_map.get(npc_id, []) or []
     if inv_items:
-        inventory_str = ", ".join(
-            f"{it.get('name', it.get('id', '?'))}×{it.get('count', 1)}" for it in inv_items
-        )
+        inventory_str = ", ".join(f"{it.get('name', it.get('id', '?'))}×{it.get('count', 1)}" for it in inv_items)
     else:
         inventory_str = "None (empty-handed)"
 
@@ -358,7 +356,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bo
             num_predict=300,
         )
         raw_response = _serialize_dialogue(resp_obj).strip()
-        plan_achieved = bool(getattr(resp_obj, "plan_achieved", False))
+        plan_achieved = bool(resp_obj.plan_achieved)
         if plan_achieved:
             print(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
         print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")

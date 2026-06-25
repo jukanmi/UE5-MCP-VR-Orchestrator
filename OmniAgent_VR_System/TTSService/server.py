@@ -512,20 +512,26 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
 
     async def _produce() -> None:
         nonlocal first_synth_ms
-        for idx, sent in enumerate(sentences):
-            ts = time.perf_counter()
-            async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
-                native, native_sr = await asyncio.to_thread(_synthesize_sync, sent, voice_id, language, meta.speed)
-            dt = (time.perf_counter() - ts) * 1000.0
-            if idx == 0:
-                first_synth_ms = dt
-            logger.info(
-                f"[TTS] synth[{idx + 1}/{len(sentences)}] {dt:.0f}ms len={len(sent)} "
-                f"npc={req.voice_id} emo={emotion} ref={voice_id} lang={language} speed={meta.speed}"
-            )
-            pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
-            await pcm_queue.put(pcm)
-        await pcm_queue.put(None)  # 종료 센티넬
+        # 예외(CUDA OOM·합성 실패 등) 시에도 finally 로 종료 센티넬 보장 — 미보장 시
+        # consumer 가 pcm_queue.get() 에서 영구 hang. 예외는 큐로 전파해 consumer 가 raise.
+        try:
+            for idx, sent in enumerate(sentences):
+                ts = time.perf_counter()
+                async with _synth_lock:  # 동시 NPC 발화 직렬화(공유 모델 정합성)
+                    native, native_sr = await asyncio.to_thread(_synthesize_sync, sent, voice_id, language, meta.speed)
+                dt = (time.perf_counter() - ts) * 1000.0
+                if idx == 0:
+                    first_synth_ms = dt
+                logger.info(
+                    f"[TTS] synth[{idx + 1}/{len(sentences)}] {dt:.0f}ms len={len(sent)} "
+                    f"npc={req.voice_id} emo={emotion} ref={voice_id} lang={language} speed={meta.speed}"
+                )
+                pcm = _float_to_pcm_s16le(_resample_to_target(native, native_sr, target_sr))
+                await pcm_queue.put(pcm)
+        except Exception as e:  # noqa: BLE001 — consumer 로 전파
+            await pcm_queue.put(e)
+        finally:
+            await pcm_queue.put(None)  # 종료 센티넬
 
     try:
         producer = asyncio.create_task(_produce())
@@ -535,6 +541,8 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
             item = await pcm_queue.get()
             if item is None:
                 break
+            if isinstance(item, Exception):
+                raise item  # producer 예외 전파 → 아래 except 가 소켓 정리
             buf = leftover + item
             off = 0
             # 문장 경계 무시하고 연속 청크 송신 — 문장 사이 silence 방지(gapless).

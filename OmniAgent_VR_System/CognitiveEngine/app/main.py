@@ -989,7 +989,7 @@ function renderInvList() {
     return;
   }
   invList.innerHTML = items.map(it =>
-    `<div class="inv-item"><span>${it.name}</span><span class="cnt">×${it.count}</span></div>`
+    `<div class="inv-item"><span>${esc(it.name)}</span><span class="cnt">×${it.count}</span></div>`
   ).join('');
 }
 
@@ -1026,6 +1026,13 @@ function removeThinking() {
   if (t) t.remove();
 }
 
+// XSS 방지 — LLM/사용자 유래 텍스트를 innerHTML 삽입 전 이스케이프.
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 function appendNPC(npcId, data) {
   const batch = data.ActionBatches && data.ActionBatches[npcId];
   if (!batch) { appendError('ActionBatch 없음'); return; }
@@ -1051,17 +1058,17 @@ function appendNPC(npcId, data) {
   const b = document.createElement('div');
   b.className = 'bubble npc';
 
-  let html = `<div class="npc-name">${npcId}</div>`;
-  html += `<div class="speech">${speech || '...'}</div>`;
+  let html = `<div class="npc-name">${esc(npcId)}</div>`;
+  html += `<div class="speech">${esc(speech || '...')}</div>`;
   html += `<div class="badges">`;
-  html += `<span class="badge mode-badge">${mode}</span>`;
-  html += `<span class="badge facial-badge">${emotion}</span>`;
+  html += `<span class="badge mode-badge">${esc(mode)}</span>`;
+  html += `<span class="badge facial-badge">${esc(emotion)}</span>`;
   if (planAchieved) html += `<span class="badge plan-achieved">✓ Plan 달성</span>`;
   html += `</div>`;
 
   if (actionTags.length > 0) {
     html += `<div class="actions">`;
-    for (const t of actionTags) html += `<span>${t}</span>`;
+    for (const t of actionTags) html += `<span>${esc(t)}</span>`;
     html += `</div>`;
   }
 
@@ -1069,10 +1076,10 @@ function appendNPC(npcId, data) {
     const uid = 'plan_' + Date.now();
     html += `<span class="plan-toggle" onclick="togglePlan('${uid}')">📋 Plan 보기</span>`;
     html += `<div class="plan-body" id="${uid}">`;
-    html += `<div class="plan-goal">🎯 ${plan.goal || ''}</div>`;
+    html += `<div class="plan-goal">🎯 ${esc(plan.goal || '')}</div>`;
     if (plan.steps && plan.steps.length > 0) {
       html += '<ul class="plan-steps">';
-      for (const s of plan.steps) html += `<li>${s}</li>`;
+      for (const s of plan.steps) html += `<li>${esc(s)}</li>`;
       html += '</ul>';
     }
     html += '</div>';
