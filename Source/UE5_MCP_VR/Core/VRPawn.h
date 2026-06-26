@@ -230,11 +230,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "5.0"))
     float CalibrationDuration = 2.f;
 
-    /** 시야 높이 오프셋(cm, 음수=내림). VROrigin Z에 더해 카메라+컨트롤러 트래킹
-     *  공간을 통째로 내림 — 아바타 머리 본이 시야보다 위로 뜰 때 시야를 머리로 맞춤.
-     *  부모(VROrigin)에 적용해 HMD 레이트업데이트가 안 덮음. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-40.0", ClampMax = "10.0"))
-    float CameraHeightOffset = -30.f;
+    /** 시야 높이 미세 오프셋(cm). VROrigin Z에 더함. **기본 0 — 비워둘 것.**
+     *  ⚠️ 0이 아니면 카메라 월드Z가 시프트되고, GetCurrentHMDHeight()가 그 카메라Z를
+     *  역산하므로 보고 높이가 오염→캡슐(아바타 몸)이 오프셋만큼 짧아짐→카메라가 짧은 몸
+     *  위로 떠 '시야 너무 높음'. 과거 -30 이 정확히 이 버그를 유발(아바타 머리 뜸을
+     *  카메라 침몰로 가리려다 역효과). 머리 본이 뜨면 여기 말고 HeadEffectorOffset/
+     *  FBIK head effector 에서 교정할 것. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-20.0", ClampMax = "20.0"))
+    float CameraHeightOffset = 0.f;
 
     /** 자세 전이 시 브로드캐스트. AnimBP / UI 가 바인딩. */
     UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
@@ -269,15 +272,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
 
-    /** 캘리브레이션 시 아바타를 플레이어 키 비율로 스케일할지. 끄면 네이티브 크기.
-     *  켜면 아바타 팔길이도 같이 줄어 손 IK 타겟에 자연히 닿음(팔꿈치 과접힘 방지). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    bool bScaleAvatarToPlayer = true;
-
-    /** 아바타 네이티브 정자세 눈높이(cm). 스케일 = CalibratedStandingHeight / 이 값.
-     *  X_Bot 기준 실측해 조정(팔 길이가 맞을 때까지). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK", meta = (ClampMin = "120.0", ClampMax = "200.0"))
-    float AvatarReferenceHeight = 170.f;
+    // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
+    // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
 
     /** HMD(VRCamera)를 몸체 메시 공간으로 변환한 Head Effector Transform. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")

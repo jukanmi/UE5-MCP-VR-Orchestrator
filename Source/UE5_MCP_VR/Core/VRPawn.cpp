@@ -231,16 +231,7 @@ void AVRPawn::FinishCalibration()
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Calibration fallback to %.1f cm (no valid samples)"),
                CalibratedStandingHeight);
     }
-
-    // 아바타를 플레이어 키 비율로 균일 스케일 — 팔 길이를 맞춰 손 IK 타겟에 자연히
-    // 닿게 한다. 메시 피벗(발)이 기준이라 발은 바닥에 고정된 채 몸만 스케일됨.
-    if (bScaleAvatarToPlayer && GetMesh() && AvatarReferenceHeight > KINDA_SMALL_NUMBER)
-    {
-        const float Scale = FMath::Clamp(CalibratedStandingHeight / AvatarReferenceHeight, 0.7f, 1.3f);
-        GetMesh()->SetRelativeScale3D(FVector(Scale));
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] Avatar scaled to %.3f (player %.1f / avatar %.1f)"),
-               Scale, CalibratedStandingHeight, AvatarReferenceHeight);
-    }
+    // 아바타 스케일링 제거 — 항상 네이티브 1:1. CalibratedStandingHeight 는 자세판정(UpdatePosture)용으로만 유지.
 }
 
 float AVRPawn::GetCurrentHMDHeight() const
