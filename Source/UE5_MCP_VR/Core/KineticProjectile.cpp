@@ -61,6 +61,9 @@ void AKineticProjectile::InitProjectile(AActor* Shooter, float InDamageScale, fl
 void AKineticProjectile::OnHit(UPrimitiveComponent* /*HitComp*/, AActor* OtherActor, UPrimitiveComponent* /*OtherComp*/,
     FVector /*NormalImpulse*/, const FHitResult& Hit)
 {
+    // 동일 프레임 다중 충돌 시 OnHit 중복 호출 → 데미지 중복 방지(이미 파괴 진행 중이면 무시).
+    if (IsActorBeingDestroyed()) return;
+
     if (OtherActor && OtherActor != this)
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(OtherActor))

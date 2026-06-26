@@ -231,6 +231,14 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
             LastHitBone = Pt.HitInfo.BoneName;
             LastHitDirection = Pt.ShotDirection;
         }
+        else
+        {
+            // 비-PointDamage(폭발·일반 데미지) — 이전 피격 방향 잔존 방지. 가해자→대상 방향으로 폴백.
+            LastHitBone = NAME_None;
+            LastHitDirection = DamageCauser
+                ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
+                : -GetActorForwardVector();
+        }
         StateComponent->ApplyDamage(ActualDamage, Multiplier);
 
         if (!StateComponent->GetAttributes().Resources.IsAlive())
@@ -860,9 +868,9 @@ void ASmartNPC::BeginGetUp()
 
     KnockdownPhase = EKnockdownPhase::GettingUp;
 
-    // 1) 엎/누움 판정 — Hips 본의 up 축과 월드 up 내적. >=0 이면 등이 바닥(FaceUp).
-    //    GetSocketQuaternion = 명시적 월드 공간(GetBoneQuaternion 도 기본 월드지만 의도 명확화).
-    const FVector HipsUp = MeshComp->GetSocketQuaternion(KnockdownPelvisBone).GetUpVector();
+    // 1) 엎/누움 판정 — Hips 본의 up 축(GetAxisZ)과 월드 up 내적. >=0 이면 등이 바닥(FaceUp).
+    //    GetSocketQuaternion = 명시적 월드 공간. GetAxisZ = 쿼터니언의 Z(up)축.
+    const FVector HipsUp = MeshComp->GetSocketQuaternion(KnockdownPelvisBone).GetAxisZ();
     const bool bFaceUp = FVector::DotProduct(HipsUp, FVector::UpVector) >= 0.f;
 
     // 2) 캡슐 재배치 — Hips 수평 위치, 바닥 트레이스 Z + 캡슐 반높이.
@@ -871,7 +879,8 @@ void ASmartNPC::BeginGetUp()
     if (UWorld* W = GetWorld())
     {
         FHitResult Hit;
-        const FVector Start = HipsLoc + FVector(0.f, 0.f, 100.f);
+        // 시작은 골반 살짝 위(+20)만 — 골반은 바닥에 누운 상태라 +100 이면 머리 위 테이블·천장을 바닥으로 오인.
+        const FVector Start = HipsLoc + FVector(0.f, 0.f, 20.f);
         const FVector End   = HipsLoc - FVector(0.f, 0.f, 500.f);
         FCollisionQueryParams Params(FName(TEXT("GetUpFloor")), /*bTraceComplex=*/false, this);
         // 정적 지형만 — Visibility 면 타 NPC/플레이어/트리거 위로 텔레포트 위험.
@@ -887,6 +896,14 @@ void ASmartNPC::BeginGetUp()
     }
     FVector NewLoc(HipsLoc.X, HipsLoc.Y, GroundZ + HalfHeight);
 
+    // 캡슐 Yaw 를 래그돌이 누운 방향(Hips Yaw)에 정렬 — 안 하면 기상 몽타주가 쓰러지기 전 회전으로 시작해 스냅.
+    // faceUp(등 바닥)은 몸이 뒤집혀 있어 +180 보정(리그·몽타주별 PIE 튜닝 대상).
+    FRotator NewRot(0.f, MeshComp->GetSocketRotation(KnockdownPelvisBone).Yaw, 0.f);
+    if (bFaceUp)
+    {
+        NewRot.Yaw += 180.f;
+    }
+
     // 캡슐 콜리전 먼저 복원 — FindTeleportSpot 이 캡슐 충돌형상으로 겹침 검사하므로 NoCollision 이면 무효.
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
@@ -897,14 +914,14 @@ void ASmartNPC::BeginGetUp()
     if (UWorld* W = GetWorld())
     {
         FVector SafeLoc = NewLoc;
-        if (W->FindTeleportSpot(this, SafeLoc, GetActorRotation()))
+        if (W->FindTeleportSpot(this, SafeLoc, NewRot))
         {
             NewLoc = SafeLoc;
         }
     }
 
-    // 물리 텔레포트(sweep 생략)로 안전 위치 배치.
-    SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+    // 물리 텔레포트(sweep 생략)로 안전 위치·방향 배치.
+    SetActorLocationAndRotation(NewLoc, NewRot, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
 
     if (UCharacterMovementComponent* CMC = GetCharacterMovement())
     {

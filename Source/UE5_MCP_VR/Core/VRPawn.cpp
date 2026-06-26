@@ -201,12 +201,12 @@ void AVRPawn::Tick(float DeltaTime)
         const FVector CurR = MotionControllerRight->GetComponentLocation();
         if (bHandVelInit)
         {
-            // 텔레포트·트래킹 튐 방지 — 프레임당 이동 >100cm(90fps 기준 ~90m/s, 인간 스윙 불가)는
-            // 글리치로 보고 0 처리. ½mv² 데미지 폭주·물리 폭발 차단. 정상 스윙(<100cm/frame)은 무영향.
-            const FVector DeltaL = CurL - PrevHandLocLeft;
-            const FVector DeltaR = CurR - PrevHandLocRight;
-            const FVector RawL = (DeltaL.Size() > 100.f) ? FVector::ZeroVector : DeltaL / DeltaTime;
-            const FVector RawR = (DeltaR.Size() > 100.f) ? FVector::ZeroVector : DeltaR / DeltaTime;
+            // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
+            // 0 처리. ½mv² 데미지 폭주·물리 폭발 차단. 속도(cm/s) 기준이라 프레임레이트 독립(저FPS 정상스윙 오판 X).
+            const FVector VelL = (CurL - PrevHandLocLeft) / DeltaTime;
+            const FVector VelR = (CurR - PrevHandLocRight) / DeltaTime;
+            const FVector RawL = (VelL.Size() > 9000.f) ? FVector::ZeroVector : VelL;
+            const FVector RawR = (VelR.Size() > 9000.f) ? FVector::ZeroVector : VelR;
             HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
             HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
 
