@@ -25,6 +25,7 @@
 #include "Engine/DamageEvents.h"
 
 // UE5 Mannequin(X_Bot) 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
+// 사지는 좌우 분리 — Mannequin 본은 _l/_r 접미사. 접미사 없으면 Left 폴백.
 static EBodyPartType BoneToBodyPart(FName Bone)
 {
     const FString B = Bone.ToString().ToLower();
@@ -32,16 +33,21 @@ static EBodyPartType BoneToBodyPart(FName Bone)
     if (B.Contains(TEXT("head")) || B.Contains(TEXT("neck"))) return EBodyPartType::Head;
     if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("clavicle")))
         return EBodyPartType::Torso;
-    return EBodyPartType::Limb;  // upperarm/lowerarm/hand/thigh/calf/foot
+    const bool bRight = B.EndsWith(TEXT("_r"));
+    if (B.Contains(TEXT("arm")) || B.Contains(TEXT("hand")))   // upperarm/lowerarm/hand
+        return bRight ? EBodyPartType::ArmRight : EBodyPartType::ArmLeft;
+    if (B.Contains(TEXT("thigh")) || B.Contains(TEXT("calf")) || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")))
+        return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
+    return EBodyPartType::Torso;
 }
 
 static float BodyPartMultiplier(EBodyPartType P)
 {
     switch (P)
     {
-        case EBodyPartType::Head: return 2.0f;
-        case EBodyPartType::Limb: return 0.75f;
-        default:                  return 1.0f;  // Torso
+        case EBodyPartType::Head:  return 2.0f;
+        case EBodyPartType::Torso: return 1.0f;
+        default:                   return 0.75f;  // ArmLeft/ArmRight/LegLeft/LegRight
     }
 }
 

@@ -25,9 +25,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
 UENUM(BlueprintType)
 enum class EBodyPartType : uint8
 {
-    Torso  UMETA(DisplayName="몸통"),   // 배율 1.0 (기본·본 미식별 폴백)
-    Head   UMETA(DisplayName="머리"),   // 배율 2.0
-    Limb   UMETA(DisplayName="사지"),   // 배율 0.75
+    Torso     UMETA(DisplayName="몸통"),    // 배율 1.0 (기본·본 미식별 폴백)
+    Head      UMETA(DisplayName="머리"),    // 배율 2.0
+    ArmLeft   UMETA(DisplayName="왼팔"),    // 배율 0.75
+    ArmRight  UMETA(DisplayName="오른팔"),  // 배율 0.75
+    LegLeft   UMETA(DisplayName="왼다리"),  // 배율 0.75
+    LegRight  UMETA(DisplayName="오른다리"),// 배율 0.75
 };
 
 UCLASS(BlueprintType, Blueprintable)
