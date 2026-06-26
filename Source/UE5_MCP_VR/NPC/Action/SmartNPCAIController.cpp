@@ -143,6 +143,26 @@ void ASmartNPCAIController::OnUnPossess()
     Super::OnUnPossess();
 }
 
+void ASmartNPCAIController::PauseAI()
+{
+    // StateTree 정지 — 진행 task 의 ExitState 호출. 넉다운 동안 새 액션 주입 차단.
+    if (StateTreeAI)
+    {
+        StateTreeAI->StopLogic(TEXT("Knockdown"));
+    }
+    // 진행 중 MoveTo 등 이동 즉시 중단(래그돌과 위치 다툼 방지).
+    StopMovement();
+}
+
+void ASmartNPCAIController::ResumeAI()
+{
+    // 에셋·Blackboard 는 OnPossess 에서 주입된 채 유지 → StartLogic 만으로 루트부터 재가동.
+    if (StateTreeAI && GetPawn())
+    {
+        StateTreeAI->StartLogic();
+    }
+}
+
 void ASmartNPCAIController::HandleActionStarted(const FGameAction& /*Action*/)
 {
 }
