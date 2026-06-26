@@ -173,7 +173,16 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
-    // 공격 명중 시 오른손 컨트롤러 럼블. BP_VRPawn 에서 UForceFeedbackEffect 에셋 할당.
+    // 공격 명중 시 럼블 — VR 컨트롤러는 Haptic(B), 게임패드/데스크탑은 ForceFeedback(A). 둘 다 폴백으로 재생.
+    // [B·권장] VR 모션 컨트롤러 정석 럼블. BP_VRPawn 에서 UHapticFeedbackEffect_Curve 에셋 할당.
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    TObjectPtr<class UHapticFeedbackEffect_Base> HitHapticEffect;
+
+    // [B] 햅틱 강도 스케일(0~1).
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    float HitHapticScale = 1.0f;
+
+    // [A·폴백] 게임패드 진동 모터. VR 컨트롤러엔 보통 안 옴. BP_VRPawn 에서 UForceFeedbackEffect 에셋 할당.
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
     TObjectPtr<class UForceFeedbackEffect> HitForceFeedbackEffect;
 
