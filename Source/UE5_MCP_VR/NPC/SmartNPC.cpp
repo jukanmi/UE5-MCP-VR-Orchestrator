@@ -127,6 +127,7 @@ void ASmartNPC::BeginPlay()
     if (GetMesh())
     {
         OriginalMeshProfile = GetMesh()->GetCollisionProfileName();
+        OriginalMeshCollision = GetMesh()->GetCollisionEnabled();
     }
 
     if (UGameInstance* GI = GetGameInstance())
@@ -156,10 +157,10 @@ void ASmartNPC::BeginPlay()
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    // 넉다운 도중 파괴/종료 시 동시 카운트 누수 방지(static — PIE 세션 넘어 잔존).
+    // 넉다운 도중 파괴/종료 시 동시 카운트 누수 방지(UNPCManager 소유 카운터 감소).
     if (KnockdownPhase != EKnockdownPhase::None)
     {
-        ActiveKnockdownCount = FMath::Max(0, ActiveKnockdownCount - 1);
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
         KnockdownPhase = EKnockdownPhase::None;
     }
 
@@ -300,7 +301,7 @@ void ASmartNPC::HandleDeath()
     if (KnockdownPhase != EKnockdownPhase::None)
     {
         GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
-        ActiveKnockdownCount = FMath::Max(0, ActiveKnockdownCount - 1);
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
         KnockdownPhase = EKnockdownPhase::None;
     }
     bFlinching = false;
@@ -637,7 +638,14 @@ void ASmartNPC::SpikeRecover()
 // 액티브 래그돌 (§3) — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
 // ====================================================================
 
-int32 ASmartNPC::ActiveKnockdownCount = 0;
+UNPCManager* ASmartNPC::GetNPCManager() const
+{
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        return GI->GetSubsystem<UNPCManager>();
+    }
+    return nullptr;
+}
 
 void ASmartNPC::RefreshTickEnabled()
 {
@@ -758,7 +766,7 @@ void ASmartNPC::TickFlinchRamp(float DeltaSeconds)
     if (FlinchBlendWeight <= KINDA_SMALL_NUMBER)
     {
         MeshComp->SetAllBodiesBelowSimulatePhysics(FlinchRootBone, false, true);
-        MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        MeshComp->SetCollisionEnabled(OriginalMeshCollision);  // 하드코딩 QueryOnly 대신 원본 복원
         bFlinching = false;
         RefreshTickEnabled();
     }
@@ -783,14 +791,17 @@ void ASmartNPC::Knockdown()
     if (!bReentry)
     {
         // 동시 넉다운 상한 초과 → Flinch 폴백(전신 래그돌은 비용·시야 혼잡).
-        if (ActiveKnockdownCount >= MaxConcurrentKnockdown)
+        // 카운터는 UNPCManager 소유(PIE 세션별 리셋). 매니저 없으면 게이트 없이 진행.
+        if (UNPCManager* Mgr = GetNPCManager())
         {
-            UE_LOG(LogTemp, Verbose, TEXT("[Ragdoll] %s 동시 넉다운 상한(%d) → Flinch 폴백"),
-                *AgentID, MaxConcurrentKnockdown);
-            Flinch();
-            return;
+            if (!Mgr->TryEnterKnockdown(MaxConcurrentKnockdown))
+            {
+                UE_LOG(LogTemp, Verbose, TEXT("[Ragdoll] %s 동시 넉다운 상한(%d) → Flinch 폴백"),
+                    *AgentID, MaxConcurrentKnockdown);
+                Flinch();
+                return;
+            }
         }
-        ++ActiveKnockdownCount;
 
         // AI 정지 + 진행 액션 중지(최초 진입만 — 재진입 시 이미 정지).
         if (ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController()))
@@ -874,15 +885,27 @@ void ASmartNPC::BeginGetUp()
     {
         HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
     }
-    const FVector NewLoc(HipsLoc.X, HipsLoc.Y, GroundZ + HalfHeight);
+    FVector NewLoc(HipsLoc.X, HipsLoc.Y, GroundZ + HalfHeight);
 
-    // 콜리전 복원 전에 위치 세팅(끼임 방지). 물리 텔레포트로 sweep 생략.
-    SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
-
+    // 캡슐 콜리전 먼저 복원 — FindTeleportSpot 이 캡슐 충돌형상으로 겹침 검사하므로 NoCollision 이면 무효.
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     }
+
+    // 래그돌이 벽·장애물 구석에 박혀 멈췄을 때 캡슐 강제 텔레포트 시 끼임 방지 — 안전 위치 탐색.
+    if (UWorld* W = GetWorld())
+    {
+        FVector SafeLoc = NewLoc;
+        if (W->FindTeleportSpot(this, SafeLoc, GetActorRotation()))
+        {
+            NewLoc = SafeLoc;
+        }
+    }
+
+    // 물리 텔레포트(sweep 생략)로 안전 위치 배치.
+    SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+
     if (UCharacterMovementComponent* CMC = GetCharacterMovement())
     {
         CMC->SetMovementMode(MOVE_Walking);
@@ -954,14 +977,15 @@ void ASmartNPC::FinishGetUp()
         MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
         MeshComp->SetAllBodiesSimulatePhysics(false);
         MeshComp->SetSimulatePhysics(false);
-        // 원본 프로파일 복원(보통 QueryOnly 캐릭터 메시) — Ragdoll 프로파일 잔존 방지.
+        // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
         MeshComp->SetCollisionProfileName(OriginalMeshProfile);
+        MeshComp->SetCollisionEnabled(OriginalMeshCollision);
     }
 
     if (KnockdownPhase != EKnockdownPhase::None)
     {
         KnockdownPhase = EKnockdownPhase::None;
-        ActiveKnockdownCount = FMath::Max(0, ActiveKnockdownCount - 1);
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
     }
     SettleTimer = 0.f;
     GetUpBlendWeight = 0.f;

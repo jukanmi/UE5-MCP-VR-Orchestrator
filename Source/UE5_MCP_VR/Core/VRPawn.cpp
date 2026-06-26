@@ -618,6 +618,13 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
     if (!bAnyOverlap || !bPush) return;   // 최소 밀치기 임계 + overlap.
 
     const float Now = GetWorld()->GetTimeSeconds();
+
+    // 만료된 약참조 키 정리 — 소멸한 NPC 의 TWeakObjectPtr 엔트리는 자동 제거 안 돼 누적되므로.
+    for (auto It = LastMeleeHitTime.CreateIterator(); It; ++It)
+    {
+        if (!It.Key().IsValid()) { It.RemoveCurrent(); }
+    }
+
     const float Energy = 0.5f * WeaponMass * SpeedMs * SpeedMs;                // ½mv² (J)
     const float Damage = FMath::Clamp(Energy * KineticDamageScale, 0.f, MaxKineticDamage);
 

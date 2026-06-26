@@ -290,10 +290,12 @@ private:
     EKnockdownPhase KnockdownPhase = EKnockdownPhase::None;
     float SettleTimer = 0.f;                // 안착 지속 누적
     float GetUpBlendWeight = 0.f;           // 기상 전신 블렌드 추적
-    FName OriginalMeshProfile;              // BeginPlay 캡처 — 기상 후 메시 콜리전 복원용
+    FName OriginalMeshProfile;              // BeginPlay 캡처 — 기상 후 메시 콜리전 프로파일 복원용
+    ECollisionEnabled::Type OriginalMeshCollision = ECollisionEnabled::QueryOnly;  // BeginPlay 캡처 — 활성화 상태 복원용
     FTimerHandle GetUpMontageTimer;
 
-    static int32 ActiveKnockdownCount;      // 동시 넉다운 카운트(MaxConcurrentKnockdown 게이트)
+    /** 동시 넉다운 게이트 카운터 소유자(UNPCManager, GameInstanceSubsystem). 없으면 nullptr. */
+    class UNPCManager* GetNPCManager() const;
 
     // --- Tick 헬퍼 ---
     void TickFlinchRamp(float DeltaSeconds);
