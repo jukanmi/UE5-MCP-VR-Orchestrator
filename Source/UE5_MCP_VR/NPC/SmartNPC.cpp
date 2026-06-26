@@ -850,7 +850,8 @@ void ASmartNPC::BeginGetUp()
     KnockdownPhase = EKnockdownPhase::GettingUp;
 
     // 1) 엎/누움 판정 — Hips 본의 up 축과 월드 up 내적. >=0 이면 등이 바닥(FaceUp).
-    const FVector HipsUp = MeshComp->GetBoneQuaternion(KnockdownPelvisBone).GetUpVector();
+    //    GetSocketQuaternion = 명시적 월드 공간(GetBoneQuaternion 도 기본 월드지만 의도 명확화).
+    const FVector HipsUp = MeshComp->GetSocketQuaternion(KnockdownPelvisBone).GetUpVector();
     const bool bFaceUp = FVector::DotProduct(HipsUp, FVector::UpVector) >= 0.f;
 
     // 2) 캡슐 재배치 — Hips 수평 위치, 바닥 트레이스 Z + 캡슐 반높이.
