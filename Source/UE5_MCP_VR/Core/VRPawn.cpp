@@ -3,6 +3,10 @@
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/Engine.h"
+#include "KineticProjectile.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -67,6 +71,18 @@ AVRPawn::AVRPawn()
 
     // 손 메시 제거됨 — 풀바디 FBIK(ABP_VRPawn) 손이 컨트롤러를 향해 역산되므로
     // 별도 손 메시는 중복. 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
+
+    // §4 동역학 근접 — 손 위치 시각 마커. **실제 타격 판정은 Tick 의 능동 스피어 쿼리(TryMeleeHits).**
+    // 본 소켓에 붙인 패시브 overlap 은 애니 본에서 overlap 이벤트 누락이 잦아 쓰지 않음(콜리전 OFF).
+    MeleeSphereLeft = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereLeft"));
+    MeleeSphereLeft->SetupAttachment(GetMesh(), TEXT("LeftHand"));  // Mixamo X_Bot 본 이름
+    MeleeSphereLeft->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    MeleeSphereRight = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereRight"));
+    MeleeSphereRight->SetupAttachment(GetMesh(), TEXT("RightHand"));  // Mixamo X_Bot 본 이름
+    MeleeSphereRight->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -176,6 +192,41 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateSmoothTurn(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
+
+    // §4 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
+    // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
+    if (DeltaTime > KINDA_SMALL_NUMBER && MotionControllerLeft && MotionControllerRight)
+    {
+        const FVector CurL = MotionControllerLeft->GetComponentLocation();
+        const FVector CurR = MotionControllerRight->GetComponentLocation();
+        if (bHandVelInit)
+        {
+            const FVector RawL = (CurL - PrevHandLocLeft)  / DeltaTime;
+            const FVector RawR = (CurR - PrevHandLocRight) / DeltaTime;
+            HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
+            HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
+
+            // 디버그 — 손 위치 구체 + 실시간 속도. 근접 미작동 단계 진단(속도 0? 쿼리 미스?).
+            if (bDebugMelee)
+            {
+                DrawDebugSphere(GetWorld(), CurL, MeleeSphereRadius, 12, FColor::Cyan,   false, 0.f);
+                DrawDebugSphere(GetWorld(), CurR, MeleeSphereRadius, 12, FColor::Yellow, false, 0.f);
+                if (GEngine)
+                {
+                    GEngine->AddOnScreenDebugMessage(8801, 0.f, FColor::Yellow,
+                        FString::Printf(TEXT("[Melee] L=%.2f  R=%.2f m/s  (min=%.2f)"),
+                            HandVelLeft.Size() / 100.f, HandVelRight.Size() / 100.f, MinImpactSpeed));
+                }
+            }
+
+            // 근접 타격 — 컨트롤러 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
+            TryMeleeHits(CurR, HandVelRight, /*bRightHand=*/true);
+            TryMeleeHits(CurL, HandVelLeft,  /*bRightHand=*/false);
+        }
+        PrevHandLocLeft  = CurL;
+        PrevHandLocRight = CurR;
+        bHandVelInit = true;
+    }
 }
 
 // ============================================================================
@@ -472,49 +523,29 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
     // 공격 소음 발생 (NPC 청각 감지용)
     UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.f, this, 0.f, NPCActionKeys::NoiseTag_Attack);
 
-    // 오른손 Aim 포즈 기준 라인트레이스 — Grip 포즈는 축이 ~30° 위로 기울어
-    // 있어 조준이 빗나간다. OpenXR Aim 포즈는 자연 조준 축과 정렬되어 있다.
-    FVector Start     = MotionControllerRightAim->GetComponentLocation();
-    FVector End       = Start + MotionControllerRightAim->GetForwardVector() * AttackRange;
-
-    FHitResult Hit;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
-
-    if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params))
+    // §4 원거리 — 히트스캔 폐기, 투사체 발사. 오른손 Aim 포즈(조준 정렬) 기준 전방.
+    // 명중·데미지는 투사체의 ½mv²(KineticProjectile::OnHit)가 처리. 근접은 스윙 overlap.
+    if (ProjectileClass && MotionControllerRightAim)
     {
-        if (AActor* HitActor = Hit.GetActor())
+        const FVector  SpawnLoc = MotionControllerRightAim->GetComponentLocation();
+        const FRotator SpawnRot = MotionControllerRightAim->GetComponentRotation();
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = this;
+        SpawnParams.Instigator = this;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+        if (AKineticProjectile* Proj = GetWorld()->SpawnActor<AKineticProjectile>(ProjectileClass, SpawnLoc, SpawnRot, SpawnParams))
         {
-            UE_LOG(LogTemp, Verbose, TEXT("[VRPawn] Attack Hit: %s"), *HitActor->GetName());
-            FPointDamageEvent DmgEvent;
-            DmgEvent.HitInfo       = Hit;
-            DmgEvent.ShotDirection = MotionControllerRight->GetForwardVector();
-            DmgEvent.DamageTypeClass = UDamageType::StaticClass();
-            HitActor->TakeDamage(AttackDamage, DmgEvent, GetController(), this);
-
-            // 명중 순간 오른손 럼블 — B(Haptic, VR 정석) + A(ForceFeedback, 게임패드 폴백) 둘 다. 미할당 항목은 no-op.
-            if (APlayerController* PC = Cast<APlayerController>(GetController()))
-            {
-                // [B] VR 모션 컨트롤러 햅틱.
-                if (HitHapticEffect)
-                {
-                    PC->PlayHapticEffect(HitHapticEffect, EControllerHand::Right, HitHapticScale, /*bLoop=*/false);
-                }
-                // [A] 게임패드 진동 모터 폴백.
-                if (HitForceFeedbackEffect)
-                {
-                    FForceFeedbackParameters FFParams;
-                    FFParams.bLooping = false;
-                    PC->ClientPlayForceFeedback(HitForceFeedbackEffect, FFParams);
-                }
-            }
-
-            DrawDebugLine(GetWorld(), Start, Hit.Location, FColor::Red, false, 1.f, 0, 2.f);
-            return;
+            // 근접과 동일한 J→HP 환산·상한 주입 — 전투 일관성.
+            Proj->InitProjectile(this, KineticDamageScale, MaxKineticDamage);
         }
-    }
-    DrawDebugLine(GetWorld(), Start, End, FColor::Green, false, 0.5f, 0, 1.f);
 
+        // 던진 손(오른손) 럼블.
+        PlayHitHaptic(/*bRightHand=*/true);
+    }
+
+    // 던지는 모션.
     if (AttackMontage)
     {
         if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
@@ -534,6 +565,110 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 {
     RemoveStateTag(TAG_State_Action_Combat_Attack);
     AddStateTag(TAG_State_Idle);
+}
+
+void AVRPawn::PlayHitHaptic(bool bRightHand)
+{
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    // [B] VR 모션 컨트롤러 햅틱 — 명중 손. 에셋 미할당 시 no-op.
+    if (HitHapticEffect)
+    {
+        PC->PlayHapticEffect(HitHapticEffect, bRightHand ? EControllerHand::Right : EControllerHand::Left,
+            HitHapticScale, /*bLoop=*/false);
+    }
+    // [A] 게임패드 진동 모터 폴백.
+    if (HitForceFeedbackEffect)
+    {
+        FForceFeedbackParameters FFParams;
+        FFParams.bLooping = false;
+        PC->ClientPlayForceFeedback(HitForceFeedbackEffect, FFParams);
+    }
+}
+
+void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
+{
+    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→SmartNPC 공격 인지).
+    // 가벼운 밀침(bPush~bStrike 사이)은 데미지 없음 = LLM 이 공격으로 안 봄.
+    const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
+    const bool  bPush   = SpeedMs >= MinImpactSpeed;
+    const bool  bStrike = SpeedMs >= MeleeStrikeSpeed;
+    if (!bPush && !bDebugMelee) return;
+
+    // 손 위치에서 능동 스피어 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
+    TArray<FOverlapResult> Overlaps;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeHit), /*bTraceComplex=*/false, this);
+    FCollisionObjectQueryParams ObjParams(ECC_Pawn);
+    const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, HandLoc, FQuat::Identity,
+        ObjParams, FCollisionShape::MakeSphere(MeleeSphereRadius), Params);
+
+    if (bDebugMelee && GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(bRightHand ? 8811 : 8812, 0.f,
+            bAnyOverlap ? FColor::Green : FColor::Silver,
+            FString::Printf(TEXT("[Melee %s] overlaps=%d push=%d strike=%d"),
+                bRightHand ? TEXT("R") : TEXT("L"), Overlaps.Num(), bPush ? 1 : 0, bStrike ? 1 : 0));
+    }
+
+    if (!bAnyOverlap || !bPush) return;   // 최소 밀치기 임계 + overlap.
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    const float Energy = 0.5f * WeaponMass * SpeedMs * SpeedMs;                // ½mv² (J)
+    const float Damage = FMath::Clamp(Energy * KineticDamageScale, 0.f, MaxKineticDamage);
+
+    for (const FOverlapResult& O : Overlaps)
+    {
+        ASmartNPC* NPC = Cast<ASmartNPC>(O.GetActor());
+        if (!NPC) continue;
+
+        // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주.
+        if (const float* Last = LastMeleeHitTime.Find(NPC))
+        {
+            if (Now - *Last < MeleeHitCooldown) continue;
+        }
+        LastMeleeHitTime.Add(NPC, Now);
+
+        FName HitBone = NAME_None;
+
+        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를 발생시킴.
+        // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
+        if (bStrike)
+        {
+            // 부위 인지 best-effort — 손 위치에서 NPC 메시 최근접 본. 실패 시 None→Torso 폴백.
+            if (USkeletalMeshComponent* NpcMesh = NPC->GetMesh())
+            {
+                HitBone = NpcMesh->FindClosestBone(HandLoc);
+            }
+
+            // FPointDamageEvent 로 보내야 SmartNPC 가 BoneName(부위 배율)·ShotDirection(래그돌 임펄스) 처리.
+            FPointDamageEvent Ev;
+            Ev.HitInfo.BoneName    = HitBone;
+            Ev.HitInfo.ImpactPoint = HandLoc;
+            Ev.ShotDirection       = HandVel.GetSafeNormal();
+            Ev.DamageTypeClass     = UDamageType::StaticClass();
+            NPC->TakeDamage(Damage, Ev, GetController(), this);
+
+            PlayHitHaptic(bRightHand);
+        }
+
+        // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
+        if (!NPC->bIsDead && KnockbackScale > 0.f)
+        {
+            const float PushSpeed = FMath::Min(SpeedMs * KnockbackScale, MaxKnockbackSpeed);
+            const FVector PushVel = HandVel.GetSafeNormal() * PushSpeed;
+            NPC->LaunchCharacter(PushVel, /*bXYOverride=*/true, /*bZOverride=*/false);
+        }
+
+        if (bDebugMelee && GEngine)
+        {
+            DrawDebugSphere(GetWorld(), HandLoc, MeleeSphereRadius, 12,
+                bStrike ? FColor::Red : FColor::Orange, false, 1.f);
+            GEngine->AddOnScreenDebugMessage(-1, 2.f, bStrike ? FColor::Red : FColor::Orange,
+                FString::Printf(TEXT("[Melee] %s %s  dmg=%.1f"),
+                    bStrike ? TEXT("STRIKE") : TEXT("PUSH"), *NPC->GetName(), bStrike ? Damage : 0.f));
+        }
+    }
 }
 
 // ============================================================================
