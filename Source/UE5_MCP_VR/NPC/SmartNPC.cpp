@@ -26,19 +26,26 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
 
-// UE5 Mannequin(X_Bot) 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
-// 사지는 좌우 분리 — Mannequin 본은 _l/_r 접미사. 접미사 없으면 Left 폴백.
+// 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
+// Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.
+// 좌우: Mixamo 는 Right/Left 접두, Mannequin 은 _r/_l 접미. 미식별 시 Left 폴백.
 static EBodyPartType BoneToBodyPart(FName Bone)
 {
     const FString B = Bone.ToString().ToLower();
     if (B.IsEmpty()) return EBodyPartType::Torso;
+    // 머리·목 (Head/Neck/HeadTop_End)
     if (B.Contains(TEXT("head")) || B.Contains(TEXT("neck"))) return EBodyPartType::Head;
-    if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("clavicle")))
+    // 몸통 — 척추·골반·쇄골/어깨 (Mannequin: spine/pelvis/clavicle, Mixamo: spine/hips/shoulder)
+    if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("hip"))
+        || B.Contains(TEXT("clavicle")) || B.Contains(TEXT("shoulder")))
         return EBodyPartType::Torso;
-    const bool bRight = B.EndsWith(TEXT("_r"));
-    if (B.Contains(TEXT("arm")) || B.Contains(TEXT("hand")))   // upperarm/lowerarm/hand
+    const bool bRight = B.Contains(TEXT("right")) || B.EndsWith(TEXT("_r"));
+    // 팔·손 (Mannequin: upperarm/lowerarm/hand, Mixamo: arm/forearm/hand)
+    if (B.Contains(TEXT("arm")) || B.Contains(TEXT("hand")))
         return bRight ? EBodyPartType::ArmRight : EBodyPartType::ArmLeft;
-    if (B.Contains(TEXT("thigh")) || B.Contains(TEXT("calf")) || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")))
+    // 다리·발 (Mannequin: thigh/calf/foot/ball, Mixamo: upleg/leg/foot/toe)
+    if (B.Contains(TEXT("leg")) || B.Contains(TEXT("thigh")) || B.Contains(TEXT("calf"))
+        || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")) || B.Contains(TEXT("toe")))
         return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
     return EBodyPartType::Torso;
 }
