@@ -11,6 +11,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
@@ -192,6 +194,9 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         {
             const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
             Multiplier = BodyPartMultiplier(BoneToBodyPart(Pt.HitInfo.BoneName));
+            // 사망 래그돌 임펄스용: 맞은 본 + 발사 방향 캡처(다음 줄 사망 판정에서 소비될 수 있음).
+            LastHitBone = Pt.HitInfo.BoneName;
+            LastHitDirection = Pt.ShotDirection;
         }
         StateComponent->ApplyDamage(ActualDamage, Multiplier);
 
@@ -247,19 +252,44 @@ void ASmartNPC::HandleDeath()
         C->UnPossess();
     }
 
-    // 5. 사망 몽타주 재생
-    if (ActionComponent && ActionComponent->ActionData)
+    // 5. 패시브 래그돌 — 사망 몽타주 대신 물리 시뮬로 자연 붕괴(§5 VR 실감형).
+    //    전제: 스켈레탈 메시에 Physics Asset 할당 필수(없으면 SetSimulatePhysics 무효).
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        if (FActionMediaData* M = ActionComponent->ActionData->ActionMedias.Find(NPCActionKeys::Media_Death))
+        // 진행 중 몽타주 정지(애니가 물리와 충돌하지 않도록).
+        StopAnimMontage();
+
+        // 캡슐은 충돌 끄기(래그돌이 자기 캡슐에 걸려 뜨는 것 방지).
+        if (UCapsuleComponent* Capsule = GetCapsuleComponent())
         {
-            if (M->Montage) PlayAnimMontage(M->Montage);
+            Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
+        // 이동 컴포넌트 정지(물리와 위치 다툼 방지).
+        if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+        {
+            CMC->StopMovementImmediately();
+            CMC->DisableMovement();
+        }
+
+        // 메시 물리 시뮬 ON — 전신 래그돌.
+        MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
+        MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        MeshComp->SetAllBodiesSimulatePhysics(true);
+        MeshComp->SetSimulatePhysics(true);
+        MeshComp->WakeAllRigidBodies();
+
+        // 마지막 타격 방향 임펄스 — 시신이 맞은 방향으로 날아감.
+        if (DeathImpulseStrength > 0.f && !LastHitDirection.IsNearlyZero())
+        {
+            const FName ImpulseBone = (LastHitBone != NAME_None) ? LastHitBone : MeshComp->GetBoneName(0);
+            MeshComp->AddImpulse(LastHitDirection * DeathImpulseStrength, ImpulseBone, /*bVelChange=*/false);
         }
     }
 
     // 6. 사망 이벤트 브로드캐스트 — BP에서 VFX 등 추가 연결 가능
     OnNPCDied.Broadcast(this);
 
-    // 7. 일정 시간 후 Actor 제거 (사망 애니메이션 재생 여유 시간)
+    // 7. 일정 시간 후 Actor 제거 (래그돌 안착·시신 노출 여유 시간)
     constexpr float DestroyDelay = 3.f;
     if (UWorld* World = GetWorld())
     {

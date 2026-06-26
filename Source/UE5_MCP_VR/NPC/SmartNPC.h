@@ -150,6 +150,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "MCP|State")
     FOnNPCDied OnNPCDied;
 
+    /** 사망 래그돌에 가할 타격 방향 임펄스 강도(본 단위, bVelChange=false → 질량 의존). 0 이면 순수 중력. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
+    float DeathImpulseStrength = 20000.0f;
+
     // === Damage Hook (UE5 Actor Override) ===
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -207,6 +211,10 @@ private:
 
     /** OnPlanUpdated 1회 바인딩(재바인딩 누수 방지). */
     bool bPlanUpdatedBound = false;
+
+    // --- 사망 임펄스용 마지막 치명타 정보 (TakeDamage 가 채움, HandleDeath 가 소비) ---
+    FName LastHitBone = NAME_None;
+    FVector LastHitDirection = FVector::ZeroVector;  // ShotDirection (피격→방향, 정규화)
 
     /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
     FString CurrentSubtitleText;
