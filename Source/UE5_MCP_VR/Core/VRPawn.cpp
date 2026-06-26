@@ -603,7 +603,10 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
     // 손 위치에서 능동 스피어 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
     TArray<FOverlapResult> Overlaps;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeHit), /*bTraceComplex=*/false, this);
-    FCollisionObjectQueryParams ObjParams(ECC_Pawn);
+    // Pawn(서 있는 NPC 캡슐) + PhysicsBody(넉다운 래그돌 메시) 둘 다 — 쓰러진 NPC 저글 타격 가능(§5.C.6).
+    FCollisionObjectQueryParams ObjParams;
+    ObjParams.AddObjectTypesToQuery(ECC_Pawn);
+    ObjParams.AddObjectTypesToQuery(ECC_PhysicsBody);
     const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, HandLoc, FQuat::Identity,
         ObjParams, FCollisionShape::MakeSphere(MeleeSphereRadius), Params);
 

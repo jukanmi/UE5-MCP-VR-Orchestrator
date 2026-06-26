@@ -706,7 +706,12 @@ void ASmartNPC::EnterRagdoll(bool bFatal)
     const float ImpulseMag = bFatal ? DeathImpulseStrength : (DeathImpulseStrength * KnockdownImpulseScale);
     if (ImpulseMag > 0.f && !LastHitDirection.IsNearlyZero())
     {
-        const FName ImpulseBone = (LastHitBone != NAME_None) ? LastHitBone : MeshComp->GetBoneName(0);
+        // 피격 본에 물리 바디 없으면(손가락·무기·버추얼 본) 임펄스 무시됨 → 골반 폴백.
+        FName ImpulseBone = LastHitBone;
+        if (ImpulseBone == NAME_None || !MeshComp->GetBodyInstance(ImpulseBone))
+        {
+            ImpulseBone = KnockdownPelvisBone;
+        }
         MeshComp->AddImpulse(LastHitDirection * ImpulseMag, ImpulseBone, /*bVelChange=*/false);
     }
 }
@@ -753,9 +758,14 @@ void ASmartNPC::Flinch()
     MeshComp->SetAllBodiesBelowPhysicsBlendWeight(FlinchRootBone, 1.0f, /*bSkipCustomPhysicsType=*/false, /*bIncludeSelf=*/true);
     FlinchBlendWeight = 1.0f;
 
-    // 3) 피격 임펄스 — 실제 타격 방향. 본 정보 없으면 가슴(Spine2) 폴백.
+    // 3) 피격 임펄스 — 실제 타격 방향. Flinch 는 상체만 시뮬하므로 하체 피격 본은 효과 없음 → 시뮬 중인 본만,
+    //    아니면 가슴(Spine2) 폴백.
     const FVector Dir  = LastHitDirection.IsNearlyZero() ? -GetActorForwardVector() : LastHitDirection;
-    const FName   Bone = (LastHitBone != NAME_None) ? LastHitBone : FName(TEXT("Spine2"));
+    FName Bone = FName(TEXT("Spine2"));
+    if (LastHitBone != NAME_None && MeshComp->IsSimulatingPhysics(LastHitBone))
+    {
+        Bone = LastHitBone;
+    }
     MeshComp->AddImpulse(Dir * FlinchImpulse, Bone, /*bVelChange=*/false);
 
     bFlinching = true;
@@ -963,13 +973,18 @@ void ASmartNPC::TickGetUpBlend(float DeltaSeconds)
     USkeletalMeshComponent* MeshComp = GetMesh();
     if (!MeshComp) return;
 
-    GetUpBlendWeight = FMath::FInterpConstantTo(GetUpBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
-    MeshComp->SetAllBodiesPhysicsBlendWeight(GetUpBlendWeight);
-
-    if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
+    // weight 0 도달 후 몽타주 끝날 때까지 매 프레임 무거운 물리 설정 반복 방지 — 보간 중에만 처리.
+    if (GetUpBlendWeight > 0.f)
     {
-        MeshComp->SetAllBodiesSimulatePhysics(false);
-        MeshComp->SetSimulatePhysics(false);
+        GetUpBlendWeight = FMath::FInterpConstantTo(GetUpBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
+        MeshComp->SetAllBodiesPhysicsBlendWeight(GetUpBlendWeight);
+
+        if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
+        {
+            GetUpBlendWeight = 0.f;
+            MeshComp->SetAllBodiesSimulatePhysics(false);
+            MeshComp->SetSimulatePhysics(false);
+        }
     }
 }
 
