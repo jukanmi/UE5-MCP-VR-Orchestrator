@@ -65,22 +65,26 @@ void AKineticProjectile::OnHit(UPrimitiveComponent* /*HitComp*/, AActor* OtherAc
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(OtherActor))
         {
-            const float SpeedMs = MoveComp->Velocity.Size() / 100.f;   // cm/s → m/s
-            const float Energy  = 0.5f * ProjectileMass * SpeedMs * SpeedMs;  // ½mv² (J)
-            const float Damage  = FMath::Clamp(Energy * DamageScale, 0.f, MaxDamage);
-
-            // 부위 인지 best-effort — 충돌은 NPC 캡슐과 일어나 Hit.BoneName 이 비어있으므로
-            // 충돌점에서 NPC 메시 최근접 본을 찾아 채운다. 실패 시 None→Torso 폴백(SmartNPC).
-            FPointDamageEvent Ev;
-            Ev.HitInfo = Hit;
-            if (USkeletalMeshComponent* NpcMesh = NPC->GetMesh())
+            // MoveComp 가 유효할 때만 속도 기반 데미지 산출(생성 실패·지연 소멸 대비).
+            if (MoveComp)
             {
-                Ev.HitInfo.BoneName = NpcMesh->FindClosestBone(Hit.ImpactPoint);
+                const float SpeedMs = MoveComp->Velocity.Size() / 100.f;   // cm/s → m/s
+                const float Energy  = 0.5f * ProjectileMass * SpeedMs * SpeedMs;  // ½mv² (J)
+                const float Damage  = FMath::Clamp(Energy * DamageScale, 0.f, MaxDamage);
+
+                // 부위 인지 best-effort — 충돌은 NPC 캡슐과 일어나 Hit.BoneName 이 비어있으므로
+                // 충돌점에서 NPC 메시 최근접 본을 찾아 채운다. 실패 시 None→Torso 폴백(SmartNPC).
+                FPointDamageEvent Ev;
+                Ev.HitInfo = Hit;
+                if (USkeletalMeshComponent* NpcMesh = NPC->GetMesh())
+                {
+                    Ev.HitInfo.BoneName = NpcMesh->FindClosestBone(Hit.ImpactPoint);
+                }
+                // FPointDamageEvent 로 보내야 SmartNPC 가 BoneName(부위)·ShotDirection(래그돌)을 처리.
+                Ev.ShotDirection   = MoveComp->Velocity.GetSafeNormal();
+                Ev.DamageTypeClass = UDamageType::StaticClass();
+                NPC->TakeDamage(Damage, Ev, GetInstigatorController(), this);
             }
-            // FPointDamageEvent 로 보내야 SmartNPC 가 BoneName(부위)·ShotDirection(래그돌)을 처리.
-            Ev.ShotDirection   = MoveComp->Velocity.GetSafeNormal();
-            Ev.DamageTypeClass = UDamageType::StaticClass();
-            NPC->TakeDamage(Damage, Ev, GetInstigatorController(), this);
         }
     }
     Destroy();

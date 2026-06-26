@@ -25,6 +25,7 @@
 #include "PhysicsEngine/PhysicalAnimationComponent.h"  // [SPIKE]
 #include "Engine/Engine.h"  // [SPIKE] GEngine
 #include "Animation/AnimMontage.h"  // 기상 몽타주
+#include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
 #include "NPCAudioStreamComponent.h"
 #include "../UI/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
@@ -818,7 +819,14 @@ void ASmartNPC::TickSettleDetection(float DeltaSeconds)
     USkeletalMeshComponent* MeshComp = GetMesh();
     if (!MeshComp) return;
 
-    const FVector PelvisVel = MeshComp->GetPhysicsLinearVelocity(KnockdownPelvisBone);
+    // 골반 본에 피직스 바디가 없으면 GetPhysicsLinearVelocity 가 0 을 반환 → 공중 낙하 중에도
+    // 즉시 안착 판정되는 버그. 바디 없으면 루트 바디(NAME_None) 속도로 폴백.
+    FName VelBone = KnockdownPelvisBone;
+    if (!MeshComp->GetBodyInstance(VelBone))
+    {
+        VelBone = NAME_None;
+    }
+    const FVector PelvisVel = MeshComp->GetPhysicsLinearVelocity(VelBone);
     if (PelvisVel.Size() < SettleSpeedThreshold)
     {
         SettleTimer += DeltaSeconds;
@@ -854,7 +862,8 @@ void ASmartNPC::BeginGetUp()
         const FVector Start = HipsLoc + FVector(0.f, 0.f, 100.f);
         const FVector End   = HipsLoc - FVector(0.f, 0.f, 500.f);
         FCollisionQueryParams Params(FName(TEXT("GetUpFloor")), /*bTraceComplex=*/false, this);
-        if (W->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+        // 정적 지형만 — Visibility 면 타 NPC/플레이어/트리거 위로 텔레포트 위험.
+        if (W->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, Params))
         {
             GroundZ = Hit.Location.Z;
         }
@@ -884,8 +893,16 @@ void ASmartNPC::BeginGetUp()
     if (Montage)
     {
         const float Dur = PlayAnimMontage(Montage);
+        // 정상 종료는 EndDelegate 로 감지(타이머는 배속·인터럽트에 어긋남). bInterrupted 는 무시.
+        if (UAnimInstance* Anim = (GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
+        {
+            FOnMontageEnded EndDel;
+            EndDel.BindUObject(this, &ASmartNPC::OnGetUpMontageEnded);
+            Anim->Montage_SetEndDelegate(EndDel, Montage);
+        }
+        // 워치독 — 델리게이트 누락·타 몽타주에 의한 인터럽트로 GettingUp 영구 고착 방지.
         GetWorldTimerManager().SetTimer(GetUpMontageTimer, this, &ASmartNPC::FinishGetUp,
-            FMath::Max(Dur, 0.1f), false);
+            FMath::Max(Dur, 0.1f) + 0.5f, false);
     }
     else
     {
@@ -915,7 +932,17 @@ void ASmartNPC::TickGetUpBlend(float DeltaSeconds)
     }
 }
 
-// 기상 완료 — 메시 콜리전 원복, AI 재개, 평상 복귀. (몽타주 종료 타이머 또는 폴백에서 호출)
+// 기상 몽타주 종료 델리게이트 — 정상 완료만 처리. 인터럽트(재넉다운·타 몽타주)는 무시.
+void ASmartNPC::OnGetUpMontageEnded(UAnimMontage* /*Montage*/, bool bInterrupted)
+{
+    if (bInterrupted) return;
+    if (KnockdownPhase == EKnockdownPhase::GettingUp)
+    {
+        FinishGetUp();
+    }
+}
+
+// 기상 완료 — 메시 콜리전 원복, AI 재개, 평상 복귀. (몽타주 종료 델리게이트·워치독·폴백에서 호출)
 void ASmartNPC::FinishGetUp()
 {
     if (bIsDead) return;

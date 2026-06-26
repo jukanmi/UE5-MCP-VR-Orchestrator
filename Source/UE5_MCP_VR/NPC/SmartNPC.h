@@ -302,6 +302,9 @@ private:
     void TickGetUpBlend(float DeltaSeconds);
     void FinishGetUp();
 
+    /** 기상 몽타주 종료 델리게이트 — 정상 완료 시 FinishGetUp(인터럽트는 무시). */
+    void OnGetUpMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
+
     /** 모든 Tick 소비자(affinity·자막·flinch·넉다운)를 OR 해 Tick 켜기/끄기 일원화. */
     void RefreshTickEnabled();
 
