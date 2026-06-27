@@ -1,10 +1,9 @@
 #include "KineticProjectile.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "Engine/DamageEvents.h"
 #include "../NPC/SmartNPC.h"
+#include "KineticDamage.h"
 
 AKineticProjectile::AKineticProjectile()
 {
@@ -72,21 +71,11 @@ void AKineticProjectile::OnHit(UPrimitiveComponent* /*HitComp*/, AActor* OtherAc
             if (MoveComp)
             {
                 const float SpeedMs = MoveComp->Velocity.Size() / 100.f;   // cm/s → m/s
-                const float Energy  = 0.5f * ProjectileMass * SpeedMs * SpeedMs;  // ½mv² (J)
-                const float Damage  = FMath::Clamp(Energy * DamageScale, 0.f, MaxDamage);
+                const float Damage  = KineticDamage::Compute(ProjectileMass, SpeedMs, DamageScale, MaxDamage);
 
-                // 부위 인지 best-effort — 충돌은 NPC 캡슐과 일어나 Hit.BoneName 이 비어있으므로
-                // 충돌점에서 NPC 메시 최근접 본을 찾아 채운다. 실패 시 None→Torso 폴백(SmartNPC).
-                FPointDamageEvent Ev;
-                Ev.HitInfo = Hit;
-                if (USkeletalMeshComponent* NpcMesh = NPC->GetMesh())
-                {
-                    Ev.HitInfo.BoneName = NpcMesh->FindClosestBone(Hit.ImpactPoint);
-                }
-                // FPointDamageEvent 로 보내야 SmartNPC 가 BoneName(부위)·ShotDirection(래그돌)을 처리.
-                Ev.ShotDirection   = MoveComp->Velocity.GetSafeNormal();
-                Ev.DamageTypeClass = UDamageType::StaticClass();
-                NPC->TakeDamage(Damage, Ev, GetInstigatorController(), this);
+                // 충돌점 기준 부위 인지 FPointDamageEvent — 근접 스윙과 동일 규약(BoneName·ShotDirection).
+                KineticDamage::ApplyToNPC(NPC, Damage, Hit.ImpactPoint,
+                    MoveComp->Velocity.GetSafeNormal(), GetInstigatorController(), this, &Hit);
             }
         }
     }

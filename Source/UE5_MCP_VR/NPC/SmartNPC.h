@@ -17,7 +17,7 @@ class UStateTree;
 class UBlackboardData;
 class UWidgetComponent;
 class UNPCAudioStreamComponent;
-class UPhysicalAnimationComponent;  // [SPIKE] 액티브 래그돌 hit-react
+class UPhysicalAnimationComponent;  // 액티브 래그돌 Flinch 상체 PD
 class UAnimMontage;
 struct FActionBatch;
 
@@ -79,8 +79,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
 	UNPCInventoryComponent* InventoryComponent;
 
-    // [SPIKE] 액티브 래그돌 hit-react — 상체에 물리 블렌드 후 애니로 PD 복귀. PA_SmartNPC 필요.
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Spike")
+    // 액티브 래그돌 — Flinch 상체 PD 복귀에 사용. 메시 바인딩은 BeginPlay 에서. PA_SmartNPC 필요.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Ragdoll")
     UPhysicalAnimationComponent* PhysicalAnim;
 
     // === Identity ===
@@ -342,6 +342,10 @@ private:
 
 public:
 
+    /** VR 플레이어 멜리 재타격 쿨다운용 — 마지막 피격 시각(World TimeSeconds). VRPawn 가 읽고 씀.
+     *  소유자(NPC) 가 직접 보유 → NPC 소멸 시 함께 사라져 누적/만료정리 불필요. */
+    float LastMeleeHitTime = -1000.f;
+
     UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
     void Debug_PrintAffinity();
 
@@ -352,43 +356,4 @@ public:
     /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")
     bool bShowAffinityOnScreen = false;
-
-    // ====================================================================
-    // [SPIKE] 액티브 래그돌 hit-react 타당성 검증 — throwaway. 콘솔: SpikeHitReact
-    // ====================================================================
-
-    /** 상체(SpikeRootBone 이하) 물리 ON + 임펄스 → SpikeRecoverTime 후 애니로 복귀.
-     *  PA_SmartNPC(물리에셋) 필요. 풀 액티브 래그돌 전 물리구동·복귀·성능 체감 확인용.
-     *  피격 시 TakeDamage 가 자동 호출(bSpikeReactOnHit). BP/콘솔에서 수동 호출도 가능. */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Spike")
-    void SpikeHitReact();
-
-    /** 피격 시 구 스파이크 SpikeHitReact(스냅 복귀) 사용 여부. 기본 false=제품 경로(ReactToHit: Flinch/Knockdown).
-     *  true 로 켜면 스파이크 스냅 동작과 A/B 비교 가능. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    bool bSpikeReactOnHit = false;
-
-    /** 물리 블렌드 시작 본(Mixamo 상체 루트). 이 본 이하만 시뮬 — 하체는 애니(이동 유지). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    FName SpikeRootBone = TEXT("Spine");
-
-    /** 애니 포즈로 당기는 PD 강도(클수록 빨리 복귀·뻣뻣). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    float SpikeOrientationStrength = 1000.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    float SpikeAngularVelStrength = 100.f;
-
-    /** 피격 임펄스 크기. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    float SpikeImpulse = 30000.f;
-
-    /** 물리→애니 복귀까지 시간(초). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
-    float SpikeRecoverTime = 0.7f;
-
-private:
-    /** SpikeRecoverTime 후 호출 — 물리 블렌드 끄고 순수 애니 복귀. */
-    void SpikeRecover();
-    FTimerHandle SpikeRecoverTimer;
 };

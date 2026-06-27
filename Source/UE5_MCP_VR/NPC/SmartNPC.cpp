@@ -21,9 +21,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Components/WidgetComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "PhysicsEngine/PhysicalAnimationComponent.h"  // [SPIKE]
-#include "Engine/Engine.h"  // [SPIKE] GEngine
+#include "PhysicsEngine/PhysicalAnimationComponent.h"  // 액티브 래그돌 PD(Flinch)
 #include "Animation/AnimMontage.h"  // 기상 몽타주
 #include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
 #include "NPCAudioStreamComponent.h"
@@ -65,6 +63,28 @@ static float BodyPartMultiplier(EBodyPartType P)
     }
 }
 
+// 물리 애니메이션 PD — 방향만 애니 포즈로 복원. 위치/속도/최대힘은 0 으로 둬야
+// PD 가 위치까지 당겨 래그돌 낙하·충돌과 다투지 않는다(필드 누락 시 흔한 함정).
+static FPhysicalAnimationData MakeOrientationPD(float OrientationStrength, float AngularVelStrength)
+{
+    FPhysicalAnimationData Data;
+    Data.bIsLocalSimulation      = false;
+    Data.OrientationStrength     = OrientationStrength;
+    Data.AngularVelocityStrength = AngularVelStrength;
+    Data.PositionStrength        = 0.f;
+    Data.VelocityStrength        = 0.f;
+    Data.MaxLinearForce          = 0.f;
+    Data.MaxAngularForce         = 0.f;
+    return Data;
+}
+
+// 전신 물리 시뮬 정지 — 본별·컴포넌트 양쪽 끄기(기상 블렌드 완료·기상 마무리 공용).
+static void StopBodySimulation(USkeletalMeshComponent* Mesh)
+{
+    Mesh->SetAllBodiesSimulatePhysics(false);
+    Mesh->SetSimulatePhysics(false);
+}
+
 ASmartNPC::ASmartNPC()
 {
     // Tick은 디버그 머리 위 호감도 표시(bShowAffinityOnScreen=true) 시에만 사용.
@@ -79,7 +99,7 @@ ASmartNPC::ASmartNPC()
     ActionComponent    = CreateDefaultSubobject<UNPCActionComponent>(TEXT("ActionComponent"));
     InventoryComponent = CreateDefaultSubobject<UNPCInventoryComponent>(TEXT("InventoryComponent"));
 
-    // [SPIKE] 액티브 래그돌 hit-react — 메시 바인딩은 BeginPlay 에서(GetMesh 준비 후).
+    // 액티브 래그돌 — Flinch 상체 PD 복귀용. 메시 바인딩은 BeginPlay 에서(GetMesh 준비 후).
     PhysicalAnim = CreateDefaultSubobject<UPhysicalAnimationComponent>(TEXT("PhysicalAnim"));
 
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -119,7 +139,7 @@ void ASmartNPC::BeginPlay()
 {
     Super::BeginPlay();
 
-    // [SPIKE] PhysicalAnimation 대상 메시 바인딩 + 기상 후 복원용 원본 콜리전 프로파일 캡처.
+    // PhysicalAnimation 대상 메시 바인딩 + 기상 후 복원용 원본 콜리전 프로파일 캡처.
     if (PhysicalAnim && GetMesh())
     {
         PhysicalAnim->SetSkeletalMeshComponent(GetMesh());
@@ -248,15 +268,8 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         }
 
         // 비치사 피격 → 동역학 반응. 데미지·인지는 이미 적용됨(반응 분기와 무관 — §5.D 데미지 상시).
-        // 기본 경로: ReactToHit(강타=Knockdown / 약타=Flinch). bSpikeReactOnHit=true 면 구 스파이크 스냅 비교용.
-        if (bSpikeReactOnHit)
-        {
-            SpikeHitReact();
-        }
-        else
-        {
-            ReactToHit(ActualDamage);
-        }
+        // ReactToHit: 강타=Knockdown(전신 래그돌→기상) / 약타=Flinch(상체 PD 복귀).
+        ReactToHit(ActualDamage);
 
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
         FPerceptionData DamageEventPerc;
@@ -583,66 +596,6 @@ void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
 }
 
 // ====================================================================
-// [SPIKE] 액티브 래그돌 hit-react — throwaway 타당성 검증
-// 상체(SpikeRootBone 이하)만 물리 시뮬 → PD(PhysicalAnimation)가 애니 포즈로 당김.
-// 하체(Hips/다리)는 애니 유지 → 이동 지속. 임펄스로 움찔 후 SpikeRecoverTime 후 복귀.
-// 전제: 메시에 PA_SmartNPC(물리에셋) 할당 필수.
-// ====================================================================
-
-void ASmartNPC::SpikeHitReact()
-{
-    USkeletalMeshComponent* MeshComp = GetMesh();
-    if (!MeshComp || !PhysicalAnim || bIsDead)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Spike] mesh/PhysicalAnim 없음 또는 사망"));
-        return;
-    }
-
-    // 1) PD 강도 — 시뮬 본을 매 프레임 애니 포즈(kinematic 타겟)로 끌어당김.
-    FPhysicalAnimationData Data;
-    Data.bIsLocalSimulation     = false;
-    Data.OrientationStrength     = SpikeOrientationStrength;
-    Data.AngularVelocityStrength = SpikeAngularVelStrength;
-    Data.PositionStrength        = 0.f;
-    Data.VelocityStrength        = 0.f;
-    Data.MaxLinearForce          = 0.f;
-    Data.MaxAngularForce         = 0.f;
-    PhysicalAnim->ApplyPhysicalAnimationSettingsBelow(SpikeRootBone, Data, /*bIncludeSelf=*/true);
-
-    // 2) 메시 콜리전 물리 허용 — 기본 QueryOnly 면 AddImpulse 거부됨(경고). 복귀 시 원복.
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-
-    // 3) 상체 물리 ON + 블렌드 1.0(완전 물리, PD 가 애니로 복원).
-    MeshComp->SetAllBodiesBelowSimulatePhysics(SpikeRootBone, true, /*bIncludeSelf=*/true);
-    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(SpikeRootBone, 1.0f, /*bSkipCustomPhysicsType=*/false, /*bIncludeSelf=*/true);
-
-    // 4) 피격 임펄스 — 가슴(Spine2)에 뒤로. 실제론 타격 방향(LastHitDirection) 사용.
-    MeshComp->AddImpulse(GetActorForwardVector() * -SpikeImpulse, TEXT("Spine2"), /*bVelChange=*/false);
-
-    UE_LOG(LogTemp, Log, TEXT("[Spike] %s hit-react ON (root=%s, recover %.2fs)"),
-        *AgentID, *SpikeRootBone.ToString(), SpikeRecoverTime);
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta,
-            FString::Printf(TEXT("[Spike] %s hit-react"), *AgentID));
-    }
-
-    // 5) 복귀 타이머.
-    GetWorldTimerManager().SetTimer(SpikeRecoverTimer, this, &ASmartNPC::SpikeRecover, SpikeRecoverTime, false);
-}
-
-void ASmartNPC::SpikeRecover()
-{
-    USkeletalMeshComponent* MeshComp = GetMesh();
-    if (!MeshComp || bIsDead) return;
-    // 블렌드 0(순수 애니) + 시뮬 OFF + 콜리전 QueryOnly 원복. (스파이크라 스냅 — 실제는 Tick 램프)
-    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(SpikeRootBone, 0.0f, false, true);
-    MeshComp->SetAllBodiesBelowSimulatePhysics(SpikeRootBone, false, true);
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    UE_LOG(LogTemp, Log, TEXT("[Spike] %s recovered to anim"), *AgentID);
-}
-
-// ====================================================================
 // 액티브 래그돌 (§3) — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
 // ====================================================================
 
@@ -742,14 +695,7 @@ void ASmartNPC::Flinch()
     if (KnockdownPhase != EKnockdownPhase::None) return;
 
     // 1) PD — 시뮬 본을 매 프레임 애니 포즈로 끌어당김(위치는 자유, 방향만 복원).
-    FPhysicalAnimationData Data;
-    Data.bIsLocalSimulation     = false;
-    Data.OrientationStrength     = FlinchOrientationStrength;
-    Data.AngularVelocityStrength = FlinchAngularVelStrength;
-    Data.PositionStrength        = 0.f;
-    Data.VelocityStrength        = 0.f;
-    Data.MaxLinearForce          = 0.f;
-    Data.MaxAngularForce         = 0.f;
+    const FPhysicalAnimationData Data = MakeOrientationPD(FlinchOrientationStrength, FlinchAngularVelStrength);
     PhysicalAnim->ApplyPhysicalAnimationSettingsBelow(FlinchRootBone, Data, /*bIncludeSelf=*/true);
 
     // 2) 메시 물리 콜리전 허용(QueryOnly 면 AddImpulse 거부) + 상체 시뮬 ON + 블렌드 1.
@@ -982,8 +928,7 @@ void ASmartNPC::TickGetUpBlend(float DeltaSeconds)
         if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
         {
             GetUpBlendWeight = 0.f;
-            MeshComp->SetAllBodiesSimulatePhysics(false);
-            MeshComp->SetSimulatePhysics(false);
+            StopBodySimulation(MeshComp);
         }
     }
 }
@@ -1007,8 +952,7 @@ void ASmartNPC::FinishGetUp()
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
         MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
-        MeshComp->SetAllBodiesSimulatePhysics(false);
-        MeshComp->SetSimulatePhysics(false);
+        StopBodySimulation(MeshComp);
         // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
         MeshComp->SetCollisionProfileName(OriginalMeshProfile);
         MeshComp->SetCollisionEnabled(OriginalMeshCollision);

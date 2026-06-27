@@ -457,9 +457,6 @@ private:
     FVector HandVelRight     = FVector::ZeroVector;
     bool bHandVelInit = false;
 
-    /** 같은 NPC 재타격 억제용 마지막 타격 시각(World TimeSeconds). */
-    TMap<TWeakObjectPtr<AActor>, float> LastMeleeHitTime;
-
     // --- 사망/리스폰 ---
     UPROPERTY(EditDefaultsOnly, Category = "Combat")
     float RespawnDelay = 5.f;

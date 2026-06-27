@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "KineticProjectile.h"
+#include "KineticDamage.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -622,47 +623,23 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
 
     const float Now = GetWorld()->GetTimeSeconds();
 
-    // 만료된 약참조 키 정리 — 소멸한 NPC 의 TWeakObjectPtr 엔트리는 자동 제거 안 돼 누적되므로.
-    for (auto It = LastMeleeHitTime.CreateIterator(); It; ++It)
-    {
-        if (!It.Key().IsValid()) { It.RemoveCurrent(); }
-    }
-
-    const float Energy = 0.5f * WeaponMass * SpeedMs * SpeedMs;                // ½mv² (J)
-    const float Damage = FMath::Clamp(Energy * KineticDamageScale, 0.f, MaxKineticDamage);
+    const float Damage = KineticDamage::Compute(WeaponMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
 
     for (const FOverlapResult& O : Overlaps)
     {
         ASmartNPC* NPC = Cast<ASmartNPC>(O.GetActor());
         if (!NPC) continue;
 
-        // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주.
-        if (const float* Last = LastMeleeHitTime.Find(NPC))
-        {
-            if (Now - *Last < MeleeHitCooldown) continue;
-        }
-        LastMeleeHitTime.Add(NPC, Now);
-
-        FName HitBone = NAME_None;
+        // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
+        if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
+        NPC->LastMeleeHitTime = Now;
 
         // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를 발생시킴.
         // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
         if (bStrike)
         {
-            // 부위 인지 best-effort — 손 위치에서 NPC 메시 최근접 본. 실패 시 None→Torso 폴백.
-            if (USkeletalMeshComponent* NpcMesh = NPC->GetMesh())
-            {
-                HitBone = NpcMesh->FindClosestBone(HandLoc);
-            }
-
-            // FPointDamageEvent 로 보내야 SmartNPC 가 BoneName(부위 배율)·ShotDirection(래그돌 임펄스) 처리.
-            FPointDamageEvent Ev;
-            Ev.HitInfo.BoneName    = HitBone;
-            Ev.HitInfo.ImpactPoint = HandLoc;
-            Ev.ShotDirection       = HandVel.GetSafeNormal();
-            Ev.DamageTypeClass     = UDamageType::StaticClass();
-            NPC->TakeDamage(Damage, Ev, GetController(), this);
-
+            // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
+            KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
             PlayHitHaptic(bRightHand);
         }
 
