@@ -26,6 +26,7 @@ Plugins/*/Intermediate/
 .vscode/
 *.code-workspace
 *.agent/
+.agents/rules/
 .vsconfig
 .github
 
