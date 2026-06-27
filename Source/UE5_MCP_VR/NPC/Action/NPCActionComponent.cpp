@@ -1237,42 +1237,35 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     DrawEQSCandidates(Pruned, EQSDebugDuration);
 
     // ── LLMClient로 전송 ─────────────────────────────────────────────────────
-    if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+    if (UNPCManager* Manager = UNPCManager::Get(this))
     {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
+        Manager->SendEnvelopePromptToLLM(Envelope);
+        TacticalQueryState = ETacticalQueryState::WaitingLLM;
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - location_decision 전송 (후보 %d개)"),
+            *AgentID, Pruned.Num());
+
+        // LLM 무응답 시 자동 복구 타이머
+        if (UWorld* W = GetWorld())
         {
-            Manager->SendEnvelopePromptToLLM(Envelope);
-            TacticalQueryState = ETacticalQueryState::WaitingLLM;
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s - location_decision 전송 (후보 %d개)"),
-                *AgentID, Pruned.Num());
-
-            // LLM 무응답 시 자동 복구 타이머
-            if (UWorld* W = GetWorld())
-            {
-                TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
-                W->GetTimerManager().SetTimer(TacticalLLMTimeoutTimer,
-                    [this, WeakThis]() { if (WeakThis.IsValid()) AbortTacticalQuery(); },
-                    TacticalLLMTimeout, false);
-            }
-
-            UE_LOG(LogTemp, Log, TEXT("=== [EQS Candidates] %s ==="), *AgentID);
-            for (const FLocationCandidate& C : Pruned)
-            {
-                UE_LOG(LogTemp, Log,
-                    TEXT("  [%s] Cat=%s Score=%.2f Dist=%.0f Cover=%.2f Loc=(%.0f,%.0f,%.0f)"),
-                    *C.CandidateId, *CategoryToString(C.Category),
-                    C.Score, C.DistanceToEnemy, C.CoverRating,
-                    C.Location.X, C.Location.Y, C.Location.Z);
-            }
+            TWeakObjectPtr<UNPCActionComponent> WeakThis(this);
+            W->GetTimerManager().SetTimer(TacticalLLMTimeoutTimer,
+                [this, WeakThis]() { if (WeakThis.IsValid()) AbortTacticalQuery(); },
+                TacticalLLMTimeout, false);
         }
-        else
+
+        UE_LOG(LogTemp, Log, TEXT("=== [EQS Candidates] %s ==="), *AgentID);
+        for (const FLocationCandidate& C : Pruned)
         {
-            TacticalQueryState = ETacticalQueryState::Idle; // NPCManager 없음 — 고착 방지
+            UE_LOG(LogTemp, Log,
+                TEXT("  [%s] Cat=%s Score=%.2f Dist=%.0f Cover=%.2f Loc=(%.0f,%.0f,%.0f)"),
+                *C.CandidateId, *CategoryToString(C.Category),
+                C.Score, C.DistanceToEnemy, C.CoverRating,
+                C.Location.X, C.Location.Y, C.Location.Z);
         }
     }
     else
     {
-        TacticalQueryState = ETacticalQueryState::Idle; // World 없음 — 고착 방지
+        TacticalQueryState = ETacticalQueryState::Idle; // World/NPCManager 없음 — 고착 방지
     }
 }
 
