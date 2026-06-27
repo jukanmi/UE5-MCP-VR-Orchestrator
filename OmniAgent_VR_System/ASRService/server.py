@@ -151,6 +151,12 @@ def _transcribe(pcm_bytes: bytes, sample_rate: int, language: Optional[str]) -> 
     return "".join(seg.text for seg in segments).strip()
 
 
+async def _send_error(websocket: WebSocket, request_id: str, code: str, message: str) -> None:
+    await websocket.send_json(
+        {"type": "error", "request_id": request_id, "code": code, "message": message}
+    )
+
+
 @app.websocket("/ws/asr/stream")
 async def ws_stream(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -171,14 +177,7 @@ async def ws_stream(websocket: WebSocket) -> None:
                 try:
                     data = json.loads(msg["text"])
                 except json.JSONDecodeError:
-                    await websocket.send_json(
-                        {
-                            "type": "error",
-                            "request_id": request_id,
-                            "code": "BAD_JSON",
-                            "message": msg["text"][:80],
-                        }
-                    )
+                    await _send_error(websocket, request_id, "BAD_JSON", msg["text"][:80])
                     continue
 
                 mtype = data.get("type")
@@ -226,27 +225,13 @@ async def ws_stream(websocket: WebSocket) -> None:
                     )
                     break
                 else:
-                    await websocket.send_json(
-                        {
-                            "type": "error",
-                            "request_id": request_id,
-                            "code": "UNKNOWN_TYPE",
-                            "message": str(mtype),
-                        }
-                    )
+                    await _send_error(websocket, request_id, "UNKNOWN_TYPE", str(mtype))
 
             elif "bytes" in msg and msg["bytes"] is not None:
                 # 버퍼 상한 초과 시 중단 — end 미전송 무한 스트리밍 OOM/DoS 차단.
                 if len(audio_buf) + len(msg["bytes"]) > MAX_AUDIO_BUF_BYTES:
                     logger.warning(f"[ASR] 버퍼 상한 초과 request_id={request_id} → 중단")
-                    await websocket.send_json(
-                        {
-                            "type": "error",
-                            "request_id": request_id,
-                            "code": "BUFFER_OVERFLOW",
-                            "message": "audio buffer size limit exceeded",
-                        }
-                    )
+                    await _send_error(websocket, request_id, "BUFFER_OVERFLOW", "audio buffer size limit exceeded")
                     break
                 audio_buf += msg["bytes"]
                 chunk_count += 1
@@ -260,14 +245,7 @@ async def ws_stream(websocket: WebSocket) -> None:
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[ASR] 스트림 처리 실패: {e}")
         try:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "request_id": request_id,
-                    "code": "INTERNAL",
-                    "message": str(e),
-                }
-            )
+            await _send_error(websocket, request_id, "INTERNAL", str(e))
         except Exception:
             pass
     finally:
