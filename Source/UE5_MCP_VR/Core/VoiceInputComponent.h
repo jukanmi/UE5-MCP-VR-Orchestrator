@@ -87,6 +87,10 @@ private:
     void SendStartIfReady();
     void HandleAsrMessage(const FString& Message);
     void CloseSocket();
+
+    /** 마이크 캡처 스트림 정지·해제 — 열려있을 때만. StopTalking·EndPlay 공용. */
+    void StopAudioCaptureStream();
+
     void SaveDebugWav(const TArray<int16>& Pcm, int32 SampleRate);
 
     // bSaveDebugWav 시 전체 PCM 누적 버퍼 (PcmLock 으로 보호)

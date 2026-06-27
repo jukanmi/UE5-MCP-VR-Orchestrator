@@ -30,17 +30,11 @@ namespace
             return BBTarget;
         }
         // <NpcName> — NPCMap 조회
-        if (UWorld* W = Self ? Self->GetWorld() : nullptr)
+        if (UNPCManager* Mgr = UNPCManager::Get(Self))
         {
-            if (UGameInstance* GI = W->GetGameInstance())
+            if (AActor* Found = Cast<AActor>(Mgr->GetNPCById(Keyword)))
             {
-                if (UNPCManager* Mgr = GI->GetSubsystem<UNPCManager>())
-                {
-                    if (AActor* Found = Cast<AActor>(Mgr->GetNPCById(Keyword)))
-                    {
-                        return Found;
-                    }
-                }
+                return Found;
             }
         }
         return BBTarget; // 미해석 폴백

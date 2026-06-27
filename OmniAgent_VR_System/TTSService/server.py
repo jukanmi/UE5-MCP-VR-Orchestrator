@@ -405,6 +405,23 @@ def _split_sentences(text: str) -> list[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Target SE 일괄 추출 (부팅 pre-extract · /api/reload_voices 공용)
+# ─────────────────────────────────────────────────────────────────────────────
+async def _pre_extract_target_ses() -> tuple[list[str], list[dict]]:
+    """voice_map 의 모든 unique ref → target SE 사전 추출. (extracted, failed) 반환.
+    list_voices() 가 이미 unique ref 만 산출 → 호출부 중복 가드 불필요."""
+    extracted: list[str] = []
+    failed: list[dict] = []
+    for npc_id, emo, vmeta in list_voices():
+        try:
+            await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
+            extracted.append(vmeta.ref)
+        except Exception as e:  # noqa: BLE001
+            failed.append({"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)})
+    return extracted, failed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Lifespan
 # ─────────────────────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -417,16 +434,12 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(_load_melo_sync, "EN")
         await asyncio.to_thread(_load_base_se_sync, "KR")
         await asyncio.to_thread(_load_base_se_sync, "EN")
-        # voice_map.npcs × emotion 의 모든 unique ref → target SE 사전 추출
-        extracted: set[str] = set()
-        for npc_id, emo, vmeta in list_voices():
-            if vmeta.ref in extracted:
-                continue
-            try:
-                await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
-                extracted.add(vmeta.ref)
-            except Exception as e:
-                logger.warning(f"[TTS] target SE pre-extract 실패 npc={npc_id} emo={emo} ref={vmeta.ref}: {e}")
+        # voice_map 의 모든 unique ref → target SE 사전 추출
+        extracted, failed = await _pre_extract_target_ses()
+        for f in failed:
+            logger.warning(
+                f"[TTS] target SE pre-extract 실패 npc={f['npc']} emo={f['emotion']} ref={f['ref']}: {f['error']}"
+            )
         logger.info(f"[TTS] pre-extract 완료 — refs={sorted(extracted)}")
         try:
             t0 = time.perf_counter()
@@ -474,33 +487,47 @@ async def synthesize(req: SynthesizeRequest) -> SynthesizeResponse:
 # ─────────────────────────────────────────────────────────────────────────────
 # WebSocket
 # ─────────────────────────────────────────────────────────────────────────────
+async def _send_error(
+    websocket: WebSocket, request_id: str, code: str, message: str, retryable: bool = False
+) -> None:
+    await websocket.send_json(
+        {
+            "type": "error",
+            "request_id": request_id,
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+        }
+    )
+
+
+async def _send_audio_chunk(
+    websocket: WebSocket, request_id: str, sequence: int, sample_rate: int, chunk: bytes, is_last: bool
+) -> None:
+    await websocket.send_json(
+        {
+            "type": "audio_chunk",
+            "request_id": request_id,
+            "sequence": sequence,
+            "sample_rate": sample_rate,
+            "channels": CHANNELS,
+            "audio_base64": base64.b64encode(chunk).decode("ascii"),
+            "is_last": is_last,
+        }
+    )
+
+
 @app.websocket("/ws/tts/stream/{request_id}")
 async def ws_stream(websocket: WebSocket, request_id: str) -> None:
     await websocket.accept()
     req = _pending.pop(request_id, None)
     if req is None:
-        await websocket.send_json(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "code": "NOT_FOUND",
-                "message": "request_id 미존재/소비됨",
-                "retryable": False,
-            }
-        )
+        await _send_error(websocket, request_id, "NOT_FOUND", "request_id 미존재/소비됨")
         await websocket.close()
         return
 
     if _state.converter is None:
-        await websocket.send_json(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "code": "MODEL_NOT_LOADED",
-                "message": "OpenVoice converter 미로드",
-                "retryable": True,
-            }
-        )
+        await _send_error(websocket, request_id, "MODEL_NOT_LOADED", "OpenVoice converter 미로드", retryable=True)
         await websocket.close()
         return
 
@@ -559,33 +586,13 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
             while len(buf) - off >= bytes_per_chunk:
                 chunk = buf[off : off + bytes_per_chunk]
                 off += bytes_per_chunk
-                await websocket.send_json(
-                    {
-                        "type": "audio_chunk",
-                        "request_id": request_id,
-                        "sequence": sequence,
-                        "sample_rate": target_sr,
-                        "channels": CHANNELS,
-                        "audio_base64": base64.b64encode(chunk).decode("ascii"),
-                        "is_last": False,
-                    }
-                )
+                await _send_audio_chunk(websocket, request_id, sequence, target_sr, chunk, is_last=False)
                 sequence += 1
                 await asyncio.sleep(CHUNK_MS / 1000.0)
             leftover = buf[off:]
 
         if leftover:  # 마지막 잔여 PCM
-            await websocket.send_json(
-                {
-                    "type": "audio_chunk",
-                    "request_id": request_id,
-                    "sequence": sequence,
-                    "sample_rate": target_sr,
-                    "channels": CHANNELS,
-                    "audio_base64": base64.b64encode(leftover).decode("ascii"),
-                    "is_last": True,
-                }
-            )
+            await _send_audio_chunk(websocket, request_id, sequence, target_sr, leftover, is_last=True)
             sequence += 1
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -605,15 +612,7 @@ async def ws_stream(websocket: WebSocket, request_id: str) -> None:
     except Exception as e:
         logger.exception(f"[TTS] 합성 실패: {e}")
         try:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "request_id": request_id,
-                    "code": "MODEL_ERROR",
-                    "message": str(e),
-                    "retryable": False,
-                }
-            )
+            await _send_error(websocket, request_id, "MODEL_ERROR", str(e))
         except Exception:
             pass
     finally:
@@ -737,16 +736,7 @@ async def api_reload_voices() -> dict:
 
     _load_map.cache_clear()
     _state.target_se_cache.clear()
-    extracted: list[str] = []
-    failed: list[dict] = []
-    for npc_id, emo, vmeta in list_voices():
-        if vmeta.ref in extracted:
-            continue
-        try:
-            await asyncio.to_thread(_load_target_se_sync, vmeta.ref)
-            extracted.append(vmeta.ref)
-        except Exception as e:
-            failed.append({"ref": vmeta.ref, "npc": npc_id, "emotion": emo, "error": str(e)})
+    extracted, failed = await _pre_extract_target_ses()
     return {"extracted": extracted, "failed": failed}
 
 

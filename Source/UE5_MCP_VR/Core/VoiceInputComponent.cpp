@@ -151,11 +151,7 @@ void UVoiceInputComponent::StopTalking()
     if (!bTalking) return;
     bTalking = false;
 
-    if (AudioCapture.IsStreamOpen())
-    {
-        AudioCapture.StopStream();
-        AudioCapture.CloseStream();
-    }
+    StopAudioCaptureStream();
 
     // 잔여 PCM flush 후 end 송신
     FlushPcmToSocket();
@@ -294,13 +290,18 @@ void UVoiceInputComponent::CloseSocket()
     bStartSent = false;
 }
 
-void UVoiceInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UVoiceInputComponent::StopAudioCaptureStream()
 {
     if (AudioCapture.IsStreamOpen())
     {
         AudioCapture.StopStream();
         AudioCapture.CloseStream();
     }
+}
+
+void UVoiceInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    StopAudioCaptureStream();
     CloseSocket();
     Super::EndPlay(EndPlayReason);
 }

@@ -129,6 +129,30 @@ def _get_ollama_client():
     return _ollama_client
 
 
+async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
+    """gemma e4b raw=true 단발 생성 — chat template(thinking) 우회. (raw_text, elapsed_ms) 반환.
+    SLM Reflex·location_decision 공용. 커넥션 풀 재사용 + stop=["\n"] 안전 마진.
+    raise_for_status 로 4xx/5xx 는 예외 → 호출부 except 가 안전 폴백 처리."""
+    import time as _t
+
+    ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+    model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
+    body = {
+        "model": model_id,
+        "prompt": prompt,
+        "stream": False,
+        "raw": True,
+        "keep_alive": "5m",
+        "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
+    }
+    _llm_start = _t.perf_counter()
+    resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+    resp.raise_for_status()
+    elapsed_ms = (_t.perf_counter() - _llm_start) * 1000.0
+    raw_text = (resp.json().get("response") or "").strip()
+    return raw_text, elapsed_ms
+
+
 @app.get("/")
 async def health_check():
     return {"message": "OmniAgent Cognitive Engine is running"}
@@ -287,6 +311,11 @@ def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
     return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
 
 
+def _empty_audio_info() -> dict:
+    """TTS 생략/실패 시 자막만 전송하는 빈 audio info (url 빈 문자열) — UE5 측 fallback."""
+    return {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+
+
 async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     """
     SLM 반사 행동 결정 (목표 500ms).
@@ -346,26 +375,7 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
     action_type = "Scan"
     try:
-        # Ollama 직접 호출 — raw=true 로 chat template(thinking 동반) 우회.
-        # location_decision 과 동일 패턴: 커넥션 풀 재사용 + stop=["\n"] 안전 마진.
-        import time as _t
-
-        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
-        model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
-        body = {
-            "model": model_id,
-            "prompt": prompt,
-            "stream": False,
-            "raw": True,
-            "keep_alive": "5m",
-            "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
-        }
-        _llm_start = _t.perf_counter()
-        resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
-        # HTTP 4xx/5xx 즉시 예외 → 잘못된 본문 파싱 대신 except 안전 폴백(Scan).
-        resp.raise_for_status()
-        _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
-        raw_text = (resp.json().get("response") or "").strip()
+        raw_text, _llm_ms = await _ollama_raw_generate(prompt)
         logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
         tokens = raw_text.split()
         text = tokens[0] if tokens else ""
@@ -603,7 +613,7 @@ async def _dispatch_npc_audio(
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
     if bypass_tts:
         logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
-        info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+        info = _empty_audio_info()
     else:
         try:
             info = await tts_client.synthesize(
@@ -614,7 +624,7 @@ async def _dispatch_npc_audio(
             )
         except tts_client.TTSError as e:
             logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
-            info = {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
+            info = _empty_audio_info()
 
     if _active_llm_ws is None:
         logger.info("[Main][TTS] 활성 UE5 WS 없음 — NpcAudioResponse 송신 생략")
@@ -696,6 +706,21 @@ def _parse_request_gen(payload_raw: dict) -> int:
         return 0
 
 
+def _location_decision_result(agent_id: str, chosen_id: str, reason: str, request_gen: int) -> str:
+    """location_decision_result envelope JSON — Fast-Path·LLM 성공 공통 응답 형식."""
+    return json.dumps(
+        {
+            "type": "location_decision_result",
+            "payload": {
+                "agent_id": agent_id,
+                "chosen_id": chosen_id,
+                "reason": reason,
+                "request_gen": request_gen,
+            },
+        }
+    )
+
+
 def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str:
     """LLM 호출 없이 즉시 location_decision_result 를 생성하는 폴백 (Fast-Path).
 
@@ -727,17 +752,7 @@ def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str
             reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
 
     logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {fallback_reason})")
-    return json.dumps(
-        {
-            "type": "location_decision_result",
-            "payload": {
-                "agent_id": agent_id,
-                "chosen_id": fallback_id,
-                "reason": reason_str,
-                "request_gen": request_gen,
-            },
-        }
-    )
+    return _location_decision_result(agent_id, fallback_id, reason_str, request_gen)
 
 
 async def _handle_location_decision(envelope: MessageEnvelope) -> str:
@@ -771,26 +786,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
             candidate_ids=candidate_ids,
         )
 
-        # Ollama 직접 호출 — raw=true 로 chat template (thinking 동반) 우회.
-        # langchain ChatOllama 는 raw 옵션 지원이 약해 httpx 로 직접 호출.
-        import time as _t
-
-        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
-        model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
-        body = {
-            "model": model_id,
-            "prompt": prompt,
-            "stream": False,
-            "raw": True,
-            "keep_alive": "5m",
-            "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
-        }
-        _llm_start = _t.perf_counter()
-        resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
-        # HTTP 4xx/5xx 즉시 예외 → except 안전 폴백(Fast-Path).
-        resp.raise_for_status()
-        _llm_ms = (_t.perf_counter() - _llm_start) * 1000.0
-        raw_text = (resp.json().get("response") or "").strip()
+        raw_text, _llm_ms = await _ollama_raw_generate(prompt)
         logger.info(f"[LocationDecision] LLM {_llm_ms:.0f}ms raw={raw_text!r} (gen={request_gen})")
 
         tokens = raw_text.split()
@@ -809,17 +805,7 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
         reason = f"LLM chose {chosen_id} ({payload.context_summary})"
         logger.info(f"[LocationDecision] 결과: agent={payload.agent_id} chosen={chosen_id}")
 
-        return json.dumps(
-            {
-                "type": "location_decision_result",
-                "payload": {
-                    "agent_id": payload.agent_id,
-                    "chosen_id": chosen_id,
-                    "reason": reason,
-                    "request_gen": request_gen,
-                },
-            }
-        )
+        return _location_decision_result(payload.agent_id, chosen_id, reason, request_gen)
 
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")

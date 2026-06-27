@@ -79,21 +79,13 @@ def _correct_facial_contamination(action: GameAction, persona_traits: list[str])
     return action
 
 
+VALID_MODES = {"Combat", "Social", "Task", "Investigation", "Lifestyle", "Common"}
+VALID_FACIALS = {"Neutral", "Happy", "Sad", "Angry", "Fear", "Surprised", "Disgusted", "Tired", "Pain"}
+
+
 def _parse_mode_and_facial(raw_response: str) -> tuple[str, str, str, bool]:
     mode = "Common"
     facial = "Neutral"
-    VALID_MODES = {"Combat", "Social", "Task", "Investigation", "Lifestyle", "Common"}
-    VALID_FACIALS = {
-        "Neutral",
-        "Happy",
-        "Sad",
-        "Angry",
-        "Fear",
-        "Surprised",
-        "Disgusted",
-        "Tired",
-        "Pain",
-    }
 
     mode_match = re.search(r"\[Mode:\s*(\w+)\]", raw_response, re.IGNORECASE)
     facial_match = re.search(r"\[Facial:\s*(\w+)\]", raw_response, re.IGNORECASE)
@@ -193,88 +185,94 @@ def _parse_action_tags(raw_response: str, facial_state: str) -> list:
     return out
 
 
+# 자연어 감정 키워드(한/영) → 정규 FacialState. 삽입 순서 = 매칭 우선순위.
+_EMOTION_KEYWORD_MAP = {
+    "기쁘": "Happy",
+    "행복": "Happy",
+    "happy": "Happy",
+    "cheerful": "Happy",
+    "joy": "Happy",
+    "슬프": "Sad",
+    "우울": "Sad",
+    "sad": "Sad",
+    "화나": "Angry",
+    "분노": "Angry",
+    "angry": "Angry",
+    "furious": "Angry",
+    "무서": "Fear",
+    "fear": "Fear",
+    "scared": "Fear",
+    "놀라": "Surprised",
+    "surprised": "Surprised",
+    "alarm": "Surprised",
+    "역겨": "Disgusted",
+    "disgust": "Disgusted",
+    "피곤": "Tired",
+    "exhaust": "Tired",
+    "tired": "Tired",
+    "아프": "Pain",
+    "pain": "Pain",
+}
+
+
 def _normalize_emotion(emotion_text: str) -> str:
     emotion_lower = emotion_text.lower()
-    EMOTION_MAP = {
-        "기쁘": "Happy",
-        "행복": "Happy",
-        "happy": "Happy",
-        "cheerful": "Happy",
-        "joy": "Happy",
-        "슬프": "Sad",
-        "우울": "Sad",
-        "sad": "Sad",
-        "화나": "Angry",
-        "분노": "Angry",
-        "angry": "Angry",
-        "furious": "Angry",
-        "무서": "Fear",
-        "fear": "Fear",
-        "scared": "Fear",
-        "놀라": "Surprised",
-        "surprised": "Surprised",
-        "alarm": "Surprised",
-        "역겨": "Disgusted",
-        "disgust": "Disgusted",
-        "피곤": "Tired",
-        "exhaust": "Tired",
-        "tired": "Tired",
-        "아프": "Pain",
-        "pain": "Pain",
-    }
-    for keyword, emotion in EMOTION_MAP.items():
+    for keyword, emotion in _EMOTION_KEYWORD_MAP.items():
         if keyword in emotion_lower:
             return emotion
     return "Neutral"
 
 
+# 자연어 키워드(한/영) → (action_type, 기본 target_id, 기본 parameters). 순서 = 매칭 우선순위.
+_KEYWORD_ACTION_MAP = [
+    (
+        ["공격", "attack", "strike", "hit", "swing", "베", "때", "slash"],
+        "Attack",
+        "Enemy",
+        {},
+    ),
+    (
+        ["방어", "막", "block", "shield", "parry", "defend"],
+        "Block",
+        None,
+        {"duration": "2.0"},
+    ),
+    (
+        ["구르", "회피", "dodge", "evade", "roll"],
+        "Dodge",
+        None,
+        {"direction": "Back"},
+    ),
+    (["도망", "달아", "flee", "escape", "run away"], "Flee", None, {}),
+    (
+        ["뛰어", "달려", "run", "rush", "sprint", "빠르게"],
+        "Move",
+        "Player",
+        {"style": "Run"},
+    ),
+    (
+        ["걸어", "천천히", "walk", "slowly", "다가"],
+        "Move",
+        "Player",
+        {"style": "Walk"},
+    ),
+    (["기어", "crawl", "sneak"], "Move", "Player", {"style": "Crawl"}),
+    (["줍", "집", "pick", "grab", "take"], "PickUp", None, {}),
+    (["버리", "drop", "discard"], "Drop", None, {}),
+    (["수색", "조사", "investigate", "search", "examine"], "Investigate", None, {}),
+    (["추적", "track", "follow trail"], "Track", None, {}),
+    (["두리번", "둘러", "scan", "look around"], "Scan", None, {}),
+    (["앉", "sit", "sits"], "Sit", None, {}),
+    (["잠", "자", "sleep", "rest", "lie down"], "Sleep", None, {}),
+    (["읽", "read"], "Read", None, {}),
+    (["멈", "기다", "wait", "stop", "pause"], "Wait", None, {"duration": "3.0"}),
+    (["바라", "돌아", "turn", "face", "look at"], "TurnTo", "Player", {}),
+]
+
+
 def _parse_natural_action(text: str, behavior_mode: str = "Common") -> Optional[GameAction]:
     text_lower = text.lower()
-    KEYWORD_ACTION_MAP = [
-        (
-            ["공격", "attack", "strike", "hit", "swing", "베", "때", "slash"],
-            "Attack",
-            "Enemy",
-            {},
-        ),
-        (
-            ["방어", "막", "block", "shield", "parry", "defend"],
-            "Block",
-            None,
-            {"duration": "2.0"},
-        ),
-        (
-            ["구르", "회피", "dodge", "evade", "roll"],
-            "Dodge",
-            None,
-            {"direction": "Back"},
-        ),
-        (["도망", "달아", "flee", "escape", "run away"], "Flee", None, {}),
-        (
-            ["뛰어", "달려", "run", "rush", "sprint", "빠르게"],
-            "Move",
-            "Player",
-            {"style": "Run"},
-        ),
-        (
-            ["걸어", "천천히", "walk", "slowly", "다가"],
-            "Move",
-            "Player",
-            {"style": "Walk"},
-        ),
-        (["기어", "crawl", "sneak"], "Move", "Player", {"style": "Crawl"}),
-        (["줍", "집", "pick", "grab", "take"], "PickUp", None, {}),
-        (["버리", "drop", "discard"], "Drop", None, {}),
-        (["수색", "조사", "investigate", "search", "examine"], "Investigate", None, {}),
-        (["추적", "track", "follow trail"], "Track", None, {}),
-        (["두리번", "둘러", "scan", "look around"], "Scan", None, {}),
-        (["앉", "sit", "sits"], "Sit", None, {}),
-        (["잠", "자", "sleep", "rest", "lie down"], "Sleep", None, {}),
-        (["읽", "read"], "Read", None, {}),
-        (["멈", "기다", "wait", "stop", "pause"], "Wait", None, {"duration": "3.0"}),
-        (["바라", "돌아", "turn", "face", "look at"], "TurnTo", "Player", {}),
-    ]
-    for keywords, action_type, target_id, parameters in KEYWORD_ACTION_MAP:
+    for keywords, action_type, target_id, parameters in _KEYWORD_ACTION_MAP:
         if any(word in text_lower for word in keywords):
             params = parameters.copy()
             if target_id:
@@ -299,6 +297,19 @@ def _parse_natural_action(text: str, behavior_mode: str = "Common") -> Optional[
     return None
 
 
+def _strip_to_dialogue(raw_response: str, facial_state: str) -> Optional[GameAction]:
+    """[Action:] 태그·`*()` 제거 후 남은 텍스트를 Dialogue 액션으로(없으면 None). 200자 절단."""
+    bare = re.sub(r"\[Action:\s*[^\]]+\]", "", raw_response, flags=re.IGNORECASE)
+    bare = re.sub(r"[*()]", "", bare).strip()
+    if not bare:
+        return None
+    return GameAction(
+        ActionType="Dialogue",
+        FacialState=facial_state,
+        Parameters={"text": bare[:200], "emotion": facial_state},
+    )
+
+
 def _regex_fallback_parse(
     raw_response: str,
     npc_id: str,
@@ -321,16 +332,9 @@ def _regex_fallback_parse(
             )
         )
     else:
-        bare = re.sub(r"\[Action:\s*[^\]]+\]", "", raw_response, flags=re.IGNORECASE)
-        bare = re.sub(r"[*()]", "", bare).strip()
-        if bare:
-            actions.append(
-                GameAction(
-                    ActionType="Dialogue",
-                    FacialState=facial_state,
-                    Parameters={"text": bare[:200], "emotion": facial_state},
-                )
-            )
+        act = _strip_to_dialogue(raw_response, facial_state)
+        if act:
+            actions.append(act)
 
     if tag_actions:
         actions.extend(tag_actions)
@@ -342,16 +346,9 @@ def _regex_fallback_parse(
                 actions.append(parsed)
 
     if not actions:
-        clean_text = re.sub(r"\[Action:\s*[^\]]+\]", "", raw_response, flags=re.IGNORECASE)
-        clean_text = re.sub(r"[*()]", "", clean_text).strip()
-        if clean_text:
-            actions.append(
-                GameAction(
-                    ActionType="Dialogue",
-                    FacialState=facial_state,
-                    Parameters={"text": clean_text[:200], "emotion": facial_state},
-                )
-            )
+        act = _strip_to_dialogue(raw_response, facial_state)
+        if act:
+            actions.append(act)
 
     return ActionBatch(AgentID=npc_id, Mode=behavior_mode, Actions=actions)
 
