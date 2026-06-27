@@ -9,6 +9,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../NPC/SmartNPC.h"
 #include "../NPC/NPCManager.h"
+#include "PlayerInteractionUtils.h"
 #include "Engine/GameInstance.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
@@ -192,42 +193,7 @@ void AVRPlayerCharacter::Look(const FInputActionValue& Value)
 
 void AVRPlayerCharacter::DetectNearbyNPC()
 {
-	// SimpleSphere Trace or Overlap
-	FVector Start = GetActorLocation();
-	float Radius = 500.0f; 
-
-	TArray<FOverlapResult> Overlaps;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
-
-	bool bHit = GetWorld()->OverlapMultiByObjectType(
-		Overlaps,
-		Start,
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECollisionChannel::ECC_Pawn),
-		FCollisionShape::MakeSphere(Radius),
-		Params
-	);
-
-	FString FoundNPCID = "";
-	float MinDistSq = FLT_MAX;
-
-	if (bHit)
-	{
-		for (const FOverlapResult& Result : Overlaps)
-		{
-			ASmartNPC* NPC = Cast<ASmartNPC>(Result.GetActor());
-			if (NPC)
-			{
-				float DistSq = FVector::DistSquared(Start, NPC->GetActorLocation());
-				if (DistSq < MinDistSq)
-				{
-					MinDistSq = DistSq;
-					FoundNPCID = NPC->AgentID;
-				}
-			}
-		}
-	}
+	const FString FoundNPCID = PlayerInteractionUtils::FindNearestNPCId(this, 500.0f);
 
 	// 미발견 시 기존 타겟 유지 — 빈 값으로 덮어쓰면 조준/탐지 한 번 빗나간 것만으로
 	// 유효하던 대화 대상이 소실되어 다음 음성 발화가 폐기된다.
@@ -293,13 +259,7 @@ void AVRPlayerCharacter::HandleVoiceTranscript(const FString& PlayerId, const FS
 		UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] Voice transcript 폐기 — target/transcript 비어있음"));
 		return;
 	}
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-		{
-			Manager->SendPlayerDialogue(PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
-		}
-	}
+	PlayerInteractionUtils::SendDialogueToNpc(this, PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
 }
 
 void AVRPlayerCharacter::SendNPCDialogue(const FString& Text)
@@ -314,15 +274,8 @@ void AVRPlayerCharacter::SendNPCDialogue(const FString& Text)
 		UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] SendNPCDialogue 실패 — 대상 NPC 없음"));
 		return;
 	}
-
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-		{
-			// player_id = actor 이름 — affinity DB 키(예: BP_Player_C_0)와 일치
-			Manager->SendPlayerDialogue(GetName(), CurrentDialogueTarget, Text);
-		}
-	}
+	// player_id = actor 이름 — affinity DB 키(예: BP_Player_C_0)와 일치
+	PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentDialogueTarget, Text);
 }
 
 void AVRPlayerCharacter::TestPlanHUD(const FString& AgentID)
@@ -339,8 +292,7 @@ void AVRPlayerCharacter::TestPlanHUD(const FString& AgentID)
 		return;
 	}
 
-	UGameInstance* GI = GetGameInstance();
-	UNPCManager* Manager = GI ? GI->GetSubsystem<UNPCManager>() : nullptr;
+	UNPCManager* Manager = UNPCManager::Get(this);
 	ASmartNPC* NPC = Manager ? Manager->GetNPCById(Target) : nullptr;
 	if (!NPC || !NPC->GetStateComponent())
 	{

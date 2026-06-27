@@ -8,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "KineticProjectile.h"
 #include "KineticDamage.h"
+#include "PlayerInteractionUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -673,25 +674,7 @@ void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 
 void AVRPawn::DetectNearbyNPC()
 {
-    TArray<FOverlapResult> Overlaps;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
-
-    GetWorld()->OverlapMultiByObjectType(
-        Overlaps, GetActorLocation(), FQuat::Identity,
-        FCollisionObjectQueryParams(ECollisionChannel::ECC_Pawn),
-        FCollisionShape::MakeSphere(500.f), Params);
-
-    FString FoundID;
-    float MinDistSq = FLT_MAX;
-    for (const FOverlapResult& R : Overlaps)
-    {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(R.GetActor()))
-        {
-            float D = FVector::DistSquared(GetActorLocation(), NPC->GetActorLocation());
-            if (D < MinDistSq) { MinDistSq = D; FoundID = NPC->AgentID; }
-        }
-    }
+    const FString FoundID = PlayerInteractionUtils::FindNearestNPCId(this, 500.f);
 
     // 미발견 시 기존 타겟 유지 — 빈 값 덮어쓰기로 유효 대상이 소실되는 것 방지.
     if (!FoundID.IsEmpty())
@@ -716,15 +699,8 @@ void AVRPawn::SendNPCDialogue(const FString& Text)
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SendNPCDialogue 실패 — 대상 NPC 없음"));
         return;
     }
-
-    if (UGameInstance* GI = GetGameInstance())
-    {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            // player_id = actor 이름 — affinity DB 키와 일치
-            Manager->SendPlayerDialogue(GetName(), CurrentTargetNPCID, Text);
-        }
-    }
+    // player_id = actor 이름 — affinity DB 키와 일치
+    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
 }
 
 void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
@@ -747,13 +723,7 @@ void AVRPawn::HandleVoiceTranscript(const FString& PlayerId, const FString& Targ
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Voice transcript 폐기 — target/transcript 비어있음"));
         return;
     }
-    if (UGameInstance* GI = GetGameInstance())
-    {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            Manager->SendPlayerDialogue(PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
-        }
-    }
+    PlayerInteractionUtils::SendDialogueToNpc(this, PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
 }
 
 void AVRPawn::LogIKMetrics()

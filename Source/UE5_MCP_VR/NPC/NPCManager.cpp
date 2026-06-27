@@ -11,6 +11,14 @@
 #include "Engine/Engine.h"
 
 
+UNPCManager* UNPCManager::Get(const UObject* WorldContext)
+{
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
+    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+    return GI ? GI->GetSubsystem<UNPCManager>() : nullptr;
+}
+
+
 // --- UNPCMap ---
 
 

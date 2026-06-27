@@ -67,6 +67,9 @@ public:
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
 
+    /** WorldContext(액터·컴포넌트 등)에서 UNPCManager 획득 — GameInstance subsystem 이중 조회 idiom 일원화. 없으면 nullptr. */
+    static UNPCManager* Get(const UObject* WorldContext);
+
     // === NPC 등록/해제 ===
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void RegisterNPC(const FString& AgentID, ASmartNPC* NPC);

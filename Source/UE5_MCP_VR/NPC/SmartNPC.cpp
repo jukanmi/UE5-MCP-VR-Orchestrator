@@ -150,12 +150,9 @@ void ASmartNPC::BeginPlay()
         OriginalMeshCollision = GetMesh()->GetCollisionEnabled();
     }
 
-    if (UGameInstance* GI = GetGameInstance())
+    if (UNPCManager* Manager = UNPCManager::Get(this))
     {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            Manager->RegisterNPC(AgentID, this);
-        }
+        Manager->RegisterNPC(AgentID, this);
     }
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
@@ -184,12 +181,9 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
         KnockdownPhase = EKnockdownPhase::None;
     }
 
-    if (UGameInstance* GI = GetGameInstance())
+    if (UNPCManager* Manager = UNPCManager::Get(this))
     {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            Manager->UnregisterNPC(AgentID);
-        }
+        Manager->UnregisterNPC(AgentID);
     }
 
     Super::EndPlay(EndPlayReason);
@@ -303,12 +297,9 @@ void ASmartNPC::HandleDeath()
     }
 
     // 3. NPCMap에서 즉시 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음
-    if (UGameInstance* GI = GetGameInstance())
+    if (UNPCManager* Manager = UNPCManager::Get(this))
     {
-        if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
-        {
-            Manager->UnregisterNPC(AgentID);
-        }
+        Manager->UnregisterNPC(AgentID);
     }
 
     // 4. AI 컨트롤러 해제 — BT 완전 중단
@@ -601,11 +592,7 @@ void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
 
 UNPCManager* ASmartNPC::GetNPCManager() const
 {
-    if (UGameInstance* GI = GetGameInstance())
-    {
-        return GI->GetSubsystem<UNPCManager>();
-    }
-    return nullptr;
+    return UNPCManager::Get(this);
 }
 
 void ASmartNPC::RefreshTickEnabled()
