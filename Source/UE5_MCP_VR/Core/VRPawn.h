@@ -18,6 +18,8 @@ class USkeletalMeshComponent;
 class UVoiceInputComponent;
 class UInventoryComponent;
 class UPlayerHUDWidget;
+class USphereComponent;
+class AKineticProjectile;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
 UENUM(BlueprintType)
@@ -90,6 +92,13 @@ public:
 
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
+
+    // §4 동역학 근접 — 손 본 소켓에 부착된 타격 구체. NPC overlap 시 손 속도로 ½mv² 데미지.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
+    USphereComponent* MeleeSphereLeft;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
+    USphereComponent* MeleeSphereRight;
 
     /** 음성 입력 — push-to-talk 마이크 캡처 → ASR → transcript → 대화. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
@@ -164,14 +173,72 @@ public:
     // 전투
     // ============================================================================
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
-    float AttackDamage = 25.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
-    float AttackRange = 3000.f;
-
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
+
+    // ── §4 동역학 데미지 튜닝 (Damage = clamp(½·m·v² · Scale, 0, Cap), v 는 m/s) ──
+
+    /** 근접 손 무기 질량(kg) — ½mv² 의 m. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float WeaponMass = 2.0f;
+
+    /** 운동에너지(J) → HP 데미지 환산 계수. PIE 에서 체감 맞춰 튜닝. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float KineticDamageScale = 1.0f;
+
+    /** 밀치기 임계(m/s). 이 미만 접촉은 무시. 이상~MeleeStrikeSpeed 미만은 밀침만(데미지·공격인지 없음). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MinImpactSpeed = 1.0f;
+
+    /** 데미지(=공격 인지) 임계(m/s). 이 이상 스윙만 TakeDamage → SmartNPC 가 공격으로 인지.
+     *  미만(밀치기 구간)은 NPC 밀려나되 LLM 이 공격으로 안 봄. MinImpactSpeed ≤ 이 값 권장. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MeleeStrikeSpeed = 2.0f;
+
+    /** 1회 타격 데미지 상한. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MaxKineticDamage = 100.f;
+
+    /** 손 타격 구체 반경(cm). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MeleeSphereRadius = 12.f;
+
+    /** 같은 NPC 재타격 최소 간격(초) — 한 스윙 다중 overlap 폭주 방지. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MeleeHitCooldown = 0.4f;
+
+    /** 손 속도 EMA 스무딩(0~1, 1=무스무딩) — 트래킹 스파이크 억제. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float HandVelSmoothing = 0.5f;
+
+    /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float KnockbackScale = 150.f;
+
+    /** 밀치기 속도 상한(cm/s). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    float MaxKnockbackSpeed = 600.f;
+
+    /** IA_Attack 으로 발사할 투사체 클래스. BP_KineticProjectile 지정. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")
+    TSubclassOf<AKineticProjectile> ProjectileClass;
+
+    /** 디버그 — 손 타격 구체·속도·명중을 화면/로그에 표시. 근접 안 먹을 때 단계 진단용. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
+    bool bDebugMelee = false;
+
+    // 공격 명중 시 럼블 — VR 컨트롤러는 Haptic(B), 게임패드/데스크탑은 ForceFeedback(A). 둘 다 폴백으로 재생.
+    // [B·권장] VR 모션 컨트롤러 정석 럼블. BP_VRPawn 에서 UHapticFeedbackEffect_Curve 에셋 할당.
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    TObjectPtr<class UHapticFeedbackEffect_Base> HitHapticEffect;
+
+    // [B] 햅틱 강도 스케일(0~1).
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    float HitHapticScale = 1.0f;
+
+    // [A·폴백] 게임패드 진동 모터. VR 컨트롤러엔 보통 안 옴. BP_VRPawn 에서 UForceFeedbackEffect 에셋 할당.
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
+    TObjectPtr<class UForceFeedbackEffect> HitForceFeedbackEffect;
 
     // ============================================================================
     // 자세 시스템 (HMD Z 높이 기반)
@@ -217,11 +284,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "5.0"))
     float CalibrationDuration = 2.f;
 
-    /** 시야 높이 오프셋(cm, 음수=내림). VROrigin Z에 더해 카메라+컨트롤러 트래킹
-     *  공간을 통째로 내림 — 아바타 머리 본이 시야보다 위로 뜰 때 시야를 머리로 맞춤.
-     *  부모(VROrigin)에 적용해 HMD 레이트업데이트가 안 덮음. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-40.0", ClampMax = "10.0"))
-    float CameraHeightOffset = -30.f;
+    /** 시야 높이 미세 오프셋(cm). VROrigin Z에 더함. **기본 0 — 비워둘 것.**
+     *  ⚠️ 0이 아니면 카메라 월드Z가 시프트되고, GetCurrentHMDHeight()가 그 카메라Z를
+     *  역산하므로 보고 높이가 오염→캡슐(아바타 몸)이 오프셋만큼 짧아짐→카메라가 짧은 몸
+     *  위로 떠 '시야 너무 높음'. 과거 -30 이 정확히 이 버그를 유발(아바타 머리 뜸을
+     *  카메라 침몰로 가리려다 역효과). 머리 본이 뜨면 여기 말고 HeadEffectorOffset/
+     *  FBIK head effector 에서 교정할 것. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-20.0", ClampMax = "20.0"))
+    float CameraHeightOffset = 0.f;
 
     /** 자세 전이 시 브로드캐스트. AnimBP / UI 가 바인딩. */
     UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
@@ -256,15 +326,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
 
-    /** 캘리브레이션 시 아바타를 플레이어 키 비율로 스케일할지. 끄면 네이티브 크기.
-     *  켜면 아바타 팔길이도 같이 줄어 손 IK 타겟에 자연히 닿음(팔꿈치 과접힘 방지). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    bool bScaleAvatarToPlayer = true;
-
-    /** 아바타 네이티브 정자세 눈높이(cm). 스케일 = CalibratedStandingHeight / 이 값.
-     *  X_Bot 기준 실측해 조정(팔 길이가 맞을 때까지). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK", meta = (ClampMin = "120.0", ClampMax = "200.0"))
-    float AvatarReferenceHeight = 170.f;
+    // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
+    // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
 
     /** HMD(VRCamera)를 몸체 메시 공간으로 변환한 Head Effector Transform. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
@@ -379,6 +442,23 @@ private:
     // --- 전투 ---
     UFUNCTION()
     void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    // §4 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
+    // 본 소켓 패시브 overlap 은 애니 본에서 이벤트 누락이 잦아 능동 쿼리로 대체.
+    void TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand);
+
+    /** 명중 손 컨트롤러 럼블 — B(Haptic)+A(ForceFeedback) 폴백. bRightHand=false 면 왼손. */
+    void PlayHitHaptic(bool bRightHand);
+
+    // 손 속도 추적(Tick) — 컨트롤러 위치 델타/dt. cm/s. ½mv² 의 v 산출.
+    FVector PrevHandLocLeft  = FVector::ZeroVector;
+    FVector PrevHandLocRight = FVector::ZeroVector;
+    FVector HandVelLeft      = FVector::ZeroVector;
+    FVector HandVelRight     = FVector::ZeroVector;
+    bool bHandVelInit = false;
+
+    /** 같은 NPC 재타격 억제용 마지막 타격 시각(World TimeSeconds). */
+    TMap<TWeakObjectPtr<AActor>, float> LastMeleeHitTime;
 
     // --- 사망/리스폰 ---
     UPROPERTY(EditDefaultsOnly, Category = "Combat")

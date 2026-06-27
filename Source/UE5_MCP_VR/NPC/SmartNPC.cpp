@@ -11,6 +11,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
@@ -19,9 +21,49 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Components/WidgetComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "PhysicsEngine/PhysicalAnimationComponent.h"  // [SPIKE]
+#include "Engine/Engine.h"  // [SPIKE] GEngine
+#include "Animation/AnimMontage.h"  // 기상 몽타주
+#include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
 #include "NPCAudioStreamComponent.h"
 #include "../UI/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Engine/DamageEvents.h"
+
+// 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
+// Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.
+// 좌우: Mixamo 는 Right/Left 접두, Mannequin 은 _r/_l 접미. 미식별 시 Left 폴백.
+static EBodyPartType BoneToBodyPart(FName Bone)
+{
+    const FString B = Bone.ToString().ToLower();
+    if (B.IsEmpty()) return EBodyPartType::Torso;
+    // 머리·목 (Head/Neck/HeadTop_End)
+    if (B.Contains(TEXT("head")) || B.Contains(TEXT("neck"))) return EBodyPartType::Head;
+    // 몸통 — 척추·골반·쇄골/어깨 (Mannequin: spine/pelvis/clavicle, Mixamo: spine/hips/shoulder)
+    if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("hip"))
+        || B.Contains(TEXT("clavicle")) || B.Contains(TEXT("shoulder")))
+        return EBodyPartType::Torso;
+    const bool bRight = B.Contains(TEXT("right")) || B.EndsWith(TEXT("_r"));
+    // 팔·손 (Mannequin: upperarm/lowerarm/hand, Mixamo: arm/forearm/hand)
+    if (B.Contains(TEXT("arm")) || B.Contains(TEXT("hand")))
+        return bRight ? EBodyPartType::ArmRight : EBodyPartType::ArmLeft;
+    // 다리·발 (Mannequin: thigh/calf/foot/ball, Mixamo: upleg/leg/foot/toe)
+    if (B.Contains(TEXT("leg")) || B.Contains(TEXT("thigh")) || B.Contains(TEXT("calf"))
+        || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")) || B.Contains(TEXT("toe")))
+        return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
+    return EBodyPartType::Torso;
+}
+
+static float BodyPartMultiplier(EBodyPartType P)
+{
+    switch (P)
+    {
+        case EBodyPartType::Head:  return 2.0f;
+        case EBodyPartType::Torso: return 1.0f;
+        default:                   return 0.75f;  // ArmLeft/ArmRight/LegLeft/LegRight
+    }
+}
 
 ASmartNPC::ASmartNPC()
 {
@@ -36,6 +78,9 @@ ASmartNPC::ASmartNPC()
     StateComponent     = CreateDefaultSubobject<UNPCStateComponent>(TEXT("StateComponent"));
     ActionComponent    = CreateDefaultSubobject<UNPCActionComponent>(TEXT("ActionComponent"));
     InventoryComponent = CreateDefaultSubobject<UNPCInventoryComponent>(TEXT("InventoryComponent"));
+
+    // [SPIKE] 액티브 래그돌 hit-react — 메시 바인딩은 BeginPlay 에서(GetMesh 준비 후).
+    PhysicalAnim = CreateDefaultSubobject<UPhysicalAnimationComponent>(TEXT("PhysicalAnim"));
 
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
     if (StimuliSource)
@@ -74,6 +119,17 @@ void ASmartNPC::BeginPlay()
 {
     Super::BeginPlay();
 
+    // [SPIKE] PhysicalAnimation 대상 메시 바인딩 + 기상 후 복원용 원본 콜리전 프로파일 캡처.
+    if (PhysicalAnim && GetMesh())
+    {
+        PhysicalAnim->SetSkeletalMeshComponent(GetMesh());
+    }
+    if (GetMesh())
+    {
+        OriginalMeshProfile = GetMesh()->GetCollisionProfileName();
+        OriginalMeshCollision = GetMesh()->GetCollisionEnabled();
+    }
+
     if (UGameInstance* GI = GetGameInstance())
     {
         if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
@@ -95,12 +151,19 @@ void ASmartNPC::BeginPlay()
     }
 
     // 디버그 표시 활성화된 NPC만 Tick 켜기 (대부분 NPC는 Tick 비용 0)
-    // 자막 표시 중에는 ApplySubtitle 가 Tick 을 따로 켠다(빌보드).
-    SetActorTickEnabled(bShowAffinityOnScreen);
+    // 자막·flinch·넉다운 등 다른 소비자는 RefreshTickEnabled 가 OR 로 함께 관리.
+    RefreshTickEnabled();
 }
 
 void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    // 넉다운 도중 파괴/종료 시 동시 카운트 누수 방지(UNPCManager 소유 카운터 감소).
+    if (KnockdownPhase != EKnockdownPhase::None)
+    {
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+        KnockdownPhase = EKnockdownPhase::None;
+    }
+
     if (UGameInstance* GI = GetGameInstance())
     {
         if (UNPCManager* Manager = GI->GetSubsystem<UNPCManager>())
@@ -158,12 +221,41 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 
     if (StateComponent)
     {
-        StateComponent->ApplyDamage(ActualDamage);
+        // [의도(Why)] 히트스캔이 채운 본 이름으로 부위를 식별해 부위별 데미지 배율을 적용.
+        float Multiplier = 1.0f;
+        if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+        {
+            const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
+            Multiplier = BodyPartMultiplier(BoneToBodyPart(Pt.HitInfo.BoneName));
+            // 사망 래그돌 임펄스용: 맞은 본 + 발사 방향 캡처(다음 줄 사망 판정에서 소비될 수 있음).
+            LastHitBone = Pt.HitInfo.BoneName;
+            LastHitDirection = Pt.ShotDirection;
+        }
+        else
+        {
+            // 비-PointDamage(폭발·일반 데미지) — 이전 피격 방향 잔존 방지. 가해자→대상 방향으로 폴백.
+            LastHitBone = NAME_None;
+            LastHitDirection = DamageCauser
+                ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
+                : -GetActorForwardVector();
+        }
+        StateComponent->ApplyDamage(ActualDamage, Multiplier);
 
         if (!StateComponent->GetAttributes().Resources.IsAlive())
         {
             HandleDeath();
             return ActualDamage;
+        }
+
+        // 비치사 피격 → 동역학 반응. 데미지·인지는 이미 적용됨(반응 분기와 무관 — §5.D 데미지 상시).
+        // 기본 경로: ReactToHit(강타=Knockdown / 약타=Flinch). bSpikeReactOnHit=true 면 구 스파이크 스냅 비교용.
+        if (bSpikeReactOnHit)
+        {
+            SpikeHitReact();
+        }
+        else
+        {
+            ReactToHit(ActualDamage);
         }
 
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
@@ -212,19 +304,24 @@ void ASmartNPC::HandleDeath()
         C->UnPossess();
     }
 
-    // 5. 사망 몽타주 재생
-    if (ActionComponent && ActionComponent->ActionData)
+    // 5. 패시브 래그돌 — 사망 몽타주 대신 물리 시뮬로 자연 붕괴(§5 VR 실감형).
+    //    진행 중이던 넉다운/기상은 정리(타이머·동시카운트). 이미 시뮬 중이면 EnterRagdoll 이 임펄스만 갱신(§6).
+    if (KnockdownPhase != EKnockdownPhase::None)
     {
-        if (FActionMediaData* M = ActionComponent->ActionData->ActionMedias.Find(NPCActionKeys::Media_Death))
-        {
-            if (M->Montage) PlayAnimMontage(M->Montage);
-        }
+        GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+        KnockdownPhase = EKnockdownPhase::None;
     }
+    bFlinching = false;
+
+    // 전신 래그돌 진입(캡슐 NoCollision·CMC 정지·메시 시뮬·치사 임펄스). 전제: 메시 Physics Asset 필수.
+    EnterRagdoll(/*bFatal=*/true);
+    RefreshTickEnabled();
 
     // 6. 사망 이벤트 브로드캐스트 — BP에서 VFX 등 추가 연결 가능
     OnNPCDied.Broadcast(this);
 
-    // 7. 일정 시간 후 Actor 제거 (사망 애니메이션 재생 여유 시간)
+    // 7. 일정 시간 후 Actor 제거 (래그돌 안착·시신 노출 여유 시간)
     constexpr float DestroyDelay = 3.f;
     if (UWorld* World = GetWorld())
     {
@@ -327,6 +424,20 @@ void ASmartNPC::Debug_PrintAffinity()
 void ASmartNPC::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+
+    // 액티브 래그돌 물리 반응 업데이트 — affinity 디버그 플래그와 독립적으로 항상 처리.
+    if (bFlinching)
+    {
+        TickFlinchRamp(DeltaSeconds);
+    }
+    if (KnockdownPhase == EKnockdownPhase::Ragdoll)
+    {
+        TickSettleDetection(DeltaSeconds);
+    }
+    else if (KnockdownPhase == EKnockdownPhase::GettingUp)
+    {
+        TickGetUpBlend(DeltaSeconds);
+    }
 
     // 말풍선 빌보드 — 표시 중일 때만 플레이어 카메라 향해 Yaw 정렬(텍스트 직립 유지).
     if (DialogueWidgetComp && DialogueWidgetComp->IsVisible())
@@ -459,8 +570,8 @@ void ASmartNPC::ApplySubtitle(bool bVisible)
 
     DialogueWidgetComp->SetVisibility(bVisible);
 
-    // 빌보드용 Tick — 표시 중에만. 숨김 시 디버그(호감도) 표시 설정값으로 복귀.
-    SetActorTickEnabled(bVisible || bShowAffinityOnScreen);
+    // 빌보드용 Tick — 표시 중에만. 다른 소비자(호감도·flinch·넉다운) OR 해 일원 관리.
+    RefreshTickEnabled();
 }
 
 // === Plan 갱신 로그 알림 ===
@@ -469,4 +580,454 @@ void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
 {
     UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] %s: plan 갱신 goal=\"%s\" steps=%d"),
         *AgentID, *NewPlan.Goal, NewPlan.Steps.Num());
+}
+
+// ====================================================================
+// [SPIKE] 액티브 래그돌 hit-react — throwaway 타당성 검증
+// 상체(SpikeRootBone 이하)만 물리 시뮬 → PD(PhysicalAnimation)가 애니 포즈로 당김.
+// 하체(Hips/다리)는 애니 유지 → 이동 지속. 임펄스로 움찔 후 SpikeRecoverTime 후 복귀.
+// 전제: 메시에 PA_SmartNPC(물리에셋) 할당 필수.
+// ====================================================================
+
+void ASmartNPC::SpikeHitReact()
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp || !PhysicalAnim || bIsDead)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Spike] mesh/PhysicalAnim 없음 또는 사망"));
+        return;
+    }
+
+    // 1) PD 강도 — 시뮬 본을 매 프레임 애니 포즈(kinematic 타겟)로 끌어당김.
+    FPhysicalAnimationData Data;
+    Data.bIsLocalSimulation     = false;
+    Data.OrientationStrength     = SpikeOrientationStrength;
+    Data.AngularVelocityStrength = SpikeAngularVelStrength;
+    Data.PositionStrength        = 0.f;
+    Data.VelocityStrength        = 0.f;
+    Data.MaxLinearForce          = 0.f;
+    Data.MaxAngularForce         = 0.f;
+    PhysicalAnim->ApplyPhysicalAnimationSettingsBelow(SpikeRootBone, Data, /*bIncludeSelf=*/true);
+
+    // 2) 메시 콜리전 물리 허용 — 기본 QueryOnly 면 AddImpulse 거부됨(경고). 복귀 시 원복.
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+    // 3) 상체 물리 ON + 블렌드 1.0(완전 물리, PD 가 애니로 복원).
+    MeshComp->SetAllBodiesBelowSimulatePhysics(SpikeRootBone, true, /*bIncludeSelf=*/true);
+    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(SpikeRootBone, 1.0f, /*bSkipCustomPhysicsType=*/false, /*bIncludeSelf=*/true);
+
+    // 4) 피격 임펄스 — 가슴(Spine2)에 뒤로. 실제론 타격 방향(LastHitDirection) 사용.
+    MeshComp->AddImpulse(GetActorForwardVector() * -SpikeImpulse, TEXT("Spine2"), /*bVelChange=*/false);
+
+    UE_LOG(LogTemp, Log, TEXT("[Spike] %s hit-react ON (root=%s, recover %.2fs)"),
+        *AgentID, *SpikeRootBone.ToString(), SpikeRecoverTime);
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta,
+            FString::Printf(TEXT("[Spike] %s hit-react"), *AgentID));
+    }
+
+    // 5) 복귀 타이머.
+    GetWorldTimerManager().SetTimer(SpikeRecoverTimer, this, &ASmartNPC::SpikeRecover, SpikeRecoverTime, false);
+}
+
+void ASmartNPC::SpikeRecover()
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp || bIsDead) return;
+    // 블렌드 0(순수 애니) + 시뮬 OFF + 콜리전 QueryOnly 원복. (스파이크라 스냅 — 실제는 Tick 램프)
+    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(SpikeRootBone, 0.0f, false, true);
+    MeshComp->SetAllBodiesBelowSimulatePhysics(SpikeRootBone, false, true);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    UE_LOG(LogTemp, Log, TEXT("[Spike] %s recovered to anim"), *AgentID);
+}
+
+// ====================================================================
+// 액티브 래그돌 (§3) — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
+// ====================================================================
+
+UNPCManager* ASmartNPC::GetNPCManager() const
+{
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        return GI->GetSubsystem<UNPCManager>();
+    }
+    return nullptr;
+}
+
+void ASmartNPC::RefreshTickEnabled()
+{
+    const bool bWantTick =
+        bShowAffinityOnScreen
+        || (DialogueWidgetComp && DialogueWidgetComp->IsVisible())
+        || bFlinching
+        || (KnockdownPhase != EKnockdownPhase::None);
+    SetActorTickEnabled(bWantTick);
+}
+
+// 사망·넉다운 공유 — 전신 래그돌 진입(HandleDeath step5 추출). 전제: 메시 Physics Asset 필수.
+void ASmartNPC::EnterRagdoll(bool bFatal)
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    // 진행 중 몽타주 정지(애니가 물리와 위치 다툼 방지).
+    StopAnimMontage();
+
+    // 캡슐 충돌 끄기(래그돌이 자기 캡슐에 걸려 뜨는 것 방지).
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+    // 이동 컴포넌트 정지(물리와 위치 다툼 방지).
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->StopMovementImmediately();
+        CMC->DisableMovement();
+    }
+
+    // 순수 래그돌 — 직전 Flinch 가 남긴 상체 PD 제거(§6: PD 가 서기 애니로 당기면 낙하 충돌).
+    // 기본 FPhysicalAnimationData 는 전 강도 0 → 사실상 PD off.
+    if (PhysicalAnim)
+    {
+        PhysicalAnim->ApplyPhysicalAnimationSettingsBelow(KnockdownPelvisBone, FPhysicalAnimationData(), /*bIncludeSelf=*/true);
+    }
+    FlinchBlendWeight = 0.f;
+
+    // 전신 물리 시뮬 ON + 블렌드 1(완전 물리). 기상 시 블렌드를 0 으로 램프.
+    MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComp->SetAllBodiesSimulatePhysics(true);
+    MeshComp->SetSimulatePhysics(true);
+    MeshComp->SetAllBodiesPhysicsBlendWeight(1.0f);
+    MeshComp->WakeAllRigidBodies();
+
+    // 마지막 타격 방향 임펄스 — 사망=DeathImpulseStrength, 넉다운=×KnockdownImpulseScale.
+    const float ImpulseMag = bFatal ? DeathImpulseStrength : (DeathImpulseStrength * KnockdownImpulseScale);
+    if (ImpulseMag > 0.f && !LastHitDirection.IsNearlyZero())
+    {
+        // 피격 본에 물리 바디 없으면(손가락·무기·버추얼 본) 임펄스 무시됨 → 골반 폴백.
+        FName ImpulseBone = LastHitBone;
+        if (ImpulseBone == NAME_None || !MeshComp->GetBodyInstance(ImpulseBone))
+        {
+            ImpulseBone = KnockdownPelvisBone;
+        }
+        MeshComp->AddImpulse(LastHitDirection * ImpulseMag, ImpulseBone, /*bVelChange=*/false);
+    }
+}
+
+// 피격 강도(=½mv² 데미지)로 반응 분기. 방향·본은 직전 TakeDamage 가 채운 LastHit* 사용.
+void ASmartNPC::ReactToHit(float HitStrength)
+{
+    if (bIsDead) return;
+
+    if (HitStrength >= KnockdownImpulseThreshold)
+    {
+        Knockdown();
+    }
+    else
+    {
+        // Flinch 내부에서 넉다운/기상 중이면 무시(약타는 강반응 덮어쓰지 않음).
+        Flinch();
+    }
+}
+
+// 약타 — 상체(FlinchRootBone 이하) 물리 블렌드 + 임펄스. Tick 램프(TickFlinchRamp)가 애니로 복귀.
+void ASmartNPC::Flinch()
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp || !PhysicalAnim || bIsDead) return;
+
+    // 넉다운/기상 중에는 약타 반응 생략(§4) — 전신 래그돌이 우선.
+    if (KnockdownPhase != EKnockdownPhase::None) return;
+
+    // 1) PD — 시뮬 본을 매 프레임 애니 포즈로 끌어당김(위치는 자유, 방향만 복원).
+    FPhysicalAnimationData Data;
+    Data.bIsLocalSimulation     = false;
+    Data.OrientationStrength     = FlinchOrientationStrength;
+    Data.AngularVelocityStrength = FlinchAngularVelStrength;
+    Data.PositionStrength        = 0.f;
+    Data.VelocityStrength        = 0.f;
+    Data.MaxLinearForce          = 0.f;
+    Data.MaxAngularForce         = 0.f;
+    PhysicalAnim->ApplyPhysicalAnimationSettingsBelow(FlinchRootBone, Data, /*bIncludeSelf=*/true);
+
+    // 2) 메시 물리 콜리전 허용(QueryOnly 면 AddImpulse 거부) + 상체 시뮬 ON + 블렌드 1.
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComp->SetAllBodiesBelowSimulatePhysics(FlinchRootBone, true, /*bIncludeSelf=*/true);
+    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(FlinchRootBone, 1.0f, /*bSkipCustomPhysicsType=*/false, /*bIncludeSelf=*/true);
+    FlinchBlendWeight = 1.0f;
+
+    // 3) 피격 임펄스 — 실제 타격 방향. Flinch 는 상체만 시뮬하므로 하체 피격 본은 효과 없음 → 시뮬 중인 본만,
+    //    아니면 가슴(Spine2) 폴백.
+    const FVector Dir  = LastHitDirection.IsNearlyZero() ? -GetActorForwardVector() : LastHitDirection;
+    FName Bone = FName(TEXT("Spine2"));
+    if (LastHitBone != NAME_None && MeshComp->IsSimulatingPhysics(LastHitBone))
+    {
+        Bone = LastHitBone;
+    }
+    MeshComp->AddImpulse(Dir * FlinchImpulse, Bone, /*bVelChange=*/false);
+
+    bFlinching = true;
+    RefreshTickEnabled();
+}
+
+// Flinch 복귀 램프 — PhysicsBlendWeight 1→0 보간, 0 도달 시 시뮬 off + 콜리전 원복.
+void ASmartNPC::TickFlinchRamp(float DeltaSeconds)
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    FlinchBlendWeight = FMath::FInterpConstantTo(FlinchBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
+    MeshComp->SetAllBodiesBelowPhysicsBlendWeight(FlinchRootBone, FlinchBlendWeight, false, true);
+
+    if (FlinchBlendWeight <= KINDA_SMALL_NUMBER)
+    {
+        MeshComp->SetAllBodiesBelowSimulatePhysics(FlinchRootBone, false, true);
+        MeshComp->SetCollisionEnabled(OriginalMeshCollision);  // 하드코딩 QueryOnly 대신 원본 복원
+        bFlinching = false;
+        RefreshTickEnabled();
+    }
+}
+
+// 강타 — 전신 래그돌 + AI 정지 + 안착 후 기상. 넉다운/기상 중 재호출 시 재진입(저글, 가드 없음 §5.C.6).
+void ASmartNPC::Knockdown()
+{
+    if (bIsDead) return;
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    const bool bReentry = (KnockdownPhase != EKnockdownPhase::None);
+
+    // 기상 중 재타격 → 몽타주·타이머 취소하고 다시 쓰러뜨림.
+    if (KnockdownPhase == EKnockdownPhase::GettingUp)
+    {
+        StopAnimMontage();
+        GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
+    }
+
+    if (!bReentry)
+    {
+        // 동시 넉다운 상한 초과 → Flinch 폴백(전신 래그돌은 비용·시야 혼잡).
+        // 카운터는 UNPCManager 소유(PIE 세션별 리셋). 매니저 없으면 게이트 없이 진행.
+        if (UNPCManager* Mgr = GetNPCManager())
+        {
+            if (!Mgr->TryEnterKnockdown(MaxConcurrentKnockdown))
+            {
+                UE_LOG(LogTemp, Verbose, TEXT("[Ragdoll] %s 동시 넉다운 상한(%d) → Flinch 폴백"),
+                    *AgentID, MaxConcurrentKnockdown);
+                Flinch();
+                return;
+            }
+        }
+
+        // AI 정지 + 진행 액션 중지(최초 진입만 — 재진입 시 이미 정지).
+        if (ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController()))
+        {
+            AI->PauseAI();
+        }
+        if (ActionComponent)
+        {
+            ActionComponent->StopAllActions();
+        }
+    }
+
+    bFlinching = false;
+    KnockdownPhase = EKnockdownPhase::Ragdoll;
+    SettleTimer = 0.f;
+
+    // 전신 래그돌(새 임펄스 포함). 재진입이면 이미 시뮬 중 → 임펄스만 갱신됨.
+    EnterRagdoll(/*bFatal=*/false);
+
+    RefreshTickEnabled();
+}
+
+// 안착 감지 — 골반 선속도가 임계 미만으로 SettleHoldTime 지속되면 기상 시작.
+void ASmartNPC::TickSettleDetection(float DeltaSeconds)
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    // 골반 본에 피직스 바디가 없으면 GetPhysicsLinearVelocity 가 0 을 반환 → 공중 낙하 중에도
+    // 즉시 안착 판정되는 버그. 바디 없으면 루트 바디(NAME_None) 속도로 폴백.
+    FName VelBone = KnockdownPelvisBone;
+    if (!MeshComp->GetBodyInstance(VelBone))
+    {
+        VelBone = NAME_None;
+    }
+    const FVector PelvisVel = MeshComp->GetPhysicsLinearVelocity(VelBone);
+    if (PelvisVel.Size() < SettleSpeedThreshold)
+    {
+        SettleTimer += DeltaSeconds;
+        if (SettleTimer >= SettleHoldTime)
+        {
+            BeginGetUp();
+        }
+    }
+    else
+    {
+        SettleTimer = 0.f;
+    }
+}
+
+// 기상 준비 — 엎/누움 판정, 캡슐 바닥 재배치·콜리전 복원, 기상 몽타주 재생 + 블렌드 램프 시작.
+void ASmartNPC::BeginGetUp()
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    KnockdownPhase = EKnockdownPhase::GettingUp;
+
+    // 1) 엎/누움 판정 — Hips 본의 up 축(GetAxisZ)과 월드 up 내적. >=0 이면 등이 바닥(FaceUp).
+    //    GetSocketQuaternion = 명시적 월드 공간. GetAxisZ = 쿼터니언의 Z(up)축.
+    const FVector HipsUp = MeshComp->GetSocketQuaternion(KnockdownPelvisBone).GetAxisZ();
+    const bool bFaceUp = FVector::DotProduct(HipsUp, FVector::UpVector) >= 0.f;
+
+    // 2) 캡슐 재배치 — Hips 수평 위치, 바닥 트레이스 Z + 캡슐 반높이.
+    const FVector HipsLoc = MeshComp->GetBoneLocation(KnockdownPelvisBone);
+    float GroundZ = HipsLoc.Z;
+    if (UWorld* W = GetWorld())
+    {
+        FHitResult Hit;
+        // 시작은 골반 살짝 위(+20)만 — 골반은 바닥에 누운 상태라 +100 이면 머리 위 테이블·천장을 바닥으로 오인.
+        const FVector Start = HipsLoc + FVector(0.f, 0.f, 20.f);
+        const FVector End   = HipsLoc - FVector(0.f, 0.f, 500.f);
+        FCollisionQueryParams Params(FName(TEXT("GetUpFloor")), /*bTraceComplex=*/false, this);
+        // 정적 지형만 — Visibility 면 타 NPC/플레이어/트리거 위로 텔레포트 위험.
+        if (W->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, Params))
+        {
+            GroundZ = Hit.Location.Z;
+        }
+    }
+    float HalfHeight = 88.f;
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    }
+    FVector NewLoc(HipsLoc.X, HipsLoc.Y, GroundZ + HalfHeight);
+
+    // 캡슐 Yaw 를 래그돌이 누운 방향(Hips Yaw)에 정렬 — 안 하면 기상 몽타주가 쓰러지기 전 회전으로 시작해 스냅.
+    // faceUp(등 바닥)은 몸이 뒤집혀 있어 +180 보정(리그·몽타주별 PIE 튜닝 대상).
+    FRotator NewRot(0.f, MeshComp->GetSocketRotation(KnockdownPelvisBone).Yaw, 0.f);
+    if (bFaceUp)
+    {
+        NewRot.Yaw += 180.f;
+    }
+
+    // 캡슐 콜리전 먼저 복원 — FindTeleportSpot 이 캡슐 충돌형상으로 겹침 검사하므로 NoCollision 이면 무효.
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    }
+
+    // 래그돌이 벽·장애물 구석에 박혀 멈췄을 때 캡슐 강제 텔레포트 시 끼임 방지 — 안전 위치 탐색.
+    if (UWorld* W = GetWorld())
+    {
+        FVector SafeLoc = NewLoc;
+        if (W->FindTeleportSpot(this, SafeLoc, NewRot))
+        {
+            NewLoc = SafeLoc;
+        }
+    }
+
+    // 물리 텔레포트(sweep 생략)로 안전 위치·방향 배치.
+    SetActorLocationAndRotation(NewLoc, NewRot, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->SetMovementMode(MOVE_Walking);
+    }
+
+    // 3) 기상 몽타주 + 전신 블렌드 램프(시뮬→애니). 현재 블렌드 1 에서 Tick 이 0 으로.
+    GetUpBlendWeight = 1.0f;
+    UAnimMontage* Montage = bFaceUp ? GetUpMontage_FaceUp : GetUpMontage_FaceDown;
+    if (Montage)
+    {
+        const float Dur = PlayAnimMontage(Montage);
+        // 정상 종료는 EndDelegate 로 감지(타이머는 배속·인터럽트에 어긋남). bInterrupted 는 무시.
+        if (UAnimInstance* Anim = (GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
+        {
+            FOnMontageEnded EndDel;
+            EndDel.BindUObject(this, &ASmartNPC::OnGetUpMontageEnded);
+            Anim->Montage_SetEndDelegate(EndDel, Montage);
+        }
+        // 워치독 — 델리게이트 누락·타 몽타주에 의한 인터럽트로 GettingUp 영구 고착 방지.
+        GetWorldTimerManager().SetTimer(GetUpMontageTimer, this, &ASmartNPC::FinishGetUp,
+            FMath::Max(Dur, 0.1f) + 0.5f, false);
+    }
+    else
+    {
+        // 폴백(§8) — 몽타주 미할당 시 즉시 블렌드 복귀. 짧은 타이머로 마무리.
+        GetWorldTimerManager().SetTimer(GetUpMontageTimer, this, &ASmartNPC::FinishGetUp, 0.5f, false);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Ragdoll] %s 기상 시작 (faceUp=%d, montage=%s)"),
+        *AgentID, bFaceUp ? 1 : 0, Montage ? *Montage->GetName() : TEXT("none(fallback)"));
+
+    RefreshTickEnabled();
+}
+
+// 기상 블렌드 램프 — 전신 PhysicsBlendWeight 1→0, 0 도달 시 시뮬 off.
+void ASmartNPC::TickGetUpBlend(float DeltaSeconds)
+{
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    // weight 0 도달 후 몽타주 끝날 때까지 매 프레임 무거운 물리 설정 반복 방지 — 보간 중에만 처리.
+    if (GetUpBlendWeight > 0.f)
+    {
+        GetUpBlendWeight = FMath::FInterpConstantTo(GetUpBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
+        MeshComp->SetAllBodiesPhysicsBlendWeight(GetUpBlendWeight);
+
+        if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
+        {
+            GetUpBlendWeight = 0.f;
+            MeshComp->SetAllBodiesSimulatePhysics(false);
+            MeshComp->SetSimulatePhysics(false);
+        }
+    }
+}
+
+// 기상 몽타주 종료 델리게이트 — 정상 완료만 처리. 인터럽트(재넉다운·타 몽타주)는 무시.
+void ASmartNPC::OnGetUpMontageEnded(UAnimMontage* /*Montage*/, bool bInterrupted)
+{
+    if (bInterrupted) return;
+    if (KnockdownPhase == EKnockdownPhase::GettingUp)
+    {
+        FinishGetUp();
+    }
+}
+
+// 기상 완료 — 메시 콜리전 원복, AI 재개, 평상 복귀. (몽타주 종료 델리게이트·워치독·폴백에서 호출)
+void ASmartNPC::FinishGetUp()
+{
+    if (bIsDead) return;
+    GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
+        MeshComp->SetAllBodiesSimulatePhysics(false);
+        MeshComp->SetSimulatePhysics(false);
+        // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
+        MeshComp->SetCollisionProfileName(OriginalMeshProfile);
+        MeshComp->SetCollisionEnabled(OriginalMeshCollision);
+    }
+
+    if (KnockdownPhase != EKnockdownPhase::None)
+    {
+        KnockdownPhase = EKnockdownPhase::None;
+        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+    }
+    SettleTimer = 0.f;
+    GetUpBlendWeight = 0.f;
+
+    // AI 재개 — StateTree 재시작(루트부터 재평가 = 기상 후 위협 재판단).
+    if (ASmartNPCAIController* AI = Cast<ASmartNPCAIController>(GetController()))
+    {
+        AI->ResumeAI();
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Ragdoll] %s 기상 완료 — AI 재개"), *AgentID);
+    RefreshTickEnabled();
 }

@@ -105,7 +105,27 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI")
     float StateUpdateInterval = 3.0f;
 
+    // === 동시 넉다운 카운트 (액티브 래그돌) ===
+    // GameInstanceSubsystem 이라 PIE 세션마다 새로 생성·리셋 → 과거 static 전역의 세션 잔존·멀티월드 공유 문제 회피.
+
+    /** 현재 카운트 < Max 면 ++ 후 true(넉다운 허용), 상한 도달이면 false(호출측 Flinch 폴백). */
+    bool TryEnterKnockdown(int32 Max)
+    {
+        if (ActiveKnockdownCount >= Max) { return false; }
+        ++ActiveKnockdownCount;
+        return true;
+    }
+
+    /** 기상·사망·EndPlay 시 카운트 감소(0 하한). */
+    void ExitKnockdown()
+    {
+        ActiveKnockdownCount = (ActiveKnockdownCount > 0) ? (ActiveKnockdownCount - 1) : 0;
+    }
+
 private:
+    /** 동시 넉다운 수(트리거형이라 평소 0). */
+    int32 ActiveKnockdownCount = 0;
+
     UPROPERTY()
     UNPCMap* NPCMap;
 

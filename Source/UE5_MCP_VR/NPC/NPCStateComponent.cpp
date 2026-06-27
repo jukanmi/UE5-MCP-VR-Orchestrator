@@ -96,10 +96,10 @@ bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
 
 // --- Damage ---
 
-float UNPCStateComponent::ApplyDamage(float DamageAmount)
+float UNPCStateComponent::ApplyDamage(float DamageAmount, float Multiplier)
 {
     FNPCAttributes& Attrs = GetMutableAttributes();
-    float EffectiveDamage = FMath::Max(0.0f, DamageAmount - Attrs.Combat.Defense);
+    float EffectiveDamage = FMath::Max(0.0f, DamageAmount - Attrs.Combat.Defense) * Multiplier;
     Attrs.Resources.Health -= EffectiveDamage;
 
     if (UWorld* World = GetWorld())
@@ -107,8 +107,8 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount)
         LastHitTime = World->GetTimeSeconds();
     }
 
-    UE_LOG(LogTemp, Log, TEXT("[NPCState] Damage Applied: %.1f (Raw: %.1f, Defense: %.1f). HP: %.0f/%.0f"),
-        EffectiveDamage, DamageAmount, Attrs.Combat.Defense,
+    UE_LOG(LogTemp, Log, TEXT("[NPCState] Damage Applied: %.1f (Raw: %.1f, Defense: %.1f, x%.2f). HP: %.0f/%.0f"),
+        EffectiveDamage, DamageAmount, Attrs.Combat.Defense, Multiplier,
         Attrs.Resources.Health, Attrs.Resources.MaxHealth);
 
     if (!Attrs.Resources.IsAlive())

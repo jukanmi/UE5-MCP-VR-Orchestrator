@@ -67,6 +67,12 @@ protected:
     float PerceptionTickInterval = 9.0f;
 
 public:
+	/** 넉다운 중 AI 일시정지 — StateTree 정지 + 이동 중단. UnPossess 금지(재빙의·BB 손실 회피). */
+	void PauseAI();
+
+	/** 기상 후 AI 재개 — StateTree 재시작(루트부터 위협 재평가). BB·소유는 유지됨. */
+	void ResumeAI();
+
 	// --- Blackboard Keys ---
 	// Target Location Vector (e.g. for MoveTo)
 	static const FName Key_TargetLocation;

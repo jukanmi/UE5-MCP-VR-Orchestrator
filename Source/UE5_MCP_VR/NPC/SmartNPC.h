@@ -17,9 +17,31 @@ class UStateTree;
 class UBlackboardData;
 class UWidgetComponent;
 class UNPCAudioStreamComponent;
+class UPhysicalAnimationComponent;  // [SPIKE] 액티브 래그돌 hit-react
+class UAnimMontage;
 struct FActionBatch;
 
+// 넉다운 진행 단계. None=평상, Ragdoll=쓰러져 안착 대기, GettingUp=기상 몽타주·블렌드 복귀 중.
+enum class EKnockdownPhase : uint8
+{
+    None,
+    Ragdoll,
+    GettingUp,
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
+
+// [의도(Why)] 히트스캔이 채워주는 본 이름을 부위로 분류해 부위별 데미지 배율을 적용하기 위함.
+UENUM(BlueprintType)
+enum class EBodyPartType : uint8
+{
+    Torso     UMETA(DisplayName="몸통"),    // 배율 1.0 (기본·본 미식별 폴백)
+    Head      UMETA(DisplayName="머리"),    // 배율 2.0
+    ArmLeft   UMETA(DisplayName="왼팔"),    // 배율 0.75
+    ArmRight  UMETA(DisplayName="오른팔"),  // 배율 0.75
+    LegLeft   UMETA(DisplayName="왼다리"),  // 배율 0.75
+    LegRight  UMETA(DisplayName="오른다리"),// 배율 0.75
+};
 
 UCLASS(BlueprintType, Blueprintable)
 class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPC
@@ -56,6 +78,10 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
 	UNPCInventoryComponent* InventoryComponent;
+
+    // [SPIKE] 액티브 래그돌 hit-react — 상체에 물리 블렌드 후 애니로 PD 복귀. PA_SmartNPC 필요.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Spike")
+    UPhysicalAnimationComponent* PhysicalAnim;
 
     // === Identity ===
 
@@ -138,6 +164,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "MCP|State")
     FOnNPCDied OnNPCDied;
 
+    /** 사망 래그돌에 가할 타격 방향 임펄스 강도(본 단위, bVelChange=false → 질량 의존). 0 이면 순수 중력. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|State")
+    float DeathImpulseStrength = 20000.0f;
+
     // === Damage Hook (UE5 Actor Override) ===
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -173,8 +203,112 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|State")
     void HandleDeath();
 
+    // ====================================================================
+    // 액티브 래그돌 — 트리거형 hit-react (§3). 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
+    // ====================================================================
+
+    /** 전신 패시브 래그돌 진입(사망·넉다운 공유). 캡슐 NoCollision·CMC 정지·메시 시뮬 ON·LastHitDirection 임펄스.
+     *  bFatal=true: HandleDeath 경로(임펄스=DeathImpulseStrength). false: 넉다운(×KnockdownImpulseScale). */
+    void EnterRagdoll(bool bFatal);
+
+    /** 약타 반응 — 상체(FlinchRootBone 이하) 물리 블렌드 + 임펄스 → Tick 램프로 애니 복귀. 넉다운/기상 중이면 무시. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Ragdoll")
+    void Flinch();
+
+    /** 강타 반응 — 전신 래그돌(EnterRagdoll(false)) + AI 정지 + 안착 후 기상. 넉다운/기상 중 재호출 시 재진입(저글). */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Ragdoll")
+    void Knockdown();
+
+    /** 피격 강도(=½mv² 데미지)로 반응 분기. >= KnockdownImpulseThreshold → Knockdown, else → Flinch.
+     *  방향·본은 LastHitDirection/LastHitBone(직전 TakeDamage 가 채움) 사용. */
+    void ReactToHit(float HitStrength);
+
+    // --- 분기 임계 ---
+
+    /** 이 데미지(=½mv² 에너지 스케일) 이상이면 넉다운, 미만이면 Flinch. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float KnockdownImpulseThreshold = 40.f;
+
+    // --- Flinch (약타) ---
+
+    /** Flinch 물리 블렌드 시작 본(이 본 이하만 시뮬, 하체는 애니 유지). Mixamo=Spine. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    FName FlinchRootBone = TEXT("Spine");
+
+    /** Flinch PD — 애니 포즈로 당기는 방향 강도(클수록 빨리 복귀·뻣뻣). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float FlinchOrientationStrength = 1000.f;
+
+    /** Flinch PD — 각속도 감쇠 강도. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float FlinchAngularVelStrength = 100.f;
+
+    /** Flinch 피격 임펄스 크기. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float FlinchImpulse = 30000.f;
+
+    /** 물리→애니 블렌드 복귀 속도(weight/초). Flinch·기상 블렌드 램프 공용. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float FlinchRecoverSpeed = 3.0f;
+
+    // --- Knockdown / 기상 ---
+
+    /** 넉다운 래그돌 임펄스 배율(DeathImpulseStrength 대비). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float KnockdownImpulseScale = 1.0f;
+
+    /** 안착 판정 본(루트/골반 선속도 측정). Mixamo=Hips. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    FName KnockdownPelvisBone = TEXT("Hips");
+
+    /** 안착 판정 — 골반 선속도가 이 값(cm/s) 미만이어야 안착 카운트. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float SettleSpeedThreshold = 150.f;
+
+    /** 안착 유지 시간(초) — 저속이 이만큼 지속되면 기상 시작. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float SettleHoldTime = 0.6f;
+
+    /** 누운(등 바닥) 상태 기상 몽타주. 미할당 시 즉시 블렌드 복귀 폴백. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    UAnimMontage* GetUpMontage_FaceUp = nullptr;
+
+    /** 엎드린(얼굴 바닥) 상태 기상 몽타주. 미할당 시 즉시 블렌드 복귀 폴백. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    UAnimMontage* GetUpMontage_FaceDown = nullptr;
+
+    /** 동시 넉다운 상한(멀티 NPC). 초과분은 Flinch 폴백. 트리거형이라 평소 0. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    int32 MaxConcurrentKnockdown = 3;
+
 private:
     void DestroyAfterDeath();
+
+    // --- 액티브 래그돌 내부 상태 ---
+    bool bFlinching = false;
+    float FlinchBlendWeight = 0.f;          // Flinch 상체 블렌드 추적(읽기 API 없어 자체 보관)
+    EKnockdownPhase KnockdownPhase = EKnockdownPhase::None;
+    float SettleTimer = 0.f;                // 안착 지속 누적
+    float GetUpBlendWeight = 0.f;           // 기상 전신 블렌드 추적
+    FName OriginalMeshProfile;              // BeginPlay 캡처 — 기상 후 메시 콜리전 프로파일 복원용
+    ECollisionEnabled::Type OriginalMeshCollision = ECollisionEnabled::QueryOnly;  // BeginPlay 캡처 — 활성화 상태 복원용
+    FTimerHandle GetUpMontageTimer;
+
+    /** 동시 넉다운 게이트 카운터 소유자(UNPCManager, GameInstanceSubsystem). 없으면 nullptr. */
+    class UNPCManager* GetNPCManager() const;
+
+    // --- Tick 헬퍼 ---
+    void TickFlinchRamp(float DeltaSeconds);
+    void TickSettleDetection(float DeltaSeconds);
+    void BeginGetUp();
+    void TickGetUpBlend(float DeltaSeconds);
+    void FinishGetUp();
+
+    /** 기상 몽타주 종료 델리게이트 — 정상 완료 시 FinishGetUp(인터럽트는 무시). */
+    void OnGetUpMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
+
+    /** 모든 Tick 소비자(affinity·자막·flinch·넉다운)를 OR 해 Tick 켜기/끄기 일원화. */
+    void RefreshTickEnabled();
 
     // --- Dialogue Subtitle 내부 ---
     UFUNCTION()
@@ -196,6 +330,10 @@ private:
     /** OnPlanUpdated 1회 바인딩(재바인딩 누수 방지). */
     bool bPlanUpdatedBound = false;
 
+    // --- 사망 임펄스용 마지막 치명타 정보 (TakeDamage 가 채움, HandleDeath 가 소비) ---
+    FName LastHitBone = NAME_None;
+    FVector LastHitDirection = FVector::ZeroVector;  // ShotDirection (피격→방향, 정규화)
+
     /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
     FString CurrentSubtitleText;
     bool bSubtitleWaitingForAudio = false;
@@ -214,4 +352,43 @@ public:
     /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")
     bool bShowAffinityOnScreen = false;
+
+    // ====================================================================
+    // [SPIKE] 액티브 래그돌 hit-react 타당성 검증 — throwaway. 콘솔: SpikeHitReact
+    // ====================================================================
+
+    /** 상체(SpikeRootBone 이하) 물리 ON + 임펄스 → SpikeRecoverTime 후 애니로 복귀.
+     *  PA_SmartNPC(물리에셋) 필요. 풀 액티브 래그돌 전 물리구동·복귀·성능 체감 확인용.
+     *  피격 시 TakeDamage 가 자동 호출(bSpikeReactOnHit). BP/콘솔에서 수동 호출도 가능. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Spike")
+    void SpikeHitReact();
+
+    /** 피격 시 구 스파이크 SpikeHitReact(스냅 복귀) 사용 여부. 기본 false=제품 경로(ReactToHit: Flinch/Knockdown).
+     *  true 로 켜면 스파이크 스냅 동작과 A/B 비교 가능. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    bool bSpikeReactOnHit = false;
+
+    /** 물리 블렌드 시작 본(Mixamo 상체 루트). 이 본 이하만 시뮬 — 하체는 애니(이동 유지). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    FName SpikeRootBone = TEXT("Spine");
+
+    /** 애니 포즈로 당기는 PD 강도(클수록 빨리 복귀·뻣뻣). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    float SpikeOrientationStrength = 1000.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    float SpikeAngularVelStrength = 100.f;
+
+    /** 피격 임펄스 크기. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    float SpikeImpulse = 30000.f;
+
+    /** 물리→애니 복귀까지 시간(초). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Spike")
+    float SpikeRecoverTime = 0.7f;
+
+private:
+    /** SpikeRecoverTime 후 호출 — 물리 블렌드 끄고 순수 애니 복귀. */
+    void SpikeRecover();
+    FTimerHandle SpikeRecoverTimer;
 };
