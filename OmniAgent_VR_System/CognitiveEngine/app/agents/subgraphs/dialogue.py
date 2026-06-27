@@ -264,6 +264,17 @@ def _serialize_dialogue(obj: DialogueResponse) -> str:
     return "\n".join(lines)
 
 
+def _vr_player_id(vr_context) -> str:
+    """vr_context(dict 또는 GesPrompt 객체)에서 player_id 추출 — 없으면 "Player"."""
+    return (
+        vr_context.get("player_id", "Player")
+        if isinstance(vr_context, dict)
+        else getattr(vr_context, "player_id", "Player")
+        if vr_context
+        else "Player"
+    )
+
+
 async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bool]:
     """
     Stage 1: 단일 NPC에 대한 e4b 호출.
@@ -285,13 +296,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bo
     memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
     vr_context = state.get("vr_context")
-    player_id = (
-        vr_context.get("player_id", "Player")
-        if isinstance(vr_context, dict)
-        else getattr(vr_context, "player_id", "Player")
-        if vr_context
-        else "Player"
-    )
+    player_id = _vr_player_id(vr_context)
 
     try:
         relation = await db_manager.get_affinity(npc_id, player_id)
@@ -489,13 +494,7 @@ async def dialogue_node(state: AgentState):
     npc_plans: Dict[str, dict] = {}
     if requires_replan:
         vr_context = state.get("vr_context")
-        player_id = (
-            vr_context.get("player_id", "Player")
-            if isinstance(vr_context, dict)
-            else getattr(vr_context, "player_id", "Player")
-            if vr_context
-            else "Player"
-        )
+        player_id = _vr_player_id(vr_context)
         raw_responses, npc_plans = await _refine_responses(raw_responses, player_id)
     else:
         print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
