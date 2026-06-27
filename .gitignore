@@ -27,6 +27,7 @@ Plugins/*/Intermediate/
 *.code-workspace
 *.agent/
 .agents/rules/
+.mcp.json
 .vsconfig
 .github
 
