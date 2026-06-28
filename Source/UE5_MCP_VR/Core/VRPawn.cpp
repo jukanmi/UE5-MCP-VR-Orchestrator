@@ -9,6 +9,7 @@
 #include "KineticProjectile.h"
 #include "KineticDamage.h"
 #include "PlayerInteractionUtils.h"
+#include "PawnDeathUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -805,9 +806,7 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
     if (CurrentStats.Resources.Health <= 0.f)
     {
-        RemoveStateTag(TAG_State_Idle);
-        AddStateTag(TAG_State_Condition_Dead);
-        HandleDeath();
+        HandleDeath();  // Dead 태그 세팅은 PawnDeathUtils::HandleDeath 내부에서 일괄
     }
     return Actual;
 }
@@ -818,10 +817,9 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
 void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    CheckpointLocation = Location;
-    CheckpointRotation = Rotation;
-    CheckpointHP       = CurrentStats.Resources.Health;
-    bHasCheckpoint     = true;
+    PawnDeathUtils::SaveCheckpoint(CurrentStats, /*bRequireAlive*/false,
+        Location, Rotation, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, TEXT("VRPawn"));
 }
 
 // ============================================================================
@@ -830,36 +828,15 @@ void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 
 void AVRPawn::HandleDeath()
 {
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        DisableInput(PC);
-
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    GetMesh()->SetVisibility(false);
-
-    GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AVRPawn::Respawn, RespawnDelay, false);
+    PawnDeathUtils::HandleDeath(this, GameplayTags, /*bClearCursor*/false,
+        RespawnDelay, RespawnTimerHandle,
+        FTimerDelegate::CreateUObject(this, &AVRPawn::Respawn), TEXT("VRPawn"));
 }
 
 void AVRPawn::Respawn()
 {
-    if (bHasCheckpoint)
-    {
-        SetActorLocationAndRotation(CheckpointLocation, CheckpointRotation);
-        CurrentStats.Resources.Health = CheckpointHP;
-    }
-    else
-    {
-        if (AActor* Start = UGameplayStatics::GetActorOfClass(GetWorld(), APlayerStart::StaticClass()))
-            SetActorLocationAndRotation(Start->GetActorLocation(), Start->GetActorRotation());
-        CurrentStats.Resources.Health = CurrentStats.Resources.MaxHealth;
-    }
-
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    GetMesh()->SetVisibility(true);
-    RemoveStateTag(TAG_State_Condition_Dead);
-    AddStateTag(TAG_State_Idle);
-
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        EnableInput(PC);
+    PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPawn"));
 }
 
 // ============================================================================

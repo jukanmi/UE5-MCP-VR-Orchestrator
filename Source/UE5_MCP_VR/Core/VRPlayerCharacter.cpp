@@ -10,6 +10,7 @@
 #include "../NPC/SmartNPC.h"
 #include "../NPC/NPCManager.h"
 #include "PlayerInteractionUtils.h"
+#include "PawnDeathUtils.h"
 #include "Engine/GameInstance.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
@@ -436,9 +437,7 @@ float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	if (CurrentStats.Resources.Health <= 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[VRPlayerCharacter] PLAYER DIED!"));
-        RemoveStateTag(TAG_State_Idle);
-        AddStateTag(TAG_State_Condition_Dead);
-		HandleDeath();
+		HandleDeath();  // Dead 태그 세팅은 PawnDeathUtils::HandleDeath 내부에서 일괄
 	}
 
 	return ActualDamage;
@@ -469,66 +468,20 @@ void AVRPlayerCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInter
 
 void AVRPlayerCharacter::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    if (!CurrentStats.Resources.IsAlive()) return;
-
-    bHasCheckpoint    = true;
-    CheckpointLocation = Location;
-    CheckpointRotation = Rotation;
-    CheckpointHP       = CurrentStats.Resources.Health;
-
-    UE_LOG(LogTemp, Log, TEXT("[Checkpoint] 저장 — 위치: %s, HP: %.1f"), *Location.ToString(), CheckpointHP);
+    PawnDeathUtils::SaveCheckpoint(CurrentStats, /*bRequireAlive*/true,
+        Location, Rotation, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, TEXT("VRPlayerCharacter"));
 }
 
 void AVRPlayerCharacter::HandleDeath()
 {
-    // 입력 차단
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        DisableInput(PC);
-        PC->bShowMouseCursor = false;
-        PC->SetInputMode(FInputModeGameOnly());
-    }
-
-    // 충돌/메시 비활성화
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    GetMesh()->SetVisibility(false);
-
-    UE_LOG(LogTemp, Warning, TEXT("[VRPlayerCharacter] 사망 — %.1f초 후 리스폰"), RespawnDelay);
-
-    GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AVRPlayerCharacter::Respawn, RespawnDelay, false);
+    PawnDeathUtils::HandleDeath(this, GameplayTags, /*bClearCursor*/true,
+        RespawnDelay, RespawnTimerHandle,
+        FTimerDelegate::CreateUObject(this, &AVRPlayerCharacter::Respawn), TEXT("VRPlayerCharacter"));
 }
 
 void AVRPlayerCharacter::Respawn()
 {
-    if (bHasCheckpoint)
-    {
-        SetActorLocationAndRotation(CheckpointLocation, CheckpointRotation);
-        CurrentStats.Resources.Health = CheckpointHP;
-    }
-    else
-    {
-        // 체크포인트 미도달 시 PlayerStart 폴백
-        AActor* StartPoint = UGameplayStatics::GetActorOfClass(GetWorld(), APlayerStart::StaticClass());
-        if (StartPoint)
-        {
-            SetActorLocationAndRotation(StartPoint->GetActorLocation(), StartPoint->GetActorRotation());
-        }
-        CurrentStats.Resources.Health = CurrentStats.Resources.MaxHealth;
-    }
-
-    // 충돌/메시 복구
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    GetMesh()->SetVisibility(true);
-
-    // 태그 초기화
-    RemoveStateTag(TAG_State_Condition_Dead);
-    AddStateTag(TAG_State_Idle);
-
-    // 입력 복구
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        EnableInput(PC);
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 리스폰 완료 — HP: %.1f"), CurrentStats.Resources.Health);
+    PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPlayerCharacter"));
 }
