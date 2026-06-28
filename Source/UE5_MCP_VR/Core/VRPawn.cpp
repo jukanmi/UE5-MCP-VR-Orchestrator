@@ -594,6 +594,14 @@ void AVRPawn::PlayHitHaptic(bool bRightHand)
     }
 }
 
+void AVRPawn::PlayHitReceivedFeedback()
+{
+    // 피격은 특정 손이 아니므로 양손 럼블. ForceFeedback 은 PlayHitHaptic 내부에서 중복 재생되나
+    // bLooping=false 라 무해(짧은 펄스). 자기공격 럼블(PlayHitHaptic)과 동일 에셋 재사용.
+    PlayHitHaptic(/*bRightHand=*/false);
+    PlayHitHaptic(/*bRightHand=*/true);
+}
+
 void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
 {
     // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→SmartNPC 공격 인지).

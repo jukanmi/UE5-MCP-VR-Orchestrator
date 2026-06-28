@@ -28,6 +28,8 @@
 #include "../UI/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
+#include "../Core/KineticDamage.h"   // 공격 판정 — NPC 타겟 데미지 일괄(ApplyToNPC)
+#include "../Core/VRPawn.h"          // 플레이어 피격 햅틱(PlayHitReceivedFeedback)
 
 // 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
 // Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.
@@ -277,6 +279,65 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
     }
 
     return ActualDamage;
+}
+
+// ============================================================================
+// 공격 판정 (NPC→타겟) — AM_Attack 의 AnimNotifyState_NPCAttackHit 윈도우가 매 틱 호출.
+// LLM 지정 단일 타겟만 거리·arc 게이트로 확인 후 1회 데미지(친선사격 없음).
+// ============================================================================
+void ASmartNPC::PerformAttackHit()
+{
+    if (bAttackHitConsumed || bIsDead) return;
+
+    AActor* Target = CurrentAttackTarget.Get();
+    if (!Target) return;
+
+    // 거리 게이트 — 아직 안 닿았으면 다음 틱 재시도(윈도우 동안 타겟이 들어올 수 있음).
+    const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
+    const float Dist = ToTarget.Size();
+    if (Dist > AttackHitRange) return;
+
+    // 정면 arc 게이트 — 등 뒤·옆 타겟 무시.
+    const FVector Dir = ToTarget.GetSafeNormal();
+    if (FVector::DotProduct(GetActorForwardVector(), Dir) < AttackHitArcCos) return;
+
+    const float Damage = FMath::Max(0.f, NPCAttributes.Combat.AttackPower * AttackDamageScale);
+    const FVector Impact = Target->GetActorLocation();
+
+    if (ASmartNPC* TargetNPC = Cast<ASmartNPC>(Target))
+    {
+        if (TargetNPC->bIsDead) return;  // 이미 죽은 NPC 재타격 방지 — 가드 소비 안 함
+        // 부위 배율·래그돌·LLM 인지까지 일괄(플레이어→NPC 와 동일 규약).
+        KineticDamage::ApplyToNPC(TargetNPC, Damage, Impact, Dir, GetController(), this);
+    }
+    else
+    {
+        // 플레이어 — 단순 HP 감소. 방향 정보용 FPointDamageEvent.
+        FPointDamageEvent Ev;
+        Ev.Damage              = Damage;
+        Ev.ShotDirection       = Dir;
+        Ev.HitInfo.ImpactPoint = Impact;
+        Ev.HitInfo.Location    = Impact;
+        Target->TakeDamage(Damage, Ev, GetController(), this);
+
+        // 넉백 + 햅틱(피격 효과). VRPawn=VR 컨트롤러 럼블, VRPlayerCharacter(레거시)=넉백만.
+        if (ACharacter* TargetChar = Cast<ACharacter>(Target))
+        {
+            if (NPCKnockbackSpeed > 0.f)
+                TargetChar->LaunchCharacter(Dir * NPCKnockbackSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
+        }
+        if (AVRPawn* VRP = Cast<AVRPawn>(Target))
+            VRP->PlayHitReceivedFeedback();
+    }
+
+    bAttackHitConsumed = true;
+
+    if (bDebugAttackHit && GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red,
+            FString::Printf(TEXT("[NPCAttack] %s → %s dmg=%.1f dist=%.0f"),
+                *GetName(), *Target->GetName(), Damage, Dist));
+    }
 }
 
 void ASmartNPC::HandleDeath()

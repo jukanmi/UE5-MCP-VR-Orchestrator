@@ -1402,6 +1402,10 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
 
+    // 공격 판정용 타겟 저장 — AM_Attack 의 AnimNotifyState_NPCAttackHit 윈도우가 이 타겟만 타격.
+    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+        OwnerNPC->SetCurrentAttackTarget(TargetActor);
+
     // 도착 후 "Attack" 몽타주 재생 — BaseMove가 OnMoveActionCompleted를 바인딩하고,
     // 콜백에서 PendingMoveMediaKey가 있으면 몽타주를 재생한다.
     PendingMoveMediaKey = TEXT("Attack");
