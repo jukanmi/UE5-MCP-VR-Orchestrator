@@ -272,7 +272,7 @@ _KEYWORD_ACTION_MAP = [
 
 # Emote 제스처 감지 — 트리거 키워드 중 하나라도 있으면 Emote. 세부 gesture 는
 # _GESTURE_KEYWORD_MAP 순서(우선순위)로 판정, 미매칭이면 Smile 기본.
-_GESTURE_TRIGGER = ["웃", "smile", "laugh", "nod", "bow", "wave", "손"]
+_GESTURE_TRIGGER = ["웃", "smile", "laugh", "nod", "bow", "wave", "손", "끄덕", "인사"]
 _GESTURE_KEYWORD_MAP = [
     (["bow", "인사"], "Bow"),
     (["wave", "손"], "Wave"),

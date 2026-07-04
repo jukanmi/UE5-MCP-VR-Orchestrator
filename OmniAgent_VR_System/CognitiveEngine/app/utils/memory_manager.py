@@ -59,7 +59,8 @@ class MemoryEntry:
         한글은 토큰 밀도가 영문보다 훨씬 높아(≈0.5~0.6토큰/자) 문자수/4 로는
         2~3배 과소평가 — 한글/기타 가중 합산으로 추정."""
         text = f"{self.speaker}: {self.content}"
-        hangul = sum(1 for c in text if "가" <= c <= "힣")
+        # 완성형 음절 + 호환 자모(ㅋㅋ·ㅠㅠ 등) — 자모 누락 시 토큰 과소평가로 요약 트리거 지연.
+        hangul = sum(1 for c in text if "가" <= c <= "힣" or "ㄱ" <= c <= "ㅣ")
         return int(hangul * HANGUL_TOKEN_RATIO + (len(text) - hangul) * OTHER_TOKEN_RATIO)
 
 

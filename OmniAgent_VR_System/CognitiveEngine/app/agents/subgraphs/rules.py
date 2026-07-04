@@ -147,7 +147,7 @@ def _clamp_numeric_param(action_type: str, params: dict, corrections: list) -> N
         elif value < 0:
             params[key] = neg_val
             corrections.append(f"{label} 음수 → {neg_disp}")
-    except ValueError:
+    except (ValueError, TypeError):
         params[key] = invalid_val
         corrections.append(f"{label} 비유효 → 기본값 {invalid_val}")
 

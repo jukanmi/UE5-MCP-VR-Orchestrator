@@ -505,7 +505,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str) -> Dict
         # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
         try:
             relation = await db_manager.get_affinity(npc_id, player_id)
-            plan["relation_snapshot"] = relation.affinity_score
+            plan["relation_snapshot"] = relation.affinity_score if relation else 0
         except Exception as e:
             print(f"[Dialogue] plan affinity 조회 실패 ({npc_id}): {e}")
             plan["relation_snapshot"] = 0
