@@ -50,3 +50,7 @@ class GesPrompt(BaseModel):
     # 대화 대상 NPC 인벤토리 — npc_id → [{id,name,desc,count,...}]. Stage1 컨텍스트 주입용.
     # 타입은 PromptPayload.npc_inventory 와 일치(일관성).
     npc_inventory: Optional[Dict[str, List[Dict[str, Any]]]] = None
+
+    # 유효 액션 타깃 vocabulary — PromptPayload.valid_targets 와 일치(일관성).
+    # Stage1 구조화 스키마 target enum 강제 + 프롬프트 주입용.
+    valid_targets: Optional[List[str]] = None

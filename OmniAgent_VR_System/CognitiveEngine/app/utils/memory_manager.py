@@ -13,7 +13,7 @@ import os
 import json
 import threading
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 from dataclasses import dataclass, asdict
 from .llm_factory import get_llm
 
@@ -21,10 +21,17 @@ from .llm_factory import get_llm
 # ─────────────────────────────────────────────────────────────────────────────
 # 토큰 / 메모리 예산 설정
 # ─────────────────────────────────────────────────────────────────────────────
-MAX_TOKENS_PER_NPC = 1000  # NPC당 최대 토큰 예산 (RAG 메모리 500~1000)
+# 예산 산정 이력: 구 CHARS_PER_TOKEN=4(영문 기준)는 한국어 토큰을 2~3배 과소평가
+# (한국어 ~0.5토큰/자 실측) → 실제로는 예산 대비 훨씬 큰 메모리를 들고 다니다
+# 갑자기 요약이 연쇄 발동하는 문제. 한글 가중 추정으로 교정하고, 교정 후 실효
+# 볼륨(약 4000자)이 유지되도록 예산을 1000→2000 으로 상향.
+MAX_TOKENS_PER_NPC = 2000  # NPC당 최대 토큰 예산 (한글 가중 추정 기준)
 SUMMARIZE_THRESHOLD = 0.8  # 80% 도달 시 요약 트리거
-ENTRIES_TO_SUMMARIZE = 5  # 1회 요약 대상 최오래된 항목 수
-CHARS_PER_TOKEN = 4  # 토큰 추정 단위 (conservative)
+# 5→8: 1회 요약당 더 많이 압축 — e2b 호출 횟수와 '요약의 요약' 반복 열화 감소.
+ENTRIES_TO_SUMMARIZE = 8  # 1회 요약 대상 최오래된 항목 수
+# 토큰/문자 비율 (gemma 계열 근사): 한글 0.6, 영문·기호 0.25(=4자/토큰).
+HANGUL_TOKEN_RATIO = 0.6
+OTHER_TOKEN_RATIO = 0.25
 
 
 # 메모리 파일 저장 경로
@@ -48,9 +55,12 @@ class MemoryEntry:
         return cls(**data)
 
     def estimate_tokens(self) -> int:
-        """이 항목의 토큰 수 추정 (정확하지 않아도 됨, 예산 체크용)."""
+        """이 항목의 토큰 수 추정 (정확하지 않아도 됨, 예산 체크용).
+        한글은 토큰 밀도가 영문보다 훨씬 높아(≈0.5~0.6토큰/자) 문자수/4 로는
+        2~3배 과소평가 — 한글/기타 가중 합산으로 추정."""
         text = f"{self.speaker}: {self.content}"
-        return len(text) // CHARS_PER_TOKEN
+        hangul = sum(1 for c in text if "가" <= c <= "힣")
+        return int(hangul * HANGUL_TOKEN_RATIO + (len(text) - hangul) * OTHER_TOKEN_RATIO)
 
 
 class ConversationMemory:
@@ -155,12 +165,15 @@ class ConversationMemory:
         conversation_text = "\n".join(lines)
 
         try:
-            llm = get_llm(model_name="gemma4_e2b", temperature=0.0)
+            # num_predict 220: 한국어 3문장 요약 실측 ~100토큰, 기본값 150은 중간 잘림 위험.
+            llm = get_llm(model_name="gemma4_e2b", temperature=0.0, num_predict=220)
+            # 프롬프트 한국어 필수 — 영어 프롬프트는 e2b 가 영어로 요약해
+            # 한국어 대화 컨텍스트에 영어 요약이 주입되던 버그 (2026-07 실측).
             summary_prompt = (
-                f"Summarize the following into a brief third-person narrative about "
-                f"{self.agent_id} and Player. Keep important facts and emotional context. "
-                "Maximum 2-3 sentences.\n\n"
-                f"{conversation_text}\n\nSummary:"
+                f"다음 대화를 {self.agent_id}와 Player에 대한 3인칭 서술로 요약하라. "
+                "중요한 사실(장소·인물·약속·아이템·위험)과 감정 맥락을 반드시 보존하라. "
+                "반드시 한국어로, 최대 3문장.\n\n"
+                f"{conversation_text}\n\n요약:"
             )
 
             response = llm.invoke(summary_prompt)

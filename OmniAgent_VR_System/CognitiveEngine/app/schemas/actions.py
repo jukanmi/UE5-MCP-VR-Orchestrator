@@ -88,6 +88,23 @@ class DialogueActionItem(BaseModel):
     style: str = Field(default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote")
 
 
+class NPCPlanItem(BaseModel):
+    """Stage2 12B plan 전용 구조화 출력 항목. 12B(abliterated)가 텍스트 포맷의
+    '정제+plan 동시 출력' 지시를 무시하고 plan 라인만 출력해 대사가 증발하던 문제
+    (2026-07 실측) 이후, Stage2 를 plan 산출 전용으로 축소 — grammar 강제로
+    goal/steps 필드 누락·형식 위반 원천 차단."""
+
+    npc_id: str = Field(description="NPC id copied EXACTLY from the '=== NPC: <id> ===' section header")
+    goal: str = Field(description="Concrete outcome this NPC pursues over the next few turns, short Korean phrase")
+    steps: List[str] = Field(description="2-4 concrete ordered action beats in Korean, no numbering prefix")
+
+
+class PlanBatchResponse(BaseModel):
+    """Stage2 plan-only 응답 루트. NPC 수만큼 NPCPlanItem."""
+
+    npcs: List[NPCPlanItem]
+
+
 class DialogueResponse(BaseModel):
     """Stage1 e4b 구조화 출력 스키마. speech·actions 를 required(default 없음)로 둬
     Ollama JSON 문법이 두 키를 강제 생성 — all-optional 이면 e4b 가 mode/facial 만

@@ -1,5 +1,4 @@
 import os
-import re
 from typing import Optional, Type, TypeVar
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -36,10 +35,8 @@ MODELS = {
     "gemma4_slm": "gemma4:e4b",  # 경량 구조화 모델 (JSON 추출 등)
     "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
-    # 기존 모델 (폴백 용도)
-    "qwen": "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    # 폴백 후보 (경량, 로컬 pull 됨)
     "qwen_slm": "qwen3:1.7b",
-    "llama": "llama3.3:70b",
     # OpenAI (API Key 필요)
     "openai": "gpt-4o-mini",
 }
@@ -56,7 +53,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # ==============================================================================
 def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int = 150):
     """
-    model_name:  "qwen" | "qwen_slm" | "llama" | "openai" | None (→ DEFAULT_MODEL)
+    model_name:  "gemma4" | "gemma4_slm" | "gemma4_e2b" | "qwen_slm" | "openai" | None (→ DEFAULT_MODEL)
     temperature: 창의성 수준 (0.0 = 결정적, 1.0 = 창의적)
     num_predict: 최대 출력 토큰 수 (대화용은 300, 구조화/요약용은 150)
     """
@@ -65,7 +62,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 
     model_name = model_name.lower()
 
-    OLLAMA_MODELS = {"gemma4", "mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen", "qwen_slm", "llama"}
+    OLLAMA_MODELS = {"gemma4", "mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen_slm"}
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
@@ -120,9 +117,12 @@ async def ollama_structured(
     num_predict: int = 300,
     num_ctx: int = 2048,
     timeout: float = 60.0,
+    schema_override: Optional[dict] = None,
 ) -> T:
     """Ollama /api/chat 직접 호출 → schema_model 인스턴스 반환.
-    format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제."""
+    format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제.
+    schema_override: 호출별 동적 제약(예: target enum 주입) 시 가공된 스키마 dict 전달 —
+    grammar 만 좁히고 검증은 여전히 schema_model(필드 str)로 수행."""
     model_id = MODELS.get(model_name, MODELS["gemma4"])
     body = {
         "model": model_id,
@@ -131,7 +131,7 @@ async def ollama_structured(
             {"role": "user", "content": user},
         ],
         "stream": False,
-        "format": schema_model.model_json_schema(),
+        "format": schema_override if schema_override is not None else schema_model.model_json_schema(),
         "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
         # 12B core 는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
         "keep_alive": "30s" if model_name == "gemma4" else "5m",
@@ -150,45 +150,19 @@ async def ollama_structured(
 
 
 # ==============================================================================
-# Ollama 직접 호출 유틸리티 (JSON 구조화 등 단발성 추론에 사용)
+# Ollama 직접 호출 유틸리티 — 경량 SLM(gemma4_slm) 단발 자유텍스트 생성
 # ==============================================================================
-def call_ollama_direct(prompt_text: str, extract_json: bool = True) -> Optional[str]:
-    """
-    경량 SLM(qwen_slm)을 사용해 단발성 텍스트/JSON 추론을 즉시 수행합니다.
-    - extract_json=True : 응답에서 JSON 블록을 자동으로 파싱/추출
-    - extract_json=False: 응답 전체 텍스트를 그대로 반환
-    """
+# 유일 호출처: dialogue.py Stage1 구조화 실패 시 폴백(자유텍스트). 과거 있던 JSON
+# 추출 분기(extract_json=True)는 호출처가 전부 구조화 출력(ollama_structured)으로
+# 이전하며 죽어 제거 — 재도입 필요 시 ollama_structured 사용(grammar 강제가 정답).
+def call_ollama_direct(prompt_text: str) -> Optional[str]:
+    """gemma4_slm 로 단발 자유텍스트 생성 → 원문 반환(실패 시 None)."""
     try:
-        print("[LLM Factory] Ollama 직접 호출 (gemma4_slm 구조화 용도)...")
+        print("[LLM Factory] Ollama 직접 호출 (gemma4_slm 자유텍스트 폴백)...")
         llm = get_llm("gemma4_slm", temperature=0.1)
         response = llm.invoke(prompt_text)
-
         output = response.content if hasattr(response, "content") else str(response)
-
-        if extract_json:
-            # ```json ... ``` 블록 우선 파싱
-            json_match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
-            if json_match:
-                extracted = json_match.group(1).strip()
-                print(f"[LLM Factory] JSON 추출 성공 ({len(extracted)} chars)")
-                return extracted
-
-            # 블록 없이 JSON 기호([ 또는 {)가 있는 경우 폴백
-            start_marks = [output.find("["), output.find("{")]
-            end_marks = [output.rfind("]"), output.rfind("}")]
-
-            valid_starts = [i for i in start_marks if i != -1]
-            valid_ends = [i for i in end_marks if i != -1]
-
-            if valid_starts and valid_ends:
-                idx_start = min(valid_starts)
-                idx_end = max(valid_ends) + 1
-                return output[idx_start:idx_end].strip()
-
-            print("[LLM Factory] 경고: JSON 블록 없음 → 원문 반환")
-
         return output.strip()
-
     except Exception as e:
         print(f"[LLM Factory] 오류: {e}")
         return None
