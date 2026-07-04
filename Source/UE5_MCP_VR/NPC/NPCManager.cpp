@@ -284,6 +284,24 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
             }
         }
     }
+
+    // ── 유효 타깃 vocabulary — valid_targets: [키워드/AgentID] (Python PromptPayload 정합).
+    // Python 이 Stage1 구조화 스키마의 target enum 으로 강제 주입. ResolveActionTarget 이
+    // 해석 가능한 키워드(Player/Self/Enemy/<AgentID>)와 정확히 일치시켜, LLM 이
+    // "Strategic Position" 류 해석 불가 자유문자열 target 을 내는 것을 원천 차단.
+    if (NPCMap)
+    {
+        TArray<TSharedPtr<FJsonValue>> TargetsArr;
+        TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Player")));
+        TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Self")));
+        TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Enemy")));
+        for (const TPair<FString, ASmartNPC*>& Pair : NPCMap->GetActiveNPCs())
+        {
+            TargetsArr.Add(MakeShared<FJsonValueString>(Pair.Key));
+        }
+        Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
+    }
+
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
     FString PayloadStr;
