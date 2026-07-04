@@ -491,7 +491,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str) -> Dict
         return {}
 
     # npc_id 매칭: 12B 가 헤더를 그대로 복사하지만 대소문자 흔들림 대비 lower 매핑.
-    id_map = {npc_id.lower(): npc_id for npc_id in raw_responses}
+    id_map = ci_id_map(raw_responses)
     npc_plans: Dict[str, dict] = {}
     for item in result.npcs:
         npc_id = id_map.get(item.npc_id.strip().lower())
