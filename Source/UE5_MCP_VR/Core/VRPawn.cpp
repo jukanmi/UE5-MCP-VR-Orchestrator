@@ -809,6 +809,13 @@ void AVRPawn::RefreshStats()
 float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
                           AController* EventInstigator, AActor* DamageCauser)
 {
+    // 이미 사망 상태에서 추가 피격 시 HandleDeath 중복 호출 → RespawnTimerHandle 이 매번 리셋되어
+    // 리스폰 무한 지연되는 버그 방지 (조기 반환).
+    if (CurrentStats.Resources.Health <= 0.f)
+    {
+        return 0.f;
+    }
+
     float Actual = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 

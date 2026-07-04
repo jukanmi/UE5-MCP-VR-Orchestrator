@@ -424,8 +424,14 @@ void AVRPlayerCharacter::RefreshStats()
 
 float AVRPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
 {
+	// 이미 사망 상태에서 추가 피격 시 HandleDeath 중복 호출 → 리스폰 타이머 리셋 무한 지연 방지.
+	if (CurrentStats.Resources.Health <= 0)
+	{
+		return 0.f;
+	}
+
 	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	
+
 	// Apply damage to Resources.Health
 	CurrentStats.Resources.Health -= ActualDamage;
 	if (CurrentStats.Resources.Health < 0) CurrentStats.Resources.Health = 0;
