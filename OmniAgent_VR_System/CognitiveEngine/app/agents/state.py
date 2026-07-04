@@ -33,7 +33,7 @@
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
 from langgraph.graph.message import add_messages
 from ..schemas.vr_context import GesPrompt
-from ..schemas.actions import ActionBatch
+from ..schemas.actions import ActionBatch, DialogueResponse
 
 
 class AgentState(TypedDict):
@@ -75,7 +75,12 @@ class AgentState(TypedDict):
     raw_response: Optional[str]
 
     # [멀티 NPC] Dialogue Stage1/2 출력: npc_id → refined raw_response
+    # (Stage2 12B plan 입력 + 메모리 + 단일 NPC 호환 텍스트 — 유지)
     raw_responses: Optional[Dict[str, str]]
+
+    # [멀티 NPC] Dialogue Stage1 구조화 출력: npc_id → DialogueResponse.
+    # Stage3(interface_output)가 정규식 없이 직접 ActionBatch 로 변환 (텍스트 왕복 제거).
+    structured_responses: Optional[Dict[str, DialogueResponse]]
 
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
