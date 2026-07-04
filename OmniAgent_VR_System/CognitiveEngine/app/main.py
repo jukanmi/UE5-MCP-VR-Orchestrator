@@ -6,6 +6,7 @@ import json
 import logging
 import traceback
 import asyncio
+import yaml
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
@@ -316,13 +317,54 @@ def _empty_audio_info() -> dict:
     return {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
 
 
+async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
+    """적대 perception(danger>=0.5)을 일으킨 대상에게 호감도 -5 감점 (side-effect)."""
+    for p in perceptions:
+        if p.danger_score >= 0.5 and p.target_id:
+            # 캐시 prime — 미존재 시 DB에서 로드하거나 기본값(0)으로 생성
+            await db_manager.get_affinity(agent_id, p.target_id)
+            # 동기 sqlite 쓰기 → 이벤트 루프 블로킹 방지 위해 스레드 오프로드 (codebase idiom).
+            await asyncio.to_thread(
+                db_manager.update_affinity_sync,
+                source_id=agent_id,
+                target_id=p.target_id,
+                score_delta=-5,
+                interaction_summary=f"Hostile {p.sense_type} (danger={p.danger_score:.2f})",
+            )
+            logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
+
+
+async def _infer_reflex_action(prompt: str) -> str:
+    """SLM raw 호출 → 유효 반사 액션 1개. 파싱/호출 실패 시 안전 폴백 "Scan"."""
+    # list — 여러 키워드 동시 포함 시 폴백 매칭 우선순위를 결정론적으로 고정 (set 순서 비결정 방지).
+    valid = ["Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"]
+    try:
+        raw_text, _llm_ms = await _ollama_raw_generate(prompt)
+        logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
+        tokens = raw_text.split()
+        text = tokens[0] if tokens else ""
+
+        # capitalize() 는 SignalAllies → Signalallies 로 PascalCase 를 깨뜨림 → lower 매핑으로 매칭
+        valid_map = {a.lower(): a for a in valid}
+        if text.lower() in valid_map:
+            return valid_map[text.lower()]
+        if text:
+            # 키워드 검색 폴백 (SLM이 잡담을 끼워넣은 경우)
+            text_l = raw_text.lower()
+            for a in valid:
+                if a.lower() in text_l:
+                    return a
+    except Exception as e:
+        logger.error(f"[SLM] 추론 실패, 안전 폴백(Scan) 사용: {e}")
+    return "Scan"
+
+
 async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     """
     SLM 반사 행동 결정 (목표 500ms).
     LangGraph 없이 단일 경량 SLM 호출로 즉각 전투/회피 액션 생성.
     """
     from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
-    from .utils import db_manager
 
     agent_id = payload.agent_id
     perceptions = payload.perceptions
@@ -336,18 +378,7 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
 
     # 플레이어 적대 행동에 따른 호감도 감소.
-    # danger_score >= 0.5 인 perception(공격/심한 위협)을 일으킨 대상에게 -5씩 감점.
-    for p in perceptions:
-        if p.danger_score >= 0.5 and p.target_id:
-            # 캐시 prime — 미존재 시 DB에서 로드하거나 기본값(0)으로 생성
-            await db_manager.get_affinity(agent_id, p.target_id)
-            db_manager.update_affinity_sync(
-                source_id=agent_id,
-                target_id=p.target_id,
-                score_delta=-5,
-                interaction_summary=f"Hostile {p.sense_type} (danger={p.danger_score:.2f})",
-            )
-            logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
+    await _apply_hostile_affinity(agent_id, perceptions)
 
     top = max(perceptions, key=lambda p: p.danger_score)
 
@@ -373,27 +404,7 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     )
 
     # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
-    action_type = "Scan"
-    try:
-        raw_text, _llm_ms = await _ollama_raw_generate(prompt)
-        logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
-        tokens = raw_text.split()
-        text = tokens[0] if tokens else ""
-
-        valid = {"Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"}
-        if text.capitalize() in valid:
-            action_type = text.capitalize()
-        elif text:
-            # 키워드 검색 폴백 (SLM이 잡담을 끼워넣은 경우)
-            text_l = raw_text.lower()
-            for a in valid:
-                if a.lower() in text_l:
-                    action_type = a
-                    break
-
-    except Exception as e:
-        logger.error(f"[SLM] 추론 실패, 안전 폴백(Scan) 사용: {e}")
-        # action_type은 이미 "Scan"으로 초기화됨
+    action_type = await _infer_reflex_action(prompt)
 
     params: dict = {}
     if action_type == "Attack":
@@ -481,11 +492,9 @@ def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: O
     task.add_done_callback(_background_tasks.discard)
 
 
-async def _handle_prompt(envelope: MessageEnvelope) -> str:
-    global _cached_world_state, _failed_action_history
-
-    logger.info(f"[Main] prompt 처리 시작. msg_id={envelope.msg_id}")
-
+async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
+    """prompt Envelope → 그래프 초기 AgentState. payload 파싱·GesPrompt 조립·계획
+    캐싱 분기 폴백·world/history 스냅샷을 한데 모은다. (history 는 소비 후 clear)."""
     prompt_payload: PromptPayload = envelope.parse_prompt_payload()
 
     ges_prompt = GesPrompt(
@@ -497,6 +506,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         stats=prompt_payload.stats,
         player_location=prompt_payload.player_location,
         npc_inventory=prompt_payload.npc_inventory,
+        valid_targets=prompt_payload.valid_targets,
     )
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
@@ -523,7 +533,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         history_snap = list(_failed_action_history)
         _failed_action_history.clear()
 
-    initial_state: AgentState = AgentState(
+    return AgentState(
         messages=[],
         vr_context=ges_prompt,
         cached_world_state=world_snap,
@@ -549,14 +559,10 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         error_msg=None,
     )
 
-    logger.info("[Main] Graph 비동기 실행 시작...")
-    try:
-        result = await app_graph.ainvoke(initial_state)
-    except Exception as e:
-        logger.error(f"[Main] LangGraph 실행 중 치명적 오류: {e}")
-        traceback.print_exc()
-        return _empty_batch_json()
 
+def _finalize_prompt_response(result: dict, envelope: MessageEnvelope) -> str:
+    """그래프 결과 → ModeActionRequest JSON. ActionBatch 추출(멀티/단일 호환)·TTS
+    dispatch·plan 회신 조립. ActionBatch 없으면 빈 배치 JSON."""
     # 멀티 NPC: action_batches 우선, 없으면 단일 action_batch 호환
     action_batches: dict = result.get("action_batches") or {}
     if not action_batches:
@@ -594,6 +600,23 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         PlanAchieved=plan_achieved,
     )
     return wrapper.model_dump_json()
+
+
+async def _handle_prompt(envelope: MessageEnvelope) -> str:
+    """조립(_build_prompt_state) → 그래프 실행 → 응답(_finalize_prompt_response)."""
+    logger.info(f"[Main] prompt 처리 시작. msg_id={envelope.msg_id}")
+
+    initial_state = await _build_prompt_state(envelope)
+
+    logger.info("[Main] Graph 비동기 실행 시작...")
+    try:
+        result = await app_graph.ainvoke(initial_state)
+    except Exception as e:
+        logger.error(f"[Main] LangGraph 실행 중 치명적 오류: {e}")
+        traceback.print_exc()
+        return _empty_batch_json()
+
+    return _finalize_prompt_response(result, envelope)
 
 
 async def _dispatch_npc_audio(
@@ -816,9 +839,6 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 # Debug Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
-import os
-import yaml
-
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _DEBUG_HTML_PATH = os.path.join(_STATIC_DIR, "debug.html")
 _TEST_CHAT_HTML_PATH = os.path.join(_STATIC_DIR, "test_chat.html")
@@ -992,6 +1012,14 @@ class DebugPromptRequest(BaseModel):
     npc_inventory: Optional[list] = None
 
 
+# 디버그 경로 plan 캐시 — UE5 NPCStateComponent 의 plan 보관/ShouldReplan 을 흉내.
+# npc_id → plan dict. 없던 것: requires_replan/current_plan 미동봉이라 PromptPayload
+# 기본값(True)으로 매 턴 12B 풀 파이프라인이 돌았음 (UE5 실동작과 다른 프로파일).
+# plan 보유 시 requires_replan=False + current_plan 동봉(e4b 경량 루프), 응답 NpcPlans 로
+# 갱신, PlanAchieved=True 면 삭제 → 다음 턴 재계획. combat 최초 전환 트리거는 미시뮬(단순화).
+_debug_plan_cache: dict = {}
+
+
 @app.post("/api/debug/prompt")
 async def api_debug_prompt(req: DebugPromptRequest):
     """디버그: UE 없이 콘솔/웹에서 NPC 에게 직접 말 걸기.
@@ -1000,6 +1028,7 @@ async def api_debug_prompt(req: DebugPromptRequest):
     import uuid
     import time as _t
 
+    cached_plan = _debug_plan_cache.get(req.npc_id)
     env = MessageEnvelope(
         msg_id=str(uuid.uuid4()),
         # auth_token 은 WS 수신 루프에서만 검증됨. 디버그는 _handle_prompt 직접 호출이라
@@ -1013,11 +1042,22 @@ async def api_debug_prompt(req: DebugPromptRequest):
             "target_npc_id": req.npc_id,
             # 모의 인벤토리를 npc_id 키로 래핑 (PromptPayload.npc_inventory 구조와 정합).
             "npc_inventory": {req.npc_id: req.npc_inventory} if req.npc_inventory else None,
+            # plan 캐싱 시뮬레이션 (UE5 SendPlayerDialogue 의 분기와 정합).
+            "requires_replan": cached_plan is None,
+            "current_plan": {req.npc_id: cached_plan} if cached_plan else None,
         },
     )
     try:
         result_json = await _handle_prompt(env)
-        return json.loads(result_json)
+        result = json.loads(result_json)
+        # plan 갱신 → 다음 디버그 턴은 e4b 경량 루프. 달성 시 삭제 → 다음 턴 재계획.
+        for npc_id, plan in (result.get("NpcPlans") or {}).items():
+            _debug_plan_cache[npc_id] = plan
+        for npc_id, achieved in (result.get("PlanAchieved") or {}).items():
+            if achieved:
+                _debug_plan_cache.pop(npc_id, None)
+                logger.info(f"[Debug] plan 달성 → 캐시 제거: {npc_id} (다음 턴 재계획)")
+        return result
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[Debug] prompt 처리 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))

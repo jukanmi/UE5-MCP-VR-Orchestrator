@@ -371,6 +371,10 @@ public:
     /** 체크포인트 액터가 호출 — 현재 위치/HP를 저장 */
     void SaveCheckpoint(const FVector& Location, const FRotator& Rotation);
 
+    /** 피격 럼블 — NPC 공격에 맞았을 때 호출(SmartNPC::PerformAttackHit).
+     *  양손 컨트롤러 햅틱(B) + 게임패드 ForceFeedback(A) 폴백. 에셋 미할당 시 no-op. */
+    void PlayHitReceivedFeedback();
+
 private:
     // --- 입력 핸들러 ---
     void OnMove(const FInputActionValue& Value);

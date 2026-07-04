@@ -9,6 +9,7 @@
 #include "KineticProjectile.h"
 #include "KineticDamage.h"
 #include "PlayerInteractionUtils.h"
+#include "PawnDeathUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -593,6 +594,14 @@ void AVRPawn::PlayHitHaptic(bool bRightHand)
     }
 }
 
+void AVRPawn::PlayHitReceivedFeedback()
+{
+    // 피격은 특정 손이 아니므로 양손 럼블. ForceFeedback 은 PlayHitHaptic 내부에서 중복 재생되나
+    // bLooping=false 라 무해(짧은 펄스). 자기공격 럼블(PlayHitHaptic)과 동일 에셋 재사용.
+    PlayHitHaptic(/*bRightHand=*/false);
+    PlayHitHaptic(/*bRightHand=*/true);
+}
+
 void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
 {
     // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→SmartNPC 공격 인지).
@@ -800,14 +809,19 @@ void AVRPawn::RefreshStats()
 float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
                           AController* EventInstigator, AActor* DamageCauser)
 {
+    // 이미 사망 상태에서 추가 피격 시 HandleDeath 중복 호출 → RespawnTimerHandle 이 매번 리셋되어
+    // 리스폰 무한 지연되는 버그 방지 (조기 반환).
+    if (CurrentStats.Resources.Health <= 0.f)
+    {
+        return 0.f;
+    }
+
     float Actual = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 
     if (CurrentStats.Resources.Health <= 0.f)
     {
-        RemoveStateTag(TAG_State_Idle);
-        AddStateTag(TAG_State_Condition_Dead);
-        HandleDeath();
+        HandleDeath();  // Dead 태그 세팅은 PawnDeathUtils::HandleDeath 내부에서 일괄
     }
     return Actual;
 }
@@ -818,10 +832,9 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
 void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    CheckpointLocation = Location;
-    CheckpointRotation = Rotation;
-    CheckpointHP       = CurrentStats.Resources.Health;
-    bHasCheckpoint     = true;
+    PawnDeathUtils::SaveCheckpoint(CurrentStats, /*bRequireAlive*/false,
+        Location, Rotation, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, TEXT("VRPawn"));
 }
 
 // ============================================================================
@@ -830,36 +843,15 @@ void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 
 void AVRPawn::HandleDeath()
 {
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        DisableInput(PC);
-
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    GetMesh()->SetVisibility(false);
-
-    GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AVRPawn::Respawn, RespawnDelay, false);
+    PawnDeathUtils::HandleDeath(this, GameplayTags, /*bClearCursor*/false,
+        RespawnDelay, RespawnTimerHandle,
+        FTimerDelegate::CreateUObject(this, &AVRPawn::Respawn), TEXT("VRPawn"));
 }
 
 void AVRPawn::Respawn()
 {
-    if (bHasCheckpoint)
-    {
-        SetActorLocationAndRotation(CheckpointLocation, CheckpointRotation);
-        CurrentStats.Resources.Health = CheckpointHP;
-    }
-    else
-    {
-        if (AActor* Start = UGameplayStatics::GetActorOfClass(GetWorld(), APlayerStart::StaticClass()))
-            SetActorLocationAndRotation(Start->GetActorLocation(), Start->GetActorRotation());
-        CurrentStats.Resources.Health = CurrentStats.Resources.MaxHealth;
-    }
-
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    GetMesh()->SetVisibility(true);
-    RemoveStateTag(TAG_State_Condition_Dead);
-    AddStateTag(TAG_State_Idle);
-
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        EnableInput(PC);
+    PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
+        CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPawn"));
 }
 
 // ============================================================================

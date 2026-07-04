@@ -25,6 +25,7 @@ import re
 import unicodedata
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
+from ..utils.id_utils import ci_id_map, ci_get
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,11 +94,76 @@ def _format_gestures(gestures) -> str:
     return "\n".join(descriptions)
 
 
-def _format_stats(stats) -> str:
-    """플레이어 스탯을 읽기 쉬운 텍스트로 변환."""
-    if not stats:
-        return "Unknown"
-    return ", ".join([f"{k}: {v}" for k, v in stats.items()])
+def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
+    """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
+
+    긴급 이벤트·guardrail 을 통과한 정상 발화만 여기 도달한다.
+    """
+    # ── 위치/제스처 포맷 ────────────────────────────────────────
+    location_str = "Unknown"
+    if vr_context.player_location:
+        loc = vr_context.player_location
+        location_str = f"({loc.x}, {loc.y}, {loc.z})"
+    gesture_str = _format_gestures(vr_context.gestures)
+
+    # ── 주변 타겟(perceived_targets) — state_update 로 캐시된 최신 상태 참조 ──
+    # prompt envelope 에는 perceived_targets 가 없어 cached_world_state 를 씀.
+    perceived_str = "Unknown"
+    state_payload = state.get("cached_world_state", {})
+    if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
+        targets = state_payload["perceived_targets"]
+        if targets:
+            pts = []
+            for pt in targets:
+                t_id = pt.get("target_id", "unknown")
+                t_dist = pt.get("distance", 0.0)
+                pts.append(f"{t_id} ({t_dist:.1f}m away)")
+            perceived_str = ", ".join(pts)
+        else:
+            perceived_str = "None visible/audible"
+
+    # ── 구조화 컨텍스트 직접 조합 ────────────────────────────────
+    natural_context = f'Player said: "{transcript}"'
+    if gesture_str != "None":
+        natural_context += f", with gestures: {gesture_str}"
+    if location_str != "Unknown":
+        natural_context += f", at location {location_str}"
+    if vr_context.last_event:
+        natural_context += f", last event: {vr_context.last_event}"
+    if perceived_str not in ("Unknown", "None visible/audible"):
+        natural_context += f", nearby: {perceived_str}"
+
+    # ── 실패 이력 주입 — UE5 action_failed 보고를 LLM 컨텍스트에 반영 ──
+    # WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
+    # 반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
+    # 최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행).
+    failed_history = state.get("failed_action_history") or []
+    if failed_history:
+        recent = failed_history[-3:]
+        fails = "; ".join(
+            f"{f.get('failed_action_type', 'Unknown')}"
+            f" by {f.get('executor_npc_id', 'unknown')}"
+            f" (reason: {f.get('reason', 'unknown')})"
+            for f in recent
+        )
+        natural_context += f". Recently FAILED actions (do NOT retry the same way): {fails}"
+
+    # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
+    # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
+    # current_plan 은 npc_id → {goal, steps, ...}. target_npc plan 만 주입,
+    # 없으면 주입 생략 — 첫 항목 폴백은 타 NPC plan 오참조 위험으로 의도적 제외.
+    current_plan = state.get("current_plan")
+    if current_plan and isinstance(current_plan, dict):
+        # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
+        plan = ci_get(current_plan, state.get("target_npc"))
+        if isinstance(plan, dict) and plan.get("goal"):
+            steps = plan.get("steps") or []
+            steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
+            natural_context += (
+                f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
+            )
+
+    return natural_context
 
 
 def interface_input_node(state: AgentState) -> dict:
@@ -166,78 +232,8 @@ def interface_input_node(state: AgentState) -> dict:
             "next": "Dialogue",
         }
 
-    # ── 컨텍스트 포맷팅 ─────────────────────────────────────────
-    location_str = "Unknown"
-    if vr_context.player_location:
-        loc = vr_context.player_location
-        location_str = f"({loc.x}, {loc.y}, {loc.z})"
-
-    gesture_str = _format_gestures(vr_context.gestures)
-    stats_str = _format_stats(vr_context.stats)
-
-    # 주변 타겟 정보 포맷팅 (agent state에서 state_update로 들어온 최신 perceived_targets 참조)
-    # prompt envelope에는 perceived_targets가 없으므로 state.get("game_state_data") 형태로 캐시된 최신 상태를 쓰거나
-    # 임시로 none 처리합니다 (interface_input이 GesPrompt만 처리중이므로)
-    perceived_str = "Unknown"
-    state_payload = state.get("cached_world_state", {})
-    if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
-        targets = state_payload["perceived_targets"]
-        if targets:
-            pts = []
-            for pt in targets:
-                t_id = pt.get("target_id", "unknown")
-                t_dist = pt.get("distance", 0.0)
-                pts.append(f"{t_id} ({t_dist:.1f}m away)")
-            perceived_str = ", ".join(pts)
-        else:
-            perceived_str = "None visible/audible"
-
-    # ── 구조화 컨텍스트 직접 조합 (LLM 없이) ────────────────────────
-    natural_context = f'Player said: "{transcript}"'
-    if gesture_str != "None":
-        natural_context += f", with gestures: {gesture_str}"
-    if location_str != "Unknown":
-        natural_context += f", at location {location_str}"
-    if vr_context.last_event:
-        natural_context += f", last event: {vr_context.last_event}"
-    if perceived_str not in ("Unknown", "None visible/audible"):
-        natural_context += f", nearby: {perceived_str}"
-
-    # ── 실패 이력 주입 — UE5 action_failed 보고를 LLM 컨텍스트에 반영 ──
-    # WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
-    # 반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
-    # 최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행).
-    failed_history = state.get("failed_action_history") or []
-    if failed_history:
-        recent = failed_history[-3:]
-        fails = "; ".join(
-            f"{f.get('failed_action_type', 'Unknown')}"
-            f" by {f.get('executor_npc_id', 'unknown')}"
-            f" (reason: {f.get('reason', 'unknown')})"
-            for f in recent
-        )
-        natural_context += f". Recently FAILED actions (do NOT retry the same way): {fails}"
-
-    # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
-    # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
-    # current_plan 은 npc_id → {goal, steps, ...}. target_npc plan 만 주입,
-    # 없으면 주입 생략 — 첫 항목 폴백은 타 NPC plan 오참조 위험으로 의도적 제외.
-    current_plan = state.get("current_plan")
-    if current_plan and isinstance(current_plan, dict):
-        target = state.get("target_npc")
-        plan = None
-        if target:
-            # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
-            # 대상 NPC plan 이 없으면 주입 생략 — 타 NPC plan 오참조로 인한 행동 불일치 방지.
-            target_lower = target.lower()
-            plan = next((v for k, v in current_plan.items() if k.lower() == target_lower), None)
-        if isinstance(plan, dict) and plan.get("goal"):
-            steps = plan.get("steps") or []
-            steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
-            natural_context += (
-                f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
-            )
-
+    # ── 구조화 컨텍스트 조합 (위치/제스처/perceived/실패이력/plan) ──
+    natural_context = _build_natural_context(vr_context, state, transcript)
     print(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
@@ -276,7 +272,7 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
 
     valid_ids = WORLD_CONSTANTS.get("valid_npc_ids", [])
     # lower→원본 ID 매핑 — C++ NPCMap 은 대소문자 구분, 원래 케이스 보존 필수.
-    id_map = {npc.lower(): npc for npc in valid_ids}
+    id_map = ci_id_map(valid_ids)
     known_npcs = (
         [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "guard", "merchant", "blacksmith"]
     )

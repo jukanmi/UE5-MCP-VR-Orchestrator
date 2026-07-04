@@ -8,7 +8,7 @@
 ║   can execute. Parses natural language into game engine function calls.     ║
 ║                                                                              ║
 ║ PIPELINE (Stage 3):                                                          ║
-║   raw_responses Dict[npc_id, str] → e4b × N 병렬 구조화 → action_batches  ║
+║   raw_responses Dict[npc_id, str] → 정규식 N개 병렬 파싱 → action_batches ║
 ║   + Python 규칙: FacialState vs persona traits 교차 검증 (오염 보정)        ║
 ║                                                                              ║
 ║ INPUT:  raw_responses (Dict[str, str])  npc_id → refined text               ║
@@ -270,6 +270,16 @@ _KEYWORD_ACTION_MAP = [
 ]
 
 
+# Emote 제스처 감지 — 트리거 키워드 중 하나라도 있으면 Emote. 세부 gesture 는
+# _GESTURE_KEYWORD_MAP 순서(우선순위)로 판정, 미매칭이면 Smile 기본.
+_GESTURE_TRIGGER = ["웃", "smile", "laugh", "nod", "bow", "wave", "손", "끄덕", "인사"]
+_GESTURE_KEYWORD_MAP = [
+    (["bow", "인사"], "Bow"),
+    (["wave", "손"], "Wave"),
+    (["nod", "끄덕"], "Nod"),
+]
+
+
 def _parse_natural_action(text: str, behavior_mode: str = "Common") -> Optional[GameAction]:
     text_lower = text.lower()
     for keywords, action_type, target_id, parameters in _KEYWORD_ACTION_MAP:
@@ -283,15 +293,12 @@ def _parse_natural_action(text: str, behavior_mode: str = "Common") -> Optional[
                 Parameters={k: str(v) for k, v in params.items()},
             )
 
-    if any(word in text_lower for word in ["웃", "smile", "laugh", "nod", "bow", "wave", "손"]):
-        if "bow" in text_lower or "인사" in text_lower:
-            gesture = "Bow"
-        elif "wave" in text_lower or "손" in text_lower:
-            gesture = "Wave"
-        elif "nod" in text_lower or "끄덕" in text_lower:
-            gesture = "Nod"
-        else:
-            gesture = "Smile"
+    if any(word in text_lower for word in _GESTURE_TRIGGER):
+        gesture = "Smile"
+        for keywords, g in _GESTURE_KEYWORD_MAP:
+            if any(word in text_lower for word in keywords):
+                gesture = g
+                break
         return GameAction(ActionType="Emote", FacialState="Neutral", Parameters={"gesture": gesture})
 
     return None
@@ -400,7 +407,8 @@ async def interface_output_node(state: AgentState):
     """
     Interface Output Agent (Stage 3, async).
 
-    raw_responses Dict[npc_id, str] → e4b × N 병렬 구조화 → action_batches.
+    raw_responses Dict[npc_id, str] → 정규식 N개 병렬 파싱(CPU, to_thread) → action_batches.
+    LLM 아님 — Stage1 텍스트를 규칙 기반으로 ActionBatch 구조화.
     단일 NPC 호환: raw_responses 없으면 raw_response + target_npc 폴백.
     """
     raw_responses: Dict[str, str] = state.get("raw_responses") or {}

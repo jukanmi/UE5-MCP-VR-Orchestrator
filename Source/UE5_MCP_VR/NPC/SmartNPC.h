@@ -281,6 +281,40 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
     int32 MaxConcurrentKnockdown = 3;
 
+    // ====================================================================
+    // 공격 판정 (NPC→타겟) — AM_Attack 의 AnimNotifyState_NPCAttackHit 가 구동.
+    // 데미지 값 = NPCAttributes.Combat.AttackPower × AttackDamageScale (몽타주라 스윙속도 없어 고정).
+    // ====================================================================
+
+    /** ExecuteAttackAction 이 LLM 지정 타겟을 저장. 노티파이 윈도우가 이 단일 타겟만 타격(친선사격 방지). */
+    void SetCurrentAttackTarget(AActor* Target) { CurrentAttackTarget = Target; }
+
+    /** 노티파이 윈도우 진입(NotifyBegin) — 스윙당 1회 가드 리셋. */
+    void BeginAttackHitWindow() { bAttackHitConsumed = false; }
+
+    /** 노티파이 윈도우 매 틱(NotifyTick) — 타겟이 거리·arc 게이트 통과 시 1회 데미지 적용. */
+    void PerformAttackHit();
+
+    /** 타격 유효 거리(cm) — 타겟이 이 안에 들어와야 명중. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
+    float AttackHitRange = 200.f;
+
+    /** 타격 정면 arc 게이트 — forward·(타겟방향) 내적이 이 값 이상이어야 명중(0.3≈72°). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
+    float AttackHitArcCos = 0.3f;
+
+    /** AttackPower → 실데미지 환산 배율. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
+    float AttackDamageScale = 1.0f;
+
+    /** 플레이어 피격 시 넉백 속도(cm/s, LaunchCharacter XY). 0=넉백 끔. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
+    float NPCKnockbackSpeed = 400.f;
+
+    /** 공격 판정 디버그 — 타겟·거리·명중을 화면/로그에 표시. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
+    bool bDebugAttackHit = false;
+
 private:
     void DestroyAfterDeath();
 
@@ -333,6 +367,10 @@ private:
     // --- 사망 임펄스용 마지막 치명타 정보 (TakeDamage 가 채움, HandleDeath 가 소비) ---
     FName LastHitBone = NAME_None;
     FVector LastHitDirection = FVector::ZeroVector;  // ShotDirection (피격→방향, 정규화)
+
+    // --- 공격 판정 상태 (NPC→타겟) ---
+    TWeakObjectPtr<AActor> CurrentAttackTarget;  // ExecuteAttackAction 이 세팅, 노티파이가 소비
+    bool bAttackHitConsumed = false;             // 스윙당 1회 가드(NotifyBegin 리셋)
 
     /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
     FString CurrentSubtitleText;

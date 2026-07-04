@@ -20,6 +20,8 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import ast
+import re
 from collections import Counter
 
 from ..state import AgentState
@@ -72,9 +74,6 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         return True
 
     try:
-        import ast
-        import re
-
         coords: dict = {}
         # ① dict/JSON 문자열 시도
         try:
@@ -89,16 +88,18 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
         if not coords:
             # 파싱 실패 → (0,0,0) 오판 대신 경계검증 생략(통과)
             return True
-        x, y, z = coords.get("x", 0), coords.get("y", 0), coords.get("z", 0)
     except Exception:
         # 파싱 자체 실패 시 경계검증 생략(통과)
         return True
 
-    x_ok = WORLD_BOUNDS.get("x_min", float("-inf")) <= x <= WORLD_BOUNDS.get("x_max", float("inf"))
-    y_ok = WORLD_BOUNDS.get("y_min", float("-inf")) <= y <= WORLD_BOUNDS.get("y_max", float("inf"))
-    z_ok = WORLD_BOUNDS.get("z_min", float("-inf")) <= z <= WORLD_BOUNDS.get("z_max", float("inf"))
+    for axis in ("x", "y", "z"):
+        value = coords.get(axis, 0)
+        lo = WORLD_BOUNDS.get(f"{axis}_min", float("-inf"))
+        hi = WORLD_BOUNDS.get(f"{axis}_max", float("inf"))
+        if not (lo <= value <= hi):
+            return False
 
-    return x_ok and y_ok and z_ok
+    return True
 
 
 def _missing_required_group(action: "GameAction") -> str | None:
@@ -118,6 +119,37 @@ def _missing_required_group(action: "GameAction") -> str | None:
         if not any(params.get(k) is not None and str(params.get(k)).strip() != "" for k in group):
             return " | ".join(group)
     return None
+
+
+# ActionType → (param_key, 상한 상수키, 상한 기본, 음수시 값, 음수 로그표기, 비유효시 값, 로그 라벨)
+# Attack.damage / Move.speed / Heal.amount 의 [0, 상한] 클램핑을 단일 테이블로 통합.
+_NUMERIC_CLAMP_RULES: dict[str, tuple] = {
+    "Attack": ("damage", "MAX_DAMAGE", 100, "0", "0", "10", "damage"),
+    "Move": ("speed", "MAX_SPEED", 600, "300", "기본값 300", "300", "speed"),
+    "Heal": ("amount", "MAX_HEALTH", 100, "0", "0", "10", "heal amount"),
+}
+
+
+def _clamp_numeric_param(action_type: str, params: dict, corrections: list) -> None:
+    """수치 파라미터를 [0, WORLD_CONSTANTS 상한] 으로 클램핑. 규칙 없는 액션은 no-op."""
+    rule = _NUMERIC_CLAMP_RULES.get(action_type)
+    if not rule:
+        return
+    key, max_key, max_default, neg_val, neg_disp, invalid_val, label = rule
+    if key not in params:
+        return
+    max_value = WORLD_CONSTANTS.get(max_key, max_default)
+    try:
+        value = float(params[key])
+        if value > max_value:
+            params[key] = str(max_value)
+            corrections.append(f"{label} 클램핑: {value} → {max_value}")
+        elif value < 0:
+            params[key] = neg_val
+            corrections.append(f"{label} 음수 → {neg_disp}")
+    except (ValueError, TypeError):
+        params[key] = invalid_val
+        corrections.append(f"{label} 비유효 → 기본값 {invalid_val}")
 
 
 def validate_and_clamp_action(action: "GameAction") -> tuple:
@@ -164,50 +196,8 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
     # 파라미터를 문자열로 통일 (C++ 호환성)
     params = {str(k): str(v) for k, v in action.Parameters.items()}
 
-    # ── Attack: damage 클램핑 ───────────────────────────────────
-    if action.ActionType == "Attack" and "damage" in params:
-        try:
-            damage = float(params["damage"])
-            max_damage = WORLD_CONSTANTS.get("MAX_DAMAGE", 100)
-            if damage > max_damage:
-                params["damage"] = str(max_damage)
-                corrections.append(f"damage 클램핑: {damage} → {max_damage}")
-            elif damage < 0:
-                params["damage"] = "0"
-                corrections.append("damage 음수 → 0")
-        except ValueError:
-            params["damage"] = "10"
-            corrections.append("damage 비유효 → 기본값 10")
-
-    # ── Move: speed 클램핑 ──────────────────────────────────────
-    elif action.ActionType == "Move" and "speed" in params:
-        try:
-            speed = float(params["speed"])
-            max_speed = WORLD_CONSTANTS.get("MAX_SPEED", 600)
-            if speed > max_speed:
-                params["speed"] = str(max_speed)
-                corrections.append(f"speed 클램핑: {speed} → {max_speed}")
-            elif speed < 0:
-                params["speed"] = "300"
-                corrections.append("speed 음수 → 기본값 300")
-        except ValueError:
-            params["speed"] = "300"
-            corrections.append("speed 비유효 → 기본값 300")
-
-    # ── Heal: amount 클램핑 ─────────────────────────────────────
-    elif action.ActionType == "Heal" and "amount" in params:
-        try:
-            amount = float(params["amount"])
-            max_health = WORLD_CONSTANTS.get("MAX_HEALTH", 100)
-            if amount > max_health:
-                params["amount"] = str(max_health)
-                corrections.append(f"heal amount 클램핑: {amount} → {max_health}")
-            elif amount < 0:
-                params["amount"] = "0"
-                corrections.append("heal amount 음수 → 0")
-        except ValueError:
-            params["amount"] = "10"
-            corrections.append("heal amount 비유효 → 기본값 10")
+    # ── 수치 파라미터 클램핑 (Attack.damage / Move.speed / Heal.amount) ──
+    _clamp_numeric_param(action.ActionType, params, corrections)
 
     action.Parameters = params
     return action, corrections
