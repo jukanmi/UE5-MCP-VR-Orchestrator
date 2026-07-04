@@ -341,8 +341,10 @@ async def _infer_reflex_action(prompt: str) -> str:
         tokens = raw_text.split()
         text = tokens[0] if tokens else ""
 
-        if text.capitalize() in valid:
-            return text.capitalize()
+        # capitalize() 는 SignalAllies → Signalallies 로 PascalCase 를 깨뜨림 → lower 매핑으로 매칭
+        valid_map = {a.lower(): a for a in valid}
+        if text.lower() in valid_map:
+            return valid_map[text.lower()]
         if text:
             # 키워드 검색 폴백 (SLM이 잡담을 끼워넣은 경우)
             text_l = raw_text.lower()

@@ -20,6 +20,8 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import ast
+import re
 from collections import Counter
 
 from ..state import AgentState
