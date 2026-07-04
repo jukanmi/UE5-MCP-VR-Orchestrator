@@ -323,7 +323,9 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
         if p.danger_score >= 0.5 and p.target_id:
             # 캐시 prime — 미존재 시 DB에서 로드하거나 기본값(0)으로 생성
             await db_manager.get_affinity(agent_id, p.target_id)
-            db_manager.update_affinity_sync(
+            # 동기 sqlite 쓰기 → 이벤트 루프 블로킹 방지 위해 스레드 오프로드 (codebase idiom).
+            await asyncio.to_thread(
+                db_manager.update_affinity_sync,
                 source_id=agent_id,
                 target_id=p.target_id,
                 score_delta=-5,
@@ -334,7 +336,8 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
 
 async def _infer_reflex_action(prompt: str) -> str:
     """SLM raw 호출 → 유효 반사 액션 1개. 파싱/호출 실패 시 안전 폴백 "Scan"."""
-    valid = {"Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"}
+    # list — 여러 키워드 동시 포함 시 폴백 매칭 우선순위를 결정론적으로 고정 (set 순서 비결정 방지).
+    valid = ["Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"]
     try:
         raw_text, _llm_ms = await _ollama_raw_generate(prompt)
         logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
