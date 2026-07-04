@@ -18,7 +18,8 @@
 ║ OUTPUT: structured_responses (Dict[str, DialogueResponse]) + raw_responses  ║
 ║                                                                              ║
 ║ OUTPUT FORMAT (CRITICAL):                                                   ║
-║   "Speech in quotes" (emotion in parentheses) *physical action in asterisks*║
+║   DialogueResponse JSON (mode/facial/speech/tone/actions/plan_achieved)     ║
+║   — grammar 강제. 텍스트 직렬화는 Stage2 plan 입력·단일호환 파생 렌더링뿐.  ║
 ║                                                                              ║
 ║ LLM SELECTION:                                                               ║
 ║   Stage 1 — e4b (경량, 병렬 VRAM 효율)                                     ║
@@ -39,7 +40,7 @@ from ...utils.memory_manager import get_conversation_context, add_conversation
 from ..state import AgentState
 from ...utils import db_manager
 from ...utils.id_utils import ci_id_map
-from ...schemas.actions import DialogueResponse, PlanBatchResponse
+from ...schemas.actions import DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 
 
 PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
@@ -51,6 +52,14 @@ def _dialogue_schema_with_targets(valid_targets) -> dict | None:
     없으면 None(ollama_structured 가 기본 model_json_schema 사용)."""
     if not valid_targets:
         return None
+    return _schema_with_target_enum(tuple(valid_targets))
+
+
+@lru_cache(maxsize=8)
+def _schema_with_target_enum(valid_targets: tuple) -> dict | None:
+    """target enum 주입 스키마 캐시 — model_json_schema() 는 pydantic 필드 그래프 전체를
+    재순회하므로 NPC×턴마다 재생성하지 않는다(동일 타깃 목록이면 동일 dict 재사용).
+    반환 dict 는 호출측에서 수정 금지(공유 캐시)."""
     schema = DialogueResponse.model_json_schema()
     target = schema.get("$defs", {}).get("DialogueActionItem", {}).get("properties", {}).get("target")
     if target is None:
@@ -206,26 +215,23 @@ def _decode_byte_tokens(text: str) -> str:
 
 def _serialize_dialogue(obj: DialogueResponse) -> str:
     """구조화 DialogueResponse → 자유텍스트 포맷 직렬화.
-    Stage2 12B plan 입력 섹션 + 메모리·단일 NPC 호환용 텍스트를 [Mode:][Facial:]
-    "speech"[Action:] 형태로 재생 (Stage3 는 structured_responses 를 직접 소비)."""
+    Stage2 12B plan 입력 섹션 + 단일 NPC 호환용 텍스트를 [Mode:][Facial:]
+    "speech"[Action:] 형태로 재생 (Stage3 는 structured_responses 를 직접 소비).
+    speech/tone 은 _run_stage1_llm 이 이미 _decode_byte_tokens 처리 — 재디코드 안 함."""
     lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
 
-    speech = _decode_byte_tokens((obj.speech or "").strip())
+    speech = (obj.speech or "").strip()
     if speech:
-        tone = _decode_byte_tokens((obj.tone or "").strip())
+        tone = (obj.tone or "").strip()
         lines.append(f'"{speech}" ({tone})' if tone else f'"{speech}"')
 
+    # 태그 키 = DialogueActionItem 필드명 — DIALOGUE_ACTION_FIELD_MAP 단일 소스.
     for act in obj.actions:
         parts = [act.type]
-        for key, val in (
-            ("target", act.target),
-            ("item", act.item),
-            ("loc", act.loc),
-            ("style", act.style),
-        ):
-            v = (val or "").strip()
+        for _, field_name in DIALOGUE_ACTION_FIELD_MAP:
+            v = (getattr(act, field_name) or "").strip()
             if v:
-                parts.append(f"{key}={v}")
+                parts.append(f"{field_name}={v}")
         lines.append(f"[Action: {' '.join(parts)}]")
 
     return "\n".join(lines)
@@ -466,22 +472,25 @@ async def dialogue_node(state: AgentState):
     results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
     structured_responses: Dict[str, DialogueResponse] = {r[0]: r[1] for r in results}
     plan_achieved_map: Dict[str, bool] = {r[0]: r[2] for r in results}
-    # raw_responses: Stage2 12B plan 입력 + 메모리 + 단일 NPC 호환용 텍스트 직렬화 (유지).
-    # Stage3 는 structured_responses 를 직접 소비 — raw_responses 재파싱 안 함.
-    raw_responses: Dict[str, str] = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
+    single_npc = npcs[0]
 
     # Stage 2: 12B plan 산출 — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
     # 대사는 Stage1 출력 그대로 (12B 정제 제거 — PLAN_SYSTEM_PROMPT 상단 주석 참조).
+    # raw_responses(텍스트)는 소비처 기준 필요 시점에만 직렬화:
+    #   replan 턴 = Stage2 plan 입력(전 NPC) / 경량 루프 = 단일 NPC 호환 1건만 (N-1 낭비 제거).
     npc_plans: Dict[str, dict] = {}
     if requires_replan:
+        raw_responses: Dict[str, str] = {
+            npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()
+        }
         vr_context = state.get("vr_context")
         player_id = _vr_player_id(vr_context)
         npc_plans = await _generate_plans(raw_responses, player_id)
     else:
         print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
+        raw_responses = {single_npc: _serialize_dialogue(structured_responses[single_npc])}
 
     # 단일 NPC 호환: raw_response 도 채움
-    single_npc = npcs[0]
     raw_response = raw_responses.get(single_npc, "")
 
     return {

@@ -24,7 +24,6 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-import asyncio
 from typing import Dict
 from .state import AgentState
 from .subgraphs.dialogue import load_persona
@@ -32,6 +31,7 @@ from ..schemas.actions import (
     ActionBatch,
     GameAction,
     DialogueResponse,
+    DIALOGUE_ACTION_FIELD_MAP,
 )
 
 
@@ -113,16 +113,6 @@ def _normalize_emotion(emotion_text: str) -> str:
     return "Neutral"
 
 
-# DialogueActionItem 필드 → GameAction.Parameters 키 (snake_case, §1 JSON 키 규칙).
-# 빈 값은 생략 — C++ ExecuteInteraction 이 필수 파라미터 누락 시 견고 폴백 or Rules 제거.
-_DIALOGUE_PARAM_MAP = (
-    ("target_id", "target"),
-    ("target_loc", "loc"),
-    ("item", "item"),
-    ("style", "style"),
-)
-
-
 def _create_empty_batch(npc_id: str) -> ActionBatch:
     return ActionBatch(
         AgentID=npc_id,
@@ -145,23 +135,26 @@ def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits
     facial = resp.facial
     # 텍스트 경로 parity: facial 우선, Neutral 이면 tone→emotion 정규화.
     emotion = facial if facial != "Neutral" else _normalize_emotion(resp.tone)
+    # 절단 없음 — 구 경로도 따옴표 매치 대사는 전문 통과였음(절단은 따옴표 없는 폴백 한정).
+    # [:200] 은 200자 초과 한국어 대사를 자막·TTS 에서 문장 중간 자르는 회귀였다.
     speech = (resp.speech or "").strip() or "..."
 
     actions = [
         GameAction(
             ActionType="Dialogue",
             FacialState=emotion,
-            Parameters={"text": speech[:200], "emotion": emotion},
+            Parameters={"text": speech, "emotion": emotion},
         )
     ]
 
+    # 필드→Parameters 키 매핑은 DIALOGUE_ACTION_FIELD_MAP 단일 소스 (§1 snake_case).
+    # 빈 값은 생략 — C++ ExecuteInteraction 이 필수 파라미터 누락 시 견고 폴백 or Rules 제거.
     for act in resp.actions:
         params: Dict[str, str] = {}
-        field_vals = {"target": act.target, "loc": act.loc, "item": act.item, "style": act.style}
-        for dst_key, src_field in _DIALOGUE_PARAM_MAP:
-            v = (field_vals[src_field] or "").strip()
+        for param_key, field_name in DIALOGUE_ACTION_FIELD_MAP:
+            v = (getattr(act, field_name) or "").strip()
             if v:
-                params[dst_key] = v
+                params[param_key] = v
         actions.append(GameAction(ActionType=act.type, FacialState=facial, Parameters=params))
 
     batch = ActionBatch(AgentID=npc_id, Mode=resp.mode, Actions=actions)
@@ -178,9 +171,9 @@ async def interface_output_node(state: AgentState):
     """
     Interface Output Agent (Stage 3, async).
 
-    structured_responses Dict[npc_id, DialogueResponse] → 필드 매핑(CPU, to_thread) → action_batches.
+    structured_responses Dict[npc_id, DialogueResponse] → 필드 매핑(동기, 경량) → action_batches.
     LLM·정규식 아님 — Stage1 구조화 출력을 규칙 기반으로 ActionBatch 변환.
-    구조화 없으면(방어적, 예: supervisor 폴백 경로) empty batch.
+    구조화 없으면(방어적 — dialogue 미산출) empty batch.
     """
     structured: Dict[str, DialogueResponse] = state.get("structured_responses") or {}
 
@@ -196,20 +189,12 @@ async def interface_output_node(state: AgentState):
             "next": "Rules",
         }
 
-    # 각 NPC의 persona traits 로드 (동기 파일 I/O — 이벤트 루프 블로킹 방지 위해 오프로드)
-    traits_map: Dict[str, list[str]] = {}
-    for npc_id in structured:
-        persona = await asyncio.to_thread(load_persona, npc_id) or {}
-        traits_map[npc_id] = persona.get("traits", [])
-
-    # Stage 3: 병렬 필드 매핑 (경량이나 오염보정 포함 — to_thread 로 루프 비블로킹)
-    async def _structure_async(npc_id: str, resp: DialogueResponse) -> tuple[str, ActionBatch]:
-        batch = await asyncio.to_thread(_structure_from_dialogue, npc_id, resp, traits_map.get(npc_id, []))
-        return npc_id, batch
-
-    results = await asyncio.gather(*[_structure_async(npc_id, resp) for npc_id, resp in structured.items()])
-
-    action_batches: Dict[str, ActionBatch] = {npc_id: batch for npc_id, batch in results}
+    # Stage 3: 동기 필드 매핑 — dict/list 조립뿐이라 to_thread 왕복이 작업보다 비쌈.
+    # load_persona 는 lru_cache — Stage1 _collect_stage1_context 가 동일 npc_id 로 이미 워밍.
+    action_batches: Dict[str, ActionBatch] = {}
+    for npc_id, resp in structured.items():
+        persona = load_persona(npc_id) or {}
+        action_batches[npc_id] = _structure_from_dialogue(npc_id, resp, persona.get("traits", []))
     print(f"[Interface Output] 구조화 완료: {list(action_batches.keys())}")
 
     # 단일 NPC 호환: action_batch 도 채움

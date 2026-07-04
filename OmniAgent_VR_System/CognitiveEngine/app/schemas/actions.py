@@ -88,6 +88,17 @@ class DialogueActionItem(BaseModel):
     style: str = Field(default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote")
 
 
+# DialogueActionItem 필드 ↔ 키 매핑 단일 소스 — (GameAction.Parameters 키, 필드명).
+# 소비처 2곳: interface_output(Stage3 Parameters 매핑)·dialogue._serialize_dialogue(태그 키=필드명).
+# 필드 추가/개명 시 여기 한 곳만 수정 (양쪽 하드코딩 2벌 유지하다 한쪽 누락되는 드리프트 방지).
+DIALOGUE_ACTION_FIELD_MAP: tuple = (
+    ("target_id", "target"),
+    ("target_loc", "loc"),
+    ("item", "item"),
+    ("style", "style"),
+)
+
+
 class NPCPlanItem(BaseModel):
     """Stage2 12B plan 전용 구조화 출력 항목. 12B(abliterated)가 텍스트 포맷의
     '정제+plan 동시 출력' 지시를 무시하고 plan 라인만 출력해 대사가 증발하던 문제

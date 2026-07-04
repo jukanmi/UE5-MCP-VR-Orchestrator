@@ -149,20 +149,6 @@ async def ollama_structured(
     return schema_model.model_validate_json(content)
 
 
-# ==============================================================================
-# Ollama 직접 호출 유틸리티 — 경량 SLM(gemma4_slm) 단발 자유텍스트 생성
-# ==============================================================================
-# 유일 호출처: dialogue.py Stage1 구조화 실패 시 폴백(자유텍스트). 과거 있던 JSON
-# 추출 분기(extract_json=True)는 호출처가 전부 구조화 출력(ollama_structured)으로
-# 이전하며 죽어 제거 — 재도입 필요 시 ollama_structured 사용(grammar 강제가 정답).
-def call_ollama_direct(prompt_text: str) -> Optional[str]:
-    """gemma4_slm 로 단발 자유텍스트 생성 → 원문 반환(실패 시 None)."""
-    try:
-        print("[LLM Factory] Ollama 직접 호출 (gemma4_slm 자유텍스트 폴백)...")
-        llm = get_llm("gemma4_slm", temperature=0.1)
-        response = llm.invoke(prompt_text)
-        output = response.content if hasattr(response, "content") else str(response)
-        return output.strip()
-    except Exception as e:
-        print(f"[LLM Factory] 오류: {e}")
-        return None
+# NOTE: 과거 call_ollama_direct(자유텍스트 단발 생성)는 유일 호출처였던 dialogue.py
+# Stage1 폴백이 구조화 재시도(ollama_structured)로 전환되며 고아화되어 제거.
+# 자유텍스트 단발이 다시 필요하면 ollama_structured(grammar 강제) 사용이 정답.

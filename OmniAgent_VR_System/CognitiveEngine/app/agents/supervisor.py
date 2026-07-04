@@ -41,15 +41,12 @@ def _route_after_input(state: AgentState) -> dict:
 
 
 def _route_after_dialogue(state: AgentState) -> dict:
-    """2단계: Dialogue 이후 → Interface_Output. raw_response 비면 폴백 대사 주입."""
-    raw_response = state.get("raw_response", "")
-    if not raw_response:
-        print("[Supervisor] ⚠️  raw_response 비어있음, 폴백 주입")
-        return {
-            "raw_response": '"..." (confused)',
-            "next": "Interface_Output",
-            "current_speaker": "Supervisor",
-        }
+    """2단계: Dialogue 이후 → Interface_Output.
+    구 raw_response 폴백 주입은 제거 — Stage3 가 structured_responses 만 소비해
+    텍스트 주입이 전달되지 않았고(죽은 안전망), dialogue 미산출 방어는
+    interface_output_node 의 empty batch 분기가 담당한다. 여기선 관측 로그만."""
+    if not state.get("structured_responses"):
+        print("[Supervisor] ⚠️  structured_responses 비어있음 — Stage3 empty batch 방어에 위임")
     return {"next": "Interface_Output", "current_speaker": "Supervisor"}
 
 
