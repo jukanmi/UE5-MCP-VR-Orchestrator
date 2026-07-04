@@ -37,6 +37,7 @@ from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ..state import AgentState
 from ...utils import db_manager
+from ...utils.id_utils import ci_id_map
 from ...schemas.actions import DialogueResponse, PlanBatchResponse
 
 

@@ -25,6 +25,7 @@ import re
 import unicodedata
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
+from ..utils.id_utils import ci_id_map, ci_get
 
 
 # ─────────────────────────────────────────────────────────────────────────────
