@@ -8,7 +8,7 @@
 ║   can execute. Parses natural language into game engine function calls.     ║
 ║                                                                              ║
 ║ PIPELINE (Stage 3):                                                          ║
-║   raw_responses Dict[npc_id, str] → e4b × N 병렬 구조화 → action_batches  ║
+║   raw_responses Dict[npc_id, str] → 정규식 N개 병렬 파싱 → action_batches ║
 ║   + Python 규칙: FacialState vs persona traits 교차 검증 (오염 보정)        ║
 ║                                                                              ║
 ║ INPUT:  raw_responses (Dict[str, str])  npc_id → refined text               ║
@@ -407,7 +407,8 @@ async def interface_output_node(state: AgentState):
     """
     Interface Output Agent (Stage 3, async).
 
-    raw_responses Dict[npc_id, str] → e4b × N 병렬 구조화 → action_batches.
+    raw_responses Dict[npc_id, str] → 정규식 N개 병렬 파싱(CPU, to_thread) → action_batches.
+    LLM 아님 — Stage1 텍스트를 규칙 기반으로 ActionBatch 구조화.
     단일 NPC 호환: raw_responses 없으면 raw_response + target_npc 폴백.
     """
     raw_responses: Dict[str, str] = state.get("raw_responses") or {}

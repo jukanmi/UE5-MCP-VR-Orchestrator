@@ -5,8 +5,8 @@
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
 ║   Generate natural, in-character NPC responses based on persona, context,   ║
-║   and conversational history. Outputs free-form text with speech, actions,  ║
-║   and emotions - NOT structured data.                                       ║
+║   and conversational history. Stage1 은 grammar 강제 DialogueResponse 를    ║
+║   산출 → 텍스트 직렬화해 raw_responses 로 전달 (Stage3 에서 재파싱).        ║
 ║                                                                              ║
 ║ PIPELINE (3-Stage):                                                          ║
 ║   Stage 1: e4b × N 병렬 — NPC별 독립 호출 (지식 오염 없음, 대사 최종본)   ║

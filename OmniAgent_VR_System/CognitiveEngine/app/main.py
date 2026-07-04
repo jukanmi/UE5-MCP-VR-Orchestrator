@@ -6,6 +6,7 @@ import json
 import logging
 import traceback
 import asyncio
+import yaml
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
@@ -832,9 +833,6 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Debug Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
-
-import os
-import yaml
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _DEBUG_HTML_PATH = os.path.join(_STATIC_DIR, "debug.html")
