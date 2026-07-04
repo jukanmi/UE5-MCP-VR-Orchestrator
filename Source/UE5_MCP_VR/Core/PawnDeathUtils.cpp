@@ -31,7 +31,8 @@ void PawnDeathUtils::HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
                                  FTimerHandle& RespawnTimer, FTimerDelegate RespawnDelegate,
                                  const TCHAR* LogContext)
 {
-    if (!Pawn) return;
+    // GetWorld() null 방어 — 액터 제거 중/미초기화 시 GetWorldTimerManager 역참조 크래시 방지.
+    if (!Pawn || !Pawn->GetWorld()) return;
 
     GameplayTagUtils::RemoveState(Tags, TAG_State_Idle);
     GameplayTagUtils::AddState(Tags, TAG_State_Condition_Dead);
@@ -63,7 +64,8 @@ void PawnDeathUtils::Respawn(ACharacter* Pawn, FPlayerAttributes& Stats,
                              const FRotator& CheckpointRotation, float CheckpointHP,
                              FGameplayTagContainer& Tags, const TCHAR* LogContext)
 {
-    if (!Pawn) return;
+    // GetWorld() null 방어 — 유효하지 않은 월드 컨텍스트로 GetActorOfClass 호출 크래시 방지.
+    if (!Pawn || !Pawn->GetWorld()) return;
 
     if (bHasCheckpoint)
     {

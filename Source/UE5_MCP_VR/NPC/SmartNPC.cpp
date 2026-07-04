@@ -290,7 +290,8 @@ void ASmartNPC::PerformAttackHit()
     if (bAttackHitConsumed || bIsDead) return;
 
     AActor* Target = CurrentAttackTarget.Get();
-    if (!Target) return;
+    // 자가 공격 방지 — 타겟팅 오작동으로 this 지정 시 자해 버그 차단.
+    if (!Target || Target == this) return;
 
     // 거리 게이트 — 아직 안 닿았으면 다음 틱 재시도(윈도우 동안 타겟이 들어올 수 있음).
     const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
