@@ -51,7 +51,7 @@ def rebuild(agent: str, force: bool = True) -> bool:
     """단일 에이전트 벡터스토어 빌드. 성공 시 True."""
     md = _count_md(agent)
     if md == 0:
-        print(f"[Build] {agent}: .md 문서 없음 — 스킵 (knowledge/{agent}/{{lore,persona,history}}/*.md 작성 필요)")
+        print(f"[Build] {agent}: .md 문서 없음 - 스킵 (knowledge/{agent}/{{lore,persona,history}}/*.md 작성 필요)")
         return False
     vs = build_vectorstore(agent, force_rebuild=force)
     ok = vs is not None
@@ -76,7 +76,7 @@ def main() -> None:
     agents = discover_agents()
     if args.list:
         if not agents:
-            print(f"[Build] 에이전트 없음 — {KNOWLEDGE_BASE_PATH} 확인")
+            print(f"[Build] 에이전트 없음 - {KNOWLEDGE_BASE_PATH} 확인")
             return
         for a in agents:
             print(f"  {a}: {_count_md(a)} md")
@@ -91,7 +91,7 @@ def main() -> None:
         print(f"[Build] 경고: '{args.agent}' 폴더가 knowledge/ 에 없음 (그래도 시도)")
 
     built = sum(1 for a in targets if rebuild(a, force=not args.use_cache))
-    print(f"[Build] 완료 — {built}/{len(targets)} 빌드 성공")
+    print(f"[Build] 완료 - {built}/{len(targets)} 빌드 성공")
 
 
 if __name__ == "__main__":
