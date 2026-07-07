@@ -17,3 +17,7 @@ docstring-code-format = false
 [tool.ruff.lint]
 # 기본 규칙(E,F)만 — 공격적 import 재정렬/리네임 없이 안정.
 select = ["E4", "E7", "E9", "F"]
+# F401(미사용 import) 자동삭제 금지 — import 먼저·usage 나중 편집 패턴에서
+# 훅의 `check --fix` 가 신규 import 를 지워 런타임 NameError 유발 (PR #16 R1·R2 실사고).
+# 경고는 그대로 표시, --fix 만 건너뜀.
+unfixable = ["F401"]
