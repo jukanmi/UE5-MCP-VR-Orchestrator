@@ -158,17 +158,21 @@ WORLD_CONSTANTS = {
     # Self/Enemy 는 C++ ResolveActionTarget(STTask_ExecuteSmartAction.cpp)이 런타임
     # 해석하는 센티넬 키워드(Self→자신, Enemy→BB perception 타겟). 구체 NPC ID 와 함께
     # 화이트리스트에 포함 — 누락 시 Attack/Block target=Enemy 등이 Rules 에서 제거됨.
+    # ⚠️ 이 정적 목록은 폴백 — prompt 에 UE5 valid_targets(런타임 등록 NPC)가 오면
+    # rules 검증은 그쪽을 우선. 여기는 personas/ 실존 NPC 와 동기 유지할 것.
+    # (2026-07-09: 유령 항목 Merchant/Blacksmith 제거, 실존 Skadi/Moca 추가 —
+    #  구 목록이 Skadi/Moca 타겟 액션을 조용히 제거하던 버그 수정)
     "valid_npc_ids": [
         "Elara",
         "James",
+        "Skadi",
+        "Moca",
         "Guard",
-        "Merchant",
-        "Blacksmith",
         "Player",
         "Self",
         "Enemy",
     ],
-    "valid_location_ids": ["TownSquare", "Tavern", "Forest", "Castle"],
+    # valid_location_ids 삭제됨(2026-07-09) — 소비처 0, 위치명 해석 미구현(POI 시스템 별도 spec 감).
     "WORLD_BOUNDS": {
         "x_min": -10000,
         "x_max": 10000,

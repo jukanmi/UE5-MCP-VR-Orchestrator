@@ -25,6 +25,7 @@ import re
 from collections import Counter
 
 from ..state import AgentState
+from .dialogue import _vr_get
 from ...schemas.actions import (
     ACTION_CATEGORY,
     ACTION_REQUIRED_PARAMS,
@@ -37,11 +38,13 @@ from ...utils import db_manager
 
 # world_constants.json에서 유효 ID 목록 및 월드 경계 로드
 VALID_NPC_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_npc_ids", []))
-VALID_LOCATION_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_location_ids", []))
 WORLD_BOUNDS: dict = WORLD_CONSTANTS.get("WORLD_BOUNDS", {})
 
+# C++ ResolveActionTarget 이 항상 해석하는 센티넬 — 런타임 목록에 무조건 합집합.
+_SENTINEL_TARGETS: set[str] = {"Player", "Self", "Enemy"}
 
-def _is_target_id_valid(target_id: str | None) -> bool:
+
+def _is_target_id_valid(target_id: str | None, runtime_targets: set[str] | None = None) -> bool:
     """
     target_id가 월드에 존재하는 유효한 NPC/Actor인지 검증한다.
 
@@ -49,10 +52,17 @@ def _is_target_id_valid(target_id: str | None) -> bool:
     UE5 C++에서 타겟을 찾지 못해 조용히 실패(silent fail)하게 됨.
     서버 단에서 선제 차단하는 것이 더 안전하고 디버깅이 쉬움.
 
+    runtime_targets: UE5 prompt 동봉 valid_targets(런타임 등록 NPC) — 있으면 이것이
+    진실(정적 목록보다 우선). 없으면 WORLD_CONSTANTS 정적 폴백. 정적 목록만 쓰던
+    구현은 실존 NPC(Skadi/Moca) 타겟 액션을 조용히 제거하던 버그(2026-07-09 수정).
+
     Returns: True이면 유효 (또는 None이라 검증 불필요)
     """
     if not target_id:
         return True  # target_id 없는 액션은 타겟 없이 실행 가능
+
+    if runtime_targets:
+        return target_id in (runtime_targets | _SENTINEL_TARGETS)
 
     # valid_npc_ids가 빈 목록이면 검증 자체를 건너뜀 (설정 미완료 대비)
     if not VALID_NPC_IDS:
@@ -152,7 +162,7 @@ def _clamp_numeric_param(action_type: str, params: dict, corrections: list) -> N
         corrections.append(f"{label} 비유효 → 기본값 {invalid_val}")
 
 
-def validate_and_clamp_action(action: "GameAction") -> tuple:
+def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | None = None) -> tuple:
     """
     단일 액션의 파라미터를 검증하고 범위를 보정(clamp)한다.
 
@@ -175,7 +185,7 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
         return None, [reason]
 
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
-    if not _is_target_id_valid(target_id):
+    if not _is_target_id_valid(target_id, runtime_targets):
         reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
         print(f"[Rules] X {reason}")
         return None, [reason]
@@ -203,7 +213,7 @@ def validate_and_clamp_action(action: "GameAction") -> tuple:
     return action, corrections
 
 
-def _validate_batch(batch: "ActionBatch") -> "ActionBatch":
+def _validate_batch(batch: "ActionBatch", runtime_targets: set[str] | None = None) -> "ActionBatch":
     """단일 ActionBatch 검증/클램핑. 공통 로직."""
     from ...schemas.actions import GameAction
 
@@ -211,7 +221,7 @@ def _validate_batch(batch: "ActionBatch") -> "ActionBatch":
     validated_actions: list[GameAction] = []
 
     for action in batch.Actions:
-        validated_action, corrections = validate_and_clamp_action(action)
+        validated_action, corrections = validate_and_clamp_action(action, runtime_targets)
         if validated_action is None:
             all_corrections.extend(corrections)
             continue
@@ -267,9 +277,14 @@ def rules_node(state: AgentState) -> dict:
             return {"next": "End", "current_speaker": "Rules"}
         action_batches = {batch.AgentID: batch}
 
+    # UE5 prompt 동봉 valid_targets(런타임 등록 NPC) — 타겟 검증의 우선 진실.
+    vr_context = state.get("vr_context")
+    runtime_list = _vr_get(vr_context, "valid_targets", None) if vr_context else None
+    runtime_targets: set[str] | None = set(runtime_list) if runtime_list else None
+
     validated_batches: dict = {}
     for npc_id, batch in action_batches.items():
-        validated_batches[npc_id] = _validate_batch(batch)
+        validated_batches[npc_id] = _validate_batch(batch, runtime_targets)
         _evaluate_and_update_affinity(state, validated_batches[npc_id])
 
     # 단일 NPC 호환: action_batch 도 채움
