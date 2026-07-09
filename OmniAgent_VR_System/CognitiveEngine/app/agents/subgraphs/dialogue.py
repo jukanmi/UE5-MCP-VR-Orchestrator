@@ -7,7 +7,7 @@
 ║   Generate natural, in-character NPC responses based on persona, context,   ║
 ║   and conversational history. Stage1 은 grammar 강제 DialogueResponse 를    ║
 ║   산출 → structured_responses 로 직접 전달 (Stage3 정규식 재파싱 없음).      ║
-║   raw_responses(텍스트)는 Stage2 plan·메모리·단일호환용으로 병행 직렬화.     ║
+║   raw_responses(텍스트)는 replan 턴의 Stage2 plan 입력용으로만 직렬화.       ║
 ║                                                                              ║
 ║ PIPELINE (3-Stage):                                                          ║
 ║   Stage 1: e4b × N 병렬 — NPC별 독립 호출 (지식 오염 없음, 대사 최종본)   ║
@@ -457,7 +457,7 @@ async def dialogue_node(state: AgentState):
 
     Stage 1: e4b × N 병렬 (지식 격리, 각 NPC 독립 호출) — 대사 최종본
     Stage 2: 12B × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
-    Output:  raw_responses Dict[npc_id, str]
+    Output:  structured_responses Dict[npc_id, DialogueResponse]
     """
     npcs = state.get("target_npcs") or []
     if not npcs:
@@ -476,27 +476,21 @@ async def dialogue_node(state: AgentState):
 
     # Stage 2: 12B plan 산출 — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
     # 대사는 Stage1 출력 그대로 (12B 정제 제거 — PLAN_SYSTEM_PROMPT 상단 주석 참조).
-    # raw_responses(텍스트)는 소비처 기준 필요 시점에만 직렬화:
-    #   replan 턴 = Stage2 plan 입력(전 NPC) / 경량 루프 = 단일 NPC 호환 1건만 (N-1 낭비 제거).
+    # raw_responses(텍스트) 직렬화는 유일 소비처인 Stage2 plan 입력용 — replan 턴에만.
+    # 경량 루프는 소비처 없음(Stage3 는 structured, 메모리는 resp.speech 직접) → 빈 dict.
     npc_plans: Dict[str, dict] = {}
+    raw_responses: Dict[str, str] = {}
     if requires_replan:
-        raw_responses: Dict[str, str] = {
-            npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()
-        }
+        raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
         vr_context = state.get("vr_context")
         player_id = _vr_player_id(vr_context)
         npc_plans = await _generate_plans(raw_responses, player_id)
     else:
         print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
-        raw_responses = {single_npc: _serialize_dialogue(structured_responses[single_npc])}
-
-    # 단일 NPC 호환: raw_response 도 채움
-    raw_response = raw_responses.get(single_npc, "")
 
     return {
         "structured_responses": structured_responses,
         "raw_responses": raw_responses,
-        "raw_response": raw_response,
         "npc_plans": npc_plans or None,
         "plan_achieved": plan_achieved_map or None,
         "target_npc": single_npc,

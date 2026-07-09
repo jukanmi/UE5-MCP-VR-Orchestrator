@@ -544,7 +544,6 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         next="",
         current_speaker="",
         natural_context=None,
-        raw_response=None,
         raw_responses=None,
         structured_responses=None,
         target_npc=target_npc_from_payload,

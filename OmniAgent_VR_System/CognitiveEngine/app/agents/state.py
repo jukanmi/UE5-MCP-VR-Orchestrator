@@ -10,7 +10,7 @@
 ║ STATE LIFECYCLE (Section 8 Orchestra):                                      ║
 ║   1. UE5 sends vr_context (GesPrompt) via Envelope                         ║
 ║   2. Interface Input adds natural_context                                   ║
-║   3. Dialogue adds raw_response                                             ║
+║   3. Dialogue adds structured_responses                                     ║
 ║   4. Interface Output adds action_batch                                     ║
 ║   5. Rules validates action_batch                                           ║
 ║   6. UE5 receives final action_batch                                        ║
@@ -19,7 +19,7 @@
 ║   • Input:     vr_context (UE5에서 수신)                                   ║
 ║   • Cache:     cached_world_state (state_update 수신 시만 갱신, LLM 미호출) ║
 ║   • History:   failed_action_history (action_failed 이력 누적)              ║
-║   • Pipeline:  natural_context, raw_response, target_npc                    ║
+║   • Pipeline:  natural_context, structured_responses, target_npc            ║
 ║   • Routing:   next, current_speaker                                        ║
 ║   • Output:    action_batch (UE5로 전송)                                   ║
 ║   • Safety:   has_error, error_msg (보안 차단), target_npcs (라우팅 가드) ║
@@ -71,11 +71,9 @@ class AgentState(TypedDict):
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트
     natural_context: Optional[str]
 
-    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답 (단일 NPC 호환)
-    raw_response: Optional[str]
-
-    # [멀티 NPC] Dialogue Stage1/2 출력: npc_id → refined raw_response
-    # (Stage2 12B plan 입력 + 메모리 + 단일 NPC 호환 텍스트 — 유지)
+    # [멀티 NPC] Dialogue Stage1 출력 텍스트 직렬화: npc_id → 태그 텍스트.
+    # 유일 소비처 = Stage2 12B plan 입력 — replan 턴에만 채워짐(경량 루프는 빈 dict).
+    # 구 raw_response(단수)는 소비처 소멸로 삭제됨 (2026-07-09).
     raw_responses: Optional[Dict[str, str]]
 
     # [멀티 NPC] Dialogue Stage1 구조화 출력: npc_id → DialogueResponse.
