@@ -13,6 +13,7 @@ NOTE: 현재 Rules 계약은 GameAction(ActionType, Parameters) 기반 — targe
       또한 ACTION_REQUIRED_PARAMS 로 필수 파라미터 누락 액션은 검증 초입에서 제거되므로,
       각 케이스는 대상 액션의 필수 파라미터를 반드시 채워야 한다(Attack→target_id, Dialogue→text).
 """
+
 import sys
 import os
 
@@ -71,11 +72,8 @@ class TestTargetIdValidation:
         action, corrections = validate_and_clamp_action(
             make_action(action_type="Attack", target_id="Goblin_999_Hallucinated")
         )
-        # valid_npc_ids가 비어있으면 검증 자체가 건너뜀 → 환경에 따라 달라짐
-        if action is None:
-            print("  ✅ 환각 NPC ID 차단됨")
-        else:
-            print("  ⚠️  world_constants valid_npc_ids가 비어있어 검증 건너뜀")
+        # VALID_NPC_IDS 는 actions.py 정적 상수로 항상 채워짐 → 환각 ID 는 반드시 차단.
+        assert action is None, "환각 NPC ID는 차단되어야 함"
 
 
 class TestCoordinateValidation:
@@ -92,12 +90,9 @@ class TestCoordinateValidation:
         action, corrections = validate_and_clamp_action(
             make_action(action_type="Move", target_loc=_loc(999999.0, 999999.0, 0.0), params={"style": "Walk"})
         )
-        # WORLD_BOUNDS 설정 여부에 따라 결과 달라짐
-        if action is None:
-            print("  ✅ 경계 밖 좌표 차단됨")
-            assert any("WORLD_BOUNDS" in c or "이탈" in c or "밖" in c for c in corrections)
-        else:
-            print("  ⚠️  WORLD_BOUNDS 미설정이라 검증 건너뜀")
+        # WORLD_BOUNDS 는 actions.py 정적 상수로 항상 채워짐 → 경계 밖 좌표는 반드시 차단.
+        assert action is None, "경계 밖 좌표는 차단되어야 함"
+        assert any("WORLD_BOUNDS" in c or "이탈" in c or "밖" in c for c in corrections)
 
 
 class TestValueClamping:
@@ -109,8 +104,9 @@ class TestValueClamping:
             make_action(action_type="Attack", target_id="Player", params={"damage": "9999"})
         )
         assert action is not None
-        assert any("클램핑" in c or "clamp" in c.lower() for c in corrections), \
+        assert any("클램핑" in c or "clamp" in c.lower() for c in corrections), (
             "damage 초과 → 클램핑 보정이 기록되어야 함"
+        )
         assert float(action.Parameters["damage"]) <= 100
 
     def test_speed_over_max(self):

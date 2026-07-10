@@ -3,6 +3,7 @@ import asyncio
 import traceback
 
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # 수동 라이브 파이프라인 하네스 — pytest 유닛이 아님(test_ 함수 없음, 서버/LLM 필요).
@@ -26,7 +27,7 @@ async def main():
         )
 
         envelope = MessageEnvelope(
-            type="prompt", auth_token="dummy", msg_id="test1", timestamp=0.0, payload={"prompt": payload.model_dump()}
+            type="prompt", auth_token="dummy", msg_id="test1", timestamp=0.0, payload=payload.model_dump()
         )
 
         result = await _handle_prompt(envelope)
