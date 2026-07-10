@@ -1,7 +1,8 @@
 import sys
 import traceback
 
-sys.path.append('c:/github/UE5_MCP_VR/OmniAgent_VR_System/CognitiveEngine')
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 try:
     from app.agents.interface_output import interface_output_node
