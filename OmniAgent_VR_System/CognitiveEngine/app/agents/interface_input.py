@@ -207,7 +207,7 @@ def interface_input_node(state: AgentState) -> dict:
     # 탐지 즉시 has_error=True → Supervisor가 LLM 호출 없이 End로 숏컷
     is_injected, matched_pattern = _check_prompt_injection(transcript)
     if is_injected:
-        print(f"[Interface Input] ⚠️  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
+        print(f"[Interface Input] WARN  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
         return {
             "has_error": True,
             "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",

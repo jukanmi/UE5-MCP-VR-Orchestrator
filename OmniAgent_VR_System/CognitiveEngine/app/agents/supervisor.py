@@ -29,7 +29,7 @@ def _route_after_input(state: AgentState) -> dict:
     """1단계: Interface_Input 이후 → Dialogue. natural_context/대상 NPC 없으면 End 숏컷."""
     natural_context = state.get("natural_context", "")
     if not natural_context:
-        print("[Supervisor] ⚠️  natural_context 비어있음, 계속 진행")
+        print("[Supervisor] WARN  natural_context 비어있음, 계속 진행")
 
     # target_npcs 비어있으면 처리 대상 없음 → 즉시 종료
     target_npcs = state.get("target_npcs", [])
@@ -41,15 +41,12 @@ def _route_after_input(state: AgentState) -> dict:
 
 
 def _route_after_dialogue(state: AgentState) -> dict:
-    """2단계: Dialogue 이후 → Interface_Output. raw_response 비면 폴백 대사 주입."""
-    raw_response = state.get("raw_response", "")
-    if not raw_response:
-        print("[Supervisor] ⚠️  raw_response 비어있음, 폴백 주입")
-        return {
-            "raw_response": '"..." (confused)',
-            "next": "Interface_Output",
-            "current_speaker": "Supervisor",
-        }
+    """2단계: Dialogue 이후 → Interface_Output.
+    구 raw_response 폴백 주입은 제거 — Stage3 가 structured_responses 만 소비해
+    텍스트 주입이 전달되지 않았고(죽은 안전망), dialogue 미산출 방어는
+    interface_output_node 의 empty batch 분기가 담당한다. 여기선 관측 로그만."""
+    if not state.get("structured_responses"):
+        print("[Supervisor] WARN  structured_responses 비어있음 - Stage3 empty batch 방어에 위임")
     return {"next": "Interface_Output", "current_speaker": "Supervisor"}
 
 
@@ -57,8 +54,8 @@ def _route_after_output(state: AgentState) -> dict:
     """3단계: Interface_Output 이후 → Rules. ActionBatch 비면 폴백 배치 생성."""
     action_batch = state.get("action_batch")
     if not action_batch or not action_batch.Actions:
-        print("[Supervisor] ⚠️  ActionBatch 비어있음, 폴백 배치 생성")
-        npc_id = state.get("target_npc", "Elara")
+        print("[Supervisor] WARN  ActionBatch 비어있음, 폴백 배치 생성")
+        npc_id = state.get("target_npc") or "Elara"  # Optional — None 이면 Elara 폴백
         return {
             "action_batch": _create_fallback_batch(npc_id),
             "next": "Rules",
@@ -81,7 +78,7 @@ def _route_after_rules(state: AgentState) -> dict:
         # 부분 실패 — 일부 NPC 만 배치 전멸: 해당 NPC 에만 폴백 배치 주입 후 정상 종료.
         # 전체 재시도(Dialogue 왕복)는 정상 NPC 응답까지 지연시키므로 전체 전멸 시에만.
         if not is_rejected and empty_ids:
-            print(f"[Supervisor] ⚠️  부분 실패 — 폴백 배치 주입: {empty_ids}")
+            print(f"[Supervisor] WARN  부분 실패 - 폴백 배치 주입: {empty_ids}")
             for npc in empty_ids:
                 action_batches[npc] = _create_fallback_batch(npc)
             first = next(iter(action_batches.values()), None)
@@ -97,8 +94,8 @@ def _route_after_rules(state: AgentState) -> dict:
         retry_count = state.get("rules_retry_count", 0)
         if retry_count >= 1:
             # 재시도 소진 — 각 NPC에 폴백 배치 생성
-            npcs = state.get("target_npcs") or [state.get("target_npc", "Elara")]
-            print(f"[Supervisor] ❌ Rules 거부 {retry_count + 1}회째 — 재시도 소진, 폴백 배치로 종료")
+            npcs = state.get("target_npcs") or [state.get("target_npc") or "Elara"]
+            print(f"[Supervisor] X Rules 거부 {retry_count + 1}회째 - 재시도 소진, 폴백 배치로 종료")
             fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
             return {
                 "action_batches": fallback_batches,
@@ -114,7 +111,7 @@ def _route_after_rules(state: AgentState) -> dict:
             "natural_context": ("System: Your previous action was rejected by game rules. Respond with speech only."),
         }
 
-    print("[Supervisor] ✅ 파이프라인 정상 완료")
+    print("[Supervisor] OK 파이프라인 정상 완료")
     return {"next": "End"}
 
 
@@ -146,7 +143,7 @@ def supervisor_node(state: AgentState) -> dict:
     # 이유: Jailbreak 탐지나 치명적 파싱 오류 시 LLM 호출 낭비 방지
     if has_error:
         error_msg = state.get("error_msg", "Unknown error")
-        print(f"[Supervisor] ⚠️  에러 숏컷 → End: {error_msg}")
+        print(f"[Supervisor] WARN  에러 숏컷 → End: {error_msg}")
         return {"next": "End"}
 
     handler = _SPEAKER_ROUTES.get(current_speaker)

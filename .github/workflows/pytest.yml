@@ -1,0 +1,45 @@
+# CognitiveEngine 유닛 테스트 CI.
+# 라이브 하네스(test_pipeline/test_affinity/test_ws_roundtrip)는 test_ 함수가 없어
+# 수집만 되고 실행 안 됨 — 서버/Ollama 불필요. 계약 동기화 테스트(test_contract_sync)는
+# Source/ C++ 헤더를 텍스트 파싱하므로 체크아웃만으로 충분.
+name: pytest
+
+on:
+  pull_request:
+    paths:
+      - "OmniAgent_VR_System/**"
+      - "Source/**"
+      - "pyproject.toml"
+      - ".github/workflows/pytest.yml"
+  push:
+    branches: [main, Develop]
+    paths:
+      - "OmniAgent_VR_System/**"
+      - "Source/**"
+      - "pyproject.toml"
+      - ".github/workflows/pytest.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: OmniAgent_VR_System/CognitiveEngine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: OmniAgent_VR_System/CognitiveEngine/requirements.txt
+
+      - name: Install dependencies
+        # torch/torchaudio 는 CPU 휠 강제 — 리눅스 기본 휠은 CUDA 번들(수 GB)이라 회피.
+        run: |
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v

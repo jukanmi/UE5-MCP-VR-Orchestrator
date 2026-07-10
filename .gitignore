@@ -29,7 +29,8 @@ Plugins/*/Intermediate/
 .agents/rules/
 .mcp.json
 .vsconfig
-.github
+# .github 자체는 추적(CI 워크플로) — copilot 지시문만 로컬 전용
+.github/copilot-instructions.md
 
 # ==============================================================================
 # PYTHON MCP SERVER & LANGGRAPH
@@ -97,7 +98,6 @@ Desktop.ini
 # ==============================================================================
 *.docx
 *.txt
-tests/
 docs/
 
 # ==============================================================================

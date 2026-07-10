@@ -187,6 +187,9 @@ protected:
     // Movement Speed 변환 (EMoveType → float)
     float ParseMoveSpeed(const EMoveType& Type) const;
 
+    // Parameters["style"] 문자열 → EMoveType. 미매칭·빈 문자열은 Walk 폴백.
+    EMoveType ParseMoveStyle(const FString& StyleStr) const;
+
     // ============================================================================
     // [기본 함수 (Base Functions)] 래퍼함수 구현시 사용하는 유틸 함수
     // ============================================================================

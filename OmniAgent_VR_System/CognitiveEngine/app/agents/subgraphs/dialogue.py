@@ -6,18 +6,20 @@
 ║ CORE RESPONSIBILITY (UNCHANGING):                                           ║
 ║   Generate natural, in-character NPC responses based on persona, context,   ║
 ║   and conversational history. Stage1 은 grammar 강제 DialogueResponse 를    ║
-║   산출 → 텍스트 직렬화해 raw_responses 로 전달 (Stage3 에서 재파싱).        ║
+║   산출 → structured_responses 로 직접 전달 (Stage3 정규식 재파싱 없음).      ║
+║   raw_responses(텍스트)는 replan 턴의 Stage2 plan 입력용으로만 직렬화.       ║
 ║                                                                              ║
 ║ PIPELINE (3-Stage):                                                          ║
 ║   Stage 1: e4b × N 병렬 — NPC별 독립 호출 (지식 오염 없음, 대사 최종본)   ║
 ║   Stage 2: 12B × 1 plan 산출 — 재계획 시만, 대사 무변경 (구조화 JSON)     ║
-║   Stage 3: interface_output.py 에서 ActionBatch 구조화                     ║
+║   Stage 3: interface_output.py 에서 structured_responses→ActionBatch 변환   ║
 ║                                                                              ║
 ║ INPUT:  target_npcs (List[str]), natural_context (str)                      ║
-║ OUTPUT: raw_responses (Dict[str, str])  npc_id → raw text (Stage1 그대로)  ║
+║ OUTPUT: structured_responses (Dict[str, DialogueResponse]) + raw_responses  ║
 ║                                                                              ║
 ║ OUTPUT FORMAT (CRITICAL):                                                   ║
-║   "Speech in quotes" (emotion in parentheses) *physical action in asterisks*║
+║   DialogueResponse JSON (mode/facial/speech/tone/actions/plan_achieved)     ║
+║   — grammar 강제. 텍스트 직렬화는 Stage2 plan 입력·단일호환 파생 렌더링뿐.  ║
 ║                                                                              ║
 ║ LLM SELECTION:                                                               ║
 ║   Stage 1 — e4b (경량, 병렬 VRAM 효율)                                     ║
@@ -32,13 +34,13 @@ import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict
-from ...utils.llm_factory import call_ollama_direct, ollama_structured
+from ...utils.llm_factory import ollama_structured
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ..state import AgentState
 from ...utils import db_manager
 from ...utils.id_utils import ci_id_map
-from ...schemas.actions import DialogueResponse, PlanBatchResponse
+from ...schemas.actions import DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 
 
 PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
@@ -50,6 +52,14 @@ def _dialogue_schema_with_targets(valid_targets) -> dict | None:
     없으면 None(ollama_structured 가 기본 model_json_schema 사용)."""
     if not valid_targets:
         return None
+    return _schema_with_target_enum(tuple(valid_targets))
+
+
+@lru_cache(maxsize=8)
+def _schema_with_target_enum(valid_targets: tuple) -> dict | None:
+    """target enum 주입 스키마 캐시 — model_json_schema() 는 pydantic 필드 그래프 전체를
+    재순회하므로 NPC×턴마다 재생성하지 않는다(동일 타깃 목록이면 동일 dict 재사용).
+    반환 dict 는 호출측에서 수정 금지(공유 캐시)."""
     schema = DialogueResponse.model_json_schema()
     target = schema.get("$defs", {}).get("DialogueActionItem", {}).get("properties", {}).get("target")
     if target is None:
@@ -71,83 +81,9 @@ def _on_memory_task_done(task) -> None:
         print(f"[Dialogue] 메모리 기록 백그라운드 실패: {task.exception()}")
 
 
-DIALOGUE_SYSTEM_PROMPT = """You are an NPC in a VR game. Reply in character following the exact format below.
-
-RESPONSE FORMAT (CRITICAL - follow exactly):
-LINE 1: [Mode: <mode>] [Facial: <expression>]
-   - Mode MUST be one of: Combat, Social, Task, Investigation, Lifestyle
-   - Facial MUST be one of: Neutral, Happy, Sad, Angry, Fear, Surprised, Disgusted, Tired, Pain
-NEXT LINES: spoken reply in "double quotes" with (emotion) tone. Optional *flavor* in asterisks (cosmetic only).
-ACTION LINES (optional, 0 or more): one [Action: ...] tag per game action you actually perform.
-
-ACTION TAG SYNTAX:
-   [Action: <Type> target=<who> item=<what> style=<how>]
-   - target: one of {valid_targets}   (who or where the action is aimed)
-   - item:   item name (give / pick up / use / equip / craft / repair)
-   - style:  optional modifier (Walk/Run/Crawl for Move; emote name for Emote)
-   - Include ONLY the keys an action needs. Emit an action tag ONLY when you truly act.
-   - *asterisk* text is NOT an action — emit a real [Action:] tag instead.
-
-AVAILABLE ACTIONS (Type — keys it uses):
- Common:        Move(target[,style])  Follow(target)  TurnTo(target)  Wait  Stop  Scan  Idle
-                UseItem(item)  Equip(item)  Unequip(item)
- Combat:        Attack(target)  Block  Dodge  Flee  SignalAllies
- Social:        Trade(target)  GiveItem(target,item)  HandObject(target,item)  Comfort(target)  Emote(style)
- Task:          PickUp(item)  Drop(item)  Craft(item)  Repair(item)
- Investigation: Investigate  Track(target)  Scout
- Lifestyle:     Sit  Sleep  Read  Pray  Dance  Sing
-
-RESPONSE EXAMPLES:
-[Mode: Social] [Facial: Happy]
-"Here, take this bread." (warmly) *holds out a loaf*
-[Action: GiveItem target=Player item=bread]
-
-[Mode: Combat] [Facial: Angry]
-"Stay back!" (furiously) *raises sword*
-[Action: Block]
-[Action: Attack target=Enemy]
-
-[Mode: Social] [Facial: Sad]
-"I understand. I'll come with you." (sadly)
-[Action: Follow target=Player]
-
-[Mode: Investigation] [Facial: Surprised]
-"What was that?" (alarmed)
-[Action: Investigate]
-
-[Mode: Lifestyle] [Facial: Tired]
-"I need to rest." (exhausted)
-[Action: Sit]
-
-FACIAL GUIDE: Neutral(calm) Happy(joy) Sad(grief) Angry(hostile) Fear(panic) Surprised(shock) Disgusted(contempt) Tired(weary) Pain(hurt)
-Facial MUST match the situation RIGHT NOW: threat/combat → Angry or Fear; sudden bad news → Surprised; calm chat → Neutral. NEVER default to Tired unless exhausted.
-
-RULES:
-- ALWAYS line 1 = [Mode: X] [Facial: Y]
-- Speech in "quotes", tone in (parentheses)
-- Emit [Action:] tags for what you DO (0 if you only talk). Multiple allowed, one per line.
-- Use ONLY action Types from the list above. Pick the closest one; never invent a Type.
-- Stay in character. Max 2-3 sentences of speech.
-- ALWAYS reply in Korean (한국어로만 답변).
-- 자연스러운 한국어 구어로만 말하라. 실제 사람이 말하듯 구체적이고 일상적으로. 뜻이 통하지 않는 추상적 은유·거창한 비유·공허한 미사여구 금지 (나쁜 예: "내 그림자조차 네 눈에 다 비치게 해 줄 테니").
-
-YOUR CHARACTER:
-You are {name}, a {role}.
-Personality traits: {traits}
-말투 (이렇게 말한다):
-{speech_style}
-Items you currently hold: {inventory} (only give/use items you actually have)
-
-Recent memory: {memory}
-Current sentiment toward player: {sentiment}
-
-Relevant context: {rag_context}
-Conversation history: {chat_history}"""
-
 # 구조화 출력(with_structured_output) 전용 프롬프트. 텍스트 태그 포맷 대신 JSON 필드
-# (speech/actions)를 채우도록 지시 — 텍스트포맷용 DIALOGUE_SYSTEM_PROMPT 를 그대로 쓰면
-# e4b 가 스키마와 충돌해 speech/actions 를 비움(실측). 폴백(call_ollama_direct 자유텍스트)
-# 경로는 여전히 DIALOGUE_SYSTEM_PROMPT 사용.
+# (speech/actions)를 채우도록 지시. 해피패스·폴백(target enum 없는 재시도) 모두 이 프롬프트로
+# ollama_structured 호출 → 전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거).
 DIALOGUE_STRUCTURED_PROMPT = """You are {name}, a {role}, an NPC in a VR game.
 Personality traits: {traits}
 말투 (이렇게 말한다):
@@ -278,27 +214,24 @@ def _decode_byte_tokens(text: str) -> str:
 
 
 def _serialize_dialogue(obj: DialogueResponse) -> str:
-    """구조화 DialogueResponse → 기존 자유텍스트 포맷으로 직렬화.
-    interface_output 정규식이 그대로 파싱하도록 [Mode:][Facial:]"speech"[Action:]
-    형태 재생. 액션 태그 키(target/item/loc/style)는 _PARAM_KEY_MAP 기준."""
+    """구조화 DialogueResponse → 자유텍스트 포맷 직렬화.
+    Stage2 12B plan 입력 섹션 + 단일 NPC 호환용 텍스트를 [Mode:][Facial:]
+    "speech"[Action:] 형태로 재생 (Stage3 는 structured_responses 를 직접 소비).
+    speech/tone 은 _run_stage1_llm 이 이미 _decode_byte_tokens 처리 — 재디코드 안 함."""
     lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
 
-    speech = _decode_byte_tokens((obj.speech or "").strip())
+    speech = (obj.speech or "").strip()
     if speech:
-        tone = _decode_byte_tokens((obj.tone or "").strip())
+        tone = (obj.tone or "").strip()
         lines.append(f'"{speech}" ({tone})' if tone else f'"{speech}"')
 
+    # 태그 키 = DialogueActionItem 필드명 — DIALOGUE_ACTION_FIELD_MAP 단일 소스.
     for act in obj.actions:
         parts = [act.type]
-        for key, val in (
-            ("target", act.target),
-            ("item", act.item),
-            ("loc", act.loc),
-            ("style", act.style),
-        ):
-            v = (val or "").strip()
+        for _, field_name in DIALOGUE_ACTION_FIELD_MAP:
+            v = (getattr(act, field_name) or "").strip()
             if v:
-                parts.append(f"{key}={v}")
+                parts.append(f"{field_name}={v}")
         lines.append(f"[Action: {' '.join(parts)}]")
 
     return "\n".join(lines)
@@ -391,24 +324,21 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     return _Stage1Context(fmt_kwargs, valid_targets, clean_query, natural_context)
 
 
-async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[str, bool]:
-    """Stage1 e4b 호출 — 구조화 해피패스 → 자유텍스트 폴백 → 기본 응답.
-    반환: (raw_response, plan_achieved)."""
-    # 구조화 호출용(JSON) 프롬프트만 해피패스에서 포맷. 자유텍스트 폴백용
-    # system_content 는 except 경로에서만 필요 → lazy(아래 except 에서 포맷).
+async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[DialogueResponse, bool]:
+    """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
+    전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved)."""
     structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
+    user_content = f"Context: {ctx.natural_context}"
 
     print(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")
 
-    raw_response = None
-    plan_achieved = False
+    resp = None
     try:
         # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
         # Ollama format 직접 호출(langchain with_structured_output 우회) — 실측 2.9배 빠름.
-        # 획득한 DialogueResponse 를 기존 텍스트 포맷으로 직렬화 → 다운스트림 무변경.
-        resp_obj = await ollama_structured(
+        resp = await ollama_structured(
             structured_content,
-            f"Context: {ctx.natural_context}",
+            user_content,
             DialogueResponse,
             # valid_targets 있으면 target enum grammar 강제 (없으면 None → 기본 스키마).
             schema_override=_dialogue_schema_with_targets(ctx.valid_targets),
@@ -418,37 +348,40 @@ async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[str, bool]:
             temperature=0.5,
             num_predict=300,
         )
-        raw_response = _serialize_dialogue(resp_obj).strip()
-        plan_achieved = bool(resp_obj.plan_achieved)
-        if plan_achieved:
-            print(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
-        print(f"[Dialogue] Stage1 응답 ({npc_id}): '{raw_response[:60]}...'")
     except Exception as e:
-        print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}): {e}")
-        # 폴백 경로에서만 자유텍스트 프롬프트 포맷 (해피패스 낭비 제거).
-        system_content = DIALOGUE_SYSTEM_PROMPT.format(**ctx.fmt_kwargs)
-        cli_prompt = f"{system_content}\n\nContext: {ctx.natural_context}\n\nRespond in character now:"
-        raw_response = await asyncio.to_thread(call_ollama_direct, cli_prompt)
-        if raw_response:
-            raw_response = _decode_byte_tokens(raw_response.strip())
+        print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}), 구조화 폴백 재시도: {e}")
+        # 폴백도 구조화: target enum 없이(폴백은 valid_targets 미보장) 기본 스키마 + temp↑(다양성).
+        try:
+            resp = await ollama_structured(
+                structured_content,
+                user_content,
+                DialogueResponse,
+                model_name="gemma4_slm",
+                temperature=0.7,
+                num_predict=300,
+            )
+        except Exception as e2:
+            print(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
+            resp = None
 
-    if not raw_response:
-        print(f"[Dialogue] Stage1 실패 ({npc_id}), 기본 응답 사용")
-        raw_response = '[Mode: Social] [Facial: Neutral]\n"..." (confused) *looks at the player silently*'
+    if resp is None:
+        resp = DialogueResponse(mode="Social", facial="Neutral", speech="...", tone="confused", actions=[])
 
-    return raw_response, plan_achieved
+    # byte-fallback 토큰 정제 — 구조화 obj 필드에 in-place(정규식 텍스트 왕복 없이 parity).
+    # cross-module 정제 중복 회피: interface_output 은 이미 정제된 speech 가정.
+    resp.speech = _decode_byte_tokens((resp.speech or "").strip()) or "..."
+    resp.tone = _decode_byte_tokens((resp.tone or "").strip())
+
+    plan_achieved = bool(resp.plan_achieved)
+    if plan_achieved:
+        print(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
+    print(f"[Dialogue] Stage1 응답 ({npc_id}): '{resp.speech[:60]}...'")
+    return resp, plan_achieved
 
 
-def _record_dialogue_memory(npc_id: str, raw_response: str, clean_query: str, natural_context: str) -> None:
-    """대사에서 발화만 추출해 fire-and-forget 메모리 기록 (Mode/Facial 태그 제거)."""
-    clean_for_memory = re.sub(
-        r"\[Mode:\s*\w+\]\s*\[Facial:\s*\w+\]\s*\n?",
-        "",
-        raw_response,
-        flags=re.IGNORECASE,
-    ).strip()
-    speech_parts = re.findall(r'"([^"]+)"', clean_for_memory)
-    speech_for_memory = speech_parts[0] if speech_parts else clean_for_memory[:100]
+def _record_dialogue_memory(npc_id: str, resp: DialogueResponse, clean_query: str, natural_context: str) -> None:
+    """resp.speech 를 fire-and-forget 메모리 기록 (구조화 obj 직접 사용, 정규식 추출 제거)."""
+    speech_for_memory = (resp.speech or "").strip()[:100]
     memory_input = clean_query if clean_query else natural_context
 
     task = asyncio.create_task(asyncio.to_thread(add_conversation, npc_id, memory_input, speech_for_memory))
@@ -456,15 +389,15 @@ def _record_dialogue_memory(npc_id: str, raw_response: str, clean_query: str, na
     task.add_done_callback(_on_memory_task_done)
 
 
-async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, str, bool]:
+async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, DialogueResponse, bool]:
     """
-    Stage 1: 단일 NPC에 대한 e4b 호출. 반환: (npc_id, raw_response, plan_achieved).
+    Stage 1: 단일 NPC에 대한 e4b 호출. 반환: (npc_id, resp, plan_achieved).
     수집(_collect_stage1_context) → 생성(_run_stage1_llm) → 기록(_record_dialogue_memory).
     """
     ctx = await _collect_stage1_context(state, npc_id)
-    raw_response, plan_achieved = await _run_stage1_llm(ctx, npc_id)
-    _record_dialogue_memory(npc_id, raw_response, ctx.clean_query, ctx.natural_context)
-    return npc_id, raw_response, plan_achieved
+    resp, plan_achieved = await _run_stage1_llm(ctx, npc_id)
+    _record_dialogue_memory(npc_id, resp, ctx.clean_query, ctx.natural_context)
+    return npc_id, resp, plan_achieved
 
 
 async def _generate_plans(raw_responses: Dict[str, str], player_id: str) -> Dict[str, dict]:
@@ -524,7 +457,7 @@ async def dialogue_node(state: AgentState):
 
     Stage 1: e4b × N 병렬 (지식 격리, 각 NPC 독립 호출) — 대사 최종본
     Stage 2: 12B × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
-    Output:  raw_responses Dict[npc_id, str]
+    Output:  structured_responses Dict[npc_id, DialogueResponse]
     """
     npcs = state.get("target_npcs") or []
     if not npcs:
@@ -535,28 +468,29 @@ async def dialogue_node(state: AgentState):
     requires_replan = state.get("requires_replan", True)
     print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
-    # Stage 1: 병렬 e4b 호출
+    # Stage 1: 병렬 e4b 호출 — 구조화 DialogueResponse 직접 산출.
     results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
-    raw_responses: Dict[str, str] = {r[0]: r[1] for r in results}
+    structured_responses: Dict[str, DialogueResponse] = {r[0]: r[1] for r in results}
     plan_achieved_map: Dict[str, bool] = {r[0]: r[2] for r in results}
+    single_npc = npcs[0]
 
     # Stage 2: 12B plan 산출 — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
     # 대사는 Stage1 출력 그대로 (12B 정제 제거 — PLAN_SYSTEM_PROMPT 상단 주석 참조).
+    # raw_responses(텍스트) 직렬화는 유일 소비처인 Stage2 plan 입력용 — replan 턴에만.
+    # 경량 루프는 소비처 없음(Stage3 는 structured, 메모리는 resp.speech 직접) → 빈 dict.
     npc_plans: Dict[str, dict] = {}
+    raw_responses: Dict[str, str] = {}
     if requires_replan:
+        raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
         vr_context = state.get("vr_context")
         player_id = _vr_player_id(vr_context)
         npc_plans = await _generate_plans(raw_responses, player_id)
     else:
         print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
 
-    # 단일 NPC 호환: raw_response 도 채움
-    single_npc = npcs[0]
-    raw_response = raw_responses.get(single_npc, "")
-
     return {
+        "structured_responses": structured_responses,
         "raw_responses": raw_responses,
-        "raw_response": raw_response,
         "npc_plans": npc_plans or None,
         "plan_achieved": plan_achieved_map or None,
         "target_npc": single_npc,
