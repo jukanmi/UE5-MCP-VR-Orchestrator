@@ -35,6 +35,25 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
     UNPCActionComponent* ActionComp = Data.CachedActionComp.Get();
     if (!ActionComp) return EStateTreeRunStatus::Running; // NPC pending destroy 등
 
+    // --- 전투 종료 게이트 (2026-07-11) ---
+    // Combat 중 타겟 사망 시 즉시 전투 해제. bIsBusy 체크보다 앞서 실행해
+    // 진행 중인 스윙·이동도 그 자리에서 끊는다(시체·리스폰 플레이어 무한공격 제거).
+    // BB 클리어·모드 복귀는 컨트롤러 핸들러 경유(§2 BB 쓰기 소유권 — STTask 직접 쓰기 금지).
+    ASmartNPCAIController& AICon = Context.GetExternalData(AIControllerHandle);
+    AActor* CombatTarget = nullptr;
+    if (ActionComp->GetBehaviorMode() == ENPCBehaviorMode::Combat)
+    {
+        if (UBlackboardComponent* BB = AICon.GetBlackboardComponent())
+        {
+            CombatTarget = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor));
+        }
+        if (CombatTarget && ASmartNPCAIController::IsTargetDead(CombatTarget))
+        {
+            AICon.HandleCombatTargetDead(CombatTarget);
+            return EStateTreeRunStatus::Running;
+        }
+    }
+
     // 이전 액션 진행 중이면 대기 — OnActionCompleted가 bIsBusy=false로 풀어줄 때까지.
     if (ActionComp->bIsBusy) return EStateTreeRunStatus::Running;
 
@@ -60,19 +79,12 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
     //   비전투 자동 Track 은 제거. Perception 으로 BB.TargetActor 가 채워졌다 해도
     //   LLM 이 명시한 액션이 없으면 NPC 는 Idle 유지한다. (사용자 결정)
     //   Combat 모드는 그대로 Attack 자동 주입 — 적 시야 진입 시 즉시 반응이 필요.
-    ASmartNPCAIController& AICon = Context.GetExternalData(AIControllerHandle);
-    if (ActionComp->GetBehaviorMode() == ENPCBehaviorMode::Combat)
+    if (CombatTarget)
     {
-        if (UBlackboardComponent* BB = AICon.GetBlackboardComponent())
-        {
-            if (AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(ASmartNPCAIController::Key_TargetActor)))
-            {
-                FGameAction AutoAction;
-                AutoAction.ActionType = EAction::Attack;
-                AutoAction.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
-                ActionComp->ActionQueue.Enqueue(AutoAction);
-            }
-        }
+        FGameAction AutoAction;
+        AutoAction.ActionType = EAction::Attack;
+        AutoAction.Parameters.Add(NPCActionKeys::Key_TargetID, CombatTarget->GetName());
+        ActionComp->ActionQueue.Enqueue(AutoAction);
     }
 
     return EStateTreeRunStatus::Running;
