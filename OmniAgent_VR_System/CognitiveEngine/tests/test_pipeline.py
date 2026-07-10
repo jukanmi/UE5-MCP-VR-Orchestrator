@@ -2,7 +2,8 @@ import sys
 import asyncio
 import traceback
 
-sys.path.append("c:/github/UE5_MCP_VR/OmniAgent_VR_System/CognitiveEngine")
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # 수동 라이브 파이프라인 하네스 — pytest 유닛이 아님(test_ 함수 없음, 서버/LLM 필요).
 # `python -m tests.test_pipeline` 로 직접 실행. LocationData 폐기 → Vector3D 사용.
