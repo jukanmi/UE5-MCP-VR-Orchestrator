@@ -75,16 +75,13 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
         return EStateTreeRunStatus::Succeeded;
     }
 
-    // 큐 비어있음 — 자율 행동 주입 정책 (2026-05-16 변경):
-    //   비전투 자동 Track 은 제거. Perception 으로 BB.TargetActor 가 채워졌다 해도
-    //   LLM 이 명시한 액션이 없으면 NPC 는 Idle 유지한다. (사용자 결정)
-    //   Combat 모드는 그대로 Attack 자동 주입 — 적 시야 진입 시 즉시 반응이 필요.
+    // 큐 비어있음 — 자율 행동 주입 정책:
+    //   비전투(2026-05-16 결정 유지): 자동 Track 없음. LLM 명시 액션 없으면 Idle 유지.
+    //   Combat(2026-07-11 변경): Attack 고정 자동주입 → C++ 척수 셀렉터. 가중치·주사위로
+    //   Attack/Dodge/Block/거리조절/Flee/SignalAllies 를 주입하고 페이싱 간격도 셀렉터가 관리.
     if (CombatTarget)
     {
-        FGameAction AutoAction;
-        AutoAction.ActionType = EAction::Attack;
-        AutoAction.Parameters.Add(NPCActionKeys::Key_TargetID, CombatTarget->GetName());
-        ActionComp->ActionQueue.Enqueue(AutoAction);
+        ActionComp->SelectCombatAction(CombatTarget);
     }
 
     return EStateTreeRunStatus::Running;

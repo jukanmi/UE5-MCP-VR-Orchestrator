@@ -256,6 +256,12 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
     // BehaviorMode(Common/Combat) 갱신 — StateComponent가 단일 소유. STTask Combat 분기가 이 값을 읽는다.
     if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
 
+    // LLM 이 전투 밖으로 전환시키면 셀렉터 연속성도 새 전투 기준으로 초기화.
+    if (Batch.Mode != ENPCBehaviorMode::Combat)
+    {
+        ResetCombatSelectorState();
+    }
+
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
     bIsDialogueActive = false;
 
@@ -336,6 +342,7 @@ void UNPCActionComponent::StopAllActions()
     ActionQueue.Empty();
     ClearActiveActionState();
     LastQueuedActionType = EAction::Idle;
+    ResetCombatSelectorState(); // 전투 종료(HandleCombatTargetDead)·비상 정지 공통 — 셀렉터 연속성 초기화
 
     ResetAllStateTagsToIdle(GetOwner());
 
@@ -1491,6 +1498,237 @@ void UNPCActionComponent::ExecuteDodgeAction(FVector Direction)
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }
 void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BaseSignalAllies(HandSign); }
+
+// ==========================================
+// [전투 행동 셀렉터] — SPEC_combat_selector Phase 1
+// ==========================================
+
+bool UNPCActionComponent::HasNearbyAlly(const AActor* EnemyTarget) const
+{
+    const AActor* Owner = GetOwner();
+    if (!Owner || !StateComponent) return false;
+
+    UNPCManager* Mgr = UNPCManager::Get(Owner);
+    if (!Mgr) return false;
+
+    for (const auto& Pair : Mgr->GetActiveNPCs())
+    {
+        const ASmartNPC* Other = Pair.Value;
+        if (!Other || Other == Owner || Other == EnemyTarget || Other->bIsDead) continue;
+        if (FVector::Dist(Owner->GetActorLocation(), Other->GetActorLocation()) > SignalAlliesRadius) continue;
+        // 적대(배율 1.0)만 제외 — 중립·아군 모두 신호 대상 후보(구조 요청).
+        if (StateComponent->GetAffinityMultiplier(Pair.Key) >= 1.f) continue;
+        return true;
+    }
+    return false;
+}
+
+void UNPCActionComponent::ResetCombatSelectorState()
+{
+    LastCombatChoice = EAction::Idle;
+    ConsecutiveCombatChoiceCount = 0;
+    LastCombatSelectTime = -1000.f;
+    bSignaledAlliesThisCombat = false;
+}
+
+bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
+{
+    AActor* Owner = GetOwner();
+    UWorld* World = GetWorld();
+    if (!TargetActor || !Owner || !World || !StateComponent) return false;
+
+    // 페이싱 — 액션 사이 최소 간격. 미충족 시 이번 틱은 대기(숨고르기).
+    const float Now = World->GetTimeSeconds();
+    if (Now - LastCombatSelectTime < CombatActionInterval) return false;
+
+    const FNPCAttributes Attr = StateComponent->GetAttributes();
+    const float Dist = FVector::Dist(Owner->GetActorLocation(), TargetActor->GetActorLocation());
+    const float HPLoss = 1.f - FMath::Clamp(Attr.Resources.GetHealthPercent(), 0.f, 1.f);
+    const bool bRecentlyHit = StateComponent->LastHitTime > 0.f
+        && (Now - StateComponent->LastHitTime) < RecentHitWindow;
+
+    // 방어 행동 공통 배율: 최근 피격 부스트 × 저HP 급증(하드 임계 없음 — 연속 스케일).
+    const float DefenseBoost = (bRecentlyHit ? RecentHitDefenseBoost : 1.f) * (1.f + LowHPDefenseScale * HPLoss);
+    // 방어 행동은 근접에서만 유의미 — 밖이면 급감.
+    const float DefenseRangeFactor = (Dist <= DefenseReactRange) ? 1.f : 0.1f;
+
+    struct FCombatCandidate { EAction Action; float Weight; };
+    TArray<FCombatCandidate, TInlineAllocator<6>> Candidates;
+
+    // Attack — Strength 파생. 연속 상한 도달 시 0(다른 행동 강제).
+    {
+        float W = CombatWeight_Attack * (Attr.BaseStats.Strength / CombatStatNorm);
+        if (LastCombatChoice == EAction::Attack && ConsecutiveCombatChoiceCount >= MaxConsecutiveAttacks)
+        {
+            W = 0.f;
+        }
+        Candidates.Add({ EAction::Attack, W });
+    }
+
+    // Dodge — Agility 파생 × 방어 배율, 근접 한정.
+    Candidates.Add({ EAction::Dodge,
+        CombatWeight_Dodge * (Attr.BaseStats.Agility / CombatStatNorm) * DefenseBoost * DefenseRangeFactor });
+
+    // Block — 방어 배율, 근접 한정(스탯 파생 없음 — 자세 유지형).
+    Candidates.Add({ EAction::Block, CombatWeight_Block * DefenseBoost * DefenseRangeFactor });
+
+    // 거리조절(Move) — Agility 파생 × 이상 링 이탈 정도. 링 안이면 0.
+    {
+        float SpacingUrge = 0.f;
+        if (Dist < SpacingMinRange)
+        {
+            SpacingUrge = (SpacingMinRange - Dist) / SpacingMinRange;                      // 너무 붙음 → 백스텝
+        }
+        else if (Dist > SpacingMaxRange)
+        {
+            SpacingUrge = FMath::Min(1.f, (Dist - SpacingMaxRange) / SpacingMaxRange);     // 너무 멂 → 접근
+        }
+        Candidates.Add({ EAction::Move,
+            CombatWeight_Spacing * (Attr.BaseStats.Agility / CombatStatNorm) * SpacingUrge });
+    }
+
+    // Flee — 저HP 제곱 램프 × 겁 성향(Fear↑·Bravery↓ → 0~2). 만HP≈0(가중치 급증은 저HP에서만).
+    {
+        const float CowardScale = (Attr.Behavior.Fear + (100.f - Attr.Behavior.Bravery)) / 100.f;
+        Candidates.Add({ EAction::Flee, CombatWeight_Flee * LowHPFleeScale * HPLoss * HPLoss * CowardScale });
+    }
+
+    // SignalAllies — 아군 감지 시 확률 편입, 전투당 1회, 저HP 편향.
+    if (!bSignaledAlliesThisCombat && HasNearbyAlly(TargetActor))
+    {
+        Candidates.Add({ EAction::SignalAllies, CombatWeight_Signal * (0.3f + HPLoss) });
+    }
+
+    // 연속 동일 행동 페널티(Attack 하드캡과 별개, 전 행동 공통 — 거듭제곱 누적).
+    for (FCombatCandidate& C : Candidates)
+    {
+        if (C.Action == LastCombatChoice && ConsecutiveCombatChoiceCount > 0)
+        {
+            C.Weight *= FMath::Pow(CombatRepeatPenalty, static_cast<float>(ConsecutiveCombatChoiceCount));
+        }
+    }
+
+    // 가중치 확률 추첨. 부동소수 잔여로 못 고르면 마지막 유효 후보.
+    auto PickWeighted = [&Candidates]() -> int32
+    {
+        float TotalW = 0.f;
+        for (const FCombatCandidate& C : Candidates) TotalW += FMath::Max(0.f, C.Weight);
+        if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
+
+        float Roll = FMath::FRandRange(0.f, TotalW);
+        for (int32 i = 0; i < Candidates.Num(); ++i)
+        {
+            const float W = FMath::Max(0.f, Candidates[i].Weight);
+            if (W <= 0.f) continue;
+            if (Roll < W) return i;
+            Roll -= W;
+        }
+        for (int32 i = Candidates.Num() - 1; i >= 0; --i)
+        {
+            if (Candidates[i].Weight > 0.f) return i;
+        }
+        return INDEX_NONE;
+    };
+
+    int32 ChosenIdx = PickWeighted();
+    if (ChosenIdx == INDEX_NONE)
+    {
+        // 후보 전멸(사실상 도달 불가) — 이번 간격은 소진시켜 매 틱 재추첨 스핀 방지.
+        LastCombatSelectTime = Now;
+        return false;
+    }
+
+    // Flee 발동 주사위 — 배짱(Bravery) 체크 성공 시 도주 억제 후 재선택("용감한 놈 끝까지").
+    if (Candidates[ChosenIdx].Action == EAction::Flee)
+    {
+        FDiceResult BraverySave;
+        if (UDiceSystem::CheckReflex(Attr.Behavior.Bravery, FleeBraveryDifficulty, BraverySave))
+        {
+            UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s: 배짱 주사위 성공(roll %.0f < %.0f) — 도주 억제, 재선택"),
+                *GetOwnerAgentID(), BraverySave.RollValue, BraverySave.TargetValue);
+            Candidates[ChosenIdx].Weight = 0.f;
+            const int32 Retry = PickWeighted();
+            if (Retry != INDEX_NONE) ChosenIdx = Retry; // 대안 없으면 Flee 유지
+        }
+    }
+
+    const EAction Chosen = Candidates[ChosenIdx].Action;
+
+    FGameAction Action;
+    Action.ActionType = Chosen;
+    switch (Chosen)
+    {
+    case EAction::Attack:
+        Action.FacialState = EFacialState::Angry;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::Dodge:
+    {
+        // 타겟 기준 좌/우 측면 스텝 — ExecuteDodgeAction 이 이 방향으로 TurnTo 후 몽타주 재생.
+        const FVector ToTarget = (TargetActor->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
+        FVector Lateral = FVector::CrossProduct(ToTarget, FVector::UpVector) * (FMath::RandBool() ? 1.f : -1.f);
+        if (Lateral.IsNearlyZero()) Lateral = -Owner->GetActorForwardVector();
+        Action.Parameters.Add(NPCActionKeys::Key_Direction, Lateral.ToString());
+        break;
+    }
+
+    case EAction::Block:
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::Move:
+    {
+        // 계산 목적지로 BaseMove 직접(EQS 미사용 §4) — 타겟 기준 자기쪽 Ideal 링 위 지점.
+        FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
+        if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
+        const FVector Dest = TargetActor->GetActorLocation() + AwayDir * SpacingIdealRange;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, Dest.ToString());
+        Action.Parameters.Add(NPCActionKeys::Key_Style, TEXT("Run"));
+        break;
+    }
+
+    case EAction::Flee:
+        // 위치 미지정 → ExecuteInteraction Flee 경로가 패닉 주사위 + EQS 후퇴로 처리.
+        Action.FacialState = EFacialState::Fear;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::SignalAllies:
+        // target_id 가 미디어 키 겸용(ExecuteSignalAllies → BasePlayActionMedia). 미매핑 시 즉시 완료 폴백.
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TEXT("SignalAllies"));
+        bSignaledAlliesThisCombat = true;
+        break;
+
+    default:
+        break;
+    }
+
+    ActionQueue.Enqueue(Action);
+
+    // 연속성 추적 갱신.
+    if (Chosen == LastCombatChoice)
+    {
+        ++ConsecutiveCombatChoiceCount;
+    }
+    else
+    {
+        LastCombatChoice = Chosen;
+        ConsecutiveCombatChoiceCount = 1;
+    }
+    LastCombatSelectTime = Now;
+
+    // 선택 분포 로그(완료 기준 1 검증용) — 후보별 최종 가중치 나열.
+    FString WeightStr;
+    for (const FCombatCandidate& C : Candidates)
+    {
+        WeightStr += FString::Printf(TEXT("%s=%.2f "), *UEnum::GetValueAsString(C.Action), C.Weight);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s → %s (dist=%.0f hpLoss=%.0f%% recentHit=%d) W[ %s]"),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(Chosen), Dist, HPLoss * 100.f, bRecentlyHit ? 1 : 0, *WeightStr);
+
+    return true;
+}
 
 // ==========================================
 // [3] Social Behaviors
