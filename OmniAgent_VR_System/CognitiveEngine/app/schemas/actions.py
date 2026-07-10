@@ -85,7 +85,9 @@ class DialogueActionItem(BaseModel):
     target: str = Field(default="", description="Player, Self, Enemy or an NPC name; '' if none")
     item: str = Field(default="", description="Item name; '' if none")
     loc: str = Field(default="", description="Location id; '' if none")
-    style: str = Field(default="", description="Modifier: Walk/Run/Crawl for Move, emote name for Emote")
+    # 어휘 단일 소스는 C++ EMoveType(NPCActionTypes.h) — Walk/Run/Sprint/Crouch.
+    # ParseMoveStyle 이 미매칭 값을 Walk 로 폴백하며 경고 로그를 남긴다.
+    style: str = Field(default="", description="Modifier: Walk/Run/Sprint/Crouch for Move, emote name for Emote")
 
 
 # DialogueActionItem 필드 ↔ 키 매핑 단일 소스 — (GameAction.Parameters 키, 필드명).

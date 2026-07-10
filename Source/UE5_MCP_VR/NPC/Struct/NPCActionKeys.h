@@ -15,6 +15,7 @@ namespace NPCActionKeys
     inline const FString Key_Text       = TEXT("text");
     inline const FString Key_TargetID   = TEXT("target_id");   // 액션 대상 actor 키워드(Player/Self/Enemy/<NpcName>)
     inline const FString Key_Item       = TEXT("item");        // 아이템 ID (use/equip/give/drop/craft/repair)
+    inline const FString Key_Style      = TEXT("style");       // Move=EMoveType 이름(Walk/Run/Sprint/Crouch), Sing/Emote=미디어 키
 
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");

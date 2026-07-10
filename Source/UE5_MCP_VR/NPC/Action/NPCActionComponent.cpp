@@ -209,6 +209,22 @@ float UNPCActionComponent::ParseMoveSpeed(const EMoveType& Type) const
     }
 }
 
+// LLM 이 Parameters["style"] 로 보내는 이동 스타일 문자열을 EMoveType 으로 해석한다.
+// 어휘 단일 소스는 EMoveType — Python 스키마(actions.py style 필드)가 이 이름을 그대로 쓴다.
+EMoveType UNPCActionComponent::ParseMoveStyle(const FString& StyleStr) const
+{
+    if (StyleStr.IsEmpty()) return EMoveType::Walk;
+
+    if (StyleStr.Equals(TEXT("Run"), ESearchCase::IgnoreCase))    return EMoveType::Run;
+    if (StyleStr.Equals(TEXT("Sprint"), ESearchCase::IgnoreCase)) return EMoveType::Sprint;
+    if (StyleStr.Equals(TEXT("Crouch"), ESearchCase::IgnoreCase)) return EMoveType::Crouch;
+    if (StyleStr.Equals(TEXT("Walk"), ESearchCase::IgnoreCase))   return EMoveType::Walk;
+
+    // 미지원 어휘는 조용히 삼키지 않는다 — Python 스키마 드리프트를 로그로 드러낸다.
+    UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 미지원 style '%s' → Walk 폴백"), *StyleStr);
+    return EMoveType::Walk;
+}
+
 // === Action Batch System ===
 
 
@@ -636,6 +652,12 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     FString ItemID = Params.FindRef(NPCActionKeys::Key_Item);
     if (ItemID.IsEmpty()) ItemID = TargetID;
 
+    // style — Move 계열은 EMoveType 으로, Sing/Emote 는 미디어 키로 해석한다(액션별 의미가 다름).
+    // ParseMoveStyle 은 Move 케이스에서만 호출 — Emote 의 style("Wave" 등)에 폴백 경고가 뜨지 않게.
+    FString StyleStr = Params.FindRef(NPCActionKeys::Key_Style);
+    // Sing/Emote 미디어 키. 비면 target_id 폴백(레거시 호환 — 구 송신측이 target_id 에 실어 보냄).
+    FString LifestyleParam = StyleStr.IsEmpty() ? TargetID : StyleStr;
+
     // 위치: Python이 직접 보내는 경우는 없고, C++ 내부 주입(전술 쿼리 결과)만 존재 → Key_TargetLoc 단일 조회
     FVector Location = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc));
     FVector Direction = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_Direction));
@@ -661,8 +683,8 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     switch (ActionType)
     {
     case EAction::Idle:         ExecuteIdle(); break;
-    case EAction::Move:         ExecuteMove(Location, TargetActor); break;
-    case EAction::Follow:       ExecuteFollow(TargetActor); break;
+    case EAction::Move:         ExecuteMove(Location, TargetActor, ParseMoveStyle(StyleStr)); break;
+    case EAction::Follow:       ExecuteFollow(TargetActor, ParseMoveStyle(StyleStr)); break;
     case EAction::Dialogue:     ExecuteDialogue(TextBody, EFacialState::Neutral); break;
     case EAction::TurnTo:       ExecuteTurnTo(Location, TargetActor); break;
     case EAction::Scan:         ExecuteScan(Location, TargetActor); break;
@@ -762,7 +784,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Dance:
     case EAction::Sing:
     case EAction::Emote:
-        ExecuteLifestyleAction(ActionType, TargetActor, Location, TargetID);
+        ExecuteLifestyleAction(ActionType, TargetActor, Location, LifestyleParam);
         break;
 
     case EAction::Wait:

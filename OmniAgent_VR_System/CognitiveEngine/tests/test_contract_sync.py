@@ -16,6 +16,7 @@ from app.schemas.actions import (
     ACTION_REQUIRED_PARAMS,
     CATEGORY_ACTION_MAP,
     DIALOGUE_ACTION_FIELD_MAP,
+    DialogueActionItem,
     EAction,
     NPCBehaviorMode,
     NPCFacialState,
@@ -26,6 +27,7 @@ from app.schemas.envelope import EEnvelopeType
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ACTION_TYPES_H = REPO_ROOT / "Source/UE5_MCP_VR/NPC/Struct/NPCActionTypes.h"
 ACTION_KEYS_H = REPO_ROOT / "Source/UE5_MCP_VR/NPC/Struct/NPCActionKeys.h"
+ACTION_COMPONENT_CPP = REPO_ROOT / "Source/UE5_MCP_VR/NPC/Action/NPCActionComponent.cpp"
 ENVELOPE_BUILDER_H = REPO_ROOT / "Source/UE5_MCP_VR/Network/EnvelopeBuilder.h"
 ENVELOPE_BUILDER_CPP = REPO_ROOT / "Source/UE5_MCP_VR/Network/EnvelopeBuilder.cpp"
 MAIN_PY = REPO_ROOT / "OmniAgent_VR_System/CognitiveEngine/app/main.py"
@@ -91,16 +93,41 @@ def test_required_params_only_known_actions():
 
 
 def test_param_keys_exist_in_cpp():
-    """Python 이 송신하는 Parameters 키가 C++ NPCActionKeys 에 동일 철자로 존재하는지.
-
-    'style' 은 의도적 제외 — 현재 C++ 어디서도 읽지 않는 키(잠재 갭, DIALOGUE_ACTION_FIELD_MAP
-    참조). C++ 소비 구현 시 이 제외를 걷어낼 것.
-    """
+    """Python 이 송신하는 Parameters 키가 C++ NPCActionKeys 에 동일 철자로 존재하는지."""
     header = _read(ACTION_KEYS_H)
-    py_keys = {param_key for param_key, _field in DIALOGUE_ACTION_FIELD_MAP} - {"style"}
+    py_keys = {param_key for param_key, _field in DIALOGUE_ACTION_FIELD_MAP}
     py_keys |= {"text"}  # Dialogue 필수 파라미터 (ACTION_REQUIRED_PARAMS)
     missing = {k for k in py_keys if f'TEXT("{k}")' not in header}
     assert not missing, f"NPCActionKeys.h 에 없는 Python 송신 키: {sorted(missing)} (§1 — 리터럴/철자 확인)"
+
+
+def test_move_style_vocabulary_matches_cpp():
+    """Parameters['style'] 이동 어휘 = EMoveType 전 항목.
+
+    ParseMoveStyle 이 미매칭 값을 Walk 로 폴백하므로, EMoveType 에 항목을 추가하고
+    ParseMoveStyle 분기를 빠뜨리면 해당 스타일이 조용히 Walk 로 뭉개진다.
+    Python 스키마(style Field description)도 같은 어휘를 LLM 에 노출해야 한다.
+    """
+    enum_block = _cpp_enum_block(_read(ACTION_TYPES_H), "EMoveType")
+    move_types = {m.group(1) for m in re.finditer(r"^\s*(\w+)\s*,?\s*$", enum_block, re.MULTILINE)}
+    assert move_types, "EMoveType 항목 파싱 실패(형식 변경?)"
+
+    parse_fn = re.search(
+        r"EMoveType\s+UNPCActionComponent::ParseMoveStyle.*?\n\}", _read(ACTION_COMPONENT_CPP), re.DOTALL
+    )
+    assert parse_fn, "NPCActionComponent.cpp 에서 ParseMoveStyle 정의를 찾지 못함"
+    handled = set(re.findall(r'TEXT\("(\w+)"\)', parse_fn.group(0)))
+    assert move_types == handled, (
+        f"ParseMoveStyle 미처리 EMoveType: {sorted(move_types - handled)} / "
+        f"enum 에 없는 분기: {sorted(handled - move_types)}"
+    )
+
+    style_desc = DialogueActionItem.model_fields["style"].description or ""
+    missing_in_py = {t for t in move_types if t not in style_desc}
+    assert not missing_in_py, (
+        f"actions.py style description 에 누락된 이동 어휘: {sorted(missing_in_py)} — "
+        "LLM 이 해당 스타일을 생성할 수 없다."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
