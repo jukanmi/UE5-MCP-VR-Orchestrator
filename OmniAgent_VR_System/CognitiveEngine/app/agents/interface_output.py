@@ -180,7 +180,7 @@ async def interface_output_node(state: AgentState):
     # 방어 경로: 구조화 출력 없음 → empty batch (raw_response 재파싱 안 함).
     if not structured:
         print("[Interface Output] WARNING: structured_responses 없음, empty batch")
-        npc_id = state.get("target_npc", "Elara")
+        npc_id = state.get("target_npc") or "Elara"  # target_npc 는 Optional — None 이면 Elara 폴백
         single_batch = _create_empty_batch(npc_id)
         return {
             "action_batches": {npc_id: single_batch},

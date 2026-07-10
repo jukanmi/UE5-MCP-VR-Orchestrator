@@ -55,7 +55,7 @@ def _route_after_output(state: AgentState) -> dict:
     action_batch = state.get("action_batch")
     if not action_batch or not action_batch.Actions:
         print("[Supervisor] WARN  ActionBatch 비어있음, 폴백 배치 생성")
-        npc_id = state.get("target_npc", "Elara")
+        npc_id = state.get("target_npc") or "Elara"  # Optional — None 이면 Elara 폴백
         return {
             "action_batch": _create_fallback_batch(npc_id),
             "next": "Rules",
@@ -94,7 +94,7 @@ def _route_after_rules(state: AgentState) -> dict:
         retry_count = state.get("rules_retry_count", 0)
         if retry_count >= 1:
             # 재시도 소진 — 각 NPC에 폴백 배치 생성
-            npcs = state.get("target_npcs") or [state.get("target_npc", "Elara")]
+            npcs = state.get("target_npcs") or [state.get("target_npc") or "Elara"]
             print(f"[Supervisor] X Rules 거부 {retry_count + 1}회째 - 재시도 소진, 폴백 배치로 종료")
             fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
             return {

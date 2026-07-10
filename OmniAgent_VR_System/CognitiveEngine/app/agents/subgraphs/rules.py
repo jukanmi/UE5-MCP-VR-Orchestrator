@@ -61,7 +61,9 @@ def _is_target_id_valid(target_id: str | None, runtime_targets: set[str] | None 
     if not target_id:
         return True  # target_id 없는 액션은 타겟 없이 실행 가능
 
-    if runtime_targets:
+    # 빈 set(UE5 가 valid_targets:[] 명시 = 등록 NPC 없음)은 센티넬만 허용 — static 폴백 금지.
+    # runtime 이 진실이므로 None(정보 없음)일 때만 static 으로 내려간다.
+    if runtime_targets is not None:
         return target_id in (runtime_targets | _SENTINEL_TARGETS)
 
     # valid_npc_ids가 빈 목록이면 검증 자체를 건너뜀 (설정 미완료 대비)
