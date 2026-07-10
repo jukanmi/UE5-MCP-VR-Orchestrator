@@ -280,7 +280,9 @@ def rules_node(state: AgentState) -> dict:
     # UE5 prompt 동봉 valid_targets(런타임 등록 NPC) — 타겟 검증의 우선 진실.
     vr_context = state.get("vr_context")
     runtime_list = _vr_get(vr_context, "valid_targets", None) if vr_context else None
-    runtime_targets: set[str] | None = set(runtime_list) if runtime_list else None
+    # vr_context 가 검증 안 된 raw dict 로도 흘러듦(_vr_get 이중 대응) — UE5 가 배열 대신
+    # 문자열을 보내면 set("Elara") 가 문자 단위로 분해돼 유효 액션이 조용히 제거됨. 시퀀스만 변환.
+    runtime_targets: set[str] | None = set(runtime_list) if isinstance(runtime_list, (list, tuple, set)) else None
 
     validated_batches: dict = {}
     for npc_id, batch in action_batches.items():
