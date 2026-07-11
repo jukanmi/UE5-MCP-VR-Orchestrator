@@ -2028,19 +2028,35 @@ void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocatio
 // 하나의 라우팅 함수로 통합하여 코드 중복을 제거하고 유지보수성을 극대화합니다.
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
 {
-    // 1. 공통 이동 및 회전 보간 처리 (이동 필요 여부에 따라)
-    FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
-    if (!Dest.IsNearlyZero())
+    const FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
+
+    // 이동은 가구行(Sit/Sleep)만 — 도착 후 몽타주(PendingMoveMediaKey, ExecuteAttackAction 과 동일 완료 체인).
+    // in-place 액션(Pray/Read/Dance/Sing/Emote)은 이동 없이 제자리 재생 + 대상 바라보기만.
+    // (구버전: 전 타입 BaseMove 직후 몽타주 즉시 재생 → 이동 중 앉기/춤 sliding 글리치 — Gemini PR#17 R4)
+    if ((LifestyleType == EAction::Sit || LifestyleType == EAction::Sleep) && !Dest.IsNearlyZero())
     {
-        // 걷기로 느긋하게 이동 후 대상을 바라봅니다.
+        // 상태 플래그는 즉시(구버전 파리티 — BaseSitDown/BaseLieDown 도 이동 완료를 기다리지 않았음).
+        if (StateComponent)
+        {
+            if (LifestyleType == EAction::Sit)   StateComponent->bIsSit = true;
+            else                                 StateComponent->bIsLie = true;
+        }
+        PendingMoveMediaKey = (LifestyleType == EAction::Sit)
+            ? NPCActionKeys::Interact_SitDown
+            : NPCActionKeys::Interact_LieDown;
         BaseMove(Dest, EMoveType::Walk);
         ExecuteTurnTo(Dest, TargetEntity);
+        return;
     }
 
-    // 2. 타입에 따른 미디어(몽타주/애니) 처리 분기
+    if (!Dest.IsNearlyZero())
+    {
+        ExecuteTurnTo(Dest, TargetEntity); // in-place — 대상을 바라보기만, 이동 없음
+    }
+
     switch (LifestyleType)
     {
-        case EAction::Sit:   BaseSitDown(TargetEntity); break;
+        case EAction::Sit:   BaseSitDown(TargetEntity); break;   // 목적지 없음 — 제자리 착석
         case EAction::Sleep: BaseLieDown(TargetEntity); break;
         case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
