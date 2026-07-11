@@ -226,6 +226,41 @@ void ASmartNPCAIController::HandleCombatTargetDead(AActor* DeadTarget)
         }
         CurrentSightTarget.Reset();
     }
+
+    // 전투가 사망으로 이미 해제됨 — 대기 중이던 소실 타임아웃 취소.
+    if (UWorld* W = GetWorld())
+    {
+        W->GetTimerManager().ClearTimer(CombatTargetLostTimer);
+    }
+}
+
+void ASmartNPCAIController::HandleCombatTargetLostTimeout()
+{
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    if (!NPC) return;
+
+    UNPCStateComponent* StateComp = NPC->StateComponent;
+    if (!StateComp || StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat) return;
+
+    // 타이머 취소 누락 대비 이중 가드 — 그 사이 재발견(BB 타겟 유효)이면 전투 유지.
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        if (BB->GetValueAsObject(Key_TargetActor)) return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] %s: 전투 타겟 장기 소실(%.1f초) — 전투 해제, Common 복귀"),
+        *NPC->AgentID, CombatTargetLostTimeout);
+
+    // HandleCombatTargetDead 와 동일 시퀀스 — 승리 보고(ReportCombatVictory)만 제외.
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->AbortCurrentAction();
+        ActionComp->StopAllActions();
+        ActionComp->AbortTacticalQuery();
+    }
+
+    StateComp->SetBehaviorMode(ENPCBehaviorMode::Common);
+    StateComp->FlagDangerReplan(); // 재조우 시 'Combat 첫 진입' replan 경로 복원
 }
 
 void ASmartNPCAIController::HandleActionStarted(const FGameAction& /*Action*/)
@@ -260,6 +295,12 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             // 1. Blackboard 업데이트 (BehaviorTree용 즉각 반응)
             Blackboard->SetValueAsObject(Key_TargetActor, Actor);
             Blackboard->SetValueAsVector(Key_TargetLocation, Actor->GetActorLocation());
+
+            // 시야 재획득 — 진행 중이던 전투 소실 타임아웃 취소(짧은 엄폐는 전투 유지)
+            if (UWorld* W = GetWorld())
+            {
+                W->GetTimerManager().ClearTimer(CombatTargetLostTimer);
+            }
 
             // 2. FPerceptionData 조립 후 EventCognition으로 넘김
             if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn()))
@@ -392,6 +433,19 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
         {
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
+
+            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지, SPEC §8).
+            if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
+            {
+                if (NPC->StateComponent && NPC->StateComponent->GetBehaviorMode() == ENPCBehaviorMode::Combat)
+                {
+                    if (UWorld* W = GetWorld())
+                    {
+                        W->GetTimerManager().SetTimer(CombatTargetLostTimer, this,
+                            &ASmartNPCAIController::HandleCombatTargetLostTimeout, CombatTargetLostTimeout, false);
+                    }
+                }
+            }
         }
 
         // 소실된 대상이 주기적 감시 대상이면 타이머 해제

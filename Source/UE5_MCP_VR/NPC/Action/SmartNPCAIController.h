@@ -66,6 +66,17 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "AI|Perception")
     float PerceptionTickInterval = 9.0f;
 
+    /** Combat 중 시야 소실 시 전투 잔존 해제 타임아웃(초) — BB 타겟 null 이 이 시간 지속되면
+     *  Common 복귀. 이내 재발견 시 타이머 취소(짧은 엄폐·스쳐 지나감은 전투 유지). SPEC §8. */
+    UPROPERTY(EditDefaultsOnly, Category = "AI|Perception", meta = (ClampMin = "1.0", ClampMax = "60.0"))
+    float CombatTargetLostTimeout = 8.0f;
+
+    FTimerHandle CombatTargetLostTimer;
+
+    /** 소실 타임아웃 만료 콜백 — 여전히 Combat + BB 타겟 null 이면 전투 해제.
+     *  HandleCombatTargetDead 와 동일 시퀀스에서 승리 보고만 제외. */
+    void HandleCombatTargetLostTimeout();
+
 public:
 	/** 전투 타겟 사망 판정 — SmartNPC.bIsDead / State.Condition.Dead 태그(플레이어 계열). */
 	static bool IsTargetDead(const AActor* Target);
