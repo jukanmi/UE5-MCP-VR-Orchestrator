@@ -196,6 +196,11 @@ protected:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseMove(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
 
+    /** BaseMove 의 액터 추적판 — MoveToActor 로 움직이는 타겟을 따라가고(자동 재경로),
+     *  AcceptanceRadius 이내 도달 시 OnMoveActionCompleted 발화. 완료·몽타주 체인은 BaseMove 와 동일. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseDialogue(const FString& DialogueText, const EFacialState Emotion);
 

@@ -468,6 +468,31 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
     }
 }
 
+void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType, float AcceptanceRadius)
+{
+    if (!TargetActor) return;
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
+
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    {
+        MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
+    }
+
+    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
+    {
+        // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
+        // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
+        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+        {
+            PFC->OnRequestFinished.RemoveAll(this);
+            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
+        }
+        bActionAwaitingAsync = true;
+        AIController->MoveToActor(TargetActor, AcceptanceRadius);
+    }
+}
+
 void UNPCActionComponent::BaseEmotion(const EFacialState Emotion)
 {
     if (StateComponent) StateComponent->SetFacialExpression(Emotion);
@@ -1436,10 +1461,11 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
     if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
         OwnerNPC->SetCurrentAttackTarget(TargetActor);
 
-    // 도착 후 "Attack" 몽타주 재생 — BaseMove가 OnMoveActionCompleted를 바인딩하고,
-    // 콜백에서 PendingMoveMediaKey가 있으면 몽타주를 재생한다.
+    // 타겟 추적 이동(스냅샷 좌표 아님) — 사거리(AcceptanceRadius) 이내 도달 시
+    // OnMoveActionCompleted 가 PendingMoveMediaKey("Attack") 몽타주를 재생한다.
+    // 추격이 끝없이 길어지면 MaxActionDuration 워치독이 강제 완료 → 셀렉터 재선택.
     PendingMoveMediaKey = TEXT("Attack");
-    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run, 150.f);
+    BaseMoveToActor(TargetActor, EMoveType::Run, 150.f);
 
     if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Attack);
