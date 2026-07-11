@@ -489,7 +489,26 @@ void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedTy
             PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
         }
         bActionAwaitingAsync = true;
-        AIController->MoveToActor(TargetActor, AcceptanceRadius);
+        const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToActor(TargetActor, AcceptanceRadius);
+        if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
+        {
+            // AlreadyAtGoal/Failed 는 OnRequestFinished 가 발화하지 않음 — 대기 유지 시
+            // 워치독(MaxActionDuration)까지 정지. 즉시 결과는 여기서 동기 처리한다.
+            if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+            {
+                PFC->OnRequestFinished.RemoveAll(this); // stale 바인딩이 무관한 후속 이동에 발화하는 것 방지
+            }
+            bActionAwaitingAsync = false;
+
+            const FString MediaKey = PendingMoveMediaKey;
+            PendingMoveMediaKey.Reset();
+            if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && !MediaKey.IsEmpty())
+            {
+                // 이미 사거리 내 — 대기 몽타주(Attack 등) 즉시 재생. 재생 성공 시 비동기 완료로 전환,
+                // 실패 시 bActionAwaitingAsync=false 라 ExecuteInteraction 말미가 즉시 완료 처리.
+                BasePlayActionMedia(MediaKey);
+            }
+        }
     }
 }
 

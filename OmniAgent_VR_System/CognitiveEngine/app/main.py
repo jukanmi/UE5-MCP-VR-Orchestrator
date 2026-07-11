@@ -439,7 +439,11 @@ async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
 
     # add_entry 는 파일 I/O + 토큰 예산 초과 시 요약까지 수행 가능 — 루프 블로킹 방지 오프로드.
     def _write_victory_memory() -> None:
-        get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).")
+        try:
+            get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).")
+        except Exception as e:
+            # to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다.
+            logger.error(f"[Main] 전투 승리 메모리 기록 실패: {e}")
 
     task = asyncio.create_task(asyncio.to_thread(_write_victory_memory))
     _background_tasks.add(task)
