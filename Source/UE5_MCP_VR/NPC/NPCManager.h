@@ -81,6 +81,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     ASmartNPC* GetNPCById(const FString& AgentID) const;
 
+    /** 등록된 전체 NPC 순회용 (근처 아군 탐색 등). NPCMap 미초기화 시 빈 맵 반환. */
+    const TMap<FString, ASmartNPC*>& GetActiveNPCs() const
+    {
+        static const TMap<FString, ASmartNPC*> Empty;
+        return NPCMap ? NPCMap->GetActiveNPCs() : Empty;
+    }
+
     // === 취합된 긴급 인지 이벤트 전송 (단일 LLM 채널, Python이 SLM/LLM 자동 라우팅) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendEventReport(const FString& AgentID, const FString& CombinedPayload);
