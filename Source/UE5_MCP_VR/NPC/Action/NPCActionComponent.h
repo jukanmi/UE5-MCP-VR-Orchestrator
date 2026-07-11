@@ -417,6 +417,15 @@ public:
     /** BasePlayActionMedia가 건 몽타주 종료 콜백(Montage_SetEndDelegate). OnActionCompleted 호출. */
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
 
+    /** Dodge 등속 이동 — 몽타주 재생 성공 시 마찰·제동 0 후 RunSpeed×배율로 Launch(고정 방향 감쇠 없이 유지).
+     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로(§6) — 정상 종료·중단·워치독 전부 커버. */
+    void StartDodgeMove(const FVector& Direction);
+    void StopDodgeMove();
+    bool bDodgeMoveActive = false;
+    float SavedGroundFriction = 8.f;
+    float SavedBrakingDecelWalking = 2048.f;
+    float SavedBrakingFrictionFactor = 2.f;
+
     /** MaxActionDuration 초과 시 강제 완료(워치독). */
     void HandleActionWatchdog();
 
@@ -555,6 +564,11 @@ public:
     /** SignalAllies 아군 탐색 반경(cm). 발동은 전투당 1회. */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
     float SignalAlliesRadius = 2000.f;
+
+    /** Dodge 등속 이동 속도 = RunSpeed × 이 배율 — 항상 달리기보다 빠름 보장.
+     *  Dodge 몽타주 재생 동안 고정 방향 유지(StartDodgeMove), 종료·중단 시 원복(StopDodgeMove). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "5.0"))
+    float DodgeSpeedMultiplier = 1.5f;
 
     // ----------------------------------------------------------------------------
     // [3] Social Behaviors

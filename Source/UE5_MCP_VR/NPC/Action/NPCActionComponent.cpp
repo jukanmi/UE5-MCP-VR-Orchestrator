@@ -330,6 +330,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
@@ -1492,8 +1493,69 @@ void UNPCActionComponent::ExecuteBlock(AActor* TargetActor)
 
 void UNPCActionComponent::ExecuteDodgeAction(FVector Direction)
 {
-    ExecuteTurnTo(GetOwner()->GetActorLocation() + Direction * 100.f, nullptr);
-    BasePlayActionMedia(TEXT("Dodge"));
+    // 셀렉터/LLM 이 주는 방향은 비정규(길이 임의) — 수평 단위벡터로 통일
+    FVector Dir = Direction.GetSafeNormal2D();
+    if (Dir.IsNearlyZero()) Dir = GetOwner()->GetActorForwardVector();
+
+    ExecuteTurnTo(GetOwner()->GetActorLocation() + Dir * 100.f, nullptr);
+
+    // 몽타주가 실제 재생될 때만 이동 — 미등록 시 기존 즉시 완료 경로 유지(모션 없는 순간이동 방지)
+    if (BasePlayActionMedia(TEXT("Dodge")))
+    {
+        StartDodgeMove(Dir);
+    }
+}
+
+void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
+{
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
+    if (!MovementComp) return;
+
+    // 진행 중 MoveTo 잔재가 회피 방향과 경합하지 않게 정지
+    if (ASmartNPCAIController* AI = GetOwnerAIController())
+    {
+        AI->StopMovement();
+    }
+
+    // 마찰·제동 0 → Launch 속도가 몽타주 동안 감쇠 없이 유지(등속). MaxWalkSpeed 는 입력 가속에만
+    // 적용되므로 건드릴 필요 없음. 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
+    SavedGroundFriction        = MovementComp->GroundFriction;
+    SavedBrakingDecelWalking   = MovementComp->BrakingDecelerationWalking;
+    SavedBrakingFrictionFactor = MovementComp->BrakingFrictionFactor;
+    MovementComp->GroundFriction             = 0.f;
+    MovementComp->BrakingDecelerationWalking = 0.f;
+    MovementComp->BrakingFrictionFactor      = 0.f;
+    bDodgeMoveActive = true;
+
+    // 모션-이동 일치: 구르기 몽타주는 전방 기준인데 Launch 는 입력 가속이 없어
+    // bOrientRotationToMovement 가 회전을 안 돌림(SetFocalPoint 도 bUseControllerRotationYaw=false 라 무력).
+    // → 액터 회전을 회피 방향으로 즉시 스냅.
+    OwnerCharacter->SetActorRotation(Direction.Rotation());
+
+    const float DodgeSpeed = ParseMoveSpeed(EMoveType::Run) * DodgeSpeedMultiplier;
+    OwnerCharacter->LaunchCharacter(Direction * DodgeSpeed, true, false); // Z 미오버라이드 — 중력 유지
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Dodge 이동 시작 — 방향 %s, 속도 %.0f"),
+        *GetOwnerAgentID(), *Direction.ToCompactString(), DodgeSpeed);
+}
+
+void UNPCActionComponent::StopDodgeMove()
+{
+    if (!bDodgeMoveActive) return;
+    bDodgeMoveActive = false;
+
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
+    if (!MovementComp) return;
+
+    MovementComp->GroundFriction             = SavedGroundFriction;
+    MovementComp->BrakingDecelerationWalking = SavedBrakingDecelWalking;
+    MovementComp->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
+
+    // 마찰 원복만으론 몇 프레임 더 미끄러짐 — 수평 잔류 속도 즉시 제거(낙하 Z 는 유지)
+    MovementComp->Velocity.X = 0.f;
+    MovementComp->Velocity.Y = 0.f;
 }
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }
@@ -1665,7 +1727,7 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
     case EAction::Dodge:
     {
-        // 타겟 기준 좌/우 측면 스텝 — ExecuteDodgeAction 이 이 방향으로 TurnTo 후 몽타주 재생.
+        // 타겟 기준 좌/우 측면 스텝 — ExecuteDodgeAction 이 이 방향으로 TurnTo 후 몽타주 + 등속 이동.
         const FVector ToTarget = (TargetActor->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
         FVector Lateral = FVector::CrossProduct(ToTarget, FVector::UpVector) * (FMath::RandBool() ? 1.f : -1.f);
         if (Lateral.IsNearlyZero()) Lateral = -Owner->GetActorForwardVector();
