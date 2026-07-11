@@ -24,6 +24,7 @@
 #include "../../Network/EnvelopeBuilder.h"
 #include "../NPCManager.h"
 #include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
+#include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -659,7 +660,8 @@ bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
         }
         if (MediaData->Sound)
         {
-            // TODO: SoundBase 검색 후 재생
+            // 몽타주와 독립 재생(완료 모델 무관) — 3D 감쇠·볼륨은 SoundBase 에셋 설정을 따른다.
+            UGameplayStatics::PlaySoundAtLocation(GetOwner(), MediaData->Sound, GetOwner()->GetActorLocation());
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] DataAsset 사운드 재생: %s"), *MediaData->Sound->GetName());
         }
     }
