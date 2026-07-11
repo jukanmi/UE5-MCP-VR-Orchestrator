@@ -424,9 +424,40 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
     return result.model_dump_json()
 
 
+async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
+    """전투 승리 보고(report_type="combat_victory") 처리 — SPEC_combat_selector Phase 2.
+
+    행동 생성 없음(무행동 배치 반환) — 후속 행동은 UE5 replan 플래그가 강제하는
+    다음 prompt 의 LLM 몫. 여기서는 승리 사실을 NPC 장기 기억에 남겨
+    다음 대화에서 '내가 그놈을 처치했다'를 인지하게만 한다.
+    """
+    from .utils.memory_manager import get_memory
+
+    agent_id = payload.agent_id
+    defeated = payload.perceptions[0].target_id if payload.perceptions else "Unknown"
+    logger.info(f"[Main] 전투 승리 보고: npc={agent_id}, defeated={defeated} — 메모리 기록, 무행동")
+
+    # add_entry 는 파일 I/O + 토큰 예산 초과 시 요약까지 수행 가능 — 루프 블로킹 방지 오프로드.
+    def _write_victory_memory() -> None:
+        get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).")
+
+    task = asyncio.create_task(asyncio.to_thread(_write_victory_memory))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return _empty_batch_json()
+
+
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
     try:
         payload = envelope.parse_emergency_report_payload()
+
+        # ── 특수 보고 분기 ─────────────────────────────────────────────
+        # combat_victory 는 위협이 아니라 종결 통보 — danger 게이트 전에 라우팅
+        # (danger=0 이라 아래 게이트에 걸려 조용히 버려지는 것을 방지).
+        if payload.report_type == "combat_victory":
+            return await _handle_combat_victory(payload)
+
         logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
         # ── danger 게이트 ──────────────────────────────────────────────

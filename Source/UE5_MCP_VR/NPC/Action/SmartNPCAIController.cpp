@@ -198,13 +198,17 @@ void ASmartNPCAIController::HandleCombatTargetDead(AActor* DeadTarget)
     {
         ActionComp->AbortCurrentAction();
         ActionComp->StopAllActions();
+        // 전투 종료로 진행 중 전술 쿼리는 무의미 — Idle 복귀(WaitingLLM 잔존 시 후속 보고 지연 방지).
+        ActionComp->AbortTacticalQuery();
     }
 
     if (UNPCStateComponent* StateComp = NPC->StateComponent)
     {
         StateComp->SetBehaviorMode(ENPCBehaviorMode::Common);
-        // Phase 1 LLM 통보 = replan 플래그만. 다음 상호작용 prompt 에서 강제 재계획(승리 후 행동은 그때 LLM 몫).
+        // replan 플래그 — 다음 상호작용 prompt 에서 강제 재계획.
         StateComp->FlagDangerReplan();
+        // Phase 2 통보: 승리 사실을 Python 에 즉시 보고(메모리 기록용, 무행동 응답).
+        StateComp->ReportCombatVictory(DeadTarget ? DeadTarget->GetName() : TEXT("Unknown"));
     }
 
     // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유 §2).

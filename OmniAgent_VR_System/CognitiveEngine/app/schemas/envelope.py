@@ -138,6 +138,9 @@ class EmergencyReportPayload(BaseModel):
     agent_id: str  # 이벤트를 감지한 주체 NPC ID
     perceptions: List[PerceptionData]  # 감지된 이벤트 목록 (위험도순 정렬됨)
     generated_at: float  # 리포트 생성 시각 (UNIX)
+    # 보고 성격. "perception"(기본 — C++ 일반 보고는 필드 생략) 외 특수 이벤트 구분용.
+    # "combat_victory": 타겟 사망 승리 보고 — danger 게이트 우회, 메모리 기록만(무행동 응답).
+    report_type: str = "perception"
 
 
 class LocationCandidate(BaseModel):

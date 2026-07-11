@@ -194,6 +194,35 @@ void UNPCStateComponent::FlushEventReport()
     LocalEventQueue.Empty();
 }
 
+void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
+{
+    ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner());
+    if (!OwnerNPC) return;
+
+    UNPCManager* Manager = UNPCManager::Get(OwnerNPC);
+    if (!Manager) return;
+
+    // 단발 이벤트라 디바운스 큐 미경유. danger=0 — Python 게이트는 report_type 으로 식별.
+    FPerceptionData Victory;
+    Victory.TargetID = DefeatedTargetID;
+    Victory.SenseType = ESenseType::Other;
+    Victory.Location = OwnerNPC->GetActorLocation();
+    Victory.Distance = 0.f;
+    Victory.DangerScore = 0.f;
+
+    const FString Payload = UMCPJsonUtils::SerializePerceptionReport(
+        OwnerNPC->AgentID, { Victory }, TEXT("combat_victory"));
+    if (Payload.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: 승리 보고 직렬화 실패 — 전송 생략"), *OwnerNPC->AgentID);
+        return;
+    }
+
+    Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+    UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: 전투 승리 보고 전송 (defeated=%s)"),
+        *OwnerNPC->AgentID, *DefeatedTargetID);
+}
+
 // --- Internal Helper ---
 
 ASmartNPCAIController* UNPCStateComponent::GetOwnerAIController() const

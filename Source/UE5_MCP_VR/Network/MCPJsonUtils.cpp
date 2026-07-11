@@ -150,7 +150,7 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
     return ParseModeActionRequestFromObject(RootObject, OutRequest);
 }
 
-FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents)
+FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType)
 {
     TArray<TSharedPtr<FJsonValue>> EventValues;
     EventValues.Reserve(PerceptionEvents.Num());
@@ -174,6 +174,11 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
     Root->SetArrayField(TEXT("perceptions"), EventValues);
     Root->SetNumberField(TEXT("generated_at"),
         (FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalSeconds());
+    // 특수 보고(승리 등)만 명시 — 일반 perception 은 필드 생략(Python 기본값 "perception" 폴백).
+    if (!ReportType.IsEmpty())
+    {
+        Root->SetStringField(TEXT("report_type"), ReportType);
+    }
 
     FString Output;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
