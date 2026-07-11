@@ -94,35 +94,75 @@ def _format_gestures(gestures) -> str:
     return "\n".join(descriptions)
 
 
+def _format_location(vr_context: GesPrompt) -> str:
+    """player_location → "(x, y, z)" 문자열, 없으면 "Unknown"."""
+    if vr_context.player_location:
+        loc = vr_context.player_location
+        return f"({loc.x}, {loc.y}, {loc.z})"
+    return "Unknown"
+
+
+def _format_perceived_targets(state: AgentState) -> str:
+    """주변 타겟(perceived_targets) 문자열 — state_update 로 캐시된 최신 상태 참조.
+    prompt envelope 에는 perceived_targets 가 없어 cached_world_state 를 씀."""
+    state_payload = state.get("cached_world_state", {})
+    if not (state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload):
+        return "Unknown"
+    targets = state_payload["perceived_targets"]
+    if not targets:
+        return "None visible/audible"
+    pts = []
+    for pt in targets:
+        t_id = pt.get("target_id", "unknown")
+        t_dist = pt.get("distance", 0.0)
+        pts.append(f"{t_id} ({t_dist:.1f}m away)")
+    return ", ".join(pts)
+
+
+def _format_failed_history(state: AgentState) -> str:
+    """실패 이력 컨텍스트 조각(". Recently FAILED ...") — 이력 없으면 "".
+    WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
+    반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
+    최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행)."""
+    failed_history = state.get("failed_action_history") or []
+    if not failed_history:
+        return ""
+    recent = failed_history[-3:]
+    fails = "; ".join(
+        f"{f.get('failed_action_type', 'Unknown')}"
+        f" by {f.get('executor_npc_id', 'unknown')}"
+        f" (reason: {f.get('reason', 'unknown')})"
+        for f in recent
+    )
+    return f". Recently FAILED actions (do NOT retry the same way): {fails}"
+
+
+def _format_plan_context(state: AgentState) -> str:
+    """계획 컨텍스트 조각(". Current goal ...") — 해당 plan 없으면 "".
+    WHY: replan=False 경량 루프에서 저장된 plan(goal/steps)을 주입해 e4b 캐릭터 드리프트 차단.
+    current_plan 은 npc_id → {goal, steps, ...}. target_npc plan 만 주입,
+    없으면 생략 — 첫 항목 폴백은 타 NPC plan 오참조 위험으로 의도적 제외."""
+    current_plan = state.get("current_plan")
+    if not (current_plan and isinstance(current_plan, dict)):
+        return ""
+    # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
+    plan = ci_get(current_plan, state.get("target_npc"))
+    if not (isinstance(plan, dict) and plan.get("goal")):
+        return ""
+    steps = plan.get("steps") or []
+    steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
+    return f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
-    긴급 이벤트·guardrail 을 통과한 정상 발화만 여기 도달한다.
+    긴급 이벤트·guardrail 을 통과한 정상 발화만 여기 도달한다. 조각 생성은 _format_* 헬퍼 분담.
     """
-    # ── 위치/제스처 포맷 ────────────────────────────────────────
-    location_str = "Unknown"
-    if vr_context.player_location:
-        loc = vr_context.player_location
-        location_str = f"({loc.x}, {loc.y}, {loc.z})"
+    location_str = _format_location(vr_context)
     gesture_str = _format_gestures(vr_context.gestures)
+    perceived_str = _format_perceived_targets(state)
 
-    # ── 주변 타겟(perceived_targets) — state_update 로 캐시된 최신 상태 참조 ──
-    # prompt envelope 에는 perceived_targets 가 없어 cached_world_state 를 씀.
-    perceived_str = "Unknown"
-    state_payload = state.get("cached_world_state", {})
-    if state_payload and isinstance(state_payload, dict) and "perceived_targets" in state_payload:
-        targets = state_payload["perceived_targets"]
-        if targets:
-            pts = []
-            for pt in targets:
-                t_id = pt.get("target_id", "unknown")
-                t_dist = pt.get("distance", 0.0)
-                pts.append(f"{t_id} ({t_dist:.1f}m away)")
-            perceived_str = ", ".join(pts)
-        else:
-            perceived_str = "None visible/audible"
-
-    # ── 구조화 컨텍스트 직접 조합 ────────────────────────────────
     natural_context = f'Player said: "{transcript}"'
     if gesture_str != "None":
         natural_context += f", with gestures: {gesture_str}"
@@ -133,57 +173,18 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     if perceived_str not in ("Unknown", "None visible/audible"):
         natural_context += f", nearby: {perceived_str}"
 
-    # ── 실패 이력 주입 — UE5 action_failed 보고를 LLM 컨텍스트에 반영 ──
-    # WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
-    # 반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
-    # 최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행).
-    failed_history = state.get("failed_action_history") or []
-    if failed_history:
-        recent = failed_history[-3:]
-        fails = "; ".join(
-            f"{f.get('failed_action_type', 'Unknown')}"
-            f" by {f.get('executor_npc_id', 'unknown')}"
-            f" (reason: {f.get('reason', 'unknown')})"
-            for f in recent
-        )
-        natural_context += f". Recently FAILED actions (do NOT retry the same way): {fails}"
-
-    # ── 계획 컨텍스트 주입 — replan=False 경량 루프에서 e4b 가 plan 일관 발화하도록 ──
-    # WHY: 재계획 없이 저장된 plan(goal/steps)을 컨텍스트로 주입해 캐릭터 드리프트 차단.
-    # current_plan 은 npc_id → {goal, steps, ...}. target_npc plan 만 주입,
-    # 없으면 주입 생략 — 첫 항목 폴백은 타 NPC plan 오참조 위험으로 의도적 제외.
-    current_plan = state.get("current_plan")
-    if current_plan and isinstance(current_plan, dict):
-        # 대소문자 무시 조회 — 디버그/외부 입력의 ID 케이스 불일치 방어.
-        plan = ci_get(current_plan, state.get("target_npc"))
-        if isinstance(plan, dict) and plan.get("goal"):
-            steps = plan.get("steps") or []
-            steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
-            natural_context += (
-                f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
-            )
+    natural_context += _format_failed_history(state)
+    natural_context += _format_plan_context(state)
 
     return natural_context
 
 
-def interface_input_node(state: AgentState) -> dict:
-    """
-    Interface Input Agent.
-
-    [처리 순서]
-    1. Guardrail 검사 → Jailbreak 감지 시 즉시 에러 반환 (LLM 없이)
-    2. 긴급 이벤트(Hit/Ambush) 감지 → 즉각 응전 컨텍스트 생성
-    3. GesPrompt 필드를 직접 조합해 natural_context 생성 (LLM 없이)
-
-    Input: AgentState (vr_context 포함)
-    Output: natural_context + target_npc, 또는 has_error=True
-    """
-    vr_context = state.get("vr_context")
-
-    # ── 입력 없을 때 기본 처리 ──────────────────────────────────
+def _coerce_vr_context(vr_context):
+    """vr_context 정규화 — (GesPrompt, None) 또는 (None, 폴백 응답 dict).
+    누락/변환 실패 시에도 그래프가 끊기지 않게 Dialogue 로 넘기는 기존 동작 유지."""
     if not vr_context:
         print("[Interface Input] ERROR: vr_context 없음")
-        return {
+        return None, {
             "natural_context": "Player input is empty.",
             "current_speaker": "Interface_Input",
             "next": "Dialogue",
@@ -195,42 +196,75 @@ def interface_input_node(state: AgentState) -> dict:
             vr_context = GesPrompt(**vr_context)
         except Exception as e:
             print(f"[Interface Input] GesPrompt 변환 실패: {e}")
-            return {
+            return None, {
                 "natural_context": "Player said something but context is unclear.",
                 "current_speaker": "Interface_Input",
                 "next": "Dialogue",
             }
 
+    return vr_context, None
+
+
+def _guardrail_block(transcript: str):
+    """[보안 1단계] Prompt Injection 탐지 — 차단 시 has_error 응답 dict, 정상이면 None.
+    탐지 즉시 has_error=True → Supervisor가 LLM 호출 없이 End로 숏컷."""
+    is_injected, matched_pattern = _check_prompt_injection(transcript)
+    if not is_injected:
+        return None
+    print(f"[Interface Input] WARN  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
+    return {
+        "has_error": True,
+        "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",
+        "current_speaker": "Interface_Input",
+        "next": "End",  # Supervisor가 에러 감지 후 즉시 종료
+    }
+
+
+def _emergency_interrupt(vr_context: GesPrompt, transcript: str):
+    """[긴급 인터럽트] Hit/Ambush — LLM 추론 지연 없이 즉각 응전 컨텍스트. 해당 없으면 None."""
+    if vr_context.last_event not in ["Hit", "Ambush"]:
+        return None
+    print(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
+    emergency_context = (
+        f"EMERGENCY: Player is under attack ({vr_context.last_event})! "
+        f'Player said: "{transcript}". '
+        "Immediate combat response required."
+    )
+    return {
+        "natural_context": emergency_context,
+        "current_speaker": "Interface_Input",
+        "next": "Dialogue",
+    }
+
+
+def interface_input_node(state: AgentState) -> dict:
+    """
+    Interface Input Agent.
+
+    [처리 순서]
+    1. vr_context 정규화 (누락/dict 폴백)
+    2. Guardrail 검사 → Jailbreak 감지 시 즉시 에러 반환 (LLM 없이)
+    3. 긴급 이벤트(Hit/Ambush) 감지 → 즉각 응전 컨텍스트 생성
+    4. GesPrompt 필드를 직접 조합해 natural_context 생성 (LLM 없이)
+
+    Input: AgentState (vr_context 포함)
+    Output: natural_context + target_npc, 또는 has_error=True
+    """
+    vr_context, fallback = _coerce_vr_context(state.get("vr_context"))
+    if fallback is not None:
+        return fallback
+
     transcript = vr_context.voice_transcript or ""
 
-    # ── [보안 1단계] Prompt Injection 탐지 ──────────────────────
-    # 탐지 즉시 has_error=True → Supervisor가 LLM 호출 없이 End로 숏컷
-    is_injected, matched_pattern = _check_prompt_injection(transcript)
-    if is_injected:
-        print(f"[Interface Input] WARN  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
-        return {
-            "has_error": True,
-            "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",
-            "current_speaker": "Interface_Input",
-            "next": "End",  # Supervisor가 에러 감지 후 즉시 종료
-        }
+    blocked = _guardrail_block(transcript)
+    if blocked is not None:
+        return blocked
 
     print(f"[Interface Input] Transcript: '{transcript}'")
 
-    # ── [긴급 인터럽트] 전투 긴급 상황 → LLM 없이 즉각 처리 ────
-    # 이유: LLM 추론 시간 지연 없이 즉각 전투 응답이 필요한 상황
-    if vr_context.last_event in ["Hit", "Ambush"]:
-        print(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
-        emergency_context = (
-            f"EMERGENCY: Player is under attack ({vr_context.last_event})! "
-            f'Player said: "{transcript}". '
-            "Immediate combat response required."
-        )
-        return {
-            "natural_context": emergency_context,
-            "current_speaker": "Interface_Input",
-            "next": "Dialogue",
-        }
+    emergency = _emergency_interrupt(vr_context, transcript)
+    if emergency is not None:
+        return emergency
 
     # ── 구조화 컨텍스트 조합 (위치/제스처/perceived/실패이력/plan) ──
     natural_context = _build_natural_context(vr_context, state, transcript)
