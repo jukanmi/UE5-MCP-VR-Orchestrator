@@ -2,10 +2,12 @@
 #include "NPCActionComponent.h"
 #include "../NPCStateComponent.h"
 #include "../SmartNPC.h"
+#include "../../Core/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "MCPStateTreeAIComponent.h"
 #include "StateTree.h"
+#include "GameplayTagAssetInterface.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 
@@ -160,6 +162,69 @@ void ASmartNPCAIController::ResumeAI()
     if (StateTreeAI && GetPawn())
     {
         StateTreeAI->StartLogic();
+    }
+}
+
+bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
+{
+    if (!Target) return false;
+
+    // NPC — HandleDeath 가 세우는 플래그. Destroy 지연(3초) 동안에도 즉시 사망 판정.
+    if (const ASmartNPC* TargetNPC = Cast<ASmartNPC>(Target))
+    {
+        return TargetNPC->bIsDead;
+    }
+
+    // 플레이어(VRPawn/VRPlayerCharacter) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
+    if (const IGameplayTagAssetInterface* TagOwner = Cast<IGameplayTagAssetInterface>(Target))
+    {
+        return TagOwner->HasMatchingGameplayTag(TAG_State_Condition_Dead);
+    }
+
+    return false;
+}
+
+void ASmartNPCAIController::HandleCombatTargetDead(AActor* DeadTarget)
+{
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    if (!NPC) return;
+
+    UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] %s: 전투 타겟 '%s' 사망 — 전투 해제, Common 복귀"),
+        *NPC->AgentID, DeadTarget ? *DeadTarget->GetName() : TEXT("Unknown"));
+
+    // 진행 중 스윙·이동 즉시 중단(몽타주 포함) 후 잔여 큐 폐기.
+    // StopAllActions 의 OnActionStoppedAll → HandleAllActionsStopped 가 BB.TargetActor 를 클리어한다.
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->AbortCurrentAction();
+        ActionComp->StopAllActions();
+        // 전투 종료로 진행 중 전술 쿼리는 무의미 — Idle 복귀(WaitingLLM 잔존 시 후속 보고 지연 방지).
+        ActionComp->AbortTacticalQuery();
+    }
+
+    if (UNPCStateComponent* StateComp = NPC->StateComponent)
+    {
+        StateComp->SetBehaviorMode(ENPCBehaviorMode::Common);
+        // replan 플래그 — 다음 상호작용 prompt 에서 강제 재계획.
+        StateComp->FlagDangerReplan();
+        // Phase 2 통보: 승리 사실을 Python 에 즉시 보고(메모리 기록용, 무행동 응답).
+        StateComp->ReportCombatVictory(DeadTarget ? DeadTarget->GetName() : TEXT("Unknown"));
+    }
+
+    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유 §2).
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        BB->ClearValue(Key_TargetActor);
+    }
+
+    // 사망 대상 주기 감시 해제 — 시체 대상 perception 재보고 방지.
+    if (CurrentSightTarget.Get() == DeadTarget)
+    {
+        if (UWorld* W = GetWorld())
+        {
+            W->GetTimerManager().ClearTimer(PerceptionTickTimer);
+        }
+        CurrentSightTarget.Reset();
     }
 }
 

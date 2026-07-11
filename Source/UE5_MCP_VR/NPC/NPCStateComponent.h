@@ -119,6 +119,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void RequestEventCognition(const FPerceptionData& Perception);
 
+    /** 전투 승리 보고 (SPEC_combat_selector Phase 2) — report_type="combat_victory" 로 즉시 발신.
+     *  디바운스 큐 미경유(단발 이벤트). Python 은 danger 게이트를 우회해 메모리 기록만 하고
+     *  무행동 배치를 반환한다(후속 행동은 replan 플래그가 강제하는 다음 prompt 의 LLM 몫). */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
+    void ReportCombatVictory(const FString& DefeatedTargetID);
+
     // --- Affinity (호감도) ---
     
     // [의도(Why)] 파이썬 서버가 계산한 타겟과의 호감도(Affinity)를 로컬 캐싱하여, 퍼셉션(시각/청각) 이벤트 발생 시 대상에 대한 즉각적인 위험도(Multiplier) 판단에 사용합니다.

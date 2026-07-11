@@ -256,6 +256,12 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
     // BehaviorMode(Common/Combat) 갱신 — StateComponent가 단일 소유. STTask Combat 분기가 이 값을 읽는다.
     if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
 
+    // LLM 이 전투 밖으로 전환시키면 셀렉터 연속성도 새 전투 기준으로 초기화.
+    if (Batch.Mode != ENPCBehaviorMode::Combat)
+    {
+        ResetCombatSelectorState();
+    }
+
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지
     bIsDialogueActive = false;
 
@@ -324,6 +330,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
@@ -336,6 +343,7 @@ void UNPCActionComponent::StopAllActions()
     ActionQueue.Empty();
     ClearActiveActionState();
     LastQueuedActionType = EAction::Idle;
+    ResetCombatSelectorState(); // 전투 종료(HandleCombatTargetDead)·비상 정지 공통 — 셀렉터 연속성 초기화
 
     ResetAllStateTagsToIdle(GetOwner());
 
@@ -457,6 +465,50 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
         }
         bActionAwaitingAsync = true;
         AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
+    }
+}
+
+void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType, float AcceptanceRadius)
+{
+    if (!TargetActor) return;
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
+
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    {
+        MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
+    }
+
+    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
+    {
+        // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
+        // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
+        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+        {
+            PFC->OnRequestFinished.RemoveAll(this);
+            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
+        }
+        bActionAwaitingAsync = true;
+        const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToActor(TargetActor, AcceptanceRadius);
+        if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
+        {
+            // AlreadyAtGoal/Failed 는 OnRequestFinished 가 발화하지 않음 — 대기 유지 시
+            // 워치독(MaxActionDuration)까지 정지. 즉시 결과는 여기서 동기 처리한다.
+            if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+            {
+                PFC->OnRequestFinished.RemoveAll(this); // stale 바인딩이 무관한 후속 이동에 발화하는 것 방지
+            }
+            bActionAwaitingAsync = false;
+
+            const FString MediaKey = PendingMoveMediaKey;
+            PendingMoveMediaKey.Reset();
+            if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && !MediaKey.IsEmpty())
+            {
+                // 이미 사거리 내 — 대기 몽타주(Attack 등) 즉시 재생. 재생 성공 시 비동기 완료로 전환,
+                // 실패 시 bActionAwaitingAsync=false 라 ExecuteInteraction 말미가 즉시 완료 처리.
+                BasePlayActionMedia(MediaKey);
+            }
+        }
     }
 }
 
@@ -1428,10 +1480,11 @@ void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType A
     if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
         OwnerNPC->SetCurrentAttackTarget(TargetActor);
 
-    // 도착 후 "Attack" 몽타주 재생 — BaseMove가 OnMoveActionCompleted를 바인딩하고,
-    // 콜백에서 PendingMoveMediaKey가 있으면 몽타주를 재생한다.
+    // 타겟 추적 이동(스냅샷 좌표 아님) — 사거리(AcceptanceRadius) 이내 도달 시
+    // OnMoveActionCompleted 가 PendingMoveMediaKey("Attack") 몽타주를 재생한다.
+    // 추격이 끝없이 길어지면 MaxActionDuration 워치독이 강제 완료 → 셀렉터 재선택.
     PendingMoveMediaKey = TEXT("Attack");
-    BaseMove(TargetActor->GetActorLocation(), EMoveType::Run, 150.f);
+    BaseMoveToActor(TargetActor, EMoveType::Run, 150.f);
 
     if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
         UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Attack, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Attack);
@@ -1485,12 +1538,304 @@ void UNPCActionComponent::ExecuteBlock(AActor* TargetActor)
 
 void UNPCActionComponent::ExecuteDodgeAction(FVector Direction)
 {
-    ExecuteTurnTo(GetOwner()->GetActorLocation() + Direction * 100.f, nullptr);
-    BasePlayActionMedia(TEXT("Dodge"));
+    // 셀렉터/LLM 이 주는 방향은 비정규(길이 임의) — 수평 단위벡터로 통일
+    FVector Dir = Direction.GetSafeNormal2D();
+    if (Dir.IsNearlyZero()) Dir = GetOwner()->GetActorForwardVector();
+
+    ExecuteTurnTo(GetOwner()->GetActorLocation() + Dir * 100.f, nullptr);
+
+    // 몽타주가 실제 재생될 때만 이동 — 미등록 시 기존 즉시 완료 경로 유지(모션 없는 순간이동 방지)
+    if (BasePlayActionMedia(TEXT("Dodge")))
+    {
+        StartDodgeMove(Dir);
+    }
+}
+
+void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
+{
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
+    if (!MovementComp) return;
+
+    // 진행 중 MoveTo 잔재가 회피 방향과 경합하지 않게 정지
+    if (ASmartNPCAIController* AI = GetOwnerAIController())
+    {
+        AI->StopMovement();
+    }
+
+    // 마찰·제동 0 → Launch 속도가 몽타주 동안 감쇠 없이 유지(등속). MaxWalkSpeed 는 입력 가속에만
+    // 적용되므로 건드릴 필요 없음. 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
+    SavedGroundFriction        = MovementComp->GroundFriction;
+    SavedBrakingDecelWalking   = MovementComp->BrakingDecelerationWalking;
+    SavedBrakingFrictionFactor = MovementComp->BrakingFrictionFactor;
+    MovementComp->GroundFriction             = 0.f;
+    MovementComp->BrakingDecelerationWalking = 0.f;
+    MovementComp->BrakingFrictionFactor      = 0.f;
+    bDodgeMoveActive = true;
+
+    // 모션-이동 일치: 구르기 몽타주는 전방 기준인데 Launch 는 입력 가속이 없어
+    // bOrientRotationToMovement 가 회전을 안 돌림(SetFocalPoint 도 bUseControllerRotationYaw=false 라 무력).
+    // → 액터 회전을 회피 방향으로 즉시 스냅.
+    OwnerCharacter->SetActorRotation(Direction.Rotation());
+
+    const float DodgeSpeed = ParseMoveSpeed(EMoveType::Run) * DodgeSpeedMultiplier;
+    OwnerCharacter->LaunchCharacter(Direction * DodgeSpeed, true, false); // Z 미오버라이드 — 중력 유지
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Dodge 이동 시작 — 방향 %s, 속도 %.0f"),
+        *GetOwnerAgentID(), *Direction.ToCompactString(), DodgeSpeed);
+}
+
+void UNPCActionComponent::StopDodgeMove()
+{
+    if (!bDodgeMoveActive) return;
+    bDodgeMoveActive = false;
+
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
+    if (!MovementComp) return;
+
+    MovementComp->GroundFriction             = SavedGroundFriction;
+    MovementComp->BrakingDecelerationWalking = SavedBrakingDecelWalking;
+    MovementComp->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
+
+    // 마찰 원복만으론 몇 프레임 더 미끄러짐 — 수평 잔류 속도 즉시 제거(낙하 Z 는 유지)
+    MovementComp->Velocity.X = 0.f;
+    MovementComp->Velocity.Y = 0.f;
 }
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }
 void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BaseSignalAllies(HandSign); }
+
+// ==========================================
+// [전투 행동 셀렉터] — SPEC_combat_selector Phase 1
+// ==========================================
+
+bool UNPCActionComponent::HasNearbyAlly(const AActor* EnemyTarget) const
+{
+    const AActor* Owner = GetOwner();
+    if (!Owner || !StateComponent) return false;
+
+    UNPCManager* Mgr = UNPCManager::Get(Owner);
+    if (!Mgr) return false;
+
+    for (const auto& Pair : Mgr->GetActiveNPCs())
+    {
+        const ASmartNPC* Other = Pair.Value;
+        if (!Other || Other == Owner || Other == EnemyTarget || Other->bIsDead) continue;
+        if (FVector::Dist(Owner->GetActorLocation(), Other->GetActorLocation()) > SignalAlliesRadius) continue;
+        // 적대(배율 1.0)만 제외 — 중립·아군 모두 신호 대상 후보(구조 요청).
+        if (StateComponent->GetAffinityMultiplier(Pair.Key) >= 1.f) continue;
+        return true;
+    }
+    return false;
+}
+
+void UNPCActionComponent::ResetCombatSelectorState()
+{
+    LastCombatChoice = EAction::Idle;
+    ConsecutiveCombatChoiceCount = 0;
+    LastCombatSelectTime = -1000.f;
+    bSignaledAlliesThisCombat = false;
+}
+
+bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
+{
+    AActor* Owner = GetOwner();
+    UWorld* World = GetWorld();
+    if (!TargetActor || !Owner || !World || !StateComponent) return false;
+
+    // 페이싱 — 액션 사이 최소 간격. 미충족 시 이번 틱은 대기(숨고르기).
+    const float Now = World->GetTimeSeconds();
+    if (Now - LastCombatSelectTime < CombatActionInterval) return false;
+
+    const FNPCAttributes Attr = StateComponent->GetAttributes();
+    const float Dist = FVector::Dist(Owner->GetActorLocation(), TargetActor->GetActorLocation());
+    const float HPLoss = 1.f - FMath::Clamp(Attr.Resources.GetHealthPercent(), 0.f, 1.f);
+    const bool bRecentlyHit = StateComponent->LastHitTime > 0.f
+        && (Now - StateComponent->LastHitTime) < RecentHitWindow;
+
+    // 방어 행동 공통 배율: 최근 피격 부스트 × 저HP 급증(하드 임계 없음 — 연속 스케일).
+    const float DefenseBoost = (bRecentlyHit ? RecentHitDefenseBoost : 1.f) * (1.f + LowHPDefenseScale * HPLoss);
+    // 방어 행동은 근접에서만 유의미 — 밖이면 급감.
+    const float DefenseRangeFactor = (Dist <= DefenseReactRange) ? 1.f : 0.1f;
+
+    struct FCombatCandidate { EAction Action; float Weight; };
+    TArray<FCombatCandidate, TInlineAllocator<6>> Candidates;
+
+    // Attack — Strength 파생. 연속 상한 도달 시 0(다른 행동 강제).
+    {
+        float W = CombatWeight_Attack * (Attr.BaseStats.Strength / CombatStatNorm);
+        if (LastCombatChoice == EAction::Attack && ConsecutiveCombatChoiceCount >= MaxConsecutiveAttacks)
+        {
+            W = 0.f;
+        }
+        Candidates.Add({ EAction::Attack, W });
+    }
+
+    // Dodge — Agility 파생 × 방어 배율, 근접 한정.
+    Candidates.Add({ EAction::Dodge,
+        CombatWeight_Dodge * (Attr.BaseStats.Agility / CombatStatNorm) * DefenseBoost * DefenseRangeFactor });
+
+    // Block — 방어 배율, 근접 한정(스탯 파생 없음 — 자세 유지형).
+    Candidates.Add({ EAction::Block, CombatWeight_Block * DefenseBoost * DefenseRangeFactor });
+
+    // 거리조절(Move) — Agility 파생 × 이상 링 이탈 정도. 링 안이면 0.
+    {
+        float SpacingUrge = 0.f;
+        if (Dist < SpacingMinRange)
+        {
+            SpacingUrge = (SpacingMinRange - Dist) / SpacingMinRange;                      // 너무 붙음 → 백스텝
+        }
+        else if (Dist > SpacingMaxRange)
+        {
+            SpacingUrge = FMath::Min(1.f, (Dist - SpacingMaxRange) / SpacingMaxRange);     // 너무 멂 → 접근
+        }
+        Candidates.Add({ EAction::Move,
+            CombatWeight_Spacing * (Attr.BaseStats.Agility / CombatStatNorm) * SpacingUrge });
+    }
+
+    // Flee — 저HP 제곱 램프 × 겁 성향(Fear↑·Bravery↓ → 0~2). 만HP≈0(가중치 급증은 저HP에서만).
+    {
+        const float CowardScale = (Attr.Behavior.Fear + (100.f - Attr.Behavior.Bravery)) / 100.f;
+        Candidates.Add({ EAction::Flee, CombatWeight_Flee * LowHPFleeScale * HPLoss * HPLoss * CowardScale });
+    }
+
+    // SignalAllies — 아군 감지 시 확률 편입, 전투당 1회, 저HP 편향.
+    if (!bSignaledAlliesThisCombat && HasNearbyAlly(TargetActor))
+    {
+        Candidates.Add({ EAction::SignalAllies, CombatWeight_Signal * (0.3f + HPLoss) });
+    }
+
+    // 연속 동일 행동 페널티(Attack 하드캡과 별개, 전 행동 공통 — 거듭제곱 누적).
+    for (FCombatCandidate& C : Candidates)
+    {
+        if (C.Action == LastCombatChoice && ConsecutiveCombatChoiceCount > 0)
+        {
+            C.Weight *= FMath::Pow(CombatRepeatPenalty, static_cast<float>(ConsecutiveCombatChoiceCount));
+        }
+    }
+
+    // 가중치 확률 추첨. 부동소수 잔여로 못 고르면 마지막 유효 후보.
+    auto PickWeighted = [&Candidates]() -> int32
+    {
+        float TotalW = 0.f;
+        for (const FCombatCandidate& C : Candidates) TotalW += FMath::Max(0.f, C.Weight);
+        if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
+
+        float Roll = FMath::FRandRange(0.f, TotalW);
+        for (int32 i = 0; i < Candidates.Num(); ++i)
+        {
+            const float W = FMath::Max(0.f, Candidates[i].Weight);
+            if (W <= 0.f) continue;
+            if (Roll < W) return i;
+            Roll -= W;
+        }
+        for (int32 i = Candidates.Num() - 1; i >= 0; --i)
+        {
+            if (Candidates[i].Weight > 0.f) return i;
+        }
+        return INDEX_NONE;
+    };
+
+    int32 ChosenIdx = PickWeighted();
+    if (ChosenIdx == INDEX_NONE)
+    {
+        // 후보 전멸(사실상 도달 불가) — 이번 간격은 소진시켜 매 틱 재추첨 스핀 방지.
+        LastCombatSelectTime = Now;
+        return false;
+    }
+
+    // Flee 발동 주사위 — 배짱(Bravery) 체크 성공 시 도주 억제 후 재선택("용감한 놈 끝까지").
+    if (Candidates[ChosenIdx].Action == EAction::Flee)
+    {
+        FDiceResult BraverySave;
+        if (UDiceSystem::CheckReflex(Attr.Behavior.Bravery, FleeBraveryDifficulty, BraverySave))
+        {
+            UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s: 배짱 주사위 성공(roll %.0f < %.0f) — 도주 억제, 재선택"),
+                *GetOwnerAgentID(), BraverySave.RollValue, BraverySave.TargetValue);
+            Candidates[ChosenIdx].Weight = 0.f;
+            const int32 Retry = PickWeighted();
+            if (Retry != INDEX_NONE) ChosenIdx = Retry; // 대안 없으면 Flee 유지
+        }
+    }
+
+    const EAction Chosen = Candidates[ChosenIdx].Action;
+
+    FGameAction Action;
+    Action.ActionType = Chosen;
+    switch (Chosen)
+    {
+    case EAction::Attack:
+        Action.FacialState = EFacialState::Angry;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::Dodge:
+    {
+        // 타겟 기준 좌/우 측면 스텝 — ExecuteDodgeAction 이 이 방향으로 TurnTo 후 몽타주 + 등속 이동.
+        const FVector ToTarget = (TargetActor->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
+        FVector Lateral = FVector::CrossProduct(ToTarget, FVector::UpVector) * (FMath::RandBool() ? 1.f : -1.f);
+        if (Lateral.IsNearlyZero()) Lateral = -Owner->GetActorForwardVector();
+        Action.Parameters.Add(NPCActionKeys::Key_Direction, Lateral.ToString());
+        break;
+    }
+
+    case EAction::Block:
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::Move:
+    {
+        // 계산 목적지로 BaseMove 직접(EQS 미사용 §4) — 타겟 기준 자기쪽 Ideal 링 위 지점.
+        FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
+        if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
+        const FVector Dest = TargetActor->GetActorLocation() + AwayDir * SpacingIdealRange;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, Dest.ToString());
+        Action.Parameters.Add(NPCActionKeys::Key_Style, TEXT("Run"));
+        break;
+    }
+
+    case EAction::Flee:
+        // 위치 미지정 → ExecuteInteraction Flee 경로가 패닉 주사위 + EQS 후퇴로 처리.
+        Action.FacialState = EFacialState::Fear;
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+        break;
+
+    case EAction::SignalAllies:
+        // target_id 가 미디어 키 겸용(ExecuteSignalAllies → BasePlayActionMedia). 미매핑 시 즉시 완료 폴백.
+        Action.Parameters.Add(NPCActionKeys::Key_TargetID, TEXT("SignalAllies"));
+        bSignaledAlliesThisCombat = true;
+        break;
+
+    default:
+        break;
+    }
+
+    ActionQueue.Enqueue(Action);
+
+    // 연속성 추적 갱신.
+    if (Chosen == LastCombatChoice)
+    {
+        ++ConsecutiveCombatChoiceCount;
+    }
+    else
+    {
+        LastCombatChoice = Chosen;
+        ConsecutiveCombatChoiceCount = 1;
+    }
+    LastCombatSelectTime = Now;
+
+    // 선택 분포 로그(완료 기준 1 검증용) — 후보별 최종 가중치 나열.
+    FString WeightStr;
+    for (const FCombatCandidate& C : Candidates)
+    {
+        WeightStr += FString::Printf(TEXT("%s=%.2f "), *UEnum::GetValueAsString(C.Action), C.Weight);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s → %s (dist=%.0f hpLoss=%.0f%% recentHit=%d) W[ %s]"),
+        *GetOwnerAgentID(), *UEnum::GetValueAsString(Chosen), Dist, HPLoss * 100.f, bRecentlyHit ? 1 : 0, *WeightStr);
+
+    return true;
+}
 
 // ==========================================
 // [3] Social Behaviors

@@ -67,6 +67,13 @@ protected:
     float PerceptionTickInterval = 9.0f;
 
 public:
+	/** 전투 타겟 사망 판정 — SmartNPC.bIsDead / State.Condition.Dead 태그(플레이어 계열). */
+	static bool IsTargetDead(const AActor* Target);
+
+	/** 전투 종료 시퀀스: 진행 액션 중단·잔여 큐 폐기 → BehaviorMode=Common → replan 플래그 → BB.TargetActor 클리어.
+	 *  BB 쓰기 소유권(CLAUDE.md §2)에 따라 STTask 가 아닌 컨트롤러가 수행 — STTask_PrepareNextAction 종료 게이트가 호출. */
+	void HandleCombatTargetDead(AActor* DeadTarget);
+
 	/** 넉다운 중 AI 일시정지 — StateTree 정지 + 이동 중단. UnPossess 금지(재빙의·BB 손실 회피). */
 	void PauseAI();
 

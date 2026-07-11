@@ -196,6 +196,11 @@ protected:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseMove(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
 
+    /** BaseMove 의 액터 추적판 — MoveToActor 로 움직이는 타겟을 따라가고(자동 재경로),
+     *  AcceptanceRadius 이내 도달 시 OnMoveActionCompleted 발화. 완료·몽타주 체인은 BaseMove 와 동일. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseDialogue(const FString& DialogueText, const EFacialState Emotion);
 
@@ -288,6 +293,22 @@ private:
 
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
+
+    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지 §6) ---
+    /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
+    EAction LastCombatChoice = EAction::Idle;
+
+    /** 동일 선택 연속 횟수. */
+    int32 ConsecutiveCombatChoiceCount = 0;
+
+    /** 마지막 셀렉터 발동 시각(TimeSeconds) — CombatActionInterval 페이싱용. */
+    float LastCombatSelectTime = -1000.f;
+
+    /** 이번 전투에서 SignalAllies 를 이미 발동했는지 — 반복 신호 방지. */
+    bool bSignaledAlliesThisCombat = false;
+
+    /** SignalAlliesRadius 내 생존·비적대 NPC 존재 여부(자신·적 제외) — SignalAllies 후보 편입 게이트. */
+    bool HasNearbyAlly(const AActor* EnemyTarget) const;
 public:
     // ============================================================================
     // [EAction 래퍼 함수 (Action Wrappers)]
@@ -401,6 +422,15 @@ public:
     /** BasePlayActionMedia가 건 몽타주 종료 콜백(Montage_SetEndDelegate). OnActionCompleted 호출. */
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
 
+    /** Dodge 등속 이동 — 몽타주 재생 성공 시 마찰·제동 0 후 RunSpeed×배율로 Launch(고정 방향 감쇠 없이 유지).
+     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로(§6) — 정상 종료·중단·워치독 전부 커버. */
+    void StartDodgeMove(const FVector& Direction);
+    void StopDodgeMove();
+    bool bDodgeMoveActive = false;
+    float SavedGroundFriction = 8.f;
+    float SavedBrakingDecelWalking = 2048.f;
+    float SavedBrakingFrictionFactor = 2.f;
+
     /** MaxActionDuration 초과 시 강제 완료(워치독). */
     void HandleActionWatchdog();
 
@@ -450,6 +480,100 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteSignalAllies(const FString& HandSign);
+
+    // ============================================================================
+    // [전투 행동 셀렉터 (Combat Action Selector)] — SPEC_combat_selector Phase 1
+    // 큐가 빈 Combat 상태에서 STTask_PrepareNextAction 이 호출하는 C++ 척수 반사층.
+    // LLM 재상담 없음 — 가중치 확률 + DiceSystem 주사위로 다음 전투 행동을 주입한다.
+    // 성격 차별화는 스탯 파생(Strength→공격, Agility→회피/기동, Fear·Bravery→도주)
+    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음(§9).
+    // ============================================================================
+
+    /** Combat 중 다음 행동을 선택해 ActionQueue 에 주입. 페이싱 간격 미충족·후보 전멸 시 false.
+     *  후보: Attack / Dodge / Block / 거리조절(Move) / Flee / SignalAllies — 전부 기존 실행·완료 경로 재사용. */
+    bool SelectCombatAction(AActor* TargetActor);
+
+    /** 셀렉터 연속성 상태 리셋. StopAllActions 및 비전투 배치 수신 시 자동 호출. */
+    void ResetCombatSelectorState();
+
+    /** 셀렉터 최소 발동 간격(초) — 연속 주입 사이 숨고르기(연속 공격 상한과 별개 페이싱). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "10.0"))
+    float CombatActionInterval = 0.6f;
+
+    /** 연속 동일 행동 1회당 가중치 배율(횟수만큼 거듭제곱 누적). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float CombatRepeatPenalty = 0.5f;
+
+    /** Attack 연속 상한 — 도달 시 다음 선택에서 Attack 가중치 0(다른 행동 강제). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 MaxConsecutiveAttacks = 3;
+
+    // --- 행동별 기본 가중치(스탯·상황 배율의 기준점) ---
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Attack = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Dodge = 0.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Block = 0.4f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Spacing = 0.35f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Flee = 0.4f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Signal = 0.5f;
+
+    /** 스탯 정규화 기준 — 가중치 배율 = 스탯/이 값 (10 = 평균 스탯이 배율 1.0). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0"))
+    float CombatStatNorm = 10.f;
+
+    /** 최근 피격 판정 윈도우(초, LastHitTime 기준) — 이내면 방어 행동 부스트. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float RecentHitWindow = 2.0f;
+
+    /** 최근 피격 시 Dodge/Block 가중치 배율. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0"))
+    float RecentHitDefenseBoost = 2.0f;
+
+    /** 저HP 방어 가중치 스케일 — Dodge/Block ×(1 + scale×(1-HP비율)). 하드 임계 없음(스펙). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float LowHPDefenseScale = 1.5f;
+
+    /** 저HP 도주 가중치 스케일 — Flee = 기본 × scale × (1-HP비율)² × 겁 성향. 만HP≈0. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float LowHPFleeScale = 4.0f;
+
+    /** Dodge/Block 이 유의미한 근접 거리(cm) — 밖이면 가중치 ×0.1. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float DefenseReactRange = 700.f;
+
+    /** 거리조절 발동 링(cm) — Min 미만=백스텝 욕구, Max 초과=접근 욕구, 목적지는 Ideal 링. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "50.0"))
+    float SpacingMinRange = 250.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SpacingMaxRange = 900.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SpacingIdealRange = 500.f;
+
+    /** Flee 선택 시 배짱 주사위 난이도 — CheckReflex(Bravery, 이 값) 성공하면 도주 취소 후 재선택.
+     *  1 = Bravery% 확률로 버팀(용감한 놈 끝까지, 겁쟁이 일찍 도망). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 FleeBraveryDifficulty = 1;
+
+    /** SignalAllies 아군 탐색 반경(cm). 발동은 전투당 1회. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SignalAlliesRadius = 2000.f;
+
+    /** Dodge 등속 이동 속도 = RunSpeed × 이 배율 — 항상 달리기보다 빠름 보장.
+     *  Dodge 몽타주 재생 동안 고정 방향 유지(StartDodgeMove), 종료·중단 시 원복(StopDodgeMove). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "5.0"))
+    float DodgeSpeedMultiplier = 1.5f;
 
     // ----------------------------------------------------------------------------
     // [3] Social Behaviors

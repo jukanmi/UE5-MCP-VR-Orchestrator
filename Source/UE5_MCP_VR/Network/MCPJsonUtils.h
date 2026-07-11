@@ -26,8 +26,10 @@ public:
 
 
     // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
+    // ReportType 이 비어있지 않으면 루트에 report_type 필드를 추가 — Python 이 보고 성격을 구분
+    // (예: "combat_victory" 는 danger 게이트 우회). 비우면 기존 perception 보고와 동일(하위호환).
     UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents);
+    static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType = TEXT(""));
 
     /** location_decision_result 메시지 파싱.
      *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "...", "request_gen": N } }
