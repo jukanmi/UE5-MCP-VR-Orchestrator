@@ -34,6 +34,7 @@ from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
 from .utils import llm_factory
+from .utils.async_tasks import spawn_background
 from .middleware import validate_auth_token, is_stale_packet, build_failed_event
 
 # 핸들러 없는 logger 는 INFO 레벨 메시지가 콘솔에 출력되지 않는다 (Python 기본 lastResort
@@ -113,9 +114,6 @@ _action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
 # WS 송신 직렬화 — 메시지별 동시 처리 + TTS 푸시가 같은 소켓에 겹쳐 쓰는 것 방지.
 _ws_send_lock = asyncio.Lock()
-# fire-and-forget 태스크 강한 참조 유지 — 미보유 시 GC 가 실행 중 태스크를 수거해 무음 중단.
-_background_tasks: set = set()
-
 # Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
 # TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
 _ollama_client = None
@@ -178,16 +176,25 @@ async def websocket_llm_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.warning(f"[Main] WS 응답 전송 실패(연결 종료 추정): {e}")
 
+    # 이 연결이 띄운 처리 태스크 — 끊기면 취소해 버려질 응답의 LLM 추론(GPU/VRAM)을 끊는다.
+    session_tasks: set[asyncio.Task] = set()
+
     try:
         while True:
             raw_data = await websocket.receive_text()
-            task = asyncio.create_task(_process_and_send(raw_data))
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+            task = spawn_background(_process_and_send(raw_data), label="ws-process")
+            session_tasks.add(task)
+            task.add_done_callback(session_tasks.discard)
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
     finally:
+        pending = [t for t in session_tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            logger.info(f"[Main] 진행 중 처리 태스크 {len(pending)}건 취소(연결 종료)")
+
         # 다중 클라이언트 레이스 방지 — 현재 끊기는 소켓이 활성 소켓일 때만 해제.
         if _active_llm_ws is websocket:
             _active_llm_ws = None
@@ -378,7 +385,10 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
 
     # 플레이어 적대 행동에 따른 호감도 감소.
-    await _apply_hostile_affinity(agent_id, perceptions)
+    # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
+    # 반영된 채 잘리면 호감도가 어중간하게 남는다(다른 상태 쓰기는 전부 spawn_background
+    # 독립 태스크라 취소 전파 없음).
+    await asyncio.shield(_apply_hostile_affinity(agent_id, perceptions))
 
     top = max(perceptions, key=lambda p: p.danger_score)
 
@@ -445,9 +455,7 @@ async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
             # to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다.
             logger.error(f"[Main] 전투 승리 메모리 기록 실패: {e}")
 
-    task = asyncio.create_task(asyncio.to_thread(_write_victory_memory))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    spawn_background(asyncio.to_thread(_write_victory_memory), label="victory-memory")
 
     return _empty_batch_json()
 
@@ -514,17 +522,16 @@ def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: O
 
     # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
     has_speech = any(c.isalnum() for c in dialogue_text)
-    task = asyncio.create_task(
+    spawn_background(
         _dispatch_npc_audio(
             npc_id=npc_id_for_audio,
             dialogue_text=dialogue_text,
             emotion=dialogue_emotion,
             trace_id=trace_id,
             bypass_tts=not has_speech,
-        )
+        ),
+        label="npc-audio",
     )
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
 
 
 async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:

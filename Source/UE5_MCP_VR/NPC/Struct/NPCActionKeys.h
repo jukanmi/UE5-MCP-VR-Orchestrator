@@ -20,18 +20,18 @@ namespace NPCActionKeys
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
 
-    // --- Action Parameter Keys (Parameters 내부) ---
-    // [주의] 현재 Python·C++ 어느 쪽도 이 키를 쓰지(write) 않음 — ExecuteInteraction 의
-    // 읽기 전용 예약 키. 송신측 구현 시 snake_case 통일 여부 결정 필요(§1).
-    inline const FString Key_Direction     = TEXT("Direction");
-    inline const FString Key_StartLocation = TEXT("StartLocation");
-    inline const FString Key_EndLocation   = TEXT("EndLocation");
-    inline const FString Key_GiveItemID    = TEXT("GiveItemID");
-    inline const FString Key_GiveAmount    = TEXT("GiveAmount");
-    inline const FString Key_GetItemID     = TEXT("GetItemID");
-    inline const FString Key_GetAmount     = TEXT("GetAmount");
-    inline const FString Key_Amount        = TEXT("Amount");
-    inline const FString Key_ItemIDs       = TEXT("ItemIDs");
+    // --- Action Parameter Keys (Parameters 내부 — §1 snake_case 통일, 2026-07-11 결정) ---
+    // Key_Direction 은 전투 셀렉터(Dodge 측면 스텝)가 내부 주입. 나머지는 ExecuteInteraction
+    // 읽기 전용 예약 키 — Python 송신 미구현(DialogueActionItem 스키마 확장은 수요 확인 후 별건).
+    inline const FString Key_Direction     = TEXT("direction");
+    inline const FString Key_StartLocation = TEXT("start_location");
+    inline const FString Key_EndLocation   = TEXT("end_location");
+    inline const FString Key_GiveItemID    = TEXT("give_item_id");
+    inline const FString Key_GiveAmount    = TEXT("give_amount");
+    inline const FString Key_GetItemID     = TEXT("get_item_id");
+    inline const FString Key_GetAmount     = TEXT("get_amount");
+    inline const FString Key_Amount        = TEXT("amount");
+    inline const FString Key_ItemIDs       = TEXT("item_ids");
 
     // --- ActionBatch Protocol Keys (최상위 PascalCase — §1, MCPJsonUtils 파싱용) ---
     inline const FString Proto_Mode          = TEXT("Mode");

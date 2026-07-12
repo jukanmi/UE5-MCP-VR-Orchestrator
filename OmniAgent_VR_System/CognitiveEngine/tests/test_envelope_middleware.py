@@ -343,9 +343,11 @@ def test_combat_victory_routed_no_action():
 
         async def _run():
             resp = await main_module._handle_emergency_report(envelope)
-            # fire-and-forget 메모리 기록 태스크 완료까지 대기 후 검증
-            if main_module._background_tasks:
-                await asyncio.gather(*list(main_module._background_tasks))
+            # fire-and-forget 메모리 기록 태스크 완료까지 대기 후 검증 (R4: 공용 헬퍼로 이동)
+            from app.utils.async_tasks import _background_tasks
+
+            if _background_tasks:
+                await asyncio.gather(*list(_background_tasks))
             return resp
 
         response = json.loads(asyncio.run(_run()))

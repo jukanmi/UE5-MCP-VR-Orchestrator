@@ -24,6 +24,7 @@
 #include "../../Network/EnvelopeBuilder.h"
 #include "../NPCManager.h"
 #include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
+#include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -338,10 +339,18 @@ void UNPCActionComponent::ClearActiveActionState()
     }
 }
 
+void UNPCActionComponent::ResetPostureFlags()
+{
+    if (!StateComponent) return;
+    StateComponent->bIsSit = false;
+    StateComponent->bIsLie = false;
+}
+
 void UNPCActionComponent::StopAllActions()
 {
     ActionQueue.Empty();
     ClearActiveActionState();
+    ResetPostureFlags(); // 사망·넉다운·전투종료 등 전면 정지 — 앉/눕 자세도 해제(AnimBP 자세 고착 방지)
     LastQueuedActionType = EAction::Idle;
     ResetCombatSelectorState(); // 전투 종료(HandleCombatTargetDead)·비상 정지 공통 — 셀렉터 연속성 초기화
 
@@ -418,6 +427,9 @@ void UNPCActionComponent::AbortCurrentAction()
     // 비동기 대기/워치독 해제 — Abort 후 콜백이 늦게 와도 OnActionCompleted 가드가 막는다.
     ClearActiveActionState();
 
+    // 아래 StopAnimMontage 가 앉/눕 포즈를 떨구므로 자세 플래그도 함께 해제.
+    ResetPostureFlags();
+
     // 중단된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
     RevertStateTagToIdle(GetOwner(), CurrentAction.ActionType);
 
@@ -464,8 +476,44 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
             PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
         }
         bActionAwaitingAsync = true;
-        AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
+        const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
+        HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
+}
+
+void UNPCActionComponent::HandleImmediateMoveResult(AAIController* AIController, EPathFollowingRequestResult::Type MoveResult)
+{
+    if (MoveResult == EPathFollowingRequestResult::RequestSuccessful) return;
+
+    // AlreadyAtGoal/Failed 는 OnRequestFinished 가 발화하지 않음 — 대기 유지 시
+    // 워치독(MaxActionDuration)까지 정지. 즉시 결과는 여기서 동기 처리한다.
+    if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
+    {
+        PFC->OnRequestFinished.RemoveAll(this); // stale 바인딩이 무관한 후속 이동에 발화하는 것 방지
+    }
+    bActionAwaitingAsync = false;
+
+    const FString MediaKey = PendingMoveMediaKey;
+    PendingMoveMediaKey.Reset();
+    if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && !MediaKey.IsEmpty())
+    {
+        // 이미 목적지 — 대기 몽타주(Attack/SitDown 등) 즉시 재생. 재생 성공 시 비동기 완료로 전환,
+        // 실패 시 bActionAwaitingAsync=false 라 ExecuteInteraction 말미가 즉시 완료 처리.
+        PlayActionMediaWithPosture(MediaKey);
+    }
+}
+
+bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
+{
+    const bool bPlayed = BasePlayActionMedia(MediaKey);
+
+    // 자세 플래그는 몽타주가 실제 재생될 때만 — 미디어 미등록인데 상태만 '앉음'이 되는 불일치 방지.
+    if (bPlayed && StateComponent)
+    {
+        if (MediaKey == NPCActionKeys::Interact_SitDown)      StateComponent->bIsSit = true;
+        else if (MediaKey == NPCActionKeys::Interact_LieDown) StateComponent->bIsLie = true;
+    }
+    return bPlayed;
 }
 
 void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType, float AcceptanceRadius)
@@ -490,25 +538,7 @@ void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedTy
         }
         bActionAwaitingAsync = true;
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToActor(TargetActor, AcceptanceRadius);
-        if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
-        {
-            // AlreadyAtGoal/Failed 는 OnRequestFinished 가 발화하지 않음 — 대기 유지 시
-            // 워치독(MaxActionDuration)까지 정지. 즉시 결과는 여기서 동기 처리한다.
-            if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
-            {
-                PFC->OnRequestFinished.RemoveAll(this); // stale 바인딩이 무관한 후속 이동에 발화하는 것 방지
-            }
-            bActionAwaitingAsync = false;
-
-            const FString MediaKey = PendingMoveMediaKey;
-            PendingMoveMediaKey.Reset();
-            if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && !MediaKey.IsEmpty())
-            {
-                // 이미 사거리 내 — 대기 몽타주(Attack 등) 즉시 재생. 재생 성공 시 비동기 완료로 전환,
-                // 실패 시 bActionAwaitingAsync=false 라 ExecuteInteraction 말미가 즉시 완료 처리.
-                BasePlayActionMedia(MediaKey);
-            }
-        }
+        HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
 }
 
@@ -542,8 +572,8 @@ void UNPCActionComponent::BaseFaceRotate(FVector TargetLocation, float TurnSpeed
 
 void UNPCActionComponent::BaseSitDown(AActor* TargetSeat)
 {
-    if (StateComponent) StateComponent->bIsSit = true;
-    BasePlayActionMedia(NPCActionKeys::Interact_SitDown);
+    // 제자리 착석 — 자세 플래그는 헬퍼가 몽타주 재생 성공 시에만 세운다(이동 경로와 동일 규칙).
+    PlayActionMediaWithPosture(NPCActionKeys::Interact_SitDown);
 }
 
 void UNPCActionComponent::BaseSitUp()
@@ -554,8 +584,7 @@ void UNPCActionComponent::BaseSitUp()
 
 void UNPCActionComponent::BaseLieDown(AActor* TargetBed)
 {
-    if (StateComponent) StateComponent->bIsLie = true;
-    BasePlayActionMedia(NPCActionKeys::Interact_LieDown);
+    PlayActionMediaWithPosture(NPCActionKeys::Interact_LieDown);
 }
 
 void UNPCActionComponent::BaseLieUp()
@@ -659,7 +688,8 @@ bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
         }
         if (MediaData->Sound)
         {
-            // TODO: SoundBase 검색 후 재생
+            // 몽타주와 독립 재생(완료 모델 무관) — 3D 감쇠·볼륨은 SoundBase 에셋 설정을 따른다.
+            UGameplayStatics::PlaySoundAtLocation(GetOwner(), MediaData->Sound, GetOwner()->GetActorLocation());
             UE_LOG(LogTemp, Log, TEXT("[NPCAction] DataAsset 사운드 재생: %s"), *MediaData->Sound->GetName());
         }
     }
@@ -1504,8 +1534,10 @@ void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FP
     {
         const FString MediaKey = PendingMoveMediaKey;
         PendingMoveMediaKey.Reset();
-        // 몽타주가 재생되면 종료 콜백이 OnActionCompleted를 호출. 없으면 여기서 즉시 완료.
-        if (!BasePlayActionMedia(MediaKey))
+
+        // 재생 성공 시 종료 콜백이 OnActionCompleted 호출(자세 플래그도 헬퍼가 재생 성공 시에만 set).
+        // 미디어 미등록이면 여기서 즉시 완료.
+        if (!PlayActionMediaWithPosture(MediaKey))
         {
             OnActionCompleted();
         }
@@ -2026,19 +2058,32 @@ void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocatio
 // 하나의 라우팅 함수로 통합하여 코드 중복을 제거하고 유지보수성을 극대화합니다.
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
 {
-    // 1. 공통 이동 및 회전 보간 처리 (이동 필요 여부에 따라)
-    FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
-    if (!Dest.IsNearlyZero())
+    const FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
+
+    // 이동은 가구行(Sit/Sleep)만 — 도착 후 몽타주(PendingMoveMediaKey, ExecuteAttackAction 과 동일 완료 체인).
+    // in-place 액션(Pray/Read/Dance/Sing/Emote)은 이동 없이 제자리 재생 + 대상 바라보기만.
+    // (구버전: 전 타입 BaseMove 직후 몽타주 즉시 재생 → 이동 중 앉기/춤 sliding 글리치 — Gemini PR#17 R4)
+    if ((LifestyleType == EAction::Sit || LifestyleType == EAction::Sleep) && !Dest.IsNearlyZero())
     {
-        // 걷기로 느긋하게 이동 후 대상을 바라봅니다.
+        // 자세 플래그(bIsSit/bIsLie)는 여기서 세우지 않는다 — 도착 후 몽타주 재생 시점
+        // (OnMoveActionCompleted)에 세운다. 미리 세우면 이동 실패·중도 Abort 시 앉지도
+        // 않았는데 플래그만 true 로 고착된다(Gemini PR#20 high).
+        PendingMoveMediaKey = (LifestyleType == EAction::Sit)
+            ? NPCActionKeys::Interact_SitDown
+            : NPCActionKeys::Interact_LieDown;
         BaseMove(Dest, EMoveType::Walk);
         ExecuteTurnTo(Dest, TargetEntity);
+        return;
     }
 
-    // 2. 타입에 따른 미디어(몽타주/애니) 처리 분기
+    if (!Dest.IsNearlyZero())
+    {
+        ExecuteTurnTo(Dest, TargetEntity); // in-place — 대상을 바라보기만, 이동 없음
+    }
+
     switch (LifestyleType)
     {
-        case EAction::Sit:   BaseSitDown(TargetEntity); break;
+        case EAction::Sit:   BaseSitDown(TargetEntity); break;   // 목적지 없음 — 제자리 착석
         case EAction::Sleep: BaseLieDown(TargetEntity); break;
         case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;

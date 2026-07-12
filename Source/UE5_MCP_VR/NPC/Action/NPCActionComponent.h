@@ -36,6 +36,7 @@ enum class ETacticalMoveState : uint8
 };
 
 class ASmartNPCAIController;
+class AAIController;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
@@ -183,6 +184,11 @@ protected:
      *  OnActionCompleted/AbortCurrentAction/StopAllActions가 공유. 태그 revert·큐 비우기 등
      *  각 함수 고유 로직은 호출부에 둔다. */
     void ClearActiveActionState();
+
+    /** 자세 플래그(bIsSit/bIsLie) 해제 — 중단(AbortCurrentAction)·전면 정지(StopAllActions) 전용.
+     *  ClearActiveActionState 에 넣으면 안 된다: OnActionCompleted 도 그걸 호출하므로 앉기
+     *  몽타주가 끝나는 즉시 자세가 풀린다. 자세는 액션 실행 플래그가 아니라 지속 상태다. */
+    void ResetPostureFlags();
 
     // Movement Speed 변환 (EMoveType → float)
     float ParseMoveSpeed(const EMoveType& Type) const;
@@ -418,6 +424,15 @@ public:
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
      *  없으면 즉시 OnActionCompleted. 도착 실패 시에도 OnActionCompleted로 큐를 푼다. */
     void OnMoveActionCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
+
+    /** MoveTo 즉시 결과(AlreadyAtGoal/Failed) 동기 처리 — OnRequestFinished 미발화 케이스.
+     *  방치 시 bActionAwaitingAsync 잔존으로 워치독까지 정지. BaseMove/BaseMoveToActor 공용. */
+    void HandleImmediateMoveResult(AAIController* AIController, EPathFollowingRequestResult::Type MoveResult);
+
+    /** 액션 미디어 재생 + 자세 플래그(bIsSit/bIsLie) — 몽타주가 실제 재생된 경우에만 자세를
+     *  세운다(미디어 미등록 시 '앉은 상태인데 서 있는' 불일치 방지). 반환: 재생 여부.
+     *  이동 후 재생(도착·AlreadyAtGoal)과 제자리 재생(BaseSitDown/BaseLieDown) 공용. */
+    bool PlayActionMediaWithPosture(const FString& MediaKey);
 
     /** BasePlayActionMedia가 건 몽타주 종료 콜백(Montage_SetEndDelegate). OnActionCompleted 호출. */
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
