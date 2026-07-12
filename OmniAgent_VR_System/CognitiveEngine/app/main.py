@@ -176,14 +176,25 @@ async def websocket_llm_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.warning(f"[Main] WS 응답 전송 실패(연결 종료 추정): {e}")
 
+    # 이 연결이 띄운 처리 태스크 — 끊기면 취소해 버려질 응답의 LLM 추론(GPU/VRAM)을 끊는다.
+    session_tasks: set[asyncio.Task] = set()
+
     try:
         while True:
             raw_data = await websocket.receive_text()
-            spawn_background(_process_and_send(raw_data), label="ws-process")
+            task = spawn_background(_process_and_send(raw_data), label="ws-process")
+            session_tasks.add(task)
+            task.add_done_callback(session_tasks.discard)
 
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
     finally:
+        pending = [t for t in session_tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            logger.info(f"[Main] 진행 중 처리 태스크 {len(pending)}건 취소(연결 종료)")
+
         # 다중 클라이언트 레이스 방지 — 현재 끊기는 소켓이 활성 소켓일 때만 해제.
         if _active_llm_ws is websocket:
             _active_llm_ws = None
@@ -374,7 +385,10 @@ async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
         return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
 
     # 플레이어 적대 행동에 따른 호감도 감소.
-    await _apply_hostile_affinity(agent_id, perceptions)
+    # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
+    # 반영된 채 잘리면 호감도가 어중간하게 남는다(다른 상태 쓰기는 전부 spawn_background
+    # 독립 태스크라 취소 전파 없음).
+    await asyncio.shield(_apply_hostile_affinity(agent_id, perceptions))
 
     top = max(perceptions, key=lambda p: p.danger_score)
 
