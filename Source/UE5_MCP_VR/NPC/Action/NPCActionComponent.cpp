@@ -428,13 +428,6 @@ void UNPCActionComponent::OnActionCompleted()
     // 완료된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
     const EAction CompletedAction = CurrentAction.ActionType;
 
-    // Read/Pray 는 액션 한정 점유 — 몽타주 종료(=완료)와 함께 가구 반납.
-    // Sit/Sleep 은 지속 상태라 여기서 해제하지 않는다(ResetPostureFlags 경유).
-    if (CompletedAction == EAction::Read || CompletedAction == EAction::Pray)
-    {
-        ReleaseOccupiedFurniture();
-    }
-
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
 
@@ -527,7 +520,7 @@ void UNPCActionComponent::HandleImmediateMoveResult(AAIController* AIController,
 
 bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
 {
-    // 가구 목적지가 있는 Lifestyle(Sit/Sleep/Read/Pray) — 점유 시도 성공 시 SeatPoint 로 스냅 후 몽타주.
+    // 가구 목적지가 있는 Lifestyle(Sit/Sleep) — 점유 시도 성공 시 SeatPoint 로 스냅 후 몽타주.
     // 실패(타인 점유)면 스냅 생략, 제자리 재생 폴백. 두 도착 경로(OnMoveActionCompleted·
     // HandleImmediateMoveResult)가 모두 여길 통과하므로 스냅·점유의 유일한 삽입 지점.
     // (PendingFurnitureTarget 은 가구行 경로만 세팅하므로 미디어 키 조건 불필요.)
@@ -2103,12 +2096,12 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
     const FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
 
     // 이동은 가구行(Sit/Sleep)만 — 도착 후 몽타주(PendingMoveMediaKey, ExecuteAttackAction 과 동일 완료 체인).
-    // in-place 액션(Pray/Read/Dance/Sing/Emote)은 이동 없이 제자리 재생 + 대상 바라보기만.
+    // in-place 액션(Read/Pray/Dance/Sing/Emote)은 이동 없이 제자리 재생 + 대상 바라보기만.
     // (구버전: 전 타입 BaseMove 직후 몽타주 즉시 재생 → 이동 중 앉기/춤 sliding 글리치 — Gemini PR#17 R4)
-    // 가구行 판정 — Sit/Sleep 은 **가구 타겟 필수**(무타겟·비가구·좌표만 = 무동작 방어),
-    // Read/Pray 는 가구 타겟이면 이동, 아니면 기존 in-place 재생 유지.
-    AFurnitureActor* FurnitureTarget = Cast<AFurnitureActor>(TargetEntity);
+    // 가구行 판정 — Sit/Sleep 은 **가구 타겟 필수**(무타겟·비가구·좌표만 = 무동작 방어).
+    // Read(책상)·Pray(제단) 는 가구 없음 — 항상 in-place.
     const bool bSitOrSleep = (LifestyleType == EAction::Sit || LifestyleType == EAction::Sleep);
+    AFurnitureActor* FurnitureTarget = bSitOrSleep ? Cast<AFurnitureActor>(TargetEntity) : nullptr;
 
     if (bSitOrSleep && !FurnitureTarget)
     {
@@ -2135,9 +2128,7 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
         {
             case EAction::Sit:   PendingMoveMediaKey = NPCActionKeys::Interact_SitDown; break;
             case EAction::Sleep: PendingMoveMediaKey = NPCActionKeys::Interact_LieDown; break;
-            case EAction::Read:  PendingMoveMediaKey = TEXT("Read"); break;
-            case EAction::Pray:  PendingMoveMediaKey = TEXT("Pray"); break;
-            default: break;
+            default: break; // Read/Pray 는 가구 경로 미진입(bSitOrSleep 만 여기 도달)
         }
         BaseMove(Dest, EMoveType::Walk);
         ExecuteTurnTo(Dest, TargetEntity);

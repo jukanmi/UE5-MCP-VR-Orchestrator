@@ -169,7 +169,7 @@ def _format_nearby_furniture(vr_context: GesPrompt) -> str:
         dist = f.get("dist_m")
         dist_str = f", {dist:.1f}m away" if isinstance(dist, (int, float)) else ""
         parts.append(f"{fid} ({ftype}, {occ}{dist_str})")
-    return ". Nearby furniture you can use as Sit/Sleep/Read/Pray target: " + "; ".join(parts)
+    return ". Nearby furniture you can use as Sit/Sleep target: " + "; ".join(parts)
 
 
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:

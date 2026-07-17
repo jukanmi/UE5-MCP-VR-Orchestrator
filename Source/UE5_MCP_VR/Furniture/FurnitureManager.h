@@ -33,7 +33,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Furniture")
     AFurnitureActor* GetFurnitureByID(const FString& InFurnitureID) const;
 
-    /** 반경 내 최근접 빈 착석 가구(Seat/Bed 만 — ReadSpot/PraySpot 제외).
+    /** 반경 내 최근접 빈 착석 가구(Seat/Bed 만).
      *  플레이어 Interact 착석 공용(VRPawn·VRPlayerCharacter). 수평 거리 기준. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Furniture")
     AFurnitureActor* FindNearestVacantSitable(const FVector& Location, float Range) const;

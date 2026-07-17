@@ -191,8 +191,8 @@ protected:
      *  몽타주가 끝나는 즉시 자세가 풀린다. 자세는 액션 실행 플래그가 아니라 지속 상태다. */
     void ResetPostureFlags();
 
-    /** 점유 가구 반납(Release + Reset). 호출처 2곳 — 라이프사이클이 다르다:
-     *  Sit/Sleep(지속 상태) = ResetPostureFlags 경유, Read/Pray(액션 한정) = OnActionCompleted 완료 시. */
+    /** 점유 가구 반납(Release + Reset). Sit/Sleep(지속 상태) 만 가구 점유 — ResetPostureFlags 경유.
+     *  Read/Pray 는 가구 없는 제자리 액션이라 점유·반납 없음. */
     void ReleaseOccupiedFurniture();
 
     // Movement Speed 변환 (EMoveType → float)

@@ -333,8 +333,6 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
                     {
                         case EFurnitureType::Seat:     TypeStr = TEXT("Seat"); break;
                         case EFurnitureType::Bed:      TypeStr = TEXT("Bed"); break;
-                        case EFurnitureType::ReadSpot: TypeStr = TEXT("ReadSpot"); break;
-                        case EFurnitureType::PraySpot: TypeStr = TEXT("PraySpot"); break;
                         default:                       TypeStr = TEXT("Unknown"); break;
                     }
 

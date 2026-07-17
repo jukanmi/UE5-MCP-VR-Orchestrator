@@ -6,15 +6,13 @@
 
 class USceneComponent;
 
-/** 가구 종류 — Sit→Seat, Sleep→Bed, Read→ReadSpot, Pray→PraySpot 을 기대
- *  (불일치여도 강제하지 않음, LLM 어휘 안내용). 플레이어 Interact 착석은 Seat/Bed 만. */
+/** 가구 종류 — Sit→Seat, Sleep→Bed 만 (플레이어 Interact 착석·NPC 이동착석 대상).
+ *  Read(책상)·Pray(제단) 는 가구 없는 제자리 액션 — 대응 타입 없음. */
 UENUM(BlueprintType)
 enum class EFurnitureType : uint8
 {
-    Seat     UMETA(DisplayName = "Seat"),
-    Bed      UMETA(DisplayName = "Bed"),
-    ReadSpot UMETA(DisplayName = "ReadSpot"),
-    PraySpot UMETA(DisplayName = "PraySpot"),
+    Seat UMETA(DisplayName = "Seat"),
+    Bed  UMETA(DisplayName = "Bed"),
 };
 
 /**
