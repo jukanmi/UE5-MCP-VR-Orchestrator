@@ -10,6 +10,8 @@
 #include "KineticDamage.h"
 #include "PlayerInteractionUtils.h"
 #include "PawnDeathUtils.h"
+#include "../Furniture/FurnitureManager.h"
+#include "../Furniture/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -450,6 +452,9 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void AVRPawn::OnMove(const FInputActionValue& Value)
 {
+    // 착석 중 스틱 이동 잠금 — 기상은 Interact 재입력(토글)만.
+    if (SeatedFurniture.IsValid()) return;
+
     FVector2D Input = Value.Get<FVector2D>();
     if (Input.IsNearlyZero()) return;
 
@@ -678,7 +683,55 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
 
 void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 {
+    // 착석 중이면 기상이 최우선(토글) — 다른 상호작용 차단.
+    if (SeatedFurniture.IsValid())
+    {
+        StandUpFromFurniture();
+        return;
+    }
+
+    // 근접 빈 가구가 있으면 착석 우선, 없으면 기존 NPC 대화 타겟팅.
+    if (TrySitOnNearbyFurniture())
+    {
+        return;
+    }
+
     DetectNearbyNPC();
+}
+
+bool AVRPawn::TrySitOnNearbyFurniture()
+{
+    UFurnitureManager* Mgr = UFurnitureManager::Get(this);
+    if (!Mgr) return false;
+
+    // 반경 내 최근접 빈 착석 가구(Seat/Bed) — 탐색은 매니저 공용 헬퍼(VRPlayerCharacter 와 공유).
+    AFurnitureActor* Nearest = Mgr->FindNearestVacantSitable(GetActorLocation(), FurnitureInteractRange);
+    if (!Nearest || !Nearest->TryOccupy(this)) return false;
+
+    // SeatPoint 스냅 — Yaw 만 적용(VR 캡슐 기울임 방지). 카메라 높이는 불변(멀미 안전).
+    const FTransform SeatXf = Nearest->GetSeatTransform();
+    SetActorLocationAndRotation(SeatXf.GetLocation(), FRotator(0.f, SeatXf.Rotator().Yaw, 0.f),
+        false, nullptr, ETeleportType::TeleportPhysics);
+    SeatedFurniture = Nearest;
+
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 착석: %s"), *Nearest->FurnitureID);
+    return true;
+}
+
+void AVRPawn::StandUpFromFurniture()
+{
+    if (AFurnitureActor* Furniture = SeatedFurniture.Get())
+    {
+        const FTransform SeatXf = Furniture->GetSeatTransform();
+        Furniture->Release(this);
+
+        // 좌석 전방 반보 이탈 — 의자 콜리전에 캡슐이 끼는 것 방지.
+        const FVector Exit = SeatXf.GetLocation() + SeatXf.GetRotation().GetForwardVector() * 60.f;
+        SetActorLocation(Exit, false, nullptr, ETeleportType::TeleportPhysics);
+
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 기상: %s"), *Furniture->FurnitureID);
+    }
+    SeatedFurniture.Reset();
 }
 
 void AVRPawn::DetectNearbyNPC()

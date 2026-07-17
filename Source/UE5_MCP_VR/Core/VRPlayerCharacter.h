@@ -14,6 +14,7 @@
 class UVoiceInputComponent;
 class UInventoryComponent;
 class UPlayerHUDWidget;
+class AFurnitureActor;
 
 UCLASS()
 class UE5_MCP_VR_API AVRPlayerCharacter : public ACharacter, public IPlayerBase
@@ -149,8 +150,25 @@ public:
 	void DetectNearbyNPC();
 
 	/** 카메라 정면 라인트레이스로 조준한 NPC 를 대화 대상으로 지정 — 플랫스크린 마우스 조준.
-	 *  Interact 입력에 바인딩. 빗나가면 DetectNearbyNPC 로 폴백. */
+	 *  빗나가면 DetectNearbyNPC 로 폴백. */
 	void DetectNPCByAim();
+
+	// --- 가구 착석 (Interact/E키 토글 — VRPawn 과 동일 UX) ---
+	/** Interact 입력 핸들러: 착석 중→기상, 근접 빈 가구→착석, 아니면 DetectNPCByAim. */
+	void OnInteract();
+
+	/** Interact 착석 판정 반경(cm). */
+	UPROPERTY(EditAnywhere, Category = "Interaction", meta = (ClampMin = "50.0", ClampMax = "500.0"))
+	float FurnitureInteractRange = 150.f;
+
+	/** 착석 중 가구 — 유효하면 이동 입력 잠금. */
+	TWeakObjectPtr<AFurnitureActor> SeatedFurniture;
+
+	bool TrySitOnNearbyFurniture();
+	void StandUpFromFurniture();
+
+	/** 착석 중 점프 차단 — JumpAction 이 ACharacter::Jump 직바인딩이라 입력 가드 대신 판정 오버라이드. */
+	virtual bool CanJumpInternal_Implementation() const override;
 
 	// --- Voice Input (push-to-talk) ---
 	void OnVoiceStart(const FInputActionValue& Value);
