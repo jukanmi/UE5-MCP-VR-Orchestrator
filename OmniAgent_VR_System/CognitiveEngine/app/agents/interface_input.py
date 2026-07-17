@@ -154,6 +154,24 @@ def _format_plan_context(state: AgentState) -> str:
     return f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
 
 
+def _format_nearby_furniture(vr_context: GesPrompt) -> str:
+    """가구 인지 조각(". Nearby furniture: ...") — 없으면 "".
+    WHY: LLM 이 주변 가구의 존재·ID·점유를 모르면 무타겟 Sit("여기 앉으세요")을 내고
+    C++ 가 무동작 방어해 NPC 가 말만 하고 안 앉는다. 빈 가구 ID 는 valid_targets 에도 합류됨(UE5)."""
+    furniture = getattr(vr_context, "nearby_furniture", None) or []
+    if not furniture:
+        return ""
+    parts = []
+    for f in furniture:
+        fid = f.get("id", "?")
+        ftype = f.get("type", "?")
+        occ = "OCCUPIED" if f.get("occupied") else "vacant"
+        dist = f.get("dist_m")
+        dist_str = f", {dist:.1f}m away" if isinstance(dist, (int, float)) else ""
+        parts.append(f"{fid} ({ftype}, {occ}{dist_str})")
+    return ". Nearby furniture you can use as Sit/Sleep/Read/Pray target: " + "; ".join(parts)
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
@@ -175,6 +193,7 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
 
     natural_context += _format_failed_history(state)
     natural_context += _format_plan_context(state)
+    natural_context += _format_nearby_furniture(vr_context)
 
     return natural_context
 

@@ -549,6 +549,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         player_location=prompt_payload.player_location,
         npc_inventory=prompt_payload.npc_inventory,
         valid_targets=prompt_payload.valid_targets,
+        nearby_furniture=prompt_payload.nearby_furniture,
     )
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
