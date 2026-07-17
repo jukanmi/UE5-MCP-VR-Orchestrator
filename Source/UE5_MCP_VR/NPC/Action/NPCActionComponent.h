@@ -37,6 +37,7 @@ enum class ETacticalMoveState : uint8
 
 class ASmartNPCAIController;
 class AAIController;
+class AFurnitureActor;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
@@ -189,6 +190,10 @@ protected:
      *  ClearActiveActionState 에 넣으면 안 된다: OnActionCompleted 도 그걸 호출하므로 앉기
      *  몽타주가 끝나는 즉시 자세가 풀린다. 자세는 액션 실행 플래그가 아니라 지속 상태다. */
     void ResetPostureFlags();
+
+    /** 점유 가구 반납(Release + Reset). 호출처 2곳 — 라이프사이클이 다르다:
+     *  Sit/Sleep(지속 상태) = ResetPostureFlags 경유, Read/Pray(액션 한정) = OnActionCompleted 완료 시. */
+    void ReleaseOccupiedFurniture();
 
     // Movement Speed 변환 (EMoveType → float)
     float ParseMoveSpeed(const EMoveType& Type) const;
@@ -419,6 +424,13 @@ public:
 
     // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생). 비어있으면 도착 즉시 완료.
     FString PendingMoveMediaKey;
+
+    /** 이동 중인 Sit/Sleep 의 가구 목적지 — 도착 시 PlayPendingMoveMedia 가 스냅·점유에 소비.
+     *  이동 중단 시 ClearActiveActionState 가 리셋(점유 전이므로 Release 불필요). */
+    TWeakObjectPtr<AFurnitureActor> PendingFurnitureTarget;
+
+    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(§6, bIsSit/bIsLie 와 동일 라이프사이클). */
+    TWeakObjectPtr<AFurnitureActor> OccupiedFurniture;
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),

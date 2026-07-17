@@ -25,6 +25,7 @@
 #include "../NPCManager.h"
 #include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
+#include "../../Furniture/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -331,6 +332,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    PendingFurnitureTarget.Reset(); // 이동 중단 시 스테일 가구 목적지 방지 — 점유 전이라 Release 불필요
     StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
     {
@@ -339,8 +341,21 @@ void UNPCActionComponent::ClearActiveActionState()
     }
 }
 
+void UNPCActionComponent::ReleaseOccupiedFurniture()
+{
+    // 가구가 먼저 파괴됐으면 약참조 invalid → 조용히 스킵.
+    if (AFurnitureActor* Furniture = OccupiedFurniture.Get())
+    {
+        Furniture->Release(GetOwner());
+    }
+    OccupiedFurniture.Reset();
+}
+
 void UNPCActionComponent::ResetPostureFlags()
 {
+    // Sit/Sleep 점유 해제 — 자세와 동일 라이프사이클(지속 상태, §6).
+    ReleaseOccupiedFurniture();
+
     if (!StateComponent) return;
     StateComponent->bIsSit = false;
     StateComponent->bIsLie = false;
@@ -412,6 +427,13 @@ void UNPCActionComponent::OnActionCompleted()
 
     // 완료된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
     const EAction CompletedAction = CurrentAction.ActionType;
+
+    // Read/Pray 는 액션 한정 점유 — 몽타주 종료(=완료)와 함께 가구 반납.
+    // Sit/Sleep 은 지속 상태라 여기서 해제하지 않는다(ResetPostureFlags 경유).
+    if (CompletedAction == EAction::Read || CompletedAction == EAction::Pray)
+    {
+        ReleaseOccupiedFurniture();
+    }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
@@ -505,6 +527,26 @@ void UNPCActionComponent::HandleImmediateMoveResult(AAIController* AIController,
 
 bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
 {
+    // 가구 목적지가 있는 Lifestyle(Sit/Sleep/Read/Pray) — 점유 시도 성공 시 SeatPoint 로 스냅 후 몽타주.
+    // 실패(타인 점유)면 스냅 생략, 제자리 재생 폴백. 두 도착 경로(OnMoveActionCompleted·
+    // HandleImmediateMoveResult)가 모두 여길 통과하므로 스냅·점유의 유일한 삽입 지점.
+    // (PendingFurnitureTarget 은 가구行 경로만 세팅하므로 미디어 키 조건 불필요.)
+    if (PendingFurnitureTarget.IsValid())
+    {
+        AFurnitureActor* Furniture = PendingFurnitureTarget.Get();
+        if (AActor* Owner = GetOwner())
+        {
+            if (Furniture->TryOccupy(Owner))
+            {
+                const FTransform SeatXf = Furniture->GetSeatTransform();
+                Owner->SetActorLocationAndRotation(SeatXf.GetLocation(), SeatXf.GetRotation(),
+                    false, nullptr, ETeleportType::TeleportPhysics);
+                OccupiedFurniture = Furniture;
+            }
+        }
+        PendingFurnitureTarget.Reset();
+    }
+
     const bool bPlayed = BasePlayActionMedia(MediaKey);
 
     // 자세 플래그는 몽타주가 실제 재생될 때만 — 미디어 미등록인데 상태만 '앉음'이 되는 불일치 방지.
@@ -2063,14 +2105,40 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
     // 이동은 가구行(Sit/Sleep)만 — 도착 후 몽타주(PendingMoveMediaKey, ExecuteAttackAction 과 동일 완료 체인).
     // in-place 액션(Pray/Read/Dance/Sing/Emote)은 이동 없이 제자리 재생 + 대상 바라보기만.
     // (구버전: 전 타입 BaseMove 직후 몽타주 즉시 재생 → 이동 중 앉기/춤 sliding 글리치 — Gemini PR#17 R4)
-    if ((LifestyleType == EAction::Sit || LifestyleType == EAction::Sleep) && !Dest.IsNearlyZero())
+    // 가구行 판정 — Sit/Sleep 은 **가구 타겟 필수**(무타겟·비가구·좌표만 = 무동작 방어),
+    // Read/Pray 는 가구 타겟이면 이동, 아니면 기존 in-place 재생 유지.
+    AFurnitureActor* FurnitureTarget = Cast<AFurnitureActor>(TargetEntity);
+    const bool bSitOrSleep = (LifestyleType == EAction::Sit || LifestyleType == EAction::Sleep);
+
+    if (bSitOrSleep && !FurnitureTarget)
     {
+        // 가구 없인 못 앉는다 — LLM 이 nearby_furniture 컨텍스트를 받고도 무타겟 Sit 을 낸 케이스.
+        // bActionAwaitingAsync=false 상태라 ExecuteInteraction 말미가 즉시 완료 처리(큐 정상 진행).
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: %s 무동작 — 가구 타겟 없음(target 미지정/비가구)"),
+            *GetOwnerAgentID(), *UEnum::GetValueAsString(LifestyleType));
+        return;
+    }
+
+    if (FurnitureTarget)
+    {
+        // 다른 가구로 갈아타는 경우 이전 점유 선(先)해제 — Stop/Abort 를 기다리지 않는다.
+        ReleaseOccupiedFurniture();
+
+        // 도착 시 스냅·점유는 PlayActionMediaWithPosture 가 소비.
+        // BaseMove 가 AlreadyAtGoal 을 동기 처리할 수 있으므로 반드시 BaseMove 호출 전에 세팅.
+        PendingFurnitureTarget = FurnitureTarget;
+
         // 자세 플래그(bIsSit/bIsLie)는 여기서 세우지 않는다 — 도착 후 몽타주 재생 시점
         // (OnMoveActionCompleted)에 세운다. 미리 세우면 이동 실패·중도 Abort 시 앉지도
         // 않았는데 플래그만 true 로 고착된다(Gemini PR#20 high).
-        PendingMoveMediaKey = (LifestyleType == EAction::Sit)
-            ? NPCActionKeys::Interact_SitDown
-            : NPCActionKeys::Interact_LieDown;
+        switch (LifestyleType)
+        {
+            case EAction::Sit:   PendingMoveMediaKey = NPCActionKeys::Interact_SitDown; break;
+            case EAction::Sleep: PendingMoveMediaKey = NPCActionKeys::Interact_LieDown; break;
+            case EAction::Read:  PendingMoveMediaKey = TEXT("Read"); break;
+            case EAction::Pray:  PendingMoveMediaKey = TEXT("Pray"); break;
+            default: break;
+        }
         BaseMove(Dest, EMoveType::Walk);
         ExecuteTurnTo(Dest, TargetEntity);
         return;
@@ -2083,8 +2151,7 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
 
     switch (LifestyleType)
     {
-        case EAction::Sit:   BaseSitDown(TargetEntity); break;   // 목적지 없음 — 제자리 착석
-        case EAction::Sleep: BaseLieDown(TargetEntity); break;
+        // Sit/Sleep 은 위에서 가구 타겟 필수 처리(무가구 = 무동작) — 여기 도달 불가.
         case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
         case EAction::Dance: BaseDance(StringParam); break;
