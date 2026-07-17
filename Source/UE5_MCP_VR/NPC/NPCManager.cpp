@@ -6,6 +6,8 @@
 #include "../Network/MCPJsonUtils.h"
 #include "../Network/EnvelopeBuilder.h"
 #include "Action/NPCActionComponent.h"
+#include "../Furniture/FurnitureManager.h"
+#include "../Furniture/FurnitureActor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
@@ -285,9 +287,9 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         }
     }
 
-    // ── 유효 타깃 vocabulary — valid_targets: [키워드/AgentID] (Python PromptPayload 정합).
+    // ── 유효 타깃 vocabulary — valid_targets: [키워드/AgentID/가구ID] (Python PromptPayload 정합).
     // Python 이 Stage1 구조화 스키마의 target enum 으로 강제 주입. ResolveActionTarget 이
-    // 해석 가능한 키워드(Player/Self/Enemy/<AgentID>)와 정확히 일치시켜, LLM 이
+    // 해석 가능한 키워드(Player/Self/Enemy/<AgentID>/<FurnitureID>)와 정확히 일치시켜, LLM 이
     // "Strategic Position" 류 해석 불가 자유문자열 target 을 내는 것을 원천 차단.
     if (NPCMap)
     {
@@ -299,6 +301,58 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         {
             TargetsArr.Add(MakeShared<FJsonValueString>(Pair.Key));
         }
+
+        // ── 가구 인지 컨텍스트 — 대상 NPC 반경 내 가구만 LLM 에 노출(공간 현실성).
+        //   valid_targets: 빈 가구만 합류 — 점유·원거리 가구 지정을 enum 차원에서 원천 차단.
+        //   nearby_furniture: 점유 포함 전부 — "자리가 없네요" 류 대사 근거.
+        // 무타겟 Sit/Sleep 은 C++(ExecuteLifestyleAction)가 무동작 방어 — 여기 노출이 유일한 착석 경로.
+        if (UFurnitureManager* FurnMgr = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFurnitureManager>() : nullptr)
+        {
+            if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+            {
+                const FVector NpcLoc = TargetNPC->GetActorLocation();
+                TArray<TSharedPtr<FJsonValue>> FurnitureArr;
+
+                for (const TPair<FString, AFurnitureActor*>& Pair : FurnMgr->GetActiveFurniture())
+                {
+                    AFurnitureActor* Furniture = Pair.Value;
+                    if (!IsValid(Furniture)) continue;
+
+                    const float Dist = FVector::Dist2D(Furniture->GetActorLocation(), NpcLoc);
+                    if (Dist > FurnitureContextRange) continue;
+
+                    const bool bOccupied = Furniture->IsOccupied();
+                    if (!bOccupied)
+                    {
+                        TargetsArr.Add(MakeShared<FJsonValueString>(Pair.Key));
+                    }
+
+                    // enum 접두("EFurnitureType::") 없는 짧은 타입명 — 프롬프트 가독성.
+                    FString TypeStr;
+                    switch (Furniture->FurnitureType)
+                    {
+                        case EFurnitureType::Seat:     TypeStr = TEXT("Seat"); break;
+                        case EFurnitureType::Bed:      TypeStr = TEXT("Bed"); break;
+                        case EFurnitureType::ReadSpot: TypeStr = TEXT("ReadSpot"); break;
+                        case EFurnitureType::PraySpot: TypeStr = TEXT("PraySpot"); break;
+                        default:                       TypeStr = TEXT("Unknown"); break;
+                    }
+
+                    TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
+                    Item->SetStringField(TEXT("id"), Pair.Key);
+                    Item->SetStringField(TEXT("type"), TypeStr);
+                    Item->SetBoolField(TEXT("occupied"), bOccupied);
+                    Item->SetNumberField(TEXT("dist_m"), FMath::RoundToFloat(Dist) / 100.f); // cm → m, 소수 2자리 내
+                    FurnitureArr.Add(MakeShared<FJsonValueObject>(Item));
+                }
+
+                if (FurnitureArr.Num() > 0)
+                {
+                    Payload->SetArrayField(TEXT("nearby_furniture"), FurnitureArr);
+                }
+            }
+        }
+
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
 
