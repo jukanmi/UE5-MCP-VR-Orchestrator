@@ -7,13 +7,16 @@
 #include "NPCActionComponent.h"
 #include "../NPCManager.h"
 #include "../Struct/NPCActionKeys.h"
+#include "../../Furniture/FurnitureManager.h"
+#include "../../Furniture/FurnitureActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/GameInstance.h"
 
 namespace
 {
     // LLM target_id 의미키워드 → 실제 AActor*.
-    //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟 / 그 외 → NPCMap AgentID 조회.
+    //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟
+    //   / 그 외 → NPCMap AgentID 조회 → FurnitureManager 가구 ID 조회 순.
     // 해석 실패 시 BB 타겟으로 폴백(기존 동작 보존).
     AActor* ResolveActionTarget(ASmartNPC* Self, const FString& Keyword, AActor* BBTarget)
     {
@@ -33,6 +36,14 @@ namespace
         if (UNPCManager* Mgr = UNPCManager::Get(Self))
         {
             if (AActor* Found = Cast<AActor>(Mgr->GetNPCById(Keyword)))
+            {
+                return Found;
+            }
+        }
+        // <FurnitureID> — 가구 등록소 조회 (NPC 이름과 충돌 시 NPC 우선 — 위 분기가 먼저).
+        if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(Self))
+        {
+            if (AFurnitureActor* Found = FurnMgr->GetFurnitureByID(Keyword))
             {
                 return Found;
             }
