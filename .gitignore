@@ -138,3 +138,15 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# ==============================================================================
+# FINETUNE (파인튜닝 — 대용량 데이터·체크포인트·GGUF·로그 커밋 금지)
+# ==============================================================================
+OmniAgent_VR_System/CognitiveEngine/app/data/train_logs/*.jsonl
+OmniAgent_VR_System/CognitiveEngine/finetune/data/raw/
+OmniAgent_VR_System/CognitiveEngine/finetune/data/processed/*.jsonl
+OmniAgent_VR_System/CognitiveEngine/finetune/eval/report/
+OmniAgent_VR_System/CognitiveEngine/finetune/**/checkpoints/
+*.gguf
+*.parquet
+*.tar.gz

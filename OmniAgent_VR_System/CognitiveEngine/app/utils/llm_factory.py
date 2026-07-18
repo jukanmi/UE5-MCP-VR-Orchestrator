@@ -1,10 +1,15 @@
+import asyncio
 import os
+import time
 from typing import Optional, Type, TypeVar
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 import httpx
 from pydantic import BaseModel
+
+from .async_tasks import spawn_background
+from .train_logger import log_llm_call
 
 load_dotenv()
 
@@ -118,11 +123,14 @@ async def ollama_structured(
     num_ctx: int = 2048,
     timeout: float = 60.0,
     schema_override: Optional[dict] = None,
+    log_extra: Optional[dict] = None,
 ) -> T:
     """Ollama /api/chat 직접 호출 → schema_model 인스턴스 반환.
     format 에 model_json_schema() 를 전달해 토큰 grammar 로 필드 생성을 강제.
     schema_override: 호출별 동적 제약(예: target enum 주입) 시 가공된 스키마 dict 전달 —
-    grammar 만 좁히고 검증은 여전히 schema_model(필드 str)로 수행."""
+    grammar 만 좁히고 검증은 여전히 schema_model(필드 str)로 수행.
+    log_extra: 지정 시 파인튜닝 로그(train_logger) 기록 — {"stage","msg_id","npc_id",...}.
+    성공·실패 양쪽 기록, fire-and-forget 라 핫패스 지연 없음."""
     model_id = MODELS.get(model_name, MODELS["gemma4"])
     body = {
         "model": model_id,
@@ -137,16 +145,45 @@ async def ollama_structured(
         "keep_alive": "30s" if model_name == "gemma4" else "5m",
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
+
+    def _log(raw: str, parsed: Optional[dict], error: str, elapsed_ms: float) -> None:
+        if log_extra is None:
+            return
+        spawn_background(
+            asyncio.to_thread(
+                log_llm_call,
+                stage=log_extra.get("stage", "unknown"),
+                model_id=model_id,
+                system_prompt=system,
+                user_prompt=user,
+                raw_response=raw,
+                parsed=parsed,
+                error=error,
+                elapsed_ms=elapsed_ms,
+                temperature=temperature,
+                extra={k: v for k, v in log_extra.items() if k != "stage"},
+            ),
+            label="train-log",
+        )
+
     # 매 호출 새 AsyncClient 생성 = TCP 핸드셰이크 오버헤드(멀티 NPC 동시 시 가중).
     # 모듈 전역 client 재사용으로 커넥션 풀 유지. timeout 은 호출별 post 인자로 전달.
     client = _get_structured_client()
-    resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
-    resp.raise_for_status()
-    # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
-    content = (resp.json().get("message") or {}).get("content")
-    if not content:
-        raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
-    return schema_model.model_validate_json(content)
+    started = time.perf_counter()
+    content = ""
+    try:
+        resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
+        resp.raise_for_status()
+        # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
+        content = (resp.json().get("message") or {}).get("content") or ""
+        if not content:
+            raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
+        parsed_obj = schema_model.model_validate_json(content)
+    except Exception as e:
+        _log(content, None, str(e), (time.perf_counter() - started) * 1000)
+        raise
+    _log(content, parsed_obj.model_dump(), "", (time.perf_counter() - started) * 1000)
+    return parsed_obj
 
 
 # NOTE: 과거 call_ollama_direct(자유텍스트 단발 생성)는 유일 호출처였던 dialogue.py
