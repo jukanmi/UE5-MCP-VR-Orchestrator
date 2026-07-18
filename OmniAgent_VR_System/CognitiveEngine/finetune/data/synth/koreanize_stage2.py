@@ -29,6 +29,7 @@ NPC 페르소나 (반드시 성격에 맞게 각색):
 - Skadi=해적선장(사나운 여성 해적선장, 약탈·호탕·결투), Moca=ASMR 스트리머(차분 다정 여성, 속삭임·휴식·소음 금지), Guard=경비병(규율, 순찰·조사)
 
 규칙:
+- 위 5명 외의 NPC 이름이 오면 코어 페르소나 각색 없이 원 캐릭터 설정(persona)을 그대로 따른다
 - 원 퀘스트의 절도·악행이 NPC 성격과 안 맞으면 목적을 각색하라 (예: 훔치기 → 분실물 회수, 조사, 의뢰받은 수거)
 - goal_ko: 구체적 결과를 담은 짧은 구. 나쁜 예: "임무 수행", "플레이어 돕기". 좋은 예: "서쪽 문 침입자를 확인하고 마을 안전 확보"
 - steps_ko: 2~4개. 각 스텝은 "~로 이동해 ~하기" 처럼 장소·대상·행동이 담긴 완결된 구여야 한다.
@@ -91,14 +92,23 @@ def validate_ko(ko: dict) -> bool:
 
 
 def quality_filter(recs):
+    """npc 미매칭도 원 캐릭터명으로 유지 — 12B 는 임의 npc_id 헤더에 일반화 (범용 학습, 2026-07-18).
+    동물/괴수(the deer 등)는 사람형 대화 주체가 아니라 제외."""
     ok = []
     for r in recs:
-        if not r["npc"]:
-            continue
         if len(r["steps"]) < 3 or not r["motivation"]:
             continue
         if r["mode"] == "Combat":  # 비전투 다양성이 목적 — 전투 plan 은 자체 시드가 담당
             continue
+        if not r["npc"]:
+            char = (r.get("character") or "").strip()
+            if not char or re.search(
+                r"\b(deer|bird|butterfly|worm|rat|cat|dog|horse|wolf|bear|fish|dragon|spider|snake|goat|sheep|cow|pig|chicken|monster|beast)\b",
+                char, re.I,
+            ):
+                continue
+            # "the mysterious owner" → "Mysterious Owner" 꼴 npc_id
+            r["npc"] = re.sub(r"^(the|a|an)\s+", "", char, flags=re.I).title()[:30]
         ok.append(r)
     return ok
 
@@ -128,21 +138,28 @@ def to_yaml(entries):
     return "\n".join(lines)
 
 
+_CORE = {"Elara", "James", "Skadi", "Moca", "Guard"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=100, help="목표 시드 수")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--only-core", action="store_true", help="코어 5 NPC 리맵 레코드만 (코어 비중 보충용)")
+    ap.add_argument("--out", default="golden_plan_seed_light.yaml", help="출력 yaml 파일명")
     args = ap.parse_args()
 
     base = os.path.dirname(os.path.abspath(__file__))
     root = os.path.abspath(os.path.join(base, "../.."))  # finetune
     src = os.path.join(root, "data/processed/stage2_light.jsonl")
-    out_yaml = os.path.join(base, "golden_plan_seed_light.yaml")
+    out_yaml = os.path.join(base, args.out)
     out_fail = os.path.join(root, "data/processed/koreanize_failures.jsonl")
 
     recs = [json.loads(l) for l in open(src, encoding="utf-8")]
     pool = quality_filter(recs)
-    print(f"전체 {len(recs)} → 품질필터 통과 {len(pool)}")
+    if args.only_core:
+        pool = [r for r in pool if r["npc"] in _CORE]
+    print(f"전체 {len(recs)} → 품질필터 통과 {len(pool)}" + (" (코어만)" if args.only_core else ""))
 
     # NPC 별 균형 샘플링
     random.seed(args.seed)

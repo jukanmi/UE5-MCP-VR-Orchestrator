@@ -64,8 +64,12 @@ NPC 페르소나·플레이어 발화·NPC 가 수행할 액션을 받아, 그 �
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 페르소나 — 실제 서빙 YAML 단일 소스
+# 페르소나 — 코어 5(서빙 YAML) + 범용 풀(persona_pool.yaml, LIGHT/NPC-v2 각색)
+# 혼합 목적: 코어 과적합 방지 — "system 의 페르소나를 따르는 능력" 자체를 학습.
 # ──────────────────────────────────────────────────────────────────────────────
+CORE_RATIO = 0.3  # 코어:범용 = 30:70 (2026-07-18 사용자 결정)
+
+
 def load_personas() -> dict:
     personas = {}
     for name in ("elara", "james", "skadi", "moca", "guard"):
@@ -73,6 +77,13 @@ def load_personas() -> dict:
         d = yaml.safe_load(open(path, encoding="utf-8"))
         personas[d["name"]] = d
     return personas
+
+
+def load_persona_pool() -> list:
+    path = os.path.join(SYNTH_DIR, "persona_pool.yaml")
+    if not os.path.exists(path):
+        return []
+    return yaml.safe_load(open(path, encoding="utf-8")) or []
 
 
 def build_system(persona: dict, valid_targets: list, inventory: str) -> str:
@@ -194,12 +205,13 @@ def load_seeds() -> list:
     return uniq
 
 
-def resolve_persona(seed: dict, personas: dict, rng: random.Random) -> dict:
+def resolve_persona(seed: dict, personas: dict, pool: list, rng: random.Random) -> dict:
+    """30:70 코어:범용 혼합. 풀 비었으면 종전대로 코어만."""
     npc = seed.get("npc", "")
-    if npc in personas:
-        return personas[npc]
-    # universal 시드(Mage 등 일반 페르소나) — 5 NPC 중 무작위 배정해 말투 다양화
-    return personas[rng.choice(list(personas))]
+    use_core = (not pool) or (rng.random() < CORE_RATIO)
+    if use_core:
+        return personas[npc] if npc in personas else personas[rng.choice(list(personas))]
+    return rng.choice(pool)
 
 
 def main():
@@ -211,11 +223,12 @@ def main():
 
     rng = random.Random(args.seed)
     personas = load_personas()
+    pool = load_persona_pool()
     seeds = load_seeds()
     rng.shuffle(seeds)
     if not args.all:
         seeds = seeds[: args.n]
-    print(f"시드 {len(seeds)}개 처리 시작 (teacher={TEACHER})")
+    print(f"시드 {len(seeds)}개 처리 시작 (teacher={TEACHER}, 범용 풀 {len(pool)}장, 코어비율 {CORE_RATIO})")
 
     out_rows, action_c = [], collections.Counter()
     n_gate_fail = n_speech_fail = 0
@@ -230,7 +243,7 @@ def main():
             n_gate_fail += 1
             continue
 
-        persona = resolve_persona(seed, personas, rng)
+        persona = resolve_persona(seed, personas, pool, rng)
         sp = teacher_speech(persona, seed, gated) or (teacher_speech(persona, seed, gated))
         if sp is None:
             n_speech_fail += 1

@@ -84,6 +84,14 @@ teacher gemma4-12b(로컬 Ollama) 배치 호출, Ollama format 스키마 강제(
 - **페르소나 정정 여파**: 실제 페르소나 = Elara 기사단장·James 항법사·Skadi 해적선장·Moca ASMR·Guard 주민. `light_quests.py NPC_RULES` 재작성(리맵: Guard 1,192·Elara 767·James 338·Skadi 330·Moca 262) · `golden_plan_seed.yaml` 예시 3개 재작성
 - **golden_universal_* 제외**: koreanize_universal 산출이 `[번역]` 플레이스홀더 저품질 — 소스에서 배제, 수리는 후순위
 
+### 범용 페르소나 확장 (2026-07-18 밤 — e4b 대사 특화 / 12B 스토리 특화 결정)
+
+코어 5 NPC 과적합 방지 — "system 의 페르소나를 따르는 능력" 자체를 학습 (사용자 결정: 소스 LIGHT+NPC-v2, 비율 30:70):
+- **build_persona_pool.py** 신규 — 바이오 2,621개 → teacher 각색 **300카드**(`persona_pool.yaml`, LIGHT 211·NPC-v2 89, 거부 1,237 — 현대캐릭터/설명문대사/구절traits 필터)
+- **stage1_e4b_train.jsonl 270행** — 코어:범용 = 27:73. 범용 대사 인캐릭터 확인(Castle Gardener 등)
+- **stage2_12b_train.jsonl 426행** — 코어 102(24%):범용 324(76%). koreanize 범용 확장(필터 풀 2,805→6,868, 동물 제외·원캐릭터명 npc_id) 327 + 코어 보충 `--only-core` 92(`golden_plan_seed_core.yaml`)
+- 검수 초안 현황: `golden_plan_seed_light.yaml` 327(범용) · `golden_plan_seed_core.yaml` 92(코어)
+
 ### multichar — 판타지 필터
 전체 13,929 중 판타지풍 17%·3인+ 7,050 → **판타지+3인 1,227** 추출(`processed/multichar_fantasy.jsonl`: setting·characters·speakers). TurnTo/SignalAllies 시나리오 합성 재료로 사용 — setting 은 영문, 각색 시 teacher 경유.
 

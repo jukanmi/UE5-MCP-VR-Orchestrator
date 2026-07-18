@@ -27,10 +27,25 @@ from app.agents.subgraphs.prompts import PLAN_SYSTEM_PROMPT  # noqa: E402
 
 PROCESSED_DIR = os.path.join(_ENGINE_ROOT, "finetune", "data", "processed")
 
-SOURCES = ("golden_plan_seed.yaml", "golden_plan_seed_light.yaml", "universal_plan_seed.yaml")
+SOURCES = ("golden_plan_seed.yaml", "golden_plan_seed_light.yaml",
+           "golden_plan_seed_core.yaml", "universal_plan_seed.yaml")
 
-# NPC 미지정(universal Mage 등) 시드용 순환 배정 풀
-NPC_POOL = ("Elara", "James", "Skadi", "Moca", "Guard")
+# NPC 미지정(universal Mage 등) 시드용 배정 풀 — 범용 페르소나 풀 있으면 그 이름을 사용
+# (12B 는 스토리 진행 특화: 임의 npc_id 헤더에 일반화되도록 코어 5 에 안 가둠)
+CORE_NPCS = ("Elara", "James", "Skadi", "Moca", "Guard")
+
+
+def load_npc_pool() -> tuple:
+    path = os.path.join(_HERE, "persona_pool.yaml")
+    if os.path.exists(path):
+        cards = yaml.safe_load(open(path, encoding="utf-8")) or []
+        names = tuple(c["name"] for c in cards if c.get("name"))
+        if names:
+            return CORE_NPCS + names
+    return CORE_NPCS
+
+
+NPC_POOL = CORE_NPCS  # main() 에서 load_npc_pool() 로 대체
 
 
 def validate_plan(goal: str, steps: list) -> bool:
@@ -52,6 +67,7 @@ def build_user(npc: str, context: str) -> str:
 
 
 def main():
+    npc_pool = load_npc_pool()
     entries = []
     n_invalid = 0
     pool_i = 0
@@ -68,8 +84,8 @@ def main():
                 n_invalid += 1
                 continue
             npc = p.get("npc") or ""
-            if npc not in NPC_POOL:
-                npc = NPC_POOL[pool_i % len(NPC_POOL)]
+            if npc not in npc_pool:
+                npc = npc_pool[pool_i % len(npc_pool)]
                 pool_i += 1
             assistant = {"npcs": [{"npc_id": npc, "goal": goal, "steps": steps}]}
             entries.append({"messages": [
