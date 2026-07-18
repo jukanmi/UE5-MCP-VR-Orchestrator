@@ -76,6 +76,14 @@ teacher gemma4-12b(로컬 Ollama) 배치 호출, Ollama format 스키마 강제(
 - 발화 코퍼스 9,444(`processed/krew_utterances.jsonl`): **현대 일상 잡담(카페·웹툰)** — 게임 직접 투입 불가, 구어체 말투 참고용으로 강등. utterance 다양화는 별도 판타지 각색 필요
 - Emote 스타일명은 임시 — C++ emote 어휘 확정 시 정합 필요
 
+### 학습 JSONL 생성기 재작성 (2026-07-18 저녁 — 플랜 검토 후 수정 반영)
+
+타 세션 산출 `generate_stage1/2.py` 가 서빙-학습 포맷 불일치(페르소나 빈값·actions만 학습·Rules 게이트 부재)라 **전면 재작성**:
+- **generate_stage1.py**: system=프로덕션 `DIALOGUE_STRUCTURED_PROMPT`+실페르소나 YAML 조립 · user=`Context: {natural_context}` (interface_input 동일 꼴) · assistant=**DialogueResponse 전체 JSON** · gold actions 는 `rules.validate_and_clamp_action` 실통과분만 · speech 는 teacher(12B)가 페르소나 말투로 생성(검증: 한글·5~120자) · 희소액션 ×3 오버샘플
+- **generate_stage2.py**: system=`PLAN_SYSTEM_PROMPT` 그대로 · user=`=== NPC: id ===`+`_serialize_dialogue` 근사 · assistant=**PlanBatchResponse JSON**(`{"npcs":[...]}`) — 99행, 전 행 스키마 유효
+- **페르소나 정정 여파**: 실제 페르소나 = Elara 기사단장·James 항법사·Skadi 해적선장·Moca ASMR·Guard 주민. `light_quests.py NPC_RULES` 재작성(리맵: Guard 1,192·Elara 767·James 338·Skadi 330·Moca 262) · `golden_plan_seed.yaml` 예시 3개 재작성
+- **golden_universal_* 제외**: koreanize_universal 산출이 `[번역]` 플레이스홀더 저품질 — 소스에서 배제, 수리는 후순위
+
 ### multichar — 판타지 필터
 전체 13,929 중 판타지풍 17%·3인+ 7,050 → **판타지+3인 1,227** 추출(`processed/multichar_fantasy.jsonl`: setting·characters·speakers). TurnTo/SignalAllies 시나리오 합성 재료로 사용 — setting 은 영문, 각색 시 teacher 경유.
 

@@ -1,5590 +1,6754 @@
-# =============================================================================
-# Stage1 시나리오 시드 400개 — 자동 생성 초안 (검토 후 학습)
-# gen_seeds.py 산출. 양식·필드 규칙: scenarios_seed.yaml 헤더 참조.
-# 카테고리 분포: Lifestyle80 Combat60 Social60 Common50 Task40 Investigation40 Talk40 Reject30
-# 검토 포인트: (1) gold.actions 필수 파라미터 (2) 페르소나 말투 정합 (3) 무효타겟 거절 자연스러움
-# =============================================================================
-
 - id: lifestyle_sit_01
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 2 }
-  utterance: "의자에 앉아"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 의자에 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_02
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 2 }
-  utterance: "저기 앉아서 좀 쉬어"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 저기 앉아서 좀 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_03
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 4 }
-  utterance: "피곤하면 앉아"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 4
+  utterance: 피곤하면 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_04
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "자리에 앉지 그래"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 자리에 앉지 그래
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_05
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 3 }
-  utterance: "여기 앉아"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 여기 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_06
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 3 }
-  utterance: "앉아서 얘기하자"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 앉아서 얘기하자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_07
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 2 }
-  utterance: "저 의자에 앉아봐"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 저 의자에 앉아봐
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_08
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 2 }
-  utterance: "잠깐 앉아 쉬어"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 잠깐 앉아 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_09
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 5 }
-  utterance: "의자에 앉아"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 5
+  utterance: 의자에 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_10
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 2 }
-  utterance: "저기 앉아서 좀 쉬어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 저기 앉아서 좀 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_11
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 2 }
-  utterance: "피곤하면 앉아"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 피곤하면 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_12
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 2 }
-  utterance: "자리에 앉지 그래"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 자리에 앉지 그래
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_13
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "여기 앉아"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 여기 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_14
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 3 }
-  utterance: "앉아서 얘기하자"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 앉아서 얘기하자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_15
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 2 }
-  utterance: "저 의자에 앉아봐"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 저 의자에 앉아봐
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_16
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "잠깐 앉아 쉬어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 잠깐 앉아 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_17
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 5 }
-  utterance: "의자에 앉아"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 5
+  utterance: 의자에 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sit_18
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_03]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_03
     nearby_furniture:
-      - { id: Chair_03, type: Chair, occupied: false, dist: 3 }
-  utterance: "저기 앉아서 좀 쉬어"
+    - id: Chair_03
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 저기 앉아서 좀 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_03 }
-
+    - type: Sit
+      target: Chair_03
 - id: lifestyle_sit_19
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 5 }
-  utterance: "피곤하면 앉아"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 5
+  utterance: 피곤하면 앉아
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_01 }
-
+    - type: Sit
+      target: Chair_01
 - id: lifestyle_sit_20
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_02]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
     nearby_furniture:
-      - { id: Chair_02, type: Chair, occupied: false, dist: 4 }
-  utterance: "자리에 앉지 그래"
+    - id: Chair_02
+      type: Chair
+      occupied: false
+      dist: 4
+  utterance: 자리에 앉지 그래
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sit, target: Chair_02 }
-
+    - type: Sit
+      target: Chair_02
 - id: lifestyle_sleep_01
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 2 }
-  utterance: "침대에서 자"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 2
+  utterance: 침대에서 자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_sleep_02
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_02]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
     nearby_furniture:
-      - { id: Bed_02, type: Bed, occupied: false, dist: 3 }
-  utterance: "늦었으니 좀 누워"
+    - id: Bed_02
+      type: Bed
+      occupied: false
+      dist: 3
+  utterance: 늦었으니 좀 누워
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_02 }
-
+    - type: Sleep
+      target: Bed_02
 - id: lifestyle_sleep_03
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_03]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_03
     nearby_furniture:
-      - { id: Bed_03, type: Bed, occupied: false, dist: 5 }
-  utterance: "잠 좀 자둬"
+    - id: Bed_03
+      type: Bed
+      occupied: false
+      dist: 5
+  utterance: 잠 좀 자둬
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_03 }
-
+    - type: Sleep
+      target: Bed_03
 - id: lifestyle_sleep_04
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 4 }
-  utterance: "침대에 누워 쉬어"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 침대에 누워 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_sleep_05
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_02]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
     nearby_furniture:
-      - { id: Bed_02, type: Bed, occupied: false, dist: 4 }
-  utterance: "피곤할 텐데 자"
+    - id: Bed_02
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 피곤할 텐데 자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_02 }
-
+    - type: Sleep
+      target: Bed_02
 - id: lifestyle_sleep_06
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_03]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_03
     nearby_furniture:
-      - { id: Bed_03, type: Bed, occupied: false, dist: 3 }
-  utterance: "눈 좀 붙여"
+    - id: Bed_03
+      type: Bed
+      occupied: false
+      dist: 3
+  utterance: 눈 좀 붙여
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_03 }
-
+    - type: Sleep
+      target: Bed_03
 - id: lifestyle_sleep_07
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 3 }
-  utterance: "이제 자러 가"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 3
+  utterance: 이제 자러 가
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_sleep_08
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_02]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
     nearby_furniture:
-      - { id: Bed_02, type: Bed, occupied: false, dist: 4 }
-  utterance: "침대에서 자"
+    - id: Bed_02
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 침대에서 자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_02 }
-
+    - type: Sleep
+      target: Bed_02
 - id: lifestyle_sleep_09
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_03]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_03
     nearby_furniture:
-      - { id: Bed_03, type: Bed, occupied: false, dist: 2 }
-  utterance: "늦었으니 좀 누워"
+    - id: Bed_03
+      type: Bed
+      occupied: false
+      dist: 2
+  utterance: 늦었으니 좀 누워
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_03 }
-
+    - type: Sleep
+      target: Bed_03
 - id: lifestyle_sleep_10
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 2 }
-  utterance: "잠 좀 자둬"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 2
+  utterance: 잠 좀 자둬
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_sleep_11
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_02]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
     nearby_furniture:
-      - { id: Bed_02, type: Bed, occupied: false, dist: 5 }
-  utterance: "침대에 누워 쉬어"
+    - id: Bed_02
+      type: Bed
+      occupied: false
+      dist: 5
+  utterance: 침대에 누워 쉬어
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_02 }
-
+    - type: Sleep
+      target: Bed_02
 - id: lifestyle_sleep_12
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_03]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_03
     nearby_furniture:
-      - { id: Bed_03, type: Bed, occupied: false, dist: 2 }
-  utterance: "피곤할 텐데 자"
+    - id: Bed_03
+      type: Bed
+      occupied: false
+      dist: 2
+  utterance: 피곤할 텐데 자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_03 }
-
+    - type: Sleep
+      target: Bed_03
 - id: lifestyle_sleep_13
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 4 }
-  utterance: "눈 좀 붙여"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 눈 좀 붙여
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_sleep_14
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_02]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
     nearby_furniture:
-      - { id: Bed_02, type: Bed, occupied: false, dist: 4 }
-  utterance: "이제 자러 가"
+    - id: Bed_02
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 이제 자러 가
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_02 }
-
+    - type: Sleep
+      target: Bed_02
 - id: lifestyle_sleep_15
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_03]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_03
     nearby_furniture:
-      - { id: Bed_03, type: Bed, occupied: false, dist: 4 }
-  utterance: "침대에서 자"
+    - id: Bed_03
+      type: Bed
+      occupied: false
+      dist: 4
+  utterance: 침대에서 자
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_03 }
-
+    - type: Sleep
+      target: Bed_03
 - id: lifestyle_sleep_16
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Bed_01]
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
     nearby_furniture:
-      - { id: Bed_01, type: Bed, occupied: false, dist: 2 }
-  utterance: "늦었으니 좀 누워"
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 2
+  utterance: 늦었으니 좀 누워
   gold:
     mode: Lifestyle
     facial: Tired
     actions:
-      - { type: Sleep, target: Bed_01 }
-
+    - type: Sleep
+      target: Bed_01
 - id: lifestyle_read_01
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_01]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_01
     nearby_furniture:
-      - { id: Desk_01, type: Desk, occupied: false, dist: 5 }
-  utterance: "책상에서 책 읽어"
+    - id: Desk_01
+      type: Desk
+      occupied: false
+      dist: 5
+  utterance: 책상에서 책 읽어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_01 }
-
+    - type: Read
+      target: Desk_01
 - id: lifestyle_read_02
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_02]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_02
     nearby_furniture:
-      - { id: Desk_02, type: Desk, occupied: false, dist: 2 }
-  utterance: "책 좀 읽어봐"
+    - id: Desk_02
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 책 좀 읽어봐
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_02 }
-
+    - type: Read
+      target: Desk_02
 - id: lifestyle_read_03
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_03]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_03
     nearby_furniture:
-      - { id: Desk_03, type: Desk, occupied: false, dist: 5 }
-  utterance: "공부 좀 해"
+    - id: Desk_03
+      type: Desk
+      occupied: false
+      dist: 5
+  utterance: 공부 좀 해
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_03 }
-
+    - type: Read
+      target: Desk_03
 - id: lifestyle_read_04
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_01]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_01
     nearby_furniture:
-      - { id: Desk_01, type: Desk, occupied: false, dist: 2 }
-  utterance: "저 책 읽어보지"
+    - id: Desk_01
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 저 책 읽어보지
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_01 }
-
+    - type: Read
+      target: Desk_01
 - id: lifestyle_read_05
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_02]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_02
     nearby_furniture:
-      - { id: Desk_02, type: Desk, occupied: false, dist: 4 }
-  utterance: "책상에 앉아 읽어"
+    - id: Desk_02
+      type: Desk
+      occupied: false
+      dist: 4
+  utterance: 책상에 앉아 읽어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_02 }
-
+    - type: Read
+      target: Desk_02
 - id: lifestyle_read_06
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_03]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_03
     nearby_furniture:
-      - { id: Desk_03, type: Desk, occupied: false, dist: 4 }
-  utterance: "독서나 하렴"
+    - id: Desk_03
+      type: Desk
+      occupied: false
+      dist: 4
+  utterance: 독서나 하렴
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_03 }
-
+    - type: Read
+      target: Desk_03
 - id: lifestyle_read_07
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_01]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_01
     nearby_furniture:
-      - { id: Desk_01, type: Desk, occupied: false, dist: 3 }
-  utterance: "책상에서 책 읽어"
+    - id: Desk_01
+      type: Desk
+      occupied: false
+      dist: 3
+  utterance: 책상에서 책 읽어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_01 }
-
+    - type: Read
+      target: Desk_01
 - id: lifestyle_read_08
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_02]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_02
     nearby_furniture:
-      - { id: Desk_02, type: Desk, occupied: false, dist: 2 }
-  utterance: "책 좀 읽어봐"
+    - id: Desk_02
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 책 좀 읽어봐
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_02 }
-
+    - type: Read
+      target: Desk_02
 - id: lifestyle_read_09
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_03]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_03
     nearby_furniture:
-      - { id: Desk_03, type: Desk, occupied: false, dist: 2 }
-  utterance: "공부 좀 해"
+    - id: Desk_03
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 공부 좀 해
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_03 }
-
+    - type: Read
+      target: Desk_03
 - id: lifestyle_read_10
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_01]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_01
     nearby_furniture:
-      - { id: Desk_01, type: Desk, occupied: false, dist: 3 }
-  utterance: "저 책 읽어보지"
+    - id: Desk_01
+      type: Desk
+      occupied: false
+      dist: 3
+  utterance: 저 책 읽어보지
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_01 }
-
+    - type: Read
+      target: Desk_01
 - id: lifestyle_read_11
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_02]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_02
     nearby_furniture:
-      - { id: Desk_02, type: Desk, occupied: false, dist: 4 }
-  utterance: "책상에 앉아 읽어"
+    - id: Desk_02
+      type: Desk
+      occupied: false
+      dist: 4
+  utterance: 책상에 앉아 읽어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_02 }
-
+    - type: Read
+      target: Desk_02
 - id: lifestyle_read_12
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_03]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_03
     nearby_furniture:
-      - { id: Desk_03, type: Desk, occupied: false, dist: 2 }
-  utterance: "독서나 하렴"
+    - id: Desk_03
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 독서나 하렴
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_03 }
-
+    - type: Read
+      target: Desk_03
 - id: lifestyle_read_13
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_01]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_01
     nearby_furniture:
-      - { id: Desk_01, type: Desk, occupied: false, dist: 3 }
-  utterance: "책상에서 책 읽어"
+    - id: Desk_01
+      type: Desk
+      occupied: false
+      dist: 3
+  utterance: 책상에서 책 읽어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_01 }
-
+    - type: Read
+      target: Desk_01
 - id: lifestyle_read_14
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Desk_02]
+    valid_targets:
+    - Player
+    - Self
+    - Desk_02
     nearby_furniture:
-      - { id: Desk_02, type: Desk, occupied: false, dist: 2 }
-  utterance: "책 좀 읽어봐"
+    - id: Desk_02
+      type: Desk
+      occupied: false
+      dist: 2
+  utterance: 책 좀 읽어봐
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Read, target: Desk_02 }
-
+    - type: Read
+      target: Desk_02
 - id: lifestyle_pray_01
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_01]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_01
     nearby_furniture:
-      - { id: Altar_01, type: Altar, occupied: false, dist: 5 }
-  utterance: "제단에서 기도해"
+    - id: Altar_01
+      type: Altar
+      occupied: false
+      dist: 5
+  utterance: 제단에서 기도해
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_01 }
-
+    - type: Pray
+      target: Altar_01
 - id: lifestyle_pray_02
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_02]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_02
     nearby_furniture:
-      - { id: Altar_02, type: Altar, occupied: false, dist: 4 }
-  utterance: "기도 좀 올려"
+    - id: Altar_02
+      type: Altar
+      occupied: false
+      dist: 4
+  utterance: 기도 좀 올려
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_02 }
-
+    - type: Pray
+      target: Altar_02
 - id: lifestyle_pray_03
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_03]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_03
     nearby_furniture:
-      - { id: Altar_03, type: Altar, occupied: false, dist: 5 }
-  utterance: "기도 드려봐"
+    - id: Altar_03
+      type: Altar
+      occupied: false
+      dist: 5
+  utterance: 기도 드려봐
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_03 }
-
+    - type: Pray
+      target: Altar_03
 - id: lifestyle_pray_04
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_01]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_01
     nearby_furniture:
-      - { id: Altar_01, type: Altar, occupied: false, dist: 4 }
-  utterance: "신께 기도하렴"
+    - id: Altar_01
+      type: Altar
+      occupied: false
+      dist: 4
+  utterance: 신께 기도하렴
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_01 }
-
+    - type: Pray
+      target: Altar_01
 - id: lifestyle_pray_05
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_02]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_02
     nearby_furniture:
-      - { id: Altar_02, type: Altar, occupied: false, dist: 3 }
-  utterance: "제단 앞에서 빌어"
+    - id: Altar_02
+      type: Altar
+      occupied: false
+      dist: 3
+  utterance: 제단 앞에서 빌어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_02 }
-
+    - type: Pray
+      target: Altar_02
 - id: lifestyle_pray_06
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_03]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_03
     nearby_furniture:
-      - { id: Altar_03, type: Altar, occupied: false, dist: 4 }
-  utterance: "제단에서 기도해"
+    - id: Altar_03
+      type: Altar
+      occupied: false
+      dist: 4
+  utterance: 제단에서 기도해
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_03 }
-
+    - type: Pray
+      target: Altar_03
 - id: lifestyle_pray_07
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_01]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_01
     nearby_furniture:
-      - { id: Altar_01, type: Altar, occupied: false, dist: 4 }
-  utterance: "기도 좀 올려"
+    - id: Altar_01
+      type: Altar
+      occupied: false
+      dist: 4
+  utterance: 기도 좀 올려
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_01 }
-
+    - type: Pray
+      target: Altar_01
 - id: lifestyle_pray_08
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_02]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_02
     nearby_furniture:
-      - { id: Altar_02, type: Altar, occupied: false, dist: 3 }
-  utterance: "기도 드려봐"
+    - id: Altar_02
+      type: Altar
+      occupied: false
+      dist: 3
+  utterance: 기도 드려봐
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_02 }
-
+    - type: Pray
+      target: Altar_02
 - id: lifestyle_pray_09
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_03]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_03
     nearby_furniture:
-      - { id: Altar_03, type: Altar, occupied: false, dist: 4 }
-  utterance: "신께 기도하렴"
+    - id: Altar_03
+      type: Altar
+      occupied: false
+      dist: 4
+  utterance: 신께 기도하렴
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_03 }
-
+    - type: Pray
+      target: Altar_03
 - id: lifestyle_pray_10
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_01]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_01
     nearby_furniture:
-      - { id: Altar_01, type: Altar, occupied: false, dist: 2 }
-  utterance: "제단 앞에서 빌어"
+    - id: Altar_01
+      type: Altar
+      occupied: false
+      dist: 2
+  utterance: 제단 앞에서 빌어
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_01 }
-
+    - type: Pray
+      target: Altar_01
 - id: lifestyle_pray_11
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_02]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_02
     nearby_furniture:
-      - { id: Altar_02, type: Altar, occupied: false, dist: 3 }
-  utterance: "제단에서 기도해"
+    - id: Altar_02
+      type: Altar
+      occupied: false
+      dist: 3
+  utterance: 제단에서 기도해
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_02 }
-
+    - type: Pray
+      target: Altar_02
 - id: lifestyle_pray_12
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Altar_03]
+    valid_targets:
+    - Player
+    - Self
+    - Altar_03
     nearby_furniture:
-      - { id: Altar_03, type: Altar, occupied: false, dist: 3 }
-  utterance: "기도 좀 올려"
+    - id: Altar_03
+      type: Altar
+      occupied: false
+      dist: 3
+  utterance: 기도 좀 올려
   gold:
     mode: Lifestyle
     facial: Neutral
     actions:
-      - { type: Pray, target: Altar_03 }
-
+    - type: Pray
+      target: Altar_03
 - id: lifestyle_dance_01
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "춤 좀 춰봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 춤 좀 춰봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_02
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "신나게 춤춰"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 신나게 춤춰
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_03
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "한 곡에 맞춰 춤추자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 한 곡에 맞춰 춤추자
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_04
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "흥겹게 춤춰봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 흥겹게 춤춰봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_05
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "춤 좀 춰봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 춤 좀 춰봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_06
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "신나게 춤춰"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 신나게 춤춰
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_07
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "한 곡에 맞춰 춤추자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 한 곡에 맞춰 춤추자
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_08
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "흥겹게 춤춰봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 흥겹게 춤춰봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_dance_09
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "춤 좀 춰봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 춤 좀 춰봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Dance }
-
+    - type: Dance
 - id: lifestyle_sing_01
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "노래 한 곡 불러줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 노래 한 곡 불러줘
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_02
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "한 곡 뽑아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 한 곡 뽑아봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_03
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "노래 좀 해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 노래 좀 해
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_04
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "흥얼거려봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 흥얼거려봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_05
   category: Lifestyle
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "노래 한 곡 불러줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 노래 한 곡 불러줘
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_06
   category: Lifestyle
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "한 곡 뽑아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 한 곡 뽑아봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_07
   category: Lifestyle
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "노래 좀 해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 노래 좀 해
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_08
   category: Lifestyle
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "흥얼거려봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 흥얼거려봐
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: lifestyle_sing_09
   category: Lifestyle
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "노래 한 곡 불러줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 노래 한 곡 불러줘
   gold:
     mode: Lifestyle
     facial: Happy
     actions:
-      - { type: Sing }
-
+    - type: Sing
 - id: combat_attack_01
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저놈 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저놈 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_02
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 쳐!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 쳐!
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_03
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "달려들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 달려들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_04
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저 침입자를 막아 쳐라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저 침입자를 막아 쳐라
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_05
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "무기 들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 무기 들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_06
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지금 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지금 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_07
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 처치해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 처치해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_08
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "덤벼드는 놈을 베어"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 덤벼드는 놈을 베어
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_09
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저놈 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저놈 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_10
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 쳐!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 쳐!
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_11
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "달려들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 달려들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_12
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저 침입자를 막아 쳐라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저 침입자를 막아 쳐라
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_13
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "무기 들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 무기 들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_14
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지금 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지금 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_15
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 처치해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 처치해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_16
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "덤벼드는 놈을 베어"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 덤벼드는 놈을 베어
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_17
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저놈 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저놈 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_18
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 쳐!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 쳐!
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_19
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "달려들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 달려들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_20
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "저 침입자를 막아 쳐라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 저 침입자를 막아 쳐라
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_21
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "무기 들어 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 무기 들어 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_22
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지금 공격해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지금 공격해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_23
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "적을 처치해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 적을 처치해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_attack_24
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "덤벼드는 놈을 베어"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 덤벼드는 놈을 베어
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: Attack, target: Enemy }
-
+    - type: Attack
+      target: Enemy
 - id: combat_block_01
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "막아!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 막아!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_02
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "방패 들어 막아"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 방패 들어 막아
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_03
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "공격을 방어해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 공격을 방어해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_04
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "가드 올려"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 가드 올려
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_05
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지금 막아라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지금 막아라
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_06
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "막아!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 막아!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_07
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "방패 들어 막아"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 방패 들어 막아
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_08
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "공격을 방어해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 공격을 방어해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_09
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "가드 올려"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 가드 올려
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_block_10
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지금 막아라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지금 막아라
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Block }
-
+    - type: Block
 - id: combat_dodge_01
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "피해!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 피해!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_02
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "옆으로 굴러 피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 옆으로 굴러 피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_03
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "회피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 회피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_04
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "빠르게 피해라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 빠르게 피해라
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_05
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "몸을 날려 피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 몸을 날려 피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_06
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "피해!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 피해!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_07
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "옆으로 굴러 피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 옆으로 굴러 피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_08
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "회피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 회피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_09
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "빠르게 피해라"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 빠르게 피해라
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_dodge_10
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "몸을 날려 피해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 몸을 날려 피해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Dodge }
-
+    - type: Dodge
 - id: combat_flee_01
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "도망쳐!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 도망쳐!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_02
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "일단 후퇴해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 일단 후퇴해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_03
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "여기서 빠져"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 여기서 빠져
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_04
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "달아나"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 달아나
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_05
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.6
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "물러서"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 물러서
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_06
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "도망쳐!"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 도망쳐!
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_07
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "일단 후퇴해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 일단 후퇴해
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_flee_08
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "여기서 빠져"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 여기서 빠져
   gold:
     mode: Combat
     facial: Fear
     actions:
-      - { type: Flee }
-
+    - type: Flee
 - id: combat_signalallies_01
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "동료 불러"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 동료 불러
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_02
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지원 요청해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지원 요청해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_03
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "다들 불러 모아"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 다들 불러 모아
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_04
   category: Combat
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "경보 울려"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 경보 울려
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_05
   category: Combat
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "아군에게 알려"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 아군에게 알려
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_06
   category: Combat
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.9
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "동료 불러"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 동료 불러
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_07
   category: Combat
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.7
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "지원 요청해"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 지원 요청해
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: combat_signalallies_08
   category: Combat
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
     danger: 0.8
-    extra: "적대적 침입자가 무기를 들고 교전 중"
-  utterance: "다들 불러 모아"
+    extra: 적대적 침입자가 무기를 들고 교전 중
+  utterance: 다들 불러 모아
   gold:
     mode: Combat
     facial: Angry
     actions:
-      - { type: SignalAllies }
-
+    - type: SignalAllies
 - id: social_giveitem_01
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Bread 보유"
-  utterance: "이거 좀 줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Bread 보유
+  utterance: 이거 좀 줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Bread }
-
+    - type: GiveItem
+      target: Player
+      item: Bread
 - id: social_giveitem_02
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Water 보유"
-  utterance: "Water 하나 건네줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Water 보유
+  utterance: Water 하나 건네줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Water }
-
+    - type: GiveItem
+      target: Player
+      item: Water
 - id: social_giveitem_03
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Potion 보유"
-  utterance: "먹을 것 좀 나눠줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Potion 보유
+  utterance: 먹을 것 좀 나눠줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Potion }
-
+    - type: GiveItem
+      target: Player
+      item: Potion
 - id: social_giveitem_04
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Sword 보유"
-  utterance: "그거 나한테 줄래"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Sword 보유
+  utterance: 그거 나한테 줄래
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Sword }
-
+    - type: GiveItem
+      target: Player
+      item: Sword
 - id: social_giveitem_05
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Coin 보유"
-  utterance: "선물 좀 해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Coin 보유
+  utterance: 선물 좀 해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Coin }
-
+    - type: GiveItem
+      target: Player
+      item: Coin
 - id: social_giveitem_06
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Herb 보유"
-  utterance: "이거 좀 줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Herb 보유
+  utterance: 이거 좀 줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Herb }
-
+    - type: GiveItem
+      target: Player
+      item: Herb
 - id: social_giveitem_07
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Apple 보유"
-  utterance: "Apple 하나 건네줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Apple 보유
+  utterance: Apple 하나 건네줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Apple }
-
+    - type: GiveItem
+      target: Player
+      item: Apple
 - id: social_giveitem_08
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Bandage 보유"
-  utterance: "먹을 것 좀 나눠줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Bandage 보유
+  utterance: 먹을 것 좀 나눠줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Bandage }
-
+    - type: GiveItem
+      target: Player
+      item: Bandage
 - id: social_giveitem_09
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Torch 보유"
-  utterance: "그거 나한테 줄래"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Torch 보유
+  utterance: 그거 나한테 줄래
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Torch }
-
+    - type: GiveItem
+      target: Player
+      item: Torch
 - id: social_giveitem_10
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Rope 보유"
-  utterance: "선물 좀 해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Rope 보유
+  utterance: 선물 좀 해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Rope }
-
+    - type: GiveItem
+      target: Player
+      item: Rope
 - id: social_giveitem_11
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Bread 보유"
-  utterance: "이거 좀 줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Bread 보유
+  utterance: 이거 좀 줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Bread }
-
+    - type: GiveItem
+      target: Player
+      item: Bread
 - id: social_giveitem_12
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Water 보유"
-  utterance: "Water 하나 건네줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Water 보유
+  utterance: Water 하나 건네줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Water }
-
+    - type: GiveItem
+      target: Player
+      item: Water
 - id: social_giveitem_13
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Potion 보유"
-  utterance: "먹을 것 좀 나눠줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Potion 보유
+  utterance: 먹을 것 좀 나눠줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Potion }
-
+    - type: GiveItem
+      target: Player
+      item: Potion
 - id: social_giveitem_14
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Sword 보유"
-  utterance: "그거 나한테 줄래"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Sword 보유
+  utterance: 그거 나한테 줄래
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Sword }
-
+    - type: GiveItem
+      target: Player
+      item: Sword
 - id: social_giveitem_15
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Coin 보유"
-  utterance: "선물 좀 해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Coin 보유
+  utterance: 선물 좀 해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Coin }
-
+    - type: GiveItem
+      target: Player
+      item: Coin
 - id: social_giveitem_16
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "인벤토리에 Herb 보유"
-  utterance: "이거 좀 줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: 인벤토리에 Herb 보유
+  utterance: 이거 좀 줘
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: GiveItem, target: Player, item: Herb }
-
+    - type: GiveItem
+      target: Player
+      item: Herb
 - id: social_trade_01
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread 거래 가능"
-  utterance: "거래하자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread 거래 가능
+  utterance: 거래하자
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Bread }
-
+    - type: Trade
+      target: Player
+      item: Bread
 - id: social_trade_02
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water 거래 가능"
-  utterance: "Water 사고 싶은데"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water 거래 가능
+  utterance: Water 사고 싶은데
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Water }
-
+    - type: Trade
+      target: Player
+      item: Water
 - id: social_trade_03
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Potion 거래 가능"
-  utterance: "물건 좀 팔아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Potion 거래 가능
+  utterance: 물건 좀 팔아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Potion }
-
+    - type: Trade
+      target: Player
+      item: Potion
 - id: social_trade_04
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 거래 가능"
-  utterance: "교환하자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 거래 가능
+  utterance: 교환하자
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Sword }
-
+    - type: Trade
+      target: Player
+      item: Sword
 - id: social_trade_05
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Coin 거래 가능"
-  utterance: "장사 좀 하지"
+    valid_targets:
+    - Player
+    - Self
+    extra: Coin 거래 가능
+  utterance: 장사 좀 하지
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Coin }
-
+    - type: Trade
+      target: Player
+      item: Coin
 - id: social_trade_06
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Herb 거래 가능"
-  utterance: "거래하자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Herb 거래 가능
+  utterance: 거래하자
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Herb }
-
+    - type: Trade
+      target: Player
+      item: Herb
 - id: social_trade_07
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Apple 거래 가능"
-  utterance: "Apple 사고 싶은데"
+    valid_targets:
+    - Player
+    - Self
+    extra: Apple 거래 가능
+  utterance: Apple 사고 싶은데
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Apple }
-
+    - type: Trade
+      target: Player
+      item: Apple
 - id: social_trade_08
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bandage 거래 가능"
-  utterance: "물건 좀 팔아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bandage 거래 가능
+  utterance: 물건 좀 팔아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Bandage }
-
+    - type: Trade
+      target: Player
+      item: Bandage
 - id: social_trade_09
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Torch 거래 가능"
-  utterance: "교환하자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Torch 거래 가능
+  utterance: 교환하자
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Torch }
-
+    - type: Trade
+      target: Player
+      item: Torch
 - id: social_trade_10
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Rope 거래 가능"
-  utterance: "장사 좀 하지"
+    valid_targets:
+    - Player
+    - Self
+    extra: Rope 거래 가능
+  utterance: 장사 좀 하지
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Rope }
-
+    - type: Trade
+      target: Player
+      item: Rope
 - id: social_trade_11
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread 거래 가능"
-  utterance: "거래하자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread 거래 가능
+  utterance: 거래하자
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Bread }
-
+    - type: Trade
+      target: Player
+      item: Bread
 - id: social_trade_12
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water 거래 가능"
-  utterance: "Water 사고 싶은데"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water 거래 가능
+  utterance: Water 사고 싶은데
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: Trade, target: Player, item: Water }
-
+    - type: Trade
+      target: Player
+      item: Water
 - id: social_comfort_01
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Player가 상심해 있음"
-  utterance: "위로해줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Player가 상심해 있음
+  utterance: 위로해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Player }
-
+    - type: Comfort
+      target: Player
 - id: social_comfort_02
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Elara]
-    extra: "Elara가 상심해 있음"
-  utterance: "괜찮다고 말해줘"
+    valid_targets:
+    - Player
+    - Self
+    - Elara
+    extra: Elara가 상심해 있음
+  utterance: 괜찮다고 말해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Elara }
-
+    - type: Comfort
+      target: Elara
 - id: social_comfort_03
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Moca]
-    extra: "Moca가 상심해 있음"
-  utterance: "저 사람 좀 달래"
+    valid_targets:
+    - Player
+    - Self
+    - Moca
+    extra: Moca가 상심해 있음
+  utterance: 저 사람 좀 달래
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Moca }
-
+    - type: Comfort
+      target: Moca
 - id: social_comfort_04
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, James]
-    extra: "James가 상심해 있음"
-  utterance: "슬퍼하는데 위로해"
+    valid_targets:
+    - Player
+    - Self
+    - James
+    extra: James가 상심해 있음
+  utterance: 슬퍼하는데 위로해
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: James }
-
+    - type: Comfort
+      target: James
 - id: social_comfort_05
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Player가 상심해 있음"
-  utterance: "안아주며 달래줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Player가 상심해 있음
+  utterance: 안아주며 달래줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Player }
-
+    - type: Comfort
+      target: Player
 - id: social_comfort_06
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Elara]
-    extra: "Elara가 상심해 있음"
-  utterance: "위로해줘"
+    valid_targets:
+    - Player
+    - Self
+    - Elara
+    extra: Elara가 상심해 있음
+  utterance: 위로해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Elara }
-
+    - type: Comfort
+      target: Elara
 - id: social_comfort_07
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Moca]
-    extra: "Moca가 상심해 있음"
-  utterance: "괜찮다고 말해줘"
+    valid_targets:
+    - Player
+    - Self
+    - Moca
+    extra: Moca가 상심해 있음
+  utterance: 괜찮다고 말해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Moca }
-
+    - type: Comfort
+      target: Moca
 - id: social_comfort_08
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, James]
-    extra: "James가 상심해 있음"
-  utterance: "저 사람 좀 달래"
+    valid_targets:
+    - Player
+    - Self
+    - James
+    extra: James가 상심해 있음
+  utterance: 저 사람 좀 달래
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: James }
-
+    - type: Comfort
+      target: James
 - id: social_comfort_09
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Player가 상심해 있음"
-  utterance: "슬퍼하는데 위로해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Player가 상심해 있음
+  utterance: 슬퍼하는데 위로해
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Player }
-
+    - type: Comfort
+      target: Player
 - id: social_comfort_10
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Elara]
-    extra: "Elara가 상심해 있음"
-  utterance: "안아주며 달래줘"
+    valid_targets:
+    - Player
+    - Self
+    - Elara
+    extra: Elara가 상심해 있음
+  utterance: 안아주며 달래줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Elara }
-
+    - type: Comfort
+      target: Elara
 - id: social_comfort_11
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Moca]
-    extra: "Moca가 상심해 있음"
-  utterance: "위로해줘"
+    valid_targets:
+    - Player
+    - Self
+    - Moca
+    extra: Moca가 상심해 있음
+  utterance: 위로해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Moca }
-
+    - type: Comfort
+      target: Moca
 - id: social_comfort_12
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, James]
-    extra: "James가 상심해 있음"
-  utterance: "괜찮다고 말해줘"
+    valid_targets:
+    - Player
+    - Self
+    - James
+    extra: James가 상심해 있음
+  utterance: 괜찮다고 말해줘
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: James }
-
+    - type: Comfort
+      target: James
 - id: social_comfort_13
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Player가 상심해 있음"
-  utterance: "저 사람 좀 달래"
+    valid_targets:
+    - Player
+    - Self
+    extra: Player가 상심해 있음
+  utterance: 저 사람 좀 달래
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Player }
-
+    - type: Comfort
+      target: Player
 - id: social_comfort_14
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Elara]
-    extra: "Elara가 상심해 있음"
-  utterance: "슬퍼하는데 위로해"
+    valid_targets:
+    - Player
+    - Self
+    - Elara
+    extra: Elara가 상심해 있음
+  utterance: 슬퍼하는데 위로해
   gold:
     mode: Social
     facial: Sad
     actions:
-      - { type: Comfort, target: Elara }
-
+    - type: Comfort
+      target: Elara
 - id: social_emote_01
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "인사해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 인사해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Wave }
-
+    - type: Emote
+      style: Wave
 - id: social_emote_02
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "손 흔들어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 손 흔들어
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Nod }
-
+    - type: Emote
+      style: Nod
 - id: social_emote_03
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "고개 끄덕여"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 고개 끄덕여
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Bow }
-
+    - type: Emote
+      style: Bow
 - id: social_emote_04
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "환영 표시해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 환영 표시해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Clap }
-
+    - type: Emote
+      style: Clap
 - id: social_emote_05
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "미소 지어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 미소 지어
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Smile }
-
+    - type: Emote
+      style: Smile
 - id: social_emote_06
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "인사해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 인사해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Wave }
-
+    - type: Emote
+      style: Wave
 - id: social_emote_07
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "손 흔들어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 손 흔들어
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Nod }
-
+    - type: Emote
+      style: Nod
 - id: social_emote_08
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "고개 끄덕여"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 고개 끄덕여
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Bow }
-
+    - type: Emote
+      style: Bow
 - id: social_emote_09
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "환영 표시해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 환영 표시해
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Clap }
-
+    - type: Emote
+      style: Clap
 - id: social_emote_10
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "미소 지어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 미소 지어
   gold:
     mode: Social
     facial: Happy
     actions:
-      - { type: Emote, style: Smile }
-
+    - type: Emote
+      style: Smile
 - id: social_handobject_01
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread를 건네려 함"
-  utterance: "이거 잠깐 들어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread를 건네려 함
+  utterance: 이거 잠깐 들어줘
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Bread }
-
+    - type: HandObject
+      target: Player
+      item: Bread
 - id: social_handobject_02
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water를 건네려 함"
-  utterance: "Water 좀 받아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water를 건네려 함
+  utterance: Water 좀 받아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Water }
-
+    - type: HandObject
+      target: Player
+      item: Water
 - id: social_handobject_03
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Potion를 건네려 함"
-  utterance: "이것 좀 건네받아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Potion를 건네려 함
+  utterance: 이것 좀 건네받아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Potion }
-
+    - type: HandObject
+      target: Player
+      item: Potion
 - id: social_handobject_04
   category: Social
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword를 건네려 함"
-  utterance: "손에 쥐어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword를 건네려 함
+  utterance: 손에 쥐어줘
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Sword }
-
+    - type: HandObject
+      target: Player
+      item: Sword
 - id: social_handobject_05
   category: Social
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Coin를 건네려 함"
-  utterance: "이거 잠깐 들어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Coin를 건네려 함
+  utterance: 이거 잠깐 들어줘
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Coin }
-
+    - type: HandObject
+      target: Player
+      item: Coin
 - id: social_handobject_06
   category: Social
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Herb를 건네려 함"
-  utterance: "Herb 좀 받아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Herb를 건네려 함
+  utterance: Herb 좀 받아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Herb }
-
+    - type: HandObject
+      target: Player
+      item: Herb
 - id: social_handobject_07
   category: Social
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Apple를 건네려 함"
-  utterance: "이것 좀 건네받아"
+    valid_targets:
+    - Player
+    - Self
+    extra: Apple를 건네려 함
+  utterance: 이것 좀 건네받아
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Apple }
-
+    - type: HandObject
+      target: Player
+      item: Apple
 - id: social_handobject_08
   category: Social
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bandage를 건네려 함"
-  utterance: "손에 쥐어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bandage를 건네려 함
+  utterance: 손에 쥐어줘
   gold:
     mode: Social
     facial: Neutral
     actions:
-      - { type: HandObject, target: Player, item: Bandage }
-
+    - type: HandObject
+      target: Player
+      item: Bandage
 - id: common_follow_01
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "나 따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 나 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_02
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_03
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "내 뒤를 따라"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 내 뒤를 따라
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_04
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "같이 가자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 같이 가자
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_05
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "옆에 붙어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 옆에 붙어
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_06
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "나 따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 나 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_07
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_08
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "내 뒤를 따라"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 내 뒤를 따라
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_09
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "같이 가자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 같이 가자
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_10
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "옆에 붙어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 옆에 붙어
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_11
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "나 따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 나 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_follow_12
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "따라와"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 따라와
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Follow, target: Player }
-
+    - type: Follow
+      target: Player
 - id: common_move_01
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "저쪽으로 가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 저쪽으로 가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Walk }
-
+    - type: Move
+      style: Walk
 - id: common_move_02
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "이동해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 이동해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Run }
-
+    - type: Move
+      style: Run
 - id: common_move_03
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "앞으로 나아가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 앞으로 나아가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Sprint }
-
+    - type: Move
+      style: Sprint
 - id: common_move_04
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "그리로 걸어가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 그리로 걸어가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Walk }
-
+    - type: Move
+      style: Walk
 - id: common_move_05
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "빨리 가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 빨리 가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Run }
-
+    - type: Move
+      style: Run
 - id: common_move_06
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "저쪽으로 가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 저쪽으로 가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Sprint }
-
+    - type: Move
+      style: Sprint
 - id: common_move_07
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "이동해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 이동해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Walk }
-
+    - type: Move
+      style: Walk
 - id: common_move_08
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "앞으로 나아가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 앞으로 나아가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Run }
-
+    - type: Move
+      style: Run
 - id: common_move_09
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "그리로 걸어가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 그리로 걸어가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Sprint }
-
+    - type: Move
+      style: Sprint
 - id: common_move_10
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "특정 지점으로 이동 지시"
-  utterance: "빨리 가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 특정 지점으로 이동 지시
+  utterance: 빨리 가
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Move, style: Walk }
-
+    - type: Move
+      style: Walk
 - id: common_turnto_01
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "나 좀 봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 나 좀 봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_02
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "이쪽 봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 이쪽 봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_03
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "돌아서"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 돌아서
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_04
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저기 쳐다봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저기 쳐다봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_05
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "고개 돌려"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 고개 돌려
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_06
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "나 좀 봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 나 좀 봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_07
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "이쪽 봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 이쪽 봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_turnto_08
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "돌아서"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 돌아서
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: TurnTo, target: Player }
-
+    - type: TurnTo
+      target: Player
 - id: common_scan_01
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "주변 살펴"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 주변 살펴
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_02
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "경계해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 경계해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_03
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "둘러봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 둘러봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_04
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "정찰해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 정찰해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_05
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "이상한 거 없나 봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 이상한 거 없나 봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_06
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "주변 살펴"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 주변 살펴
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_07
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "경계해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 경계해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_scan_08
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "주변 경계 지시"
-  utterance: "둘러봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: 주변 경계 지시
+  utterance: 둘러봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Scan }
-
+    - type: Scan
 - id: common_wait_01
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "여기서 기다려"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 여기서 기다려
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Wait }
-
+    - type: Wait
 - id: common_wait_02
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "잠깐 대기해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 잠깐 대기해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Wait }
-
+    - type: Wait
 - id: common_wait_03
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "가만히 있어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 가만히 있어
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Wait }
-
+    - type: Wait
 - id: common_wait_04
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "기다려"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 기다려
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Wait }
-
+    - type: Wait
 - id: common_stop_01
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "멈춰"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 멈춰
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Stop }
-
+    - type: Stop
 - id: common_stop_02
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "그만해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 그만해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Stop }
-
+    - type: Stop
 - id: common_stop_03
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "정지"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 정지
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Stop }
-
+    - type: Stop
 - id: common_stop_04
   category: Common
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "하던 거 멈춰"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 하던 거 멈춰
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: Stop }
-
+    - type: Stop
 - id: common_useitem_01
   category: Common
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread 사용 가능"
-  utterance: "Bread 써"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread 사용 가능
+  utterance: Bread 써
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: UseItem, item: Bread }
-
+    - type: UseItem
+      item: Bread
 - id: common_useitem_02
   category: Common
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water 사용 가능"
-  utterance: "그거 사용해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water 사용 가능
+  utterance: 그거 사용해
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: UseItem, item: Water }
-
+    - type: UseItem
+      item: Water
 - id: common_useitem_03
   category: Common
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Potion 사용 가능"
-  utterance: "아이템 써봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Potion 사용 가능
+  utterance: 아이템 써봐
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: UseItem, item: Potion }
-
+    - type: UseItem
+      item: Potion
 - id: common_useitem_04
   category: Common
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 사용 가능"
-  utterance: "그거 마셔"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 사용 가능
+  utterance: 그거 마셔
   gold:
     mode: Common
     facial: Neutral
     actions:
-      - { type: UseItem, item: Sword }
-
+    - type: UseItem
+      item: Sword
 - id: task_pickup_01
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 위치에 아이템"
-  utterance: "저기 떨어진 거 주워"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 위치에 아이템
+  utterance: 저기 떨어진 거 주워
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 1200,300,0 }
-
+    - type: PickUp
+      loc: 1200
+      300: null
+      0: null
 - id: task_pickup_02
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 위치에 아이템"
-  utterance: "그거 집어"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 위치에 아이템
+  utterance: 그거 집어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: -800,1500,0 }
-
+    - type: PickUp
+      loc: -800
+      1500: null
+      0: null
 - id: task_pickup_03
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(500,-2200,0) 위치에 아이템"
-  utterance: "바닥에 있는 거 주워와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (500,-2200,0) 위치에 아이템
+  utterance: 바닥에 있는 거 주워와
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 500,-2200,0 }
-
+    - type: PickUp
+      loc: 500
+      -2200: null
+      0: null
 - id: task_pickup_04
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(3000,0,0) 위치에 아이템"
-  utterance: "저 물건 챙겨"
+    valid_targets:
+    - Player
+    - Self
+    extra: (3000,0,0) 위치에 아이템
+  utterance: 저 물건 챙겨
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 3000,0,0 }
-
+    - type: PickUp
+      loc: 3000
+      0: null
 - id: task_pickup_05
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-1500,-1500,0) 위치에 아이템"
-  utterance: "주워 담아"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-1500,-1500,0) 위치에 아이템
+  utterance: 주워 담아
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: -1500,-1500,0 }
-
+    - type: PickUp
+      loc: -1500
+      -1500: null
+      0: null
 - id: task_pickup_06
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(2400,900,0) 위치에 아이템"
-  utterance: "저기 떨어진 거 주워"
+    valid_targets:
+    - Player
+    - Self
+    extra: (2400,900,0) 위치에 아이템
+  utterance: 저기 떨어진 거 주워
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 2400,900,0 }
-
+    - type: PickUp
+      loc: 2400
+      900: null
+      0: null
 - id: task_pickup_07
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-3200,600,0) 위치에 아이템"
-  utterance: "그거 집어"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-3200,600,0) 위치에 아이템
+  utterance: 그거 집어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: -3200,600,0 }
-
+    - type: PickUp
+      loc: -3200
+      600: null
+      0: null
 - id: task_pickup_08
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(700,4100,0) 위치에 아이템"
-  utterance: "바닥에 있는 거 주워와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (700,4100,0) 위치에 아이템
+  utterance: 바닥에 있는 거 주워와
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 700,4100,0 }
-
+    - type: PickUp
+      loc: 700
+      4100: null
+      0: null
 - id: task_pickup_09
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1800,-700,0) 위치에 아이템"
-  utterance: "저 물건 챙겨"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1800,-700,0) 위치에 아이템
+  utterance: 저 물건 챙겨
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 1800,-700,0 }
-
+    - type: PickUp
+      loc: 1800
+      -700: null
+      0: null
 - id: task_pickup_10
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-600,2600,0) 위치에 아이템"
-  utterance: "주워 담아"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-600,2600,0) 위치에 아이템
+  utterance: 주워 담아
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: -600,2600,0 }
-
+    - type: PickUp
+      loc: -600
+      2600: null
+      0: null
 - id: task_pickup_11
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 위치에 아이템"
-  utterance: "저기 떨어진 거 주워"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 위치에 아이템
+  utterance: 저기 떨어진 거 주워
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: 1200,300,0 }
-
+    - type: PickUp
+      loc: 1200
+      300: null
+      0: null
 - id: task_pickup_12
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 위치에 아이템"
-  utterance: "그거 집어"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 위치에 아이템
+  utterance: 그거 집어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: PickUp, loc: -800,1500,0 }
-
+    - type: PickUp
+      loc: -800
+      1500: null
+      0: null
 - id: task_drop_01
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread 소지 중"
-  utterance: "Bread 내려놔"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread 소지 중
+  utterance: Bread 내려놔
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Bread }
-
+    - type: Drop
+      target: Player
+      item: Bread
 - id: task_drop_02
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water 소지 중"
-  utterance: "그거 버려"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water 소지 중
+  utterance: 그거 버려
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Water }
-
+    - type: Drop
+      target: Player
+      item: Water
 - id: task_drop_03
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Potion 소지 중"
-  utterance: "손에 든 거 내려놔"
+    valid_targets:
+    - Player
+    - Self
+    extra: Potion 소지 중
+  utterance: 손에 든 거 내려놔
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Potion }
-
+    - type: Drop
+      target: Player
+      item: Potion
 - id: task_drop_04
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 소지 중"
-  utterance: "여기 놓아둬"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 소지 중
+  utterance: 여기 놓아둬
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Sword }
-
+    - type: Drop
+      target: Player
+      item: Sword
 - id: task_drop_05
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Coin 소지 중"
-  utterance: "떨궈"
+    valid_targets:
+    - Player
+    - Self
+    extra: Coin 소지 중
+  utterance: 떨궈
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Coin }
-
+    - type: Drop
+      target: Player
+      item: Coin
 - id: task_drop_06
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Herb 소지 중"
-  utterance: "Herb 내려놔"
+    valid_targets:
+    - Player
+    - Self
+    extra: Herb 소지 중
+  utterance: Herb 내려놔
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Herb }
-
+    - type: Drop
+      target: Player
+      item: Herb
 - id: task_drop_07
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Apple 소지 중"
-  utterance: "그거 버려"
+    valid_targets:
+    - Player
+    - Self
+    extra: Apple 소지 중
+  utterance: 그거 버려
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Apple }
-
+    - type: Drop
+      target: Player
+      item: Apple
 - id: task_drop_08
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bandage 소지 중"
-  utterance: "손에 든 거 내려놔"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bandage 소지 중
+  utterance: 손에 든 거 내려놔
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Bandage }
-
+    - type: Drop
+      target: Player
+      item: Bandage
 - id: task_drop_09
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Torch 소지 중"
-  utterance: "여기 놓아둬"
+    valid_targets:
+    - Player
+    - Self
+    extra: Torch 소지 중
+  utterance: 여기 놓아둬
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Torch }
-
+    - type: Drop
+      target: Player
+      item: Torch
 - id: task_drop_10
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Rope 소지 중"
-  utterance: "떨궈"
+    valid_targets:
+    - Player
+    - Self
+    extra: Rope 소지 중
+  utterance: 떨궈
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Drop, target: Player, item: Rope }
-
+    - type: Drop
+      target: Player
+      item: Rope
 - id: task_craft_01
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bread 제작 재료 보유"
-  utterance: "Bread 하나 만들어"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bread 제작 재료 보유
+  utterance: Bread 하나 만들어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Bread }
-
+    - type: Craft
+      item: Bread
 - id: task_craft_02
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Water 제작 재료 보유"
-  utterance: "제작해봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Water 제작 재료 보유
+  utterance: 제작해봐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Water }
-
+    - type: Craft
+      item: Water
 - id: task_craft_03
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Potion 제작 재료 보유"
-  utterance: "그거 만들어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Potion 제작 재료 보유
+  utterance: 그거 만들어줘
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Potion }
-
+    - type: Craft
+      item: Potion
 - id: task_craft_04
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 제작 재료 보유"
-  utterance: "재료로 만들어"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 제작 재료 보유
+  utterance: 재료로 만들어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Sword }
-
+    - type: Craft
+      item: Sword
 - id: task_craft_05
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Coin 제작 재료 보유"
-  utterance: "만들어보자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Coin 제작 재료 보유
+  utterance: 만들어보자
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Coin }
-
+    - type: Craft
+      item: Coin
 - id: task_craft_06
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Herb 제작 재료 보유"
-  utterance: "Herb 하나 만들어"
+    valid_targets:
+    - Player
+    - Self
+    extra: Herb 제작 재료 보유
+  utterance: Herb 하나 만들어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Herb }
-
+    - type: Craft
+      item: Herb
 - id: task_craft_07
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Apple 제작 재료 보유"
-  utterance: "제작해봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Apple 제작 재료 보유
+  utterance: 제작해봐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Apple }
-
+    - type: Craft
+      item: Apple
 - id: task_craft_08
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bandage 제작 재료 보유"
-  utterance: "그거 만들어줘"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bandage 제작 재료 보유
+  utterance: 그거 만들어줘
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Bandage }
-
+    - type: Craft
+      item: Bandage
 - id: task_craft_09
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Torch 제작 재료 보유"
-  utterance: "재료로 만들어"
+    valid_targets:
+    - Player
+    - Self
+    extra: Torch 제작 재료 보유
+  utterance: 재료로 만들어
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Torch }
-
+    - type: Craft
+      item: Torch
 - id: task_craft_10
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Rope 제작 재료 보유"
-  utterance: "만들어보자"
+    valid_targets:
+    - Player
+    - Self
+    extra: Rope 제작 재료 보유
+  utterance: 만들어보자
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Craft, item: Rope }
-
+    - type: Craft
+      item: Rope
 - id: task_repair_01
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 파손 — 수리 필요"
-  utterance: "Sword 수리해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 파손 — 수리 필요
+  utterance: Sword 수리해
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Sword }
-
+    - type: Repair
+      target: Player
+      item: Sword
 - id: task_repair_02
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Shield 파손 — 수리 필요"
-  utterance: "고쳐봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Shield 파손 — 수리 필요
+  utterance: 고쳐봐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Shield }
-
+    - type: Repair
+      target: Player
+      item: Shield
 - id: task_repair_03
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Armor 파손 — 수리 필요"
-  utterance: "망가진 거 고쳐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Armor 파손 — 수리 필요
+  utterance: 망가진 거 고쳐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Armor }
-
+    - type: Repair
+      target: Player
+      item: Armor
 - id: task_repair_04
   category: Task
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bow 파손 — 수리 필요"
-  utterance: "정비해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bow 파손 — 수리 필요
+  utterance: 정비해
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Bow }
-
+    - type: Repair
+      target: Player
+      item: Bow
 - id: task_repair_05
   category: Task
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Sword 파손 — 수리 필요"
-  utterance: "Sword 수리해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Sword 파손 — 수리 필요
+  utterance: Sword 수리해
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Sword }
-
+    - type: Repair
+      target: Player
+      item: Sword
 - id: task_repair_06
   category: Task
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Shield 파손 — 수리 필요"
-  utterance: "고쳐봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Shield 파손 — 수리 필요
+  utterance: 고쳐봐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Shield }
-
+    - type: Repair
+      target: Player
+      item: Shield
 - id: task_repair_07
   category: Task
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Armor 파손 — 수리 필요"
-  utterance: "망가진 거 고쳐"
+    valid_targets:
+    - Player
+    - Self
+    extra: Armor 파손 — 수리 필요
+  utterance: 망가진 거 고쳐
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Armor }
-
+    - type: Repair
+      target: Player
+      item: Armor
 - id: task_repair_08
   category: Task
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "Bow 파손 — 수리 필요"
-  utterance: "정비해"
+    valid_targets:
+    - Player
+    - Self
+    extra: Bow 파손 — 수리 필요
+  utterance: 정비해
   gold:
     mode: Task
     facial: Neutral
     actions:
-      - { type: Repair, target: Player, item: Bow }
-
+    - type: Repair
+      target: Player
+      item: Bow
 - id: invest_investigate_01
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 방향에서 이상 징후"
-  utterance: "저기서 소리 났어, 확인해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 방향에서 이상 징후
+  utterance: 저기서 소리 났어, 확인해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 1200,300,0 }
-
+    - type: Investigate
+      loc: 1200
+      300: null
+      0: null
 - id: invest_investigate_02
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 방향에서 이상 징후"
-  utterance: "이상한 데 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 방향에서 이상 징후
+  utterance: 이상한 데 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -800,1500,0 }
-
+    - type: Investigate
+      loc: -800
+      1500: null
+      0: null
 - id: invest_investigate_03
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(500,-2200,0) 방향에서 이상 징후"
-  utterance: "저쪽 살펴봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (500,-2200,0) 방향에서 이상 징후
+  utterance: 저쪽 살펴봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 500,-2200,0 }
-
+    - type: Investigate
+      loc: 500
+      -2200: null
+      0: null
 - id: invest_investigate_04
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(3000,0,0) 방향에서 이상 징후"
-  utterance: "무슨 일인지 알아봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (3000,0,0) 방향에서 이상 징후
+  utterance: 무슨 일인지 알아봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 3000,0,0 }
-
+    - type: Investigate
+      loc: 3000
+      0: null
 - id: invest_investigate_05
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-1500,-1500,0) 방향에서 이상 징후"
-  utterance: "저 지점 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-1500,-1500,0) 방향에서 이상 징후
+  utterance: 저 지점 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -1500,-1500,0 }
-
+    - type: Investigate
+      loc: -1500
+      -1500: null
+      0: null
 - id: invest_investigate_06
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(2400,900,0) 방향에서 이상 징후"
-  utterance: "저기서 소리 났어, 확인해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (2400,900,0) 방향에서 이상 징후
+  utterance: 저기서 소리 났어, 확인해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 2400,900,0 }
-
+    - type: Investigate
+      loc: 2400
+      900: null
+      0: null
 - id: invest_investigate_07
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-3200,600,0) 방향에서 이상 징후"
-  utterance: "이상한 데 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-3200,600,0) 방향에서 이상 징후
+  utterance: 이상한 데 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -3200,600,0 }
-
+    - type: Investigate
+      loc: -3200
+      600: null
+      0: null
 - id: invest_investigate_08
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(700,4100,0) 방향에서 이상 징후"
-  utterance: "저쪽 살펴봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (700,4100,0) 방향에서 이상 징후
+  utterance: 저쪽 살펴봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 700,4100,0 }
-
+    - type: Investigate
+      loc: 700
+      4100: null
+      0: null
 - id: invest_investigate_09
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1800,-700,0) 방향에서 이상 징후"
-  utterance: "무슨 일인지 알아봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1800,-700,0) 방향에서 이상 징후
+  utterance: 무슨 일인지 알아봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 1800,-700,0 }
-
+    - type: Investigate
+      loc: 1800
+      -700: null
+      0: null
 - id: invest_investigate_10
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-600,2600,0) 방향에서 이상 징후"
-  utterance: "저 지점 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-600,2600,0) 방향에서 이상 징후
+  utterance: 저 지점 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -600,2600,0 }
-
+    - type: Investigate
+      loc: -600
+      2600: null
+      0: null
 - id: invest_investigate_11
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 방향에서 이상 징후"
-  utterance: "저기서 소리 났어, 확인해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 방향에서 이상 징후
+  utterance: 저기서 소리 났어, 확인해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 1200,300,0 }
-
+    - type: Investigate
+      loc: 1200
+      300: null
+      0: null
 - id: invest_investigate_12
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 방향에서 이상 징후"
-  utterance: "이상한 데 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 방향에서 이상 징후
+  utterance: 이상한 데 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -800,1500,0 }
-
+    - type: Investigate
+      loc: -800
+      1500: null
+      0: null
 - id: invest_investigate_13
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(500,-2200,0) 방향에서 이상 징후"
-  utterance: "저쪽 살펴봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (500,-2200,0) 방향에서 이상 징후
+  utterance: 저쪽 살펴봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 500,-2200,0 }
-
+    - type: Investigate
+      loc: 500
+      -2200: null
+      0: null
 - id: invest_investigate_14
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(3000,0,0) 방향에서 이상 징후"
-  utterance: "무슨 일인지 알아봐"
+    valid_targets:
+    - Player
+    - Self
+    extra: (3000,0,0) 방향에서 이상 징후
+  utterance: 무슨 일인지 알아봐
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 3000,0,0 }
-
+    - type: Investigate
+      loc: 3000
+      0: null
 - id: invest_investigate_15
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-1500,-1500,0) 방향에서 이상 징후"
-  utterance: "저 지점 조사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-1500,-1500,0) 방향에서 이상 징후
+  utterance: 저 지점 조사해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: -1500,-1500,0 }
-
+    - type: Investigate
+      loc: -1500
+      -1500: null
+      0: null
 - id: invest_investigate_16
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(2400,900,0) 방향에서 이상 징후"
-  utterance: "저기서 소리 났어, 확인해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (2400,900,0) 방향에서 이상 징후
+  utterance: 저기서 소리 났어, 확인해
   gold:
     mode: Investigation
     facial: Surprised
     actions:
-      - { type: Investigate, loc: 2400,900,0 }
-
+    - type: Investigate
+      loc: 2400
+      900: null
+      0: null
 - id: invest_track_01
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "저놈 추적해"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 저놈 추적해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_02
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "발자국 따라가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 발자국 따라가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_track_03
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "뒤를 밟아"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 뒤를 밟아
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_04
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "쫓아가 살펴"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 쫓아가 살펴
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_track_05
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "흔적 따라가"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 흔적 따라가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_06
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "저놈 추적해"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 저놈 추적해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_track_07
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "발자국 따라가"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 발자국 따라가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_08
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "뒤를 밟아"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 뒤를 밟아
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_track_09
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "쫓아가 살펴"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 쫓아가 살펴
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_10
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "흔적 따라가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 흔적 따라가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_track_11
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Enemy]
-    extra: "대상의 흔적을 추적"
-  utterance: "저놈 추적해"
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    extra: 대상의 흔적을 추적
+  utterance: 저놈 추적해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Enemy }
-
+    - type: Track
+      target: Enemy
 - id: invest_track_12
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "대상의 흔적을 추적"
-  utterance: "발자국 따라가"
+    valid_targets:
+    - Player
+    - Self
+    extra: 대상의 흔적을 추적
+  utterance: 발자국 따라가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Track, target: Player }
-
+    - type: Track
+      target: Player
 - id: invest_scout_01
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 지역 정찰 지시"
-  utterance: "저 지역 정찰해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 지역 정찰 지시
+  utterance: 저 지역 정찰해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 1200,300,0 }
-
+    - type: Scout
+      loc: 1200
+      300: null
+      0: null
 - id: invest_scout_02
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 지역 정찰 지시"
-  utterance: "앞쪽 척후 나가"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 지역 정찰 지시
+  utterance: 앞쪽 척후 나가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: -800,1500,0 }
-
+    - type: Scout
+      loc: -800
+      1500: null
+      0: null
 - id: invest_scout_03
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(500,-2200,0) 지역 정찰 지시"
-  utterance: "미리 살펴보고 와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (500,-2200,0) 지역 정찰 지시
+  utterance: 미리 살펴보고 와
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 500,-2200,0 }
-
+    - type: Scout
+      loc: 500
+      -2200: null
+      0: null
 - id: invest_scout_04
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(3000,0,0) 지역 정찰 지시"
-  utterance: "정찰 다녀와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (3000,0,0) 지역 정찰 지시
+  utterance: 정찰 다녀와
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 3000,0,0 }
-
+    - type: Scout
+      loc: 3000
+      0: null
 - id: invest_scout_05
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-1500,-1500,0) 지역 정찰 지시"
-  utterance: "그쪽 답사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-1500,-1500,0) 지역 정찰 지시
+  utterance: 그쪽 답사해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: -1500,-1500,0 }
-
+    - type: Scout
+      loc: -1500
+      -1500: null
+      0: null
 - id: invest_scout_06
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(2400,900,0) 지역 정찰 지시"
-  utterance: "저 지역 정찰해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (2400,900,0) 지역 정찰 지시
+  utterance: 저 지역 정찰해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 2400,900,0 }
-
+    - type: Scout
+      loc: 2400
+      900: null
+      0: null
 - id: invest_scout_07
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-3200,600,0) 지역 정찰 지시"
-  utterance: "앞쪽 척후 나가"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-3200,600,0) 지역 정찰 지시
+  utterance: 앞쪽 척후 나가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: -3200,600,0 }
-
+    - type: Scout
+      loc: -3200
+      600: null
+      0: null
 - id: invest_scout_08
   category: Investigation
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(700,4100,0) 지역 정찰 지시"
-  utterance: "미리 살펴보고 와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (700,4100,0) 지역 정찰 지시
+  utterance: 미리 살펴보고 와
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 700,4100,0 }
-
+    - type: Scout
+      loc: 700
+      4100: null
+      0: null
 - id: invest_scout_09
   category: Investigation
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1800,-700,0) 지역 정찰 지시"
-  utterance: "정찰 다녀와"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1800,-700,0) 지역 정찰 지시
+  utterance: 정찰 다녀와
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 1800,-700,0 }
-
+    - type: Scout
+      loc: 1800
+      -700: null
+      0: null
 - id: invest_scout_10
   category: Investigation
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-600,2600,0) 지역 정찰 지시"
-  utterance: "그쪽 답사해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-600,2600,0) 지역 정찰 지시
+  utterance: 그쪽 답사해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: -600,2600,0 }
-
+    - type: Scout
+      loc: -600
+      2600: null
+      0: null
 - id: invest_scout_11
   category: Investigation
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(1200,300,0) 지역 정찰 지시"
-  utterance: "저 지역 정찰해"
+    valid_targets:
+    - Player
+    - Self
+    extra: (1200,300,0) 지역 정찰 지시
+  utterance: 저 지역 정찰해
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: 1200,300,0 }
-
+    - type: Scout
+      loc: 1200
+      300: null
+      0: null
 - id: invest_scout_12
   category: Investigation
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-    extra: "(-800,1500,0) 지역 정찰 지시"
-  utterance: "앞쪽 척후 나가"
+    valid_targets:
+    - Player
+    - Self
+    extra: (-800,1500,0) 지역 정찰 지시
+  utterance: 앞쪽 척후 나가
   gold:
     mode: Investigation
     facial: Neutral
     actions:
-      - { type: Scout, loc: -800,1500,0 }
-
+    - type: Scout
+      loc: -800
+      1500: null
+      0: null
 - id: talk_01
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "오늘 날씨 참 좋다"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 오늘 날씨 참 좋다
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_02
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "요즘 마을은 좀 어때"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 요즘 마을은 좀 어때
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_03
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "그동안 잘 지냈어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 그동안 잘 지냈어
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_04
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "네 이름이 뭐였지"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 네 이름이 뭐였지
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_05
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "이 근처에 뭐 볼 만한 거 있어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 이 근처에 뭐 볼 만한 거 있어
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_06
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "옛날 얘기 좀 해줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 옛날 얘기 좀 해줘
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_07
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "장사는 잘 돼"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 장사는 잘 돼
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_08
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "기분이 좋아 보이네"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 기분이 좋아 보이네
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_09
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 산 너머엔 뭐가 있을까"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 산 너머엔 뭐가 있을까
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_10
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "밤이 깊었네"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 밤이 깊었네
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_11
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "여긴 조용하고 좋다"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 여긴 조용하고 좋다
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_12
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "네 고향은 어디야"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 네 고향은 어디야
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_13
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "뭐 좋은 일 있어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 뭐 좋은 일 있어
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_14
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "요즘 소문 들은 거 있어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 요즘 소문 들은 거 있어
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_15
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "피곤해 보인다"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 피곤해 보인다
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_16
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "다들 어디 갔지"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 다들 어디 갔지
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_17
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "이 검 멋지지 않아"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 이 검 멋지지 않아
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_18
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "그 얘기 정말이야"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 그 얘기 정말이야
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_19
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "고맙다는 말 하고 싶었어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 고맙다는 말 하고 싶었어
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_20
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "잘 자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 잘 자
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_21
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "오늘 날씨 참 좋다"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 오늘 날씨 참 좋다
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_22
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "요즘 마을은 좀 어때"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 요즘 마을은 좀 어때
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_23
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "그동안 잘 지냈어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 그동안 잘 지냈어
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_24
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "네 이름이 뭐였지"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 네 이름이 뭐였지
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_25
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "이 근처에 뭐 볼 만한 거 있어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 이 근처에 뭐 볼 만한 거 있어
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_26
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "옛날 얘기 좀 해줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 옛날 얘기 좀 해줘
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_27
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "장사는 잘 돼"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 장사는 잘 돼
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_28
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "기분이 좋아 보이네"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 기분이 좋아 보이네
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_29
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 산 너머엔 뭐가 있을까"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 산 너머엔 뭐가 있을까
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_30
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "밤이 깊었네"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 밤이 깊었네
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_31
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "여긴 조용하고 좋다"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 여긴 조용하고 좋다
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_32
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "네 고향은 어디야"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 네 고향은 어디야
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_33
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "뭐 좋은 일 있어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 뭐 좋은 일 있어
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_34
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "요즘 소문 들은 거 있어"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 요즘 소문 들은 거 있어
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_35
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "피곤해 보인다"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 피곤해 보인다
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_36
   category: Talk
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "다들 어디 갔지"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 다들 어디 갔지
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: talk_37
   category: Talk
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "이 검 멋지지 않아"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 이 검 멋지지 않아
   gold:
     mode: Social
     facial: Happy
     actions: []
-
 - id: talk_38
   category: Talk
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "그 얘기 정말이야"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 그 얘기 정말이야
   gold:
     mode: Social
     facial: Neutral
     actions: []
-
 - id: talk_39
   category: Talk
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "고맙다는 말 하고 싶었어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 고맙다는 말 하고 싶었어
   gold:
     mode: Social
     facial: Tired
     actions: []
-
 - id: talk_40
   category: Talk
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self, Chair_01]
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
     nearby_furniture:
-      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
-  utterance: "잘 자"
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+  utterance: 잘 자
   gold:
     mode: Social
     facial: Sad
     actions: []
-
 - id: reject_01
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "의자에 앉아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 의자에 앉아봐
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "주변에 앉을 의자가 없다고 답함"
-
+    speech_hint: 주변에 앉을 의자가 없다고 답함
 - id: reject_02
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "침대에서 자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 침대에서 자
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "근처에 침대가 없다고 답함"
-
+    speech_hint: 근처에 침대가 없다고 답함
 - id: reject_03
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 적을 공격해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 적을 공격해
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "공격할 적이 보이지 않는다고 답함"
-
+    speech_hint: 공격할 적이 보이지 않는다고 답함
 - id: reject_04
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "Skadi 따라가"
+    valid_targets:
+    - Player
+    - Self
+  utterance: Skadi 따라가
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "그 사람이 여기 없다고 답함"
-
+    speech_hint: 그 사람이 여기 없다고 답함
 - id: reject_05
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "책상에서 책 읽어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 책상에서 책 읽어
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "읽을 책상이 없다고 답함"
-
+    speech_hint: 읽을 책상이 없다고 답함
 - id: reject_06
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "제단에서 기도해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 제단에서 기도해
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "제단이 근처에 없다고 답함"
-
+    speech_hint: 제단이 근처에 없다고 답함
 - id: reject_07
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "금화 줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 금화 줘
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "가진 금화가 없다고 답함"
-
+    speech_hint: 가진 금화가 없다고 답함
 - id: reject_08
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 사람 위로해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 사람 위로해
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "위로할 사람이 여기 없다고 답함"
-
+    speech_hint: 위로할 사람이 여기 없다고 답함
 - id: reject_09
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "의자에 앉아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 의자에 앉아봐
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "주변에 앉을 의자가 없다고 답함"
-
+    speech_hint: 주변에 앉을 의자가 없다고 답함
 - id: reject_10
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "침대에서 자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 침대에서 자
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "근처에 침대가 없다고 답함"
-
+    speech_hint: 근처에 침대가 없다고 답함
 - id: reject_11
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 적을 공격해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 적을 공격해
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "공격할 적이 보이지 않는다고 답함"
-
+    speech_hint: 공격할 적이 보이지 않는다고 답함
 - id: reject_12
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "Skadi 따라가"
+    valid_targets:
+    - Player
+    - Self
+  utterance: Skadi 따라가
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "그 사람이 여기 없다고 답함"
-
+    speech_hint: 그 사람이 여기 없다고 답함
 - id: reject_13
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "책상에서 책 읽어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 책상에서 책 읽어
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "읽을 책상이 없다고 답함"
-
+    speech_hint: 읽을 책상이 없다고 답함
 - id: reject_14
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "제단에서 기도해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 제단에서 기도해
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "제단이 근처에 없다고 답함"
-
+    speech_hint: 제단이 근처에 없다고 답함
 - id: reject_15
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "금화 줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 금화 줘
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "가진 금화가 없다고 답함"
-
+    speech_hint: 가진 금화가 없다고 답함
 - id: reject_16
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 사람 위로해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 사람 위로해
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "위로할 사람이 여기 없다고 답함"
-
+    speech_hint: 위로할 사람이 여기 없다고 답함
 - id: reject_17
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "의자에 앉아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 의자에 앉아봐
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "주변에 앉을 의자가 없다고 답함"
-
+    speech_hint: 주변에 앉을 의자가 없다고 답함
 - id: reject_18
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "침대에서 자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 침대에서 자
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "근처에 침대가 없다고 답함"
-
+    speech_hint: 근처에 침대가 없다고 답함
 - id: reject_19
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 적을 공격해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 적을 공격해
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "공격할 적이 보이지 않는다고 답함"
-
+    speech_hint: 공격할 적이 보이지 않는다고 답함
 - id: reject_20
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "Skadi 따라가"
+    valid_targets:
+    - Player
+    - Self
+  utterance: Skadi 따라가
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "그 사람이 여기 없다고 답함"
-
+    speech_hint: 그 사람이 여기 없다고 답함
 - id: reject_21
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "책상에서 책 읽어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 책상에서 책 읽어
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "읽을 책상이 없다고 답함"
-
+    speech_hint: 읽을 책상이 없다고 답함
 - id: reject_22
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "제단에서 기도해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 제단에서 기도해
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "제단이 근처에 없다고 답함"
-
+    speech_hint: 제단이 근처에 없다고 답함
 - id: reject_23
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "금화 줘"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 금화 줘
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "가진 금화가 없다고 답함"
-
+    speech_hint: 가진 금화가 없다고 답함
 - id: reject_24
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 사람 위로해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 사람 위로해
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "위로할 사람이 여기 없다고 답함"
-
+    speech_hint: 위로할 사람이 여기 없다고 답함
 - id: reject_25
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "의자에 앉아봐"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 의자에 앉아봐
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "주변에 앉을 의자가 없다고 답함"
-
+    speech_hint: 주변에 앉을 의자가 없다고 답함
 - id: reject_26
   category: Reject
   npc: Elara
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "침대에서 자"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 침대에서 자
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "근처에 침대가 없다고 답함"
-
+    speech_hint: 근처에 침대가 없다고 답함
 - id: reject_27
   category: Reject
   npc: James
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "저 적을 공격해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저 적을 공격해
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "공격할 적이 보이지 않는다고 답함"
-
+    speech_hint: 공격할 적이 보이지 않는다고 답함
 - id: reject_28
   category: Reject
   npc: Skadi
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "Skadi 따라가"
+    valid_targets:
+    - Player
+    - Self
+  utterance: Skadi 따라가
   gold:
     mode: Social
     facial: Neutral
     actions: []
-    speech_hint: "그 사람이 여기 없다고 답함"
-
+    speech_hint: 그 사람이 여기 없다고 답함
 - id: reject_29
   category: Reject
   npc: Moca
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "책상에서 책 읽어"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 책상에서 책 읽어
   gold:
     mode: Social
     facial: Surprised
     actions: []
-    speech_hint: "읽을 책상이 없다고 답함"
-
+    speech_hint: 읽을 책상이 없다고 답함
 - id: reject_30
   category: Reject
   npc: Guard
   paraphrase: 8
   situation:
-    valid_targets: [Player, Self]
-  utterance: "제단에서 기도해"
+    valid_targets:
+    - Player
+    - Self
+  utterance: 제단에서 기도해
   gold:
     mode: Social
     facial: Sad
     actions: []
-    speech_hint: "제단이 근처에 없다고 답함"
+    speech_hint: 제단이 근처에 없다고 답함

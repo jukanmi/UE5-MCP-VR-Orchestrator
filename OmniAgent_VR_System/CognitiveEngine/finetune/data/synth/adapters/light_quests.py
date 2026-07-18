@@ -31,13 +31,16 @@ ACT_CAT = {
 }
 STOP = {"the", "a", "an", "to", "from", "on", "in", "at", "my", "some", "of", "with", "for", "and"}
 
-# character 설명 → 우리 5 NPC 리맵 (직업/역할 키워드, 위→아래 우선)
+# character 설명 → 우리 5 NPC 리맵 (직업/역할 키워드, 위→아래 우선).
+# 실제 페르소나(personas/generic/*.yaml, 2026-07-18 확인):
+# Elara=Knight Commander(기사단장) · James=Ship Navigator(항법사) · Skadi=Pirate Captain(해적선장)
+# · Moca=ASMR Streamer(차분·다정) · Guard=Inhabitant(주민)
 NPC_RULES = [
-    ("Moca", r"merchant|trader|seller|shopkeeper|vendor|owner|peddler|innkeep"),
-    ("Guard", r"guard|soldier|knight|watchman|sentry|constable|warden"),
-    ("Skadi", r"warrior|fighter|hunter|archer|swordsman|mercenary|pirate|bandit|thief"),
-    ("Elara", r"healer|priest|nun|monk|witch|wizard|mage|cleric|apothecary|nurse"),
-    ("James", r"farmer|peasant|worker|servant|laborer|miller|fisher|shepherd|cook|smith|carpenter|boy|girl"),
+    ("Skadi", r"pirate|corsair|buccaneer|raider|bandit|thief|smuggler|mercenary|warrior|fighter|hunter|archer|swordsman"),
+    ("James", r"navigator|sailor|seaman|mariner|deck hand|fisher|cartographer|helmsman|traveler"),
+    ("Elara", r"knight|commander|paladin|guard|soldier|watchman|sentry|constable|warden|noble"),
+    ("Moca", r"bard|singer|musician|dancer|entertainer|storyteller|maid|nurse|caretaker|healer"),
+    ("Guard", r"villager|peasant|farmer|worker|servant|laborer|miller|shepherd|cook|smith|carpenter|merchant|trader|shopkeeper|innkeep|owner|boy|girl"),
 ]
 
 
