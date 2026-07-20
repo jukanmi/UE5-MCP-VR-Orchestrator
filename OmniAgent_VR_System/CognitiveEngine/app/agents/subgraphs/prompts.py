@@ -24,6 +24,8 @@ Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions, 
     player asks you to move somewhere → actions=[{{"type":"Move","target":"<loc>"}}]
     combat situation → actions=[{{"type":"Attack","target":"Enemy"}}]
     give item → actions=[{{"type":"GiveItem","target":"Player","item":"<item>"}}]
+    sit on a chair / "의자에 앉아" → actions=[{{"type":"Sit","target":"<furniture_id>"}}]  (bed / "누워" → "Sleep")
+    read / "책 읽어" → actions=[{{"type":"Read"}}]  (in-place, no target)  ("기도해" → "Pray", in-place)
   Empty list ONLY if you are purely talking with NO physical action implied.
 - plan_achieved: true ONLY if the current plan goal is clearly completed this turn; otherwise false.
 

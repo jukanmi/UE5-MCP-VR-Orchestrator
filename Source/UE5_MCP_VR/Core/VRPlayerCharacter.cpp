@@ -11,6 +11,8 @@
 #include "../NPC/NPCManager.h"
 #include "PlayerInteractionUtils.h"
 #include "PawnDeathUtils.h"
+#include "../Furniture/FurnitureManager.h"
+#include "../Furniture/FurnitureActor.h"
 #include "Engine/GameInstance.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
@@ -136,10 +138,10 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::PerformAttack);
 		}
 
-		// Interact — 카메라 조준 라인트레이스로 대화 대상 NPC 지정 (마우스 조준)
+		// Interact — 착석 토글(근접 가구) 우선, 아니면 카메라 조준 NPC 대화 지정
 		if (InteractAction)
 		{
-			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::DetectNPCByAim);
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AVRPlayerCharacter::OnInteract);
 		}
 
 		// Voice push-to-talk: 누름 시작 → 녹음, 뗌/취소 → 종료
@@ -152,8 +154,68 @@ void AVRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	}
 }
 
+void AVRPlayerCharacter::OnInteract()
+{
+	// 착석 중이면 기상이 최우선(토글) — 다른 상호작용 차단. VRPawn::OnInteract 과 동일 UX.
+	if (SeatedFurniture.IsValid())
+	{
+		StandUpFromFurniture();
+		return;
+	}
+
+	if (TrySitOnNearbyFurniture())
+	{
+		return;
+	}
+
+	DetectNPCByAim();
+}
+
+bool AVRPlayerCharacter::TrySitOnNearbyFurniture()
+{
+	UFurnitureManager* Mgr = UFurnitureManager::Get(this);
+	if (!Mgr) return false;
+
+	AFurnitureActor* Nearest = Mgr->FindNearestVacantSitable(GetActorLocation(), FurnitureInteractRange);
+	if (!Nearest || !Nearest->TryOccupy(this)) return false;
+
+	// SeatPoint 스냅 — Yaw 만(캡슐 기울임 방지). 시점은 컨트롤러 회전이라 그대로.
+	const FTransform SeatXf = Nearest->GetSeatTransform();
+	SetActorLocationAndRotation(SeatXf.GetLocation(), FRotator(0.f, SeatXf.Rotator().Yaw, 0.f),
+		false, nullptr, ETeleportType::TeleportPhysics);
+	SeatedFurniture = Nearest;
+
+	UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 착석: %s"), *Nearest->FurnitureID);
+	return true;
+}
+
+void AVRPlayerCharacter::StandUpFromFurniture()
+{
+	if (AFurnitureActor* Furniture = SeatedFurniture.Get())
+	{
+		const FTransform SeatXf = Furniture->GetSeatTransform();
+		Furniture->Release(this);
+
+		// 좌석 전방 반보 이탈 — 의자 콜리전에 캡슐이 끼는 것 방지.
+		SetActorLocation(SeatXf.GetLocation() + SeatXf.GetRotation().GetForwardVector() * 60.f,
+			false, nullptr, ETeleportType::TeleportPhysics);
+
+		UE_LOG(LogTemp, Log, TEXT("[VRPlayerCharacter] 기상: %s"), *Furniture->FurnitureID);
+	}
+	SeatedFurniture.Reset();
+}
+
+bool AVRPlayerCharacter::CanJumpInternal_Implementation() const
+{
+	// 착석 중 점프 차단 — 기상은 Interact 재입력(토글)만.
+	return !SeatedFurniture.IsValid() && Super::CanJumpInternal_Implementation();
+}
+
 void AVRPlayerCharacter::Move(const FInputActionValue& Value)
 {
+	// 착석 중 이동 입력 잠금 — 기상은 Interact 재입력(토글)만.
+	if (SeatedFurniture.IsValid()) return;
+
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 

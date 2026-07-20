@@ -105,6 +105,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void SendPlayerDialogue(const FString& PlayerID, const FString& TargetNpcId, const FString& Text);
 
+    /** 가구 인지 반경(cm) — 대화 대상 NPC 기준 이 거리 내 가구만 LLM 컨텍스트(nearby_furniture)·
+     *  타겟 enum(valid_targets, 빈 가구만)에 노출. 공간 현실성: 멀리 있는 가구는 모름. */
+    static constexpr float FurnitureContextRange = 1500.f;
+
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendStateToMCP(const FGameStateData& StateData);
 

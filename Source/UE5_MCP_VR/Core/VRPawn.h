@@ -33,6 +33,8 @@ enum class EVRPosture : uint8
 /** 자세 전이 알림용 델리게이트 — AnimBP·UI 등이 폴링 대신 이 이벤트로 반응. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVRPostureChanged, EVRPosture, NewPosture);
 
+class AFurnitureActor;
+
 /**
  * Meta Quest 3S 전용 VR 폰.
  * ACharacter 기반으로 캡슐 물리/네비게이션을 유지하면서 HMD + 양손 모션컨트롤러를 올립니다.
@@ -433,6 +435,20 @@ private:
     /** DetectNearbyNPC 가 지정한 발화 대상 NPC. (이후 음성 입력 단계에서 사용) */
     UPROPERTY(BlueprintReadWrite, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
     FString CurrentTargetNPCID;
+
+    // --- 가구 착석 (Interact 토글) ---
+    /** Interact 시 착석 판정 반경(cm) — 이내 최근접 빈 가구가 있으면 NPC 감지보다 착석 우선. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (ClampMin = "50.0", ClampMax = "500.0"))
+    float FurnitureInteractRange = 150.f;
+
+    /** 착석 중 가구 — 유효하면 스틱 이동 잠금, Interact 재입력 시 기상(토글). */
+    TWeakObjectPtr<AFurnitureActor> SeatedFurniture;
+
+    /** 반경 내 최근접 빈 가구 착석 시도(점유 + SeatPoint 스냅). 성공 시 true — OnInteract 가 NPC 감지 생략. */
+    bool TrySitOnNearbyFurniture();
+
+    /** 기상 — 점유 해제 + 좌석 전방 반보 이탈(의자 콜리전 끼임 방지). */
+    void StandUpFromFurniture();
 
     /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
     UFUNCTION(Exec)

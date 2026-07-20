@@ -54,3 +54,7 @@ class GesPrompt(BaseModel):
     # 유효 액션 타깃 vocabulary — PromptPayload.valid_targets 와 일치(일관성).
     # Stage1 구조화 스키마 target enum 강제 + 프롬프트 주입용.
     valid_targets: Optional[List[str]] = None
+
+    # 반경 내 가구 인지 컨텍스트 — PromptPayload.nearby_furniture 와 일치(일관성).
+    # [{id,type,occupied,dist_m}] — natural_context "Nearby furniture:" 조각 소스.
+    nearby_furniture: Optional[List[Dict[str, Any]]] = None

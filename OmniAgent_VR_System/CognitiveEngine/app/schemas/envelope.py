@@ -111,9 +111,12 @@ class PromptPayload(BaseModel):
     # npc_id → [{id,name,desc,count,weight}, ...]. LLM 컨텍스트 주입용(GiveItem/HandObject 근거).
     npc_inventory: Optional[Dict[str, List[Dict[str, Any]]]] = None
     # 유효 액션 타깃 vocabulary — UE5 ResolveActionTarget 해석 가능 키워드 전체
-    # (Player/Self/Enemy + 등록 AgentID). Stage1 구조화 스키마 target enum 강제용.
+    # (Player/Self/Enemy + 등록 AgentID + 반경 내 빈 가구 ID). Stage1 구조화 스키마 target enum 강제용.
     # 미지정 시 enum 강제 없이 자유문자열 허용(하위호환).
     valid_targets: Optional[List[str]] = None
+    # 대상 NPC 반경 내 가구 인지 컨텍스트 — [{id,type,occupied,dist_m}, ...]. UE5 NPCManager 동봉.
+    # Sit/Sleep target 지정 근거(natural_context "Nearby furniture:" 조각 소스).
+    nearby_furniture: Optional[List[Dict[str, Any]]] = None
 
 
 class ActionFailedPayload(BaseModel):
