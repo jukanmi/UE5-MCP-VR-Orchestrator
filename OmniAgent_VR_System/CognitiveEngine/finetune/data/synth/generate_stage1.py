@@ -10,7 +10,9 @@
   살아남은 시드만 채택 (재작성 사유 2)
 
 speech 는 시드에 없음 → teacher(gemma4-12b)가 페르소나 말투로 생성.
-희소 액션(Block/Dodge/Dance/Sing/Track) ×3 오버샘플.
+희소 액션 오버샘플은 **동적 계산**(시드 코퍼스 내 타입별 실빈도 기반) — 하드코딩 목록
+수동 관리 금지(2026-07-23, Equip 0개로 Skadi 무기 미사용 버그 재발 후 결정). 타입 추가 시
+seed 만 늘리면 이 로직이 자동으로 부족분을 감지해 오버샘플.
 
 사용: python generate_stage1.py [--n 200] [--all] [--seed 42]
 """
@@ -41,8 +43,10 @@ PERSONA_DIR = os.path.join(_ENGINE_ROOT, "app", "agents", "personas", "generic")
 OLLAMA = "http://localhost:11434/api/chat"
 TEACHER = "gemma4-12b"
 
-RARE_ACTIONS = {"Block", "Dodge", "Dance", "Sing", "Track"}
-OVERSAMPLE = 3
+# 타입별 최소 확보 카피 수 목표·상한 — 시드 자체가 1개뿐인 타입이 무한 복제되며
+# 문구 다양성 0으로 수렴하는 것 방지(MAX_COPIES_PER_TYPE 캡).
+TARGET_MIN_COPIES = 20
+MAX_COPIES_PER_TYPE = 5
 
 SPEECH_SCHEMA = {
     "type": "object",
@@ -86,7 +90,9 @@ def load_persona_pool() -> list:
     return yaml.safe_load(open(path, encoding="utf-8")) or []
 
 
-def build_system(persona: dict, valid_targets: list, inventory: str) -> str:
+def build_system(persona: dict, valid_targets: list, inventory: str,
+                  sentiment: str = "Neutral (Score: 0)",
+                  chat_history: str = "No previous conversation") -> str:
     """서빙 _collect_stage1_context 와 동일 조립 — 세션 상태(메모리 등)는 중립 기본값."""
     return DIALOGUE_STRUCTURED_PROMPT.format(
         name=persona["name"],
@@ -94,9 +100,9 @@ def build_system(persona: dict, valid_targets: list, inventory: str) -> str:
         traits=persona.get("traits", []),
         speech_style=_format_speech_style(persona.get("speech_style")),
         memory="None",
-        sentiment="Neutral",
+        sentiment=sentiment,
         rag_context="None",
-        chat_history="No previous conversation",
+        chat_history=chat_history,
         inventory=inventory,
         valid_targets=", ".join(valid_targets) if valid_targets else "Player, Self, Enemy, or an NPC name",
     )
@@ -153,36 +159,58 @@ def rules_gate(actions: list, valid_targets: list) -> list | None:
 # ──────────────────────────────────────────────────────────────────────────────
 # teacher — speech/tone 생성
 # ──────────────────────────────────────────────────────────────────────────────
+def _norm_speech(s: str) -> str:
+    """복창 비교용 정규화 — 공백·문장부호 제거."""
+    return re.sub(r"[\s.!?…~,\"'·]+", "", s or "")
+
+
+def is_parrot(speech: str, utterance: str) -> bool:
+    """teacher 가 플레이어 발화를 NPC 대사로 그대로 복창했는지.
+
+    NPC 가 명령을 앵무새처럼 되뇌면 순수 노이즈 — 모델에 복창 경향을 심는다
+    (2026-07-30 실측 13/707=1.8%). 정규화 후 완전 동일만 잡는다. 부분 포함까지
+    막으면 "제단에서 기도해 → 기도하겠소" 류 정상 복창-응답까지 걷혀 실패율만 뛴다."""
+    n_utt = _norm_speech(utterance)
+    return bool(n_utt) and len(n_utt) >= 4 and _norm_speech(speech) == n_utt
+
+
 def teacher_speech(persona: dict, seed: dict, actions: list, timeout=60) -> dict | None:
     acts = "; ".join(f"{a['type']}({a.get('target') or a.get('item') or a.get('loc') or ''})" for a in actions) or "없음(대화만)"
     hint = seed.get("gold", {}).get("speech_hint", "")
+    utterance = seed.get("utterance", "")
     user = (
         f"NPC: {persona['name']} ({persona.get('role','')})\n"
         f"말투 예시:\n{_format_speech_style(persona.get('speech_style'))}\n"
-        f"플레이어 발화: \"{seed.get('utterance','')}\"\n"
+        f"플레이어 발화: \"{utterance}\"\n"
         f"수행 액션: {acts}\n"
         + (f"대사 방향: {hint}\n" if hint else "")
         + "이 순간의 NPC 대사를 써라."
     )
-    body = json.dumps({
-        "model": TEACHER,
-        "messages": [{"role": "system", "content": SPEECH_SYSTEM}, {"role": "user", "content": user}],
-        "stream": False,
-        "format": SPEECH_SCHEMA,
-        "think": False,
-        "options": {"temperature": 0.6, "num_ctx": 2048, "num_predict": 200},
-    }).encode()
-    try:
-        req = urllib.request.Request(OLLAMA, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            out = json.loads(json.load(resp)["message"]["content"])
-        speech = (out.get("speech") or "").strip()
-        # 한글 미포함·영문 혼입·과장 길이 거부
-        if not speech or not (5 <= len(speech) <= 120) or not re.search(r"[가-힣]", speech) or re.search(r"[A-Za-z]{3,}", speech):
+    messages = [{"role": "system", "content": SPEECH_SYSTEM}, {"role": "user", "content": user}]
+    # 복창은 드롭하지 않고 온도 올려 1회 재생성 — 드롭하면 행 수만 줄고 시드는 그대로 낭비.
+    for temperature in (0.6, 0.95):
+        body = json.dumps({
+            "model": TEACHER,
+            "messages": messages,
+            "stream": False,
+            "format": SPEECH_SCHEMA,
+            "think": False,
+            "options": {"temperature": temperature, "num_ctx": 2048, "num_predict": 200},
+        }).encode()
+        try:
+            req = urllib.request.Request(OLLAMA, data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                out = json.loads(json.load(resp)["message"]["content"])
+            speech = (out.get("speech") or "").strip()
+            # 한글 미포함·영문 혼입·과장 길이 거부
+            if not speech or not (5 <= len(speech) <= 120) or not re.search(r"[가-힣]", speech) or re.search(r"[A-Za-z]{3,}", speech):
+                return None
+            if is_parrot(speech, utterance):
+                continue  # 발화 복창 — 재굴림
+            return {"speech": speech, "tone": (out.get("tone") or "").strip()[:20]}
+        except Exception:
             return None
-        return {"speech": speech, "tone": (out.get("tone") or "").strip()[:20]}
-    except Exception:
-        return None
+    return None  # 재굴림에도 복창
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -205,12 +233,21 @@ def load_seeds() -> list:
     return uniq
 
 
-def resolve_persona(seed: dict, personas: dict, pool: list, rng: random.Random) -> dict:
-    """30:70 코어:범용 혼합. 풀 비었으면 종전대로 코어만."""
-    npc = seed.get("npc", "")
-    use_core = (not pool) or (rng.random() < CORE_RATIO)
+def resolve_persona(seed: dict, personas: dict, pool: list, rng: random.Random,
+                     force_core: bool = False) -> dict:
+    """시드 지정 npc 우선 매칭 → 없을 때만 30:70 코어:범용 무작위 배정.
+    seed['npc']가 명시(Elara, Skadi, Moca, Guard, James 또는 범용 풀 이름)되면
+    해당 페르소나의 성격·말투·인벤토리가 100% 완벽히 일치하여 주입됨."""
+    npc_name = seed.get("npc")
+    if npc_name in personas:
+        return personas[npc_name]
+    pool_match = next((p for p in pool if p.get("name") == npc_name), None)
+    if pool_match:
+        return pool_match
+
+    use_core = force_core or (not pool) or (rng.random() < CORE_RATIO)
     if use_core:
-        return personas[npc] if npc in personas else personas[rng.choice(list(personas))]
+        return personas[rng.choice(list(personas))]
     return rng.choice(pool)
 
 
@@ -228,6 +265,13 @@ def main():
     rng.shuffle(seeds)
     if not args.all:
         seeds = seeds[: args.n]
+
+    # 오버샘플 배수 산정용 — teacher 호출 전 시드 자체(as-authored gold)의 타입별 실빈도.
+    # gate/teacher 통과 여부와 무관하게 "이 타입이 코퍼스에 얼마나 희소한가"만 반영.
+    raw_type_freq = collections.Counter()
+    for s in seeds:
+        for a in ((s.get("gold", {}) or {}).get("actions") or []):
+            raw_type_freq[a.get("type")] += 1
     print(f"시드 {len(seeds)}개 처리 시작 (teacher={TEACHER}, 범용 풀 {len(pool)}장, 코어비율 {CORE_RATIO})")
 
     out_rows, action_c = [], collections.Counter()
@@ -243,33 +287,67 @@ def main():
             n_gate_fail += 1
             continue
 
-        persona = resolve_persona(seed, personas, pool, rng)
-        sp = teacher_speech(persona, seed, gated) or (teacher_speech(persona, seed, gated))
-        if sp is None:
-            n_speech_fail += 1
-            continue
+        # 코퍼스 희소 타입(오버샘플 대상과 동일 기준) 포함 시드는 코어 5명 중 무작위 배정
+        # 강제(범용 스위치 30:70 안 타게) — 근거는 위 resolve_persona docstring 참조.
+        is_rare_seed = bool(actions) and min(
+            (raw_type_freq.get(a.get("type"), 1) for a in actions), default=1
+        ) <= TARGET_MIN_COPIES
+        if gated:
+            rarest = min(raw_type_freq.get(a["type"], 1) for a in gated)
+            copies = min(MAX_COPIES_PER_TYPE, max(1, -(-TARGET_MIN_COPIES // rarest)))  # ceil div
+        else:
+            copies = 1
 
-        assistant = {
-            "mode": gold.get("mode", "Common"),
-            "facial": gold.get("facial", "Neutral"),
-            "speech": sp["speech"],
-            "tone": sp["tone"],
-            "actions": gated,
-            "plan_achieved": False,
-        }
-        inventory = "None (empty-handed)"
-        extra = sit.get("extra", "")
-        m = re.search(r"인벤토리에 (\S+)", extra or "")
-        if m:
-            inventory = f"{m.group(1)}×1"
+        inventory_list = sit.get("inventory") or []
+        if inventory_list:
+            inventory = ", ".join(f"{item_name}×1" for item_name in inventory_list)
+        else:
+            inventory = "None (empty-handed)"
+            extra = sit.get("extra", "")
+            m = re.search(r"인벤토리에 (\S+)", extra or "")
+            if m:
+                inventory = f"{m.group(1)}×1"
+        sentiment = sit.get("sentiment", "Neutral (Score: 0)")
+        
+        # Parse chat_history if present in seed situation
+        chat_hist_raw = sit.get("chat_history") or sit.get("history") or []
+        if isinstance(chat_hist_raw, list) and chat_hist_raw:
+            hist_lines = []
+            for h in chat_hist_raw:
+                raw_role = str(h.get("role", "")).strip()
+                if raw_role.lower() in ["user", "player"]:
+                    r = "Player"
+                elif raw_role:
+                    r = raw_role
+                else:
+                    r = "NPC"
+                hist_lines.append(f"{r}: {h.get('content', '')}")
+            chat_history_str = "\n".join(hist_lines)
+        elif isinstance(chat_hist_raw, str) and chat_hist_raw:
+            chat_history_str = chat_hist_raw
+        else:
+            chat_history_str = "No previous conversation"
 
-        row = {"messages": [
-            {"role": "system", "content": build_system(persona, valid_targets, inventory)},
-            {"role": "user", "content": f"Context: {build_natural_context(seed)}"},
-            {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
-        ]}
-        copies = 1 + (OVERSAMPLE if any(a["type"] in RARE_ACTIONS for a in gated) else 0)
+        # 카피마다 페르소나 재굴림
         for _ in range(copies):
+            persona = resolve_persona(seed, personas, pool, rng, force_core=is_rare_seed)
+            sp = teacher_speech(persona, seed, gated)
+            if sp is None:
+                n_speech_fail += 1
+                continue
+            assistant = {
+                "mode": gold.get("mode", "Common"),
+                "facial": gold.get("facial", "Neutral"),
+                "speech": sp["speech"],
+                "tone": sp["tone"],
+                "actions": gated,
+                "plan_achieved": False,
+            }
+            row = {"messages": [
+                {"role": "system", "content": build_system(persona, valid_targets, inventory, sentiment, chat_history_str)},
+                {"role": "user", "content": f"Context: {build_natural_context(seed)}"},
+                {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
+            ]}
             out_rows.append(row)
             for a in gated:
                 action_c[a["type"]] += 1

@@ -68,6 +68,9 @@ def build_user(npc: str, context: str) -> str:
 
 def main():
     npc_pool = load_npc_pool()
+    generic_npc_pool = [n for n in npc_pool if n not in CORE_NPCS]
+    if not generic_npc_pool:
+        generic_npc_pool = ["GenericNPC"]
     entries = []
     n_invalid = 0
     pool_i = 0
@@ -85,7 +88,7 @@ def main():
                 continue
             npc = p.get("npc") or ""
             if npc not in npc_pool:
-                npc = npc_pool[pool_i % len(npc_pool)]
+                npc = generic_npc_pool[pool_i % len(generic_npc_pool)]
                 pool_i += 1
             assistant = {"npcs": [{"npc_id": npc, "goal": goal, "steps": steps}]}
             entries.append({"messages": [
