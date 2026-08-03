@@ -37,7 +37,10 @@ MODELS = {
     # gemma4-12b 는 hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 의 ollama cp 별칭.
     "gemma4": "gemma4-12b",
     "mid": "qwen3:8b",  # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
-    "gemma4_slm": "gemma4:e4b",  # 경량 구조화 모델 (JSON 추출 등)
+    # 경량 구조화 모델 (JSON 추출 등) — LoRA 파인튜닝판(SPEC_finetune M2, 2026-07-21).
+    # 액션선택 정확도 개선(gold 재현 3/8→8/8, held-out 의도인식 0/6→2/6) — finetune/RESULT.md.
+    # 롤백: "gemma4:e4b" 로 원복(기존 태그 불변).
+    "gemma4_slm": "gemma4-e4b-dialogue-v2",
     "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 폴백 후보 (경량, 로컬 pull 됨)

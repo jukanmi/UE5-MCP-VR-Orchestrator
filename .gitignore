@@ -147,6 +147,7 @@ OmniAgent_VR_System/CognitiveEngine/finetune/data/raw/
 OmniAgent_VR_System/CognitiveEngine/finetune/data/processed/*.jsonl
 OmniAgent_VR_System/CognitiveEngine/finetune/eval/report/
 OmniAgent_VR_System/CognitiveEngine/finetune/**/checkpoints/
+OmniAgent_VR_System/CognitiveEngine/finetune/*
 *.gguf
 *.parquet
 *.tar.gz

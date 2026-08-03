@@ -53,6 +53,9 @@ EAction = Literal[
     "Scout",
     "Sit",
     "Sleep",
+    # Sit/Sleep 의 짝 — 자세 해제. 없으면 "일어나"를 표현할 액션이 없어 모델이
+    # Sleep 을 반복한다(2026-08-02 Moca 로그 실측). C++ EAction::StandUp 과 1:1.
+    "StandUp",
     "Read",
     "Pray",
     "Dance",
@@ -208,7 +211,7 @@ CATEGORY_ACTION_MAP = {
     "Task": {"PickUp", "Drop", "Craft", "Repair"},
     "Investigation": {"Investigate", "Track", "Scout"},
     # "Clean" 제거됨 — EAction Literal/C++ enum 에 없는 죽은 항목이었음
-    "Lifestyle": {"Sit", "Sleep", "Read", "Pray", "Dance", "Sing"},
+    "Lifestyle": {"Sit", "Sleep", "StandUp", "Read", "Pray", "Dance", "Sing"},
 }
 
 # 액션 → 카테고리 역조회 맵 (Rules 의 Mode 보정용)

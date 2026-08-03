@@ -9487,3 +9487,312 @@
       loc: Enemy
     - type: SignalAllies
     speech_hint: 큭...! 갑판에 침입자다! 당장 모두 이쪽으로 지원해라!
+- id: lifestyle_standup_01
+  category: Lifestyle
+  npc: Elara
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: true
+      dist: 0
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - KnightSword
+    - Shield_Knight
+    - HealthPotion
+  utterance: 일어나
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 알겠소. 자리에서 일어나 그대를 마주하겠소.
+- id: lifestyle_standup_02
+  category: Lifestyle
+  npc: Skadi
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
+    nearby_furniture:
+    - id: Bed_01
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Friendly (Score: 40)'
+    inventory:
+    - Cutlass_Pirate
+    - RumBottle
+    - TreasureKey
+  utterance: 이제 그만 일어나봐
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 하하, 알았다! 이만 몸을 일으키지.
+- id: lifestyle_standup_03
+  category: Lifestyle
+  npc: Guard
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
+    nearby_furniture:
+    - id: Chair_02
+      type: Chair
+      occupied: true
+      dist: 0
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - GuardSpear
+    - GuardShield
+    - Whistle
+  utterance: 일어서
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 예, 즉시 기립하여 경계 위치로 복귀하겠습니다.
+- id: lifestyle_standup_04
+  category: Lifestyle
+  npc: Moca
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
+    nearby_furniture:
+    - id: Bed_02
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Friendly (Score: 60)'
+    inventory:
+    - Microphone
+    - SoftBlanket
+    - HerbTea
+  utterance: 그만 자고 일어나
+  gold:
+    mode: Lifestyle
+    facial: Tired
+    actions:
+    - type: StandUp
+    speech_hint: 아... 네, 이제 천천히 몸을 일으켜 볼게요...
+- id: lifestyle_standup_05
+  category: Lifestyle
+  npc: James
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: true
+      dist: 0
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - NavDagger
+    - Compass
+    - StarMap
+  utterance: 자리에서 일어나줄래?
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 네, 자리에서 일어나 다음 항해를 준비하겠습니다.
+- id: lifestyle_standup_06
+  category: Lifestyle
+  npc: Guard
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
+    nearby_furniture:
+    - id: Bed_01
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - GuardSpear
+    - GuardShield
+    - Whistle
+  utterance: 기상!
+  gold:
+    mode: Lifestyle
+    facial: Surprised
+    actions:
+    - type: StandUp
+    speech_hint: 예! 즉시 일어나 근무 태세를 갖추겠습니다.
+- id: lifestyle_standup_07
+  category: Lifestyle
+  npc: Skadi
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
+    nearby_furniture:
+    - id: Bed_02
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Hostile (Score: -40)'
+    inventory:
+    - Cutlass_Pirate
+    - RumBottle
+  utterance: 언제까지 누워있을 거야
+  gold:
+    mode: Lifestyle
+    facial: Angry
+    actions:
+    - type: StandUp
+    speech_hint: 쳇, 알았다니까! 지금 일어나면 될 거 아니냐.
+- id: lifestyle_standup_08
+  category: Lifestyle
+  npc: Elara
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
+    nearby_furniture:
+    - id: Bed_01
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Friendly (Score: 50)'
+    inventory:
+    - KnightSword
+    - Shield_Knight
+    - HealthPotion
+  utterance: 이제 일어날 시간이야
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 그렇군. 몸을 일으켜 갑옷을 정비하겠소.
+- id: lifestyle_standup_09
+  category: Lifestyle
+  npc: Moca
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_02
+    nearby_furniture:
+    - id: Chair_02
+      type: Chair
+      occupied: true
+      dist: 0
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - Microphone
+    - HerbTea
+  utterance: 그만 앉아있고 일어나
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: StandUp
+    speech_hint: 네... 조용히 일어설게요...
+- id: lifestyle_standup_10
+  category: Lifestyle
+  npc: James
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_02
+    nearby_furniture:
+    - id: Bed_02
+      type: Bed
+      occupied: true
+      dist: 0
+    sentiment: 'Friendly (Score: 30)'
+    inventory:
+    - NavDagger
+    - StarMap
+  utterance: 몸 좀 일으켜봐
+  gold:
+    mode: Lifestyle
+    facial: Tired
+    actions:
+    - type: StandUp
+    speech_hint: 네, 무거운 몸이지만 일으켜 세우겠습니다.
+- id: lifestyle_standup_11_already_standing
+  category: Lifestyle
+  npc: Elara
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 3
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - KnightSword
+    - Shield_Knight
+    - HealthPotion
+    extra: 서 있는 상태. 앉거나 누워 있지 않음.
+  utterance: 일어나봐
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions: []
+    speech_hint: 나는 이미 서 있소. 무엇을 하면 되겠소?
+- id: lifestyle_standup_12_already_standing
+  category: Lifestyle
+  npc: Guard
+  paraphrase: 8
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_01
+    nearby_furniture:
+    - id: Bed_01
+      type: Bed
+      occupied: false
+      dist: 4
+    sentiment: 'Neutral (Score: 0)'
+    inventory:
+    - GuardSpear
+    - GuardShield
+    - Whistle
+    extra: 서 있는 상태. 앉거나 누워 있지 않음.
+  utterance: 그만 자고 일어나
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions: []
+    speech_hint: 저는 취침 중이 아니라 기립 근무 중입니다.
