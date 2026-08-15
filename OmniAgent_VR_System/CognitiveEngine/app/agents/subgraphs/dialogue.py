@@ -34,7 +34,7 @@ import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict
-from ...utils.llm_factory import ollama_structured
+from ...utils.llm_factory import ollama_structured, STAGE1_MODEL, STAGE2_MODEL
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
@@ -278,7 +278,7 @@ async def _run_stage1_llm(
             DialogueResponse,
             # valid_targets 있으면 target enum grammar 강제 (없으면 None → 기본 스키마).
             schema_override=_dialogue_schema_with_targets(ctx.valid_targets),
-            model_name="gemma4_slm",
+            model_name=STAGE1_MODEL,
             # temp 0.7→0.5: 미사여구 드리프트 억제(Tier2). 0.4 는 반복적, 0.6 는 과격/장황 드리프트 —
             # 스윕 결과 0.5 가 자연스러움·다양성·캐릭터 유지 균형점(실측).
             temperature=0.5,
@@ -293,7 +293,7 @@ async def _run_stage1_llm(
                 structured_content,
                 user_content,
                 DialogueResponse,
-                model_name="gemma4_slm",
+                model_name=STAGE1_MODEL,
                 temperature=0.7,
                 num_predict=300,
                 log_extra={**log_extra, "fallback": True} if log_extra else None,
@@ -347,9 +347,7 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
     return npc_id, resp, plan_achieved
 
 
-async def _generate_plans(
-    raw_responses: Dict[str, str], player_id: str, msg_id: str = ""
-) -> Dict[str, dict]:
+async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id: str = "") -> Dict[str, dict]:
     """
     Stage 2: 12B plan 전용 산출. 재계획(requires_replan=True) 경로에서만 호출.
     대사는 건드리지 않음 — Stage1 출력이 그대로 최종 (정제는 Stage1 프롬프트가 담당).
@@ -364,7 +362,7 @@ async def _generate_plans(
             PLAN_SYSTEM_PROMPT,
             sections,
             PlanBatchResponse,
-            model_name="gemma4",
+            model_name=STAGE2_MODEL,
             temperature=0.3,
             # plan-only 는 NPC 당 ~100토큰 (goal 1구절 + steps 2-4개). 여유 2배.
             num_predict=220 * len(raw_responses),

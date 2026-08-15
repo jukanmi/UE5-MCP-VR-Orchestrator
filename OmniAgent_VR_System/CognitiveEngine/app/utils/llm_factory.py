@@ -3,7 +3,6 @@ import os
 import time
 from typing import Optional, Type, TypeVar
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 import httpx
 from pydantic import BaseModel
@@ -45,12 +44,22 @@ MODELS = {
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 폴백 후보 (경량, 로컬 pull 됨)
     "qwen_slm": "qwen3:1.7b",
-    # OpenAI (API Key 필요)
-    "openai": "gpt-4o-mini",
+    # ---------------------------------------------------------------------------
+    # Ollama 클라우드 모델 — OLLAMA_API_KEY 환경변수 필요 (ollama.com에서 발급)
+    # 사용: get_llm("cloud_qwen") / get_llm("cloud_deepseek") 등
+    # ---------------------------------------------------------------------------
+    "cloud_qwen": "qwen3-coder:480b-cloud",  # JSON 구조화 최강, 한국어 우수
+    "cloud_deepseek": "deepseek-v3.1:671b-cloud",  # 전술 추론 깊이 우수
+    "cloud_deepseek_flash": "deepseek-v4-flash",  # 빠른 응답 위주
+    "cloud_gpt_large": "gpt-oss:120b-cloud",  # GPT 계열 대형
+    "cloud_gpt_small": "gpt-oss:20b-cloud",  # GPT 계열 경량
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
-DEFAULT_MODEL = "gemma4"
+# Stage2 플래너·get_llm() 폴백 — 여기 한 줄만 바꾸면 Stage2+get_llm 전체 반영.
+STAGE2_MODEL = "gemma4"
+# Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
+STAGE1_MODEL = "gemma4_slm"
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -61,16 +70,29 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # ==============================================================================
 def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int = 150):
     """
-    model_name:  "gemma4" | "gemma4_slm" | "gemma4_e2b" | "qwen_slm" | "openai" | None (→ DEFAULT_MODEL)
+    model_name:  "gemma4" | "gemma4_slm" | "gemma4_e2b" | "qwen_slm" | None (→ STAGE2_MODEL)
     temperature: 창의성 수준 (0.0 = 결정적, 1.0 = 창의적)
     num_predict: 최대 출력 토큰 수 (대화용은 300, 구조화/요약용은 150)
     """
     if model_name is None:
-        model_name = DEFAULT_MODEL
+        model_name = STAGE2_MODEL
 
     model_name = model_name.lower()
 
-    OLLAMA_MODELS = {"gemma4", "mid", "gemma4_slm", "gemma4_31b", "gemma4_e2b", "qwen_slm"}
+    OLLAMA_MODELS = {
+        "gemma4",
+        "mid",
+        "gemma4_slm",
+        "gemma4_31b",
+        "gemma4_e2b",
+        "qwen_slm",
+        # 클라우드 모델 — 동일 Ollama 엔드포인트, OLLAMA_API_KEY 인증 추가됨
+        "cloud_qwen",
+        "cloud_deepseek",
+        "cloud_deepseek_flash",
+        "cloud_gpt_large",
+        "cloud_gpt_small",
+    }
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
@@ -93,20 +115,8 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             reasoning=False,
         )
 
-    elif model_name == "openai":
-        model_id = MODELS["openai"]
-        print(f"[LLM Factory] OpenAI 모델 사용: {model_id}")
-        return ChatOpenAI(
-            model=model_id,
-            temperature=temperature,
-            api_key=os.getenv("OPENAI_API_KEY"),
-            max_retries=2,
-        )
-
     else:
-        raise ValueError(
-            f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. 선택 가능: {list(MODELS.keys()) + ['openai']}"
-        )
+        raise ValueError(f"[LLM Factory] 알 수 없는 model_name: '{model_name}'. 선택 가능: {list(MODELS.keys())}")
 
 
 # ==============================================================================
