@@ -150,7 +150,7 @@ bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& Out
     return ParseModeActionRequestFromObject(RootObject, OutRequest);
 }
 
-FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType)
+FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType, const FString& ReflexAction)
 {
     TArray<TSharedPtr<FJsonValue>> EventValues;
     EventValues.Reserve(PerceptionEvents.Num());
@@ -178,6 +178,11 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
     if (!ReportType.IsEmpty())
     {
         Root->SetStringField(TEXT("report_type"), ReportType);
+    }
+    // 척수반사 실행 이력 — 미발동이면 필드 생략(Python 기본값 "" 폴백, 하위호환).
+    if (!ReflexAction.IsEmpty())
+    {
+        Root->SetStringField(TEXT("reflex_action"), ReflexAction);
     }
 
     FString Output;

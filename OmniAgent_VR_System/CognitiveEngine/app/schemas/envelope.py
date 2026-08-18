@@ -144,6 +144,10 @@ class EmergencyReportPayload(BaseModel):
     # 보고 성격. "perception"(기본 — C++ 일반 보고는 필드 생략) 외 특수 이벤트 구분용.
     # "combat_victory": 타겟 사망 승리 보고 — danger 게이트 우회, 메모리 기록만(무행동 응답).
     report_type: str = "perception"
+    # C++ 척수반사가 이 보고 직전에 실행한 액션 이름("Attack" 등). 미발동이면 C++ 이 필드를
+    # 생략하므로 빈 문자열. 채워져 있으면 메모리에 Event 로 남겨 다음 replan 이 중복 지시를
+    # 내지 않게 한다(SPEC_reflex_table §3.4).
+    reflex_action: str = ""
 
 
 class LocationCandidate(BaseModel):
