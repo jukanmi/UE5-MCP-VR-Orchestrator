@@ -147,7 +147,15 @@ OmniAgent_VR_System/CognitiveEngine/finetune/data/raw/
 OmniAgent_VR_System/CognitiveEngine/finetune/data/processed/*.jsonl
 OmniAgent_VR_System/CognitiveEngine/finetune/eval/report/
 OmniAgent_VR_System/CognitiveEngine/finetune/**/checkpoints/
-OmniAgent_VR_System/CognitiveEngine/finetune/*
+OmniAgent_VR_System/CognitiveEngine/finetune/**/models/
+OmniAgent_VR_System/CognitiveEngine/finetune/**/*.bin
+OmniAgent_VR_System/CognitiveEngine/finetune/**/*.safetensors
+OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/batches/
+OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/speech/
+OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/gen_*.py
+OmniAgent_VR_System/CognitiveEngine/finetune/deploy/out*/
+OmniAgent_VR_System/CognitiveEngine/finetune/train/outputs/
+OmniAgent_VR_System/CognitiveEngine/finetune/**/unsloth_compiled_cache/
 *.gguf
 *.parquet
 *.tar.gz
