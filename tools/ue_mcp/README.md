@@ -40,6 +40,31 @@ UE5 `RemoteControl` 플러그인의 raw HTTP API(`127.0.0.1:30010`)를 툴 4개�
 | `ue_get_property` | `PUT /remote/object/property` (READ) | 프로퍼티 읽기 |
 | `ue_set_property` | `PUT /remote/object/property` (WRITE) | 프로퍼티 쓰기 |
 | `ue_search_assets` | `PUT /remote/search/assets` | 에셋 경로 찾기 |
+| `ue_run_python` | `ExecutePythonCommandEx` 경유 | 에디터 안에서 `unreal` 모듈 실행 (에셋 생성 등) |
+
+### `ue_run_python`
+
+위 3개 툴은 **이미 있는** 오브젝트만 건드린다. 에셋을 **새로 만들거나** 컴포넌트를 붙이려면
+RemoteControl raw API 로는 안 되고, PythonScriptPlugin 의 `unreal` 모듈이 필요하다.
+별도 포트를 열지 않고 `UPythonScriptLibrary::ExecutePythonCommandEx`(BlueprintCallable static)를
+기존 `/remote/object/call` 로 태운다.
+
+**선행 설정 2가지** (둘 다 없으면 HTTP 400):
+
+1. **PythonScriptPlugin 활성화** — 엔진 기본 비활성(`PythonScriptPlugin.uplugin:13`). `.uproject` 에 항목 추가 + 에디터 재시작.
+2. **RemoteControl 보안 게이트 해제** — `RemoteControlModule.cpp:2531` 이 `bEnableRemotePythonExecution=false` 일 때
+   `PythonScriptLibrary` 를 **클래스 이름으로 하드 차단**한다(`Object ... cannot be accessed remotely`).
+   Project Settings > Plugins > Remote Control > Security 에서 `Restrict Server Access` 를 먼저 켜야
+   (`RemoteControlSettings.h:347` editCondition) `Enable Remote Python Execution` 체크박스가 활성화된다.
+
+> ⚠️ 2번은 **임의 코드 실행 스위치**다. 30010(HTTP)은 루프백 전용이지만 30020(WebSocket)은 기본 `0.0.0.0` 이라
+> 같은 LAN 의 기기가 임의 코드를 실행할 수 있게 된다. 함께 `Remote Control Websocket Bind Address` 를
+> `127.0.0.1` 로 바꿀 것.
+- 반환값은 없다. 알고 싶은 값은 **`print` 로 찍어야** `LogOutput` 으로 회수된다.
+- `mode`: `script`(기본, 여러 줄) · `eval`(표현식 1개, 값 반환) · `file`(디스크 .py 실행).
+  `script` 는 코드를 `exec(...)` 한 줄로 감싸 보낸다 — UE 의 `ExecuteStatement` 가 `Py_single_input`
+  컴파일이라 여러 줄을 그대로 주면 `SyntaxError: multiple statements found` 가 난다.
+- Undo 트랜잭션을 걸지 않는다. 필요하면 스크립트 안에서 `unreal.ScopedEditorTransaction` 을 쓸 것.
 
 ## 오브젝트 경로 형식
 
@@ -77,9 +102,55 @@ ue_search_assets("BP_Chair", class_names=["/Script/Engine.Blueprint"])
 ue_get_property("/Game/.../BP_Chair.Default__BP_Chair_C", "FurnitureType")
 ```
 
+블루프린트 에셋 생성 (부모 C++ 클래스 지정 + 컴파일 + 저장):
+```python
+ue_run_python('''
+import unreal
+factory = unreal.BlueprintFactory()
+factory.set_editor_property("parent_class", unreal.Actor)   # 예: unreal.SmartNPCCharacter
+bp = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+    "BP_Probe", "/Game/Blueprint/Test", None, factory)
+unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+unreal.EditorAssetLibrary.save_loaded_asset(bp)
+print(bp.get_path_name())
+''')
+```
+
+컴포넌트 추가 (`SubobjectDataSubsystem` — UE5 에서 컴포넌트 계층을 다루는 유일한 공개 API):
+```python
+ue_run_python('''
+import unreal
+sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+bp = unreal.load_asset("/Game/Blueprint/Test/BP_Probe")
+root = sds.k2_gather_subobject_data_for_blueprint(bp)[0]
+handle, fail = sds.add_new_subobject(
+    unreal.AddNewSubobjectParams(parent_handle=root, new_class=unreal.StaticMeshComponent,
+                                 blueprint_context=bp))
+print("fail:", fail)
+unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+unreal.EditorAssetLibrary.save_loaded_asset(bp)
+''')
+```
+
+CDO 기본값 세팅:
+```python
+ue_run_python('''
+import unreal
+cdo = unreal.get_default_object(unreal.load_blueprint_class("/Game/Blueprint/Test/BP_Probe"))
+cdo.set_editor_property("FurnitureType", "Chair")
+''')
+```
+
+검증용 스크린샷 (클로드가 PNG 를 직접 읽어 육안 확인):
+```python
+ue_run_python('unreal.AutomationLibrary.take_high_res_screenshot(1280, 720, "probe.png")')
+```
+
 ## 한계
 
-- **함수는 `BlueprintCallable`/`CallInEditor` 여야 한다.** 순수 C++ 내부 함수는 호출 불가.
-- 블루프린트 **노드 그래프 편집 불가** — 이건 RemoteControl 범위 밖.
-  (필요해지면 `PythonScriptPlugin` 기반 브리지로 확장해야 함 — 초기 검토의 경로 C)
+- **함수는 `BlueprintCallable`/`CallInEditor` 여야 한다.** 순수 C++ 내부 함수는 호출 불가
+  (`ue_call_function` 한정. `ue_run_python` 은 `unreal` 모듈이 노출하는 전체 API 를 쓴다).
+- 블루프린트 **노드 그래프(K2Node) 배선은 여전히 불가.** 파이썬에도 노드 스폰·핀 연결 API 가
+  노출돼 있지 않다. 진짜 필요해지면 `BlueprintGraph` 모듈을 링크하는 자체 C++ 에디터 플러그인이
+  유일한 길. 이 프로젝트는 로직이 전부 C++(StateTree·NPCActionComponent) 이라 당장은 불필요.
 - PIE 중 게임 로직 검증은 여전히 사용자 몫. 이 서버는 에디터 상태 조회·수정용.
