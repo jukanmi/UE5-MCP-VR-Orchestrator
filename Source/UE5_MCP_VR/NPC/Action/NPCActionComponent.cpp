@@ -147,6 +147,191 @@ namespace
 UNPCActionComponent::UNPCActionComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
+
+    // === 척수반사 기본 룰 (SPEC_reflex_table §3.2) ===
+    // 위에서부터 처음 맞는 하나만 발동한다 — 좁은 조건이 먼저.
+    // 거리 상한은 감지 반경(SightRadius 3000 / HearingRange 3000) 안에서만 의미가 있다.
+    {
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("적대·근접 즉시 공격");
+        R.Sense = ESenseType::Sight;
+        R.Relation = ENPCRelation::Hostile;
+        R.MaxDistance = 500.f;
+        R.Cooldown = 3.f;
+        R.bEnterCombat = true;
+        R.ActionWeights.Add(EAction::Attack, 100.f);
+    }
+    {
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("적대·원거리 공격 or 아군 호출");
+        R.Sense = ESenseType::Sight;
+        R.Relation = ENPCRelation::Hostile;
+        R.Cooldown = 3.f;
+        R.bEnterCombat = true;
+        R.ActionWeights.Add(EAction::Attack, 80.f);
+        R.ActionWeights.Add(EAction::SignalAllies, 20.f);
+    }
+    {
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("중립·고위험 경계");
+        R.Sense = ESenseType::Sight;
+        R.Relation = ENPCRelation::Neutral;
+        R.MinBaseDanger = 0.5f;
+        R.Cooldown = 10.f;
+        R.ActionWeights.Add(EAction::Scan, 60.f);
+        R.ActionWeights.Add(EAction::SignalAllies, 40.f);
+    }
+    {
+        // 비전투 생동 반응 — Mode 전환 없음. 쿨다운이 perception tick(9초)보다 훨씬 길어야
+        // 시야에 든 아군을 향해 계속 돌아보는 꼴이 안 난다.
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("친화·근거리 인사");
+        R.Sense = ESenseType::Sight;
+        R.Relation = ENPCRelation::Friendly;
+        R.MaxDistance = 800.f;
+        R.Cooldown = 30.f;
+        R.ActionWeights.Add(EAction::TurnTo, 100.f);
+    }
+    {
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("물건 떨어지는 소리 조사");
+        R.Sense = ESenseType::Hearing;
+        R.EventTypeContains = TEXT("Drop");
+        R.Cooldown = 8.f;
+        R.ActionWeights.Add(EAction::Investigate, 60.f);
+        R.ActionWeights.Add(EAction::TurnTo, 40.f);
+    }
+    {
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("아이템 사용 소리 쳐다보기");
+        R.Sense = ESenseType::Hearing;
+        R.EventTypeContains = TEXT("UseItem");
+        R.Cooldown = 8.f;
+        R.ActionWeights.Add(EAction::TurnTo, 70.f);
+        R.ActionWeights.Add(EAction::Investigate, 30.f);
+    }
+}
+
+bool UNPCActionComponent::DoesReflexRuleMatch(const FReflexRule& Rule, ESenseType Sense, const FString& EventType,
+                                              ENPCRelation Relation, float BaseDanger, float Distance) const
+{
+    if (Rule.Sense != Sense) return false;
+
+    if (Rule.Relation != ENPCRelation::Any && Rule.Relation != Relation) return false;
+
+    if (!Rule.EventTypeContains.IsEmpty() && !EventType.Contains(Rule.EventTypeContains)) return false;
+
+    if (Rule.MaxDistance > 0.f && Distance > Rule.MaxDistance) return false;
+
+    if (BaseDanger < Rule.MinBaseDanger) return false;
+
+    // 액션이 하나도 없는 룰은 발동해봐야 아무 일도 안 일어난다 — 매칭 단계에서 배제.
+    return Rule.ActionWeights.Num() > 0;
+}
+
+EAction UNPCActionComponent::PickWeightedReflexAction(const TMap<EAction, float>& Weights)
+{
+    float TotalW = 0.f;
+    for (const TPair<EAction, float>& Pair : Weights) TotalW += FMath::Max(0.f, Pair.Value);
+    if (TotalW <= KINDA_SMALL_NUMBER) return EAction::Idle;
+
+    float Roll = FMath::FRandRange(0.f, TotalW);
+    EAction Last = EAction::Idle;
+    for (const TPair<EAction, float>& Pair : Weights)
+    {
+        const float W = FMath::Max(0.f, Pair.Value);
+        if (W <= 0.f) continue;
+        Last = Pair.Key;                 // 부동소수 잔여로 못 고를 때의 폴백
+        if (Roll < W) return Pair.Key;
+        Roll -= W;
+    }
+    return Last;
+}
+
+bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventType, const FString& SourceID,
+                                         float BaseDanger, float Distance, const FVector& StimulusLoc)
+{
+    UWorld* World = GetWorld();
+    if (!World || !StateComponent || ReflexRules.Num() == 0) return false;
+
+    // 진행 중 액션·대기 큐가 있으면 개입하지 않는다(셀렉터와 동일 규율).
+    if (bIsBusy || !ActionQueue.IsEmpty()) return false;
+
+    const float Now = World->GetTimeSeconds();
+    if (Now - LastReflexTime < ReflexGlobalCooldown) return false;
+
+    // 룰별 쿨다운 배열을 테이블 크기에 맞춘다(에디터에서 룰을 늘렸을 수 있음).
+    if (ReflexRuleLastFireTime.Num() != ReflexRules.Num())
+    {
+        ReflexRuleLastFireTime.Init(-1000.f, ReflexRules.Num());
+    }
+
+    const ENPCRelation Relation = StateComponent->GetRelation(SourceID);
+
+    for (int32 i = 0; i < ReflexRules.Num(); ++i)
+    {
+        const FReflexRule& Rule = ReflexRules[i];
+        if (!DoesReflexRuleMatch(Rule, Sense, EventType, Relation, BaseDanger, Distance)) continue;
+
+        // 매칭은 됐지만 쿨다운 중 — 아래 룰로 흘리지 않고 여기서 끝낸다.
+        // (넘기면 더 약한 룰이 대신 튀어 같은 자극에 계속 반응하는 꼴이 된다)
+        if (Now - ReflexRuleLastFireTime[i] < Rule.Cooldown) return false;
+
+        const EAction Chosen = PickWeightedReflexAction(Rule.ActionWeights);
+        if (Chosen == EAction::Idle) return false;
+
+        FGameAction Action;
+        Action.ActionType = Chosen;
+        switch (Chosen)
+        {
+        case EAction::Attack:
+            Action.FacialState = EFacialState::Angry;
+            Action.Parameters.Add(NPCActionKeys::Key_TargetID, SourceID);
+            break;
+
+        case EAction::SignalAllies:
+            // target_id 가 미디어 키 겸용(ExecuteSignalAllies → BasePlayActionMedia).
+            Action.Parameters.Add(NPCActionKeys::Key_TargetID, TEXT("SignalAllies"));
+            break;
+
+        case EAction::Scan:
+            Action.FacialState = EFacialState::Surprised;
+            Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, StimulusLoc.ToString());
+            break;
+
+        case EAction::TurnTo:
+        case EAction::Investigate:
+            // 위치 기반 — TargetActor 해석 없이도 동작하도록 좌표를 직접 싣는다.
+            Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, StimulusLoc.ToString());
+            break;
+
+        default:
+            break;
+        }
+
+        ActionQueue.Enqueue(Action);
+        LastQueuedActionType = Chosen;
+
+        ReflexRuleLastFireTime[i] = Now;
+        LastReflexTime = Now;
+
+        // Combat 진입 — 반사가 SLM 을 대체하면서 Mode 를 올릴 주체도 여기로 옮겨왔다.
+        if (Rule.bEnterCombat && StateComponent->GetBehaviorMode() != ENPCBehaviorMode::Combat)
+        {
+            StateComponent->SetBehaviorMode(ENPCBehaviorMode::Combat);
+        }
+
+        // LLM 이 "이미 반응했음"을 알아야 다음 replan 이 한 박자 늦은 지시를 안 만든다.
+        StateComponent->NoteReflexAction(Chosen);
+
+        UE_LOG(LogTemp, Log, TEXT("[Reflex] %s: rule='%s' src=%s dist=%.0f base=%.2f -> %s%s"),
+            *GetOwnerAgentID(), *Rule.RuleName, *SourceID, Distance, BaseDanger,
+            *UEnum::GetValueAsString(Chosen), Rule.bEnterCombat ? TEXT(" (Combat 진입)") : TEXT(""));
+
+        return true;
+    }
+
+    return false;
 }
 
 void UNPCActionComponent::BeginPlay()
@@ -262,12 +447,20 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
     }
 
     // BehaviorMode(Common/Combat) 갱신 — StateComponent가 단일 소유. STTask Combat 분기가 이 값을 읽는다.
-    if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
-
-    // LLM 이 전투 밖으로 전환시키면 셀렉터 연속성도 새 전투 기준으로 초기화.
-    if (Batch.Mode != ENPCBehaviorMode::Combat)
+    //
+    // 빈 배치는 Mode 를 건드리지 않는다. emergency_report 가 통보 전용이 된 뒤로 Python 은
+    // 행동 없는 응답(Mode=Common)을 정상적으로 돌려주는데, 그걸 그대로 반영하면 척수반사가
+    // 방금 올린 Combat 이 곧바로 되돌아간다. combat_victory 의 빈 배치도 같은 이유로 안전해진다.
+    // "행동을 지시하지 않은 응답"에 모드 전환 권한을 주지 않는 것이 요점.
+    if (Batch.Actions.Num() > 0)
     {
-        ResetCombatSelectorState();
+        if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
+
+        // LLM 이 전투 밖으로 전환시키면 셀렉터 연속성도 새 전투 기준으로 초기화.
+        if (Batch.Mode != ENPCBehaviorMode::Combat)
+        {
+            ResetCombatSelectorState();
+        }
     }
 
     // 새 배치 수신 시 대화 슬롯 해제 → 이전 배치의 bIsDialogueActive=true 고착 방지

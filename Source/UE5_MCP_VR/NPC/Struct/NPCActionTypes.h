@@ -54,6 +54,18 @@ enum class EAttackType : uint8
 	Magic
 };
 
+/** ENPCRelation: 호감도 임계값으로 분류한 대상과의 관계.
+ *  단일 소유는 NPCStateComponent::GetRelation — GetAffinityMultiplier 도 이 값을 배율로 변환할 뿐이다.
+ *  Any 는 반사 룰 필터 전용 와일드카드로, GetRelation 이 반환하는 일은 없다. */
+UENUM(BlueprintType)
+enum class ENPCRelation : uint8
+{
+	Hostile    UMETA(DisplayName = "Hostile"),
+	Neutral    UMETA(DisplayName = "Neutral"),
+	Friendly   UMETA(DisplayName = "Friendly"),
+	Any        UMETA(DisplayName = "Any (rule filter only)")
+};
+
 /** ESenseType: AI 퍼셉션 감각 종류 통합 관리 */
 UENUM(BlueprintType)
 enum class ESenseType : uint8
@@ -163,6 +175,58 @@ struct FActionBatch
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Action")
 	TArray<FGameAction> Actions;
+};
+
+/** FReflexRule: 척수반사 테이블 한 줄 (SPEC_reflex_table §3.2).
+ *
+ *  자극(감각·소음종류·관계·거리·위험도)이 전부 맞으면 가중 분포로 액션 하나를 뽑아
+ *  ActionQueue 에 직접 주입한다. Python 왕복이 없으므로 서버가 죽어 있어도 동작한다.
+ *
+ *  danger 필터가 **BaseDanger(자극 원본 세기)** 기준인 것이 중요하다. 최종 위험도
+ *  (= BaseDanger × 호감도배율)는 Friendly 대상에서 항상 0 이 되므로, 최종값으로 걸면
+ *  Friendly 룰은 영원히 안 걸린다. 관계는 Relation 이, 세기는 BaseDanger 가 따로 본다.
+ */
+USTRUCT(BlueprintType)
+struct FReflexRule
+{
+	GENERATED_BODY()
+
+	/** 어떤 감각의 자극에 반응하는가. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	ESenseType Sense = ESenseType::Sight;
+
+	/** Hearing 소음 태그 부분매치("Drop", "UseItem" 등). 비어 있으면 종류를 안 가린다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	FString EventTypeContains;
+
+	/** 대상과의 관계. Any = 무관. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	ENPCRelation Relation = ENPCRelation::Any;
+
+	/** 거리 상한(cm). 0 이면 무제한. 감지 반경(SightRadius/HearingRange = 3000)보다 크게 잡지 말 것. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex", meta = (ClampMin = "0.0"))
+	float MaxDistance = 0.f;
+
+	/** BaseDanger 하한(포함). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinBaseDanger = 0.f;
+
+	/** 이 룰의 재발동 금지 시간(초). perception tick 이 9초마다 같은 자극을 재통지하므로
+	 *  생동 반응류는 그보다 넉넉히 잡아야 스팸이 안 난다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex", meta = (ClampMin = "0.0"))
+	float Cooldown = 3.f;
+
+	/** 액션별 가중치. 합이 1일 필요 없다(상대 비율로 추첨). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	TMap<EAction, float> ActionWeights;
+
+	/** true 면 발동과 동시에 BehaviorMode 를 Combat 으로 올린다. 비전투 반사는 반드시 false. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	bool bEnterCombat = false;
+
+	/** 로그·디버그용 이름. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+	FString RuleName;
 };
 
 // ============================================================================

@@ -602,6 +602,56 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "5.0"))
     float DodgeSpeedMultiplier = 1.5f;
 
+    // ============================================================================
+    // 척수반사 테이블 (SPEC_reflex_table)
+    // ----------------------------------------------------------------------------
+    // WHY: 접적 반응을 Python SLM 에 물어보면 WS 왕복 + debounce + 추론으로 수백 ms~수 초가
+    //      걸리고, 서버가 죽으면 반사 자체가 사라진다. 규칙이 이미 결정론이므로 C++ 에서 바로
+    //      실행한다. 매칭·추첨·주입이 전부 이 컴포넌트 안에 있는 이유는 ActionQueue 가 여기
+    //      private 이고, 기존 주입 경로(전투 셀렉터·EQS 결과)도 전부 컴포넌트 내부라서다.
+    //      컨트롤러는 자극을 넘기는 TryReflexReact 호출 하나만 한다.
+    // ============================================================================
+
+    /** 퍼셉션 자극 하나를 반사 테이블에 걸어보고, 맞으면 액션을 큐에 주입한다.
+     *
+     *  @param Sense        자극 감각(Sight/Hearing)
+     *  @param EventType    Hearing 소음 태그("Drop" 등). Sight 면 빈 문자열.
+     *  @param SourceID     자극 발생 대상의 이름 — 관계 판정·Attack 타겟에 쓰인다.
+     *  @param BaseDanger   호감도 배율을 곱하기 **전**의 원본 위험도.
+     *  @param Distance     대상까지 거리(cm)
+     *  @param StimulusLoc  자극 위치 — 소음 조사·바라보기 목적지.
+     *  @return 반사가 실제로 발동했으면 true.
+     *
+     *  진행 중 액션은 강탈하지 않는다(bIsBusy·큐 비어있음 요구) — 전투 셀렉터와 같은 규율. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Reflex")
+    bool TryReflexReact(ESenseType Sense, const FString& EventType, const FString& SourceID,
+                        float BaseDanger, float Distance, const FVector& StimulusLoc);
+
+    /** 반사 룰 테이블. 기본값은 생성자에서 확정(CLAUDE.md §9 — 바이너리에만 두지 말 것).
+     *  위에서부터 검사해 **처음 맞는 룰 하나만** 발동하므로, 좁은 조건을 위에 둘 것. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+    TArray<FReflexRule> ReflexRules;
+
+    /** 룰과 무관한 NPC 단위 최소 간격(초). 서로 다른 룰이 번갈아 튀는 것을 막는다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+    float ReflexGlobalCooldown = 1.5f;
+
+private:
+    /** 룰별 마지막 발동 시각. ReflexRules 와 인덱스 정합(첫 호출 시 크기 맞춤). */
+    TArray<float> ReflexRuleLastFireTime;
+
+    /** NPC 단위 마지막 반사 시각. */
+    float LastReflexTime = -1000.f;
+
+    /** 룰 하나가 이 자극에 걸리는지 판정. */
+    bool DoesReflexRuleMatch(const FReflexRule& Rule, ESenseType Sense, const FString& EventType,
+                             ENPCRelation Relation, float BaseDanger, float Distance) const;
+
+    /** 가중 분포 추첨. 후보가 없으면 EAction::Idle 반환. */
+    static EAction PickWeightedReflexAction(const TMap<EAction, float>& Weights);
+
+public:
+
     // ----------------------------------------------------------------------------
     // [3] Social Behaviors
     // ----------------------------------------------------------------------------
