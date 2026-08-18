@@ -47,8 +47,12 @@ logging.basicConfig(
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
 
-# SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
-# 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
+# emergency 통보 게이트 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
+# 이 미만(친화적/저위협 perception)은 호감도 감점 대상도 아니라 통보만 하고 끝낸다.
+#
+# 이름이 SLM 인 것은 잔재다 — SLM 반사는 2026-08-19 제거됐고 이 상수는 통보 게이트로 유임됐다.
+# 리네임하지 말 것: env var 키로도 읽히므로 이름을 바꾸면 기존 배포·실행 스크립트의
+# 오버라이드가 **조용히** 무시된다(에러 없이 기본값 0.5 로 돌아감).
 SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
 
 
