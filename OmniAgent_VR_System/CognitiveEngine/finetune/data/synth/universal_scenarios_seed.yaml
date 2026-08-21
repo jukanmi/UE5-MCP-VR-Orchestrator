@@ -1,0 +1,158 @@
+- id: univ_lifestyle_sit_01
+  category: Lifestyle
+  persona: Mage
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Chair_Study_01
+    nearby_furniture:
+    - id: Chair_Study_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: 주문서 해독에 집중해야 하니 의자에 앉겠다.
+  gold:
+    mode: Lifestyle
+    facial: Neutral
+    actions:
+    - type: Sit
+      target: Chair_Study_01
+- id: univ_lifestyle_sleep_01
+  category: Lifestyle
+  persona: Wanderer
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Bed_Inn_01
+    nearby_furniture:
+    - id: Bed_Inn_01
+      type: Bed
+      occupied: false
+      dist: 3
+  utterance: 긴 여정이었으니 오늘 밤은 침대에서 자야겠군.
+  gold:
+    mode: Lifestyle
+    facial: Tired
+    actions:
+    - type: Sleep
+      target: Bed_Inn_01
+- id: univ_combat_attack_01
+  category: Combat
+  persona: Knight
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy_Bandit
+    danger: 0.9
+    extra: 도적 무리가 명예로운 영지에 침입함
+  utterance: 영지를 위협하는 무법자들을 처단하라!
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+    - type: Attack
+      target: Enemy_Bandit
+- id: univ_combat_flee_01
+  category: Combat
+  persona: Alchemist
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy_Dragon
+    danger: 1.0
+    extra: 거대한 드래곤이 공방 근처에 출현함
+  utterance: 도저히 당해낼 수 없다, 어서 후퇴해야 해!
+  gold:
+    mode: Combat
+    facial: Fear
+    actions:
+    - type: Flee
+      target: Self
+- id: univ_social_giveitem_01
+  category: Social
+  persona: Blacksmith
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    extra: 새로 제련한 강철 검이 가방에 있음
+  utterance: 약속했던 단단한 검일세, 받아가게.
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: GiveItem
+      target: Player
+      item: SteelSword
+- id: univ_social_comfort_01
+  category: Social
+  persona: Innkeeper
+  situation:
+    valid_targets:
+    - Player
+    - Self
+  utterance: 많이 지쳐 보이는군요. 따뜻한 음료 한 잔 마시며 마음을 가라앉히세요.
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: univ_task_pickup_01
+  category: Task
+  persona: Scholar
+  situation:
+    valid_targets:
+    - Player
+    - Self
+  utterance: 바닥에 떨어진 고대의 열쇠를 집어 들자.
+  gold:
+    mode: Task
+    facial: Surprised
+    actions:
+    - type: PickUp
+      loc: 300,150,0
+- id: univ_invest_scan_01
+  category: Investigation
+  persona: Assassin
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    extra: 지하 통로에서 이상한 발자국 소리가 들림
+  utterance: 어둠 속에서 무언가가 움직이고 있다. 주변을 탐색해야겠어.
+  gold:
+    mode: Investigation
+    facial: Neutral
+    actions:
+    - type: Investigate
+      loc: -1200,-500,20
+- id: univ_talk_smalltalk_01
+  category: Talk
+  persona: Merchant
+  situation:
+    valid_targets:
+    - Player
+    - Self
+  utterance: 오늘 교역 시장 동향은 매우 활발하군요.
+  gold:
+    mode: Social
+    facial: Happy
+    actions: []
+- id: univ_reject_no_target_01
+  category: Reject
+  persona: Innkeeper
+  situation:
+    valid_targets:
+    - Player
+    - Self
+  utterance: 저기 상자에 있는 물건을 가져다줘.
+  gold:
+    mode: Social
+    facial: Neutral
+    actions: []
+    speech_hint: 주변에 지정한 상자가 없다고 설명함

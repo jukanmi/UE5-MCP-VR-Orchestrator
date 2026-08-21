@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>파인튜닝 데이터셋 편집기</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+  h1 { font-size: 1.4rem; font-weight: 700; color: #7dd3fc; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 20px; }
+  .section { background: #1e2330; border: 1px solid #2d3748; border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+  .section-title { font-size: 0.95rem; font-weight: 600; color: #94a3b8; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  th { text-align: left; padding: 7px 9px; color: #64748b; border-bottom: 1px solid #2d3748; font-weight: 500; }
+  td { padding: 6px 9px; border-bottom: 1px solid #1a2035; vertical-align: middle; }
+  tr:hover td { background: #252c3d; }
+  input, select, textarea { background: #111827; border: 1px solid #374151; color: #e2e8f0; border-radius: 6px; padding: 5px 9px; font-size: 0.83rem; font-family: inherit; }
+  textarea { width: 100%; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+  button { cursor: pointer; border: none; border-radius: 6px; padding: 5px 12px; font-size: 0.8rem; font-weight: 600; }
+  button:hover { opacity: 0.85; }
+  .btn-primary { background: #1d4ed8; color: #fff; }
+  .btn-danger  { background: #7f1d1d; color: #fca5a5; }
+  .btn-ghost   { background: #1a2035; color: #94a3b8; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .ok    { color: #4ade80; font-weight: 600; }
+  .bad   { color: #f87171; font-weight: 600; cursor: help; }
+  .cov-table td, .cov-table th { text-align: center; }
+  .cov-table td:first-child, .cov-table th:first-child { text-align: left; }
+  .thin { color: #f59e0b; }
+  .zero { color: #f87171; font-weight: 700; }
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); align-items:center; justify-content:center; z-index:50; }
+  .modal { background:#1e2330; border:1px solid #374151; border-radius:10px; padding:20px; width:640px; max-height:85vh; overflow-y:auto; }
+  .field-label { font-size: 0.75rem; color: #64748b; margin-bottom: 3px; display:block; }
+  .field { margin-bottom: 10px; }
+  .field input, .field select { width: 100%; }
+</style>
+</head>
+<body>
+<h1>파인튜닝 데이터셋 편집기</h1>
+<div class="subtitle">scenarios_seed_draft.yaml — Ollama/UE5 무관 독립 실행. 저장 시 즉시 rules 검증.</div>
+
+<div class="section">
+  <div class="section-title">타입별 커버리지 (코어 5 NPC 기준, 20 미만 = 노란색, 0 = 빨간색)</div>
+  <div id="coverage"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">시드 목록</div>
+  <div class="row">
+    <select id="f-npc"><option value="">전체 NPC</option></select>
+    <select id="f-cat"><option value="">전체 카테고리</option></select>
+    <input id="f-q" placeholder="검색(id/발화)" style="flex:1; min-width:160px;">
+    <button class="btn-primary" onclick="openNew()">+ 새 시드</button>
+  </div>
+  <table>
+    <thead><tr><th>id</th><th>category</th><th>npc</th><th>utterance</th><th>호감도</th><th>actions</th><th>speech_hint</th><th>검증</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <div class="section-title" id="modal-title">시드 편집</div>
+    <div class="field"><span class="field-label">id</span><input id="m-id"></div>
+    <div class="field"><span class="field-label">category</span><input id="m-category"></div>
+    <div class="field"><span class="field-label">npc</span><input id="m-npc"></div>
+    <div class="field"><span class="field-label">utterance</span><input id="m-utterance"></div>
+    <div class="field">
+      <span class="field-label">호감도(sentiment) — 서빙 프롬프트 그대로 매칭, 미지정 시 학습에서 "Neutral" 편향(2026-07-27 발견 버그)</span>
+      <select id="m-sentiment-tag">
+        <option value="Hostile">Hostile</option>
+        <option value="Unfriendly">Unfriendly</option>
+        <option value="Neutral" selected>Neutral</option>
+        <option value="Friendly">Friendly</option>
+        <option value="Devoted">Devoted</option>
+      </select>
+      <input id="m-sentiment-score" type="number" placeholder="Score(-100~100)" value="0" style="width:140px;">
+    </div>
+    <div class="field"><span class="field-label">situation (JSON) — sentiment 은 위 필드로 자동 반영</span><textarea id="m-situation" rows="6"></textarea></div>
+    <div class="field"><span class="field-label">gold (JSON)</span><textarea id="m-gold" rows="6"></textarea></div>
+    <div class="row"><span id="m-validate-result"></span></div>
+    <div class="row">
+      <button class="btn-ghost" onclick="validateModal()">검증만</button>
+      <button class="btn-primary" onclick="saveModal()">저장</button>
+      <button class="btn-ghost" onclick="closeModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let editingId = null;
+
+async function loadCoverage() {
+  const c = await (await fetch('/api/coverage')).json();
+  const types = Object.keys(c.total).sort();
+  const npcs = Object.keys(c.per_core);
+  let html = `<table class="cov-table"><thead><tr><th>NPC</th>` + types.map(t=>`<th>${t}</th>`).join('') + `</tr></thead><tbody>`;
+  for (const npc of npcs) {
+    html += `<tr><td>${npc}</td>` + types.map(t => {
+      const n = c.per_core[npc][t] || 0;
+      const cls = n === 0 ? 'zero' : (n < 20 ? 'thin' : '');
+      return `<td class="${cls}">${n}</td>`;
+    }).join('') + `</tr>`;
+  }
+  html += `<tr><td><b>전체합</b></td>` + types.map(t=>`<td>${c.total[t]}</td>`).join('') + `</tr>`;
+  html += `</tbody></table><div style="margin-top:8px;color:#64748b;font-size:0.8rem;">총 시드 ${c.seed_count}개</div>`;
+  document.getElementById('coverage').innerHTML = html;
+}
+
+async function loadRows() {
+  const npc = document.getElementById('f-npc').value;
+  const cat = document.getElementById('f-cat').value;
+  const q = document.getElementById('f-q').value;
+  const params = new URLSearchParams({npc, category: cat, q});
+  const rows = await (await fetch('/api/seeds?' + params)).json();
+
+  const npcSet = new Set(rows.map(r=>r.npc).filter(Boolean));
+  const catSet = new Set(rows.map(r=>r.category).filter(Boolean));
+  const npcSel = document.getElementById('f-npc');
+  const catSel = document.getElementById('f-cat');
+  if (npcSel.options.length <= 1) for (const n of [...npcSet].sort()) npcSel.innerHTML += `<option value="${n}">${n}</option>`;
+  if (catSel.options.length <= 1) for (const c of [...catSet].sort()) catSel.innerHTML += `<option value="${c}">${c}</option>`;
+
+  document.getElementById('rows').innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.id}</td><td>${r.category}</td><td>${r.npc}</td>
+      <td>${(r.utterance||'').slice(0,40)}</td>
+      <td>${r.sentiment}</td>
+      <td>${r.actions_summary}</td>
+      <td>${r.speech_hint || ''}</td>
+      <td>${r.valid ? '<span class="ok">OK</span>' : `<span class="bad" title="${(r.invalid_reason||'').replace(/"/g,'&quot;')}">FAIL</span>`}</td>
+      <td>
+        <button class="btn-ghost" onclick="openEdit('${r.id}')">수정</button>
+        <button class="btn-danger" onclick="deleteRow('${r.id}')">삭제</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openEdit(id) {
+  const s = await (await fetch('/api/seeds/' + id)).json();
+  editingId = id;
+  document.getElementById('modal-title').textContent = '시드 수정: ' + id;
+  document.getElementById('m-id').value = s.id;
+  document.getElementById('m-id').disabled = true;
+  document.getElementById('m-category').value = s.category || '';
+  document.getElementById('m-npc').value = s.npc || '';
+  document.getElementById('m-utterance').value = s.utterance || '';
+  fillSentimentFields(s.situation && s.situation.sentiment);
+  document.getElementById('m-situation').value = JSON.stringify(s.situation || {}, null, 2);
+  document.getElementById('m-gold').value = JSON.stringify(s.gold || {}, null, 2);
+  document.getElementById('m-validate-result').textContent = '';
+  document.getElementById('modal-bg').style.display = 'flex';
+}
+
+function fillSentimentFields(sentimentStr) {
+  const m = /^(\w+)\s*\(Score:\s*(-?\d+)\)$/.exec(sentimentStr || '');
+  document.getElementById('m-sentiment-tag').value = m ? m[1] : 'Neutral';
+  document.getElementById('m-sentiment-score').value = m ? m[2] : '0';
+}
+
+function openNew() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = '새 시드';
+  document.getElementById('m-id').value = '';
+  document.getElementById('m-id').disabled = false;
+  document.getElementById('m-category').value = '';
+  document.getElementById('m-npc').value = '';
+  document.getElementById('m-utterance').value = '';
+  fillSentimentFields(null);
+  document.getElementById('m-situation').value = JSON.stringify({valid_targets: ["Player", "Self"]}, null, 2);
+  document.getElementById('m-gold').value = JSON.stringify({mode: "Common", facial: "Neutral", actions: []}, null, 2);
+  document.getElementById('m-validate-result').textContent = '';
+  document.getElementById('modal-bg').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal-bg').style.display = 'none'; }
+
+function buildPayload() {
+  const situation = JSON.parse(document.getElementById('m-situation').value || '{}');
+  const tag = document.getElementById('m-sentiment-tag').value;
+  const score = document.getElementById('m-sentiment-score').value || '0';
+  situation.sentiment = `${tag} (Score: ${score})`;
+  return {
+    id: document.getElementById('m-id').value.trim(),
+    category: document.getElementById('m-category').value.trim(),
+    npc: document.getElementById('m-npc').value.trim(),
+    utterance: document.getElementById('m-utterance').value,
+    situation,
+    gold: JSON.parse(document.getElementById('m-gold').value || '{}'),
+  };
+}
+
+async function validateModal() {
+  try {
+    const payload = buildPayload();
+    const res = await (await fetch('/api/validate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})).json();
+    document.getElementById('m-validate-result').innerHTML = res.valid
+      ? '<span class="ok">검증 통과</span>'
+      : `<span class="bad">검증 실패: ${res.reason}</span>`;
+  } catch (e) {
+    document.getElementById('m-validate-result').innerHTML = `<span class="bad">JSON 파싱 오류: ${e.message}</span>`;
+  }
+}
+
+async function saveModal() {
+  let payload;
+  try { payload = buildPayload(); } catch (e) { alert('JSON 파싱 오류: ' + e.message); return; }
+  if (!payload.id) { alert('id 필수'); return; }
+  const method = editingId ? 'PUT' : 'POST';
+  const url = editingId ? '/api/seeds/' + editingId : '/api/seeds';
+  const res = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  if (!res.ok) { const err = await res.json(); alert('실패: ' + (err.detail || res.status)); return; }
+  closeModal();
+  loadRows();
+  loadCoverage();
+}
+
+async function deleteRow(id) {
+  if (!confirm(id + ' 삭제?')) return;
+  await fetch('/api/seeds/' + id, {method: 'DELETE'});
+  loadRows();
+  loadCoverage();
+}
+
+document.getElementById('f-npc').addEventListener('change', loadRows);
+document.getElementById('f-cat').addEventListener('change', loadRows);
+document.getElementById('f-q').addEventListener('input', loadRows);
+
+loadCoverage();
+loadRows();
+</script>
+</body>
+</html>
