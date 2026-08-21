@@ -652,4 +652,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam);
 
+    /** 자세 해제(앉기/눕기 → 기립). 현재 자세 플래그가 몽타주를 결정하며, 서 있으면 무동작. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteStandUp();
+
 };

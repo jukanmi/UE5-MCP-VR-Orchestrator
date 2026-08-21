@@ -25,6 +25,7 @@ import re
 from collections import Counter
 
 from ..state import AgentState
+from ...utils.train_logger import log_rules_result
 from .dialogue import _vr_get
 from ...schemas.actions import (
     ACTION_CATEGORY,
@@ -215,12 +216,17 @@ def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | 
     return action, corrections
 
 
-def _validate_batch(batch: "ActionBatch", runtime_targets: set[str] | None = None) -> "ActionBatch":
-    """단일 ActionBatch 검증/클램핑. 공통 로직."""
+def _validate_batch(
+    batch: "ActionBatch", runtime_targets: set[str] | None = None, log_ctx: dict | None = None
+) -> "ActionBatch":
+    """단일 ActionBatch 검증/클램핑. 공통 로직.
+    log_ctx: 파인튜닝 로그 조인 키({"msg_id","attempt"}) — 지정 시 판정 결과 jsonl 기록."""
     from ...schemas.actions import GameAction
 
     all_corrections: list[str] = []
     validated_actions: list[GameAction] = []
+    actions_before = len(batch.Actions)
+    mode_before = batch.Mode
 
     for action in batch.Actions:
         validated_action, corrections = validate_and_clamp_action(action, runtime_targets)
@@ -233,15 +239,25 @@ def _validate_batch(batch: "ActionBatch", runtime_targets: set[str] | None = Non
     if not validated_actions:
         print(f"[Rules] X {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
-        return batch
-
-    batch.Actions = validated_actions
-    _correct_mode_mismatch(batch)
-    if all_corrections:
-        summary = "; ".join(all_corrections)
-        print(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
     else:
-        print(f"[Rules] OK {batch.AgentID} 검증 통과")
+        batch.Actions = validated_actions
+        _correct_mode_mismatch(batch)
+        if all_corrections:
+            summary = "; ".join(all_corrections)
+            print(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
+        else:
+            print(f"[Rules] OK {batch.AgentID} 검증 통과")
+
+    if log_ctx is not None:
+        log_rules_result(
+            npc_id=batch.AgentID,
+            actions_before=actions_before,
+            actions_after=len(batch.Actions),
+            corrections=all_corrections,
+            mode_before=mode_before,
+            mode_after=batch.Mode,
+            extra=log_ctx,
+        )
     return batch
 
 
@@ -286,9 +302,12 @@ def rules_node(state: AgentState) -> dict:
     # 문자열을 보내면 set("Elara") 가 문자 단위로 분해돼 유효 액션이 조용히 제거됨. 시퀀스만 변환.
     runtime_targets: set[str] | None = set(runtime_list) if isinstance(runtime_list, (list, tuple, set)) else None
 
+    # 파인튜닝 로그 조인 키 — Stage1 LLM 레코드와 msg_id+attempt 로 매칭 (train_logger)
+    log_ctx = {"msg_id": state.get("msg_id", ""), "attempt": state.get("rules_retry_count", 0)}
+
     validated_batches: dict = {}
     for npc_id, batch in action_batches.items():
-        validated_batches[npc_id] = _validate_batch(batch, runtime_targets)
+        validated_batches[npc_id] = _validate_batch(batch, runtime_targets, log_ctx)
         _evaluate_and_update_affinity(state, validated_batches[npc_id])
 
     # 단일 NPC 호환: action_batch 도 채움

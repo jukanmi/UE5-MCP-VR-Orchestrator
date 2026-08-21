@@ -34,7 +34,7 @@ import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict
-from ...utils.llm_factory import ollama_structured
+from ...utils.llm_factory import ollama_structured, STAGE1_MODEL, STAGE2_MODEL
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
@@ -258,7 +258,9 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     return _Stage1Context(fmt_kwargs, valid_targets, clean_query, natural_context)
 
 
-async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[DialogueResponse, bool]:
+async def _run_stage1_llm(
+    ctx: _Stage1Context, npc_id: str, log_extra: dict | None = None
+) -> tuple[DialogueResponse, bool]:
     """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
     전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved)."""
     structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
@@ -276,11 +278,12 @@ async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[DialogueRes
             DialogueResponse,
             # valid_targets 있으면 target enum grammar 강제 (없으면 None → 기본 스키마).
             schema_override=_dialogue_schema_with_targets(ctx.valid_targets),
-            model_name="gemma4_slm",
+            model_name=STAGE1_MODEL,
             # temp 0.7→0.5: 미사여구 드리프트 억제(Tier2). 0.4 는 반복적, 0.6 는 과격/장황 드리프트 —
             # 스윕 결과 0.5 가 자연스러움·다양성·캐릭터 유지 균형점(실측).
             temperature=0.5,
             num_predict=300,
+            log_extra=log_extra,
         )
     except Exception as e:
         print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}), 구조화 폴백 재시도: {e}")
@@ -290,9 +293,10 @@ async def _run_stage1_llm(ctx: _Stage1Context, npc_id: str) -> tuple[DialogueRes
                 structured_content,
                 user_content,
                 DialogueResponse,
-                model_name="gemma4_slm",
+                model_name=STAGE1_MODEL,
                 temperature=0.7,
                 num_predict=300,
+                log_extra={**log_extra, "fallback": True} if log_extra else None,
             )
         except Exception as e2:
             print(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
@@ -330,12 +334,20 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
     수집(_collect_stage1_context) → 생성(_run_stage1_llm) → 기록(_record_dialogue_memory).
     """
     ctx = await _collect_stage1_context(state, npc_id)
-    resp, plan_achieved = await _run_stage1_llm(ctx, npc_id)
+    # 파인튜닝 로그 컨텍스트 — msg_id 로 Rules 레코드와 조인 (train_logger)
+    log_extra = {
+        "stage": "stage1",
+        "msg_id": state.get("msg_id", ""),
+        "npc_id": npc_id,
+        "attempt": state.get("rules_retry_count", 0),
+        "valid_targets": ctx.valid_targets or [],
+    }
+    resp, plan_achieved = await _run_stage1_llm(ctx, npc_id, log_extra)
     _record_dialogue_memory(npc_id, resp, ctx.clean_query, ctx.natural_context)
     return npc_id, resp, plan_achieved
 
 
-async def _generate_plans(raw_responses: Dict[str, str], player_id: str) -> Dict[str, dict]:
+async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id: str = "") -> Dict[str, dict]:
     """
     Stage 2: 12B plan 전용 산출. 재계획(requires_replan=True) 경로에서만 호출.
     대사는 건드리지 않음 — Stage1 출력이 그대로 최종 (정제는 Stage1 프롬프트가 담당).
@@ -350,10 +362,11 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str) -> Dict
             PLAN_SYSTEM_PROMPT,
             sections,
             PlanBatchResponse,
-            model_name="gemma4",
+            model_name=STAGE2_MODEL,
             temperature=0.3,
             # plan-only 는 NPC 당 ~100토큰 (goal 1구절 + steps 2-4개). 여유 2배.
             num_predict=220 * len(raw_responses),
+            log_extra={"stage": "stage2", "msg_id": msg_id, "npc_ids": list(raw_responses)},
         )
     except Exception as e:
         print(f"[Dialogue] Stage2 12B 오류, plan 생략: {e}")
@@ -419,7 +432,7 @@ async def dialogue_node(state: AgentState):
         raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
         vr_context = state.get("vr_context")
         player_id = _vr_player_id(vr_context)
-        npc_plans = await _generate_plans(raw_responses, player_id)
+        npc_plans = await _generate_plans(raw_responses, player_id, state.get("msg_id", ""))
     else:
         print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
 

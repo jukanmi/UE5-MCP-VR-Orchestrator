@@ -24,14 +24,19 @@ Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions, 
     player asks you to move somewhere → actions=[{{"type":"Move","target":"<loc>"}}]
     combat situation → actions=[{{"type":"Attack","target":"Enemy"}}]
     give item → actions=[{{"type":"GiveItem","target":"Player","item":"<item>"}}]
-    sit on a chair / "의자에 앉아" → actions=[{{"type":"Sit","target":"<furniture_id>"}}]  (bed / "누워" → "Sleep")
+    sit on a chair / "의자에 앉아" → actions=[{{"type":"Sit","target":"<seat furniture_id>"}}]
+    lie on a bed / "누워" / "침대에 누워" / "누워서 쉬어" → actions=[{{"type":"Sleep","target":"<bed furniture_id>"}}]
+    get up / "일어나" / "일어서" / "그만 자고 일어나" → actions=[{{"type":"StandUp"}}]  (no target — 현재 자세가 앉기/눕기를 알아서 해제)
     read / "책 읽어" → actions=[{{"type":"Read"}}]  (in-place, no target)  ("기도해" → "Pray", in-place)
   Empty list ONLY if you are purely talking with NO physical action implied.
+  IMPORTANT: a command like "앉아"/"누워"/"따라와" tells YOU (this NPC) to do it — YOU perform the
+  action on yourself. Do NOT merely offer it to the player in speech while emitting no action;
+  emit the matching action (Sit/Sleep/Follow) with YOURSELF as the actor.
 - plan_achieved: true ONLY if the current plan goal is clearly completed this turn; otherwise false.
 
 Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
  Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
- PickUp Drop Craft Repair Investigate Track Scout Sit Sleep Read Pray Dance Sing.
+ PickUp Drop Craft Repair Investigate Track Scout Sit Sleep StandUp Read Pray Dance Sing.
 Use ONLY a type from this list. target MUST be one of: {valid_targets}. Never invent other target names.
 
 YOUR inventory (items you currently hold): {inventory}

@@ -95,6 +95,12 @@ namespace
             case EAction::Track:
                 return FName("State.Action.Investigation.Track");
 
+            // Lifestyle
+            // 주의: Sit/Sleep/Read/Pray 는 .ini 에 태그가 등록돼 있는데도 여기 매핑이 없어
+            // 런타임에 태그를 못 받는다(기존 갭, 2026-08-02 발견 — 별건으로 정리 필요).
+            case EAction::StandUp:
+                return FName("State.Action.Lifestyle.StandUp");
+
             default:
                 return NAME_None;
         }
@@ -903,6 +909,10 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Emote:
         ExecuteLifestyleAction(ActionType, TargetActor, Location, LifestyleParam);
         break;
+
+    // 자세 해제는 가구·좌표가 필요 없어 ExecuteLifestyleAction 경로를 타지 않는다
+    // (그쪽은 가구 타겟 필수 방어가 걸려 있어 무타겟이면 즉시 반환).
+    case EAction::StandUp:      ExecuteStandUp(); break;
 
     case EAction::Wait:
         // 즉시형으로 처리(아래 tail에서 OnActionCompleted). duration 기반 실제 대기가 필요하면
@@ -2091,6 +2101,38 @@ void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocatio
 
 // [의도(Why)] 기존에 파편화되어 있던 앉기, 자기, 기도, 춤, 노래, 감정표현 등의 라이프스타일 액션들을
 // 하나의 라우팅 함수로 통합하여 코드 중복을 제거하고 유지보수성을 극대화합니다.
+void UNPCActionComponent::ExecuteStandUp()
+{
+    // Sit/Sleep 의 짝 — 진입 시 **가구 타입**이 자세를 정했듯, 해제는 **현재 자세**가 몽타주를 정한다.
+    // LLM 이 자세를 몰라도(프롬프트에 자세 필드 없음) 단일 StandUp 하나로 앉기·눕기 모두 해제된다.
+    if (!StateComponent)
+    {
+        // 상태 컴포넌트 없으면 자세 개념 자체가 없음 — 즉시 완료(워치독 회피).
+        return;
+    }
+
+    const bool bLie = StateComponent->bIsLie;
+    const bool bSit = StateComponent->bIsSit;
+
+    if (!bLie && !bSit)
+    {
+        // 서 있는데 일어나라는 지시 — 무동작. 가구 없는 Sit 방어와 동일 패턴으로,
+        // bActionAwaitingAsync=false 라 ExecuteInteraction 말미가 즉시 완료 처리(큐 정상 진행).
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: StandUp 무동작 — 앉거나 누운 상태가 아님"),
+            *GetOwnerAgentID());
+        return;
+    }
+
+    // 점유 가구 반납 — 자세와 동일 라이프사이클(§6). BaseLieUp/BaseSitUp 은 플래그만 내리므로
+    // 여기서 반납하지 않으면 가구가 영구 점유로 남아 다른 NPC 가 못 쓴다.
+    ReleaseOccupiedFurniture();
+
+    // 눕기가 앉기보다 우선 — 둘 다 서 있을 수 없는 조합이나 플래그가 어긋난 경우의 방어.
+    // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인(§3).
+    if (bLie) BaseLieUp();
+    else      BaseSitUp();
+}
+
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
 {
     const FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
@@ -2124,12 +2166,12 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
         // 자세 플래그(bIsSit/bIsLie)는 여기서 세우지 않는다 — 도착 후 몽타주 재생 시점
         // (OnMoveActionCompleted)에 세운다. 미리 세우면 이동 실패·중도 Abort 시 앉지도
         // 않았는데 플래그만 true 로 고착된다(Gemini PR#20 high).
-        switch (LifestyleType)
-        {
-            case EAction::Sit:   PendingMoveMediaKey = NPCActionKeys::Interact_SitDown; break;
-            case EAction::Sleep: PendingMoveMediaKey = NPCActionKeys::Interact_LieDown; break;
-            default: break; // Read/Pray 는 가구 경로 미진입(bSitOrSleep 만 여기 도달)
-        }
+        // 자세(몽타주)는 **가구 타입**이 결정 — LLM 이 Sit/Sleep 을 혼동해도(예: 침대에 Sit)
+        // 가구에 맞는 자세로 교정. Seat=앉기(SitDown), Bed=눕기(LieDown).
+        // bIsSit/bIsLie 도 도착 후 BasePlayActionMedia(L548)가 이 MediaKey 기준으로 세운다.
+        PendingMoveMediaKey = (FurnitureTarget->FurnitureType == EFurnitureType::Bed)
+            ? NPCActionKeys::Interact_LieDown
+            : NPCActionKeys::Interact_SitDown;
         BaseMove(Dest, EMoveType::Walk);
         ExecuteTurnTo(Dest, TargetEntity);
         return;

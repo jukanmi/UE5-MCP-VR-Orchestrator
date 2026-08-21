@@ -66,7 +66,7 @@ async def _check_ollama_model() -> None:
                 logger.warning(f"[Startup] Ollama 응답 비정상 (status={r.status_code}) — 서버 미실행 가능")
                 return
             installed = [m["name"] for m in r.json().get("models", [])]
-            required = llm_factory.MODELS[llm_factory.DEFAULT_MODEL]
+            required = llm_factory.MODELS[llm_factory.STAGE2_MODEL]
             if not any(required in m for m in installed):
                 logger.warning(f"[Startup] 기본 모델 '{required}' Ollama에 없음 — 첫 LLM 호출 시 오류 발생 가능")
                 return

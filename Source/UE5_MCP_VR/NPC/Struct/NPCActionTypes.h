@@ -118,6 +118,9 @@ enum class EAction : uint8
     //Lifestyle
 	Sit           UMETA(DisplayName = "Sit"),
 	Sleep         UMETA(DisplayName = "Sleep"),
+	// 자세 해제 — Sit/Sleep 의 짝. 진입만 있고 해제가 없으면 LLM 이 "일어나"를 표현할
+	// 액션이 없어 Sleep 을 반복한다(2026-08-02 Moca 로그 실측).
+	StandUp       UMETA(DisplayName = "StandUp"),
 	Read          UMETA(DisplayName = "Read"),
 	Pray          UMETA(DisplayName = "Pray"),
 	Dance         UMETA(DisplayName = "Dance"),
