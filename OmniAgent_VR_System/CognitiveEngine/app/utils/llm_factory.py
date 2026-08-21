@@ -27,6 +27,37 @@ def _get_structured_client() -> "httpx.AsyncClient":
     return _structured_client
 
 
+def _extract_json_from_thinking(thinking: str) -> str:
+    """클라우드 thinking 모델이 content 를 비우고 thinking 안에 JSON 을 남긴 경우 추출.
+    마지막 { ... } 블록을 탐색 — 모델이 "Thus JSON:" 뒤에 최종 답을 쓰는 패턴."""
+    if not thinking:
+        return ""
+    # 마지막 { 위치부터 역방향으로 matching } 찾기
+    last_open = thinking.rfind("{")
+    if last_open == -1:
+        return ""
+    # last_open 이후 닫는 괄호 균형 맞추기
+    depth = 0
+    for i, ch in enumerate(thinking[last_open:], last_open):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return thinking[last_open : i + 1]
+    return ""
+
+
+def _strip_markdown_json(content: str) -> str:
+    """클라우드 모델이 ```json ... ``` 로 감싸 반환하는 경우 내부 JSON만 추출."""
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        return "\n".join(inner).strip()
+    return stripped
+
+
 # ==============================================================================
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
 # ==============================================================================
@@ -37,22 +68,26 @@ MODELS = {
     "gemma4": "gemma4-12b",
     "mid": "qwen3:8b",  # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
     # 경량 구조화 모델 (JSON 추출 등) — LoRA 파인튜닝판(SPEC_finetune M2, 2026-07-21).
-    # 액션선택 정확도 개선(gold 재현 3/8→8/8, held-out 의도인식 0/6→2/6) — finetune/RESULT.md.
-    # 롤백: "gemma4:e4b" 로 원복(기존 태그 불변).
-    "gemma4_slm": "gemma4-e4b-dialogue-v2",
+    # v3: 3806행 재학습(v2 대비 5배 데이터), gold 재현 6/8→8/8, held-out 0/6→2/6.
+    # 롤백: "gemma4-e4b-dialogue-v2" 로 원복.
+    "gemma4_slm": "gemma4-e4b-dialogue-v3",
     "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 폴백 후보 (경량, 로컬 pull 됨)
     "qwen_slm": "qwen3:1.7b",
     # ---------------------------------------------------------------------------
-    # Ollama 클라우드 모델 — OLLAMA_API_KEY 환경변수 필요 (ollama.com에서 발급)
-    # 사용: get_llm("cloud_qwen") / get_llm("cloud_deepseek") 등
+    # Ollama 클라우드 모델 — ollama.com 계정 로그인 필요 (Ollama 앱에서 인증)
+    # 사용: get_llm("cloud_deepseek_flash") / ollama_structured(model_name="cloud_glm") 등
+    # 주의: 클라우드 모델은 format=schema grammar 강제 미지원 — JSON을 마크다운 블록으로
+    #       감싸 반환. ollama_structured 가 자동 strip 처리하므로 호출 측 변경 불필요.
+    # 2026-08-15 기준 활성 모델 (retired: deepseek-v3.1:671b, qwen3-coder:480b 제거)
     # ---------------------------------------------------------------------------
-    "cloud_qwen": "qwen3-coder:480b-cloud",  # JSON 구조화 최강, 한국어 우수
-    "cloud_deepseek": "deepseek-v3.1:671b-cloud",  # 전술 추론 깊이 우수
-    "cloud_deepseek_flash": "deepseek-v4-flash",  # 빠른 응답 위주
-    "cloud_gpt_large": "gpt-oss:120b-cloud",  # GPT 계열 대형
-    "cloud_gpt_small": "gpt-oss:20b-cloud",  # GPT 계열 경량
+    "cloud_deepseek_flash": "deepseek-v4-flash:cloud",  # 빠른 응답, 284B MoE
+    "cloud_deepseek_pro": "deepseek-v4-pro",  # 전술 추론 깊이 (pull 필요)
+    "cloud_glm": "glm-5.2",  # 한국어 우수, 장기 작업 강점 (pull 필요)
+    "cloud_kimi": "kimi-k3",  # 멀티모달+추론 (pull 필요)
+    "cloud_gpt_large": "gpt-oss:120b-cloud",  # 설치됨, 동작 확인
+    "cloud_gpt_small": "gpt-oss:20b-cloud",  # 미테스트
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
@@ -86,10 +121,11 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
         "gemma4_31b",
         "gemma4_e2b",
         "qwen_slm",
-        # 클라우드 모델 — 동일 Ollama 엔드포인트, OLLAMA_API_KEY 인증 추가됨
-        "cloud_qwen",
-        "cloud_deepseek",
+        # 클라우드 모델 — Ollama 앱 로그인으로 인증
         "cloud_deepseek_flash",
+        "cloud_deepseek_pro",
+        "cloud_glm",
+        "cloud_kimi",
         "cloud_gpt_large",
         "cloud_gpt_small",
     }
@@ -188,9 +224,17 @@ async def ollama_structured(
         resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
         resp.raise_for_status()
         # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
-        content = (resp.json().get("message") or {}).get("content") or ""
+        msg = resp.json().get("message") or {}
+        content = msg.get("content") or ""
+        if not content:
+            # 클라우드 thinking 모델: think=False 무시 → thinking 토큰이 num_predict 소비 후
+            # content 미출력. thinking 필드 마지막 JSON 블록 추출로 폴백.
+            content = _extract_json_from_thinking(msg.get("thinking") or "")
         if not content:
             raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
+        # 클라우드 모델은 format=schema grammar 미강제 → ```json ... ``` 마크다운 래핑.
+        # 로컬 모델은 이미 순수 JSON이므로 strip 무해.
+        content = _strip_markdown_json(content)
         parsed_obj = schema_model.model_validate_json(content)
     except Exception as e:
         _log(content, None, str(e), (time.perf_counter() - started) * 1000)
