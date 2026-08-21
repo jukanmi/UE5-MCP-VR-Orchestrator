@@ -318,6 +318,15 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Actor->GetActorLocation());
                     Perception.DangerScore = FinalDanger;
 
+                    // 척수반사 — Python 왕복 없이 즉시 반응(SPEC_reflex_table).
+                    // danger 게이트 **밖**에서 부른다: 친화 인사처럼 게이트를 못 넘는 자극이
+                    // 반사의 주 대상이기 때문. 관계·거리 판정은 룰이 직접 한다.
+                    if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                    {
+                        ActionComp->TryReflexReact(ESenseType::Sight, FString(), TargetID,
+                            SightBaseDanger, Perception.Distance, Actor->GetActorLocation());
+                    }
+
                     // 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 emergency report·EQS.
                     // 중립/친화(배율로 danger 하락) 감지 시 SLM 반사·전투 포지셔닝 모두 생략.
                     // 플레이어 상호작용은 dialogue(prompt) 경로로 처리.
@@ -412,13 +421,20 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                         EventType.Contains(TEXT("Hit")) ||
                         BaseDanger >= 0.5f;
 
-                    if (bIsCombatNoise)
+                    if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                     {
-                        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                        if (bIsCombatNoise)
                         {
                             TArray<FVector> EnemyLocs;
                             EnemyLocs.Add(Stimulus.StimulusLocation);
                             ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                        }
+                        else
+                        {
+                            // 전투 소음은 위 EQS 엄폐가 전담한다. 반사까지 끼면 즉시형 Scan 이
+                            // 큐 앞을 막아 엄폐 이동이 밀리므로, 반사는 비전투 소음만 받는다.
+                            ActionComp->TryReflexReact(ESenseType::Hearing, EventType, SourceName,
+                                BaseDanger, Perception.Distance, Stimulus.StimulusLocation);
                         }
                     }
                 }

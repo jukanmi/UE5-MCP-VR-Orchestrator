@@ -164,7 +164,9 @@ void UNPCStateComponent::FlushEventReport()
         RefinedEvents.Add(LocalEventQueue[i]);
     }
 
-    FString Payload = UMCPJsonUtils::SerializePerceptionReport(OwnerNPC->AgentID, RefinedEvents);
+    // 반사 이력 동봉(§3.4) — 통보와 같은 배로 보내야 다음 replan 이 "이미 반응함"에서 출발한다.
+    FString Payload = UMCPJsonUtils::SerializePerceptionReport(
+        OwnerNPC->AgentID, RefinedEvents, TEXT(""), PendingReflexAction);
     if (Payload.IsEmpty())
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: Perception 직렬화 실패 — flush 건너뜀"), *OwnerNPC->AgentID);
@@ -192,6 +194,7 @@ void UNPCStateComponent::FlushEventReport()
     // Python 서버가 envelope 타입을 보고 내부에서 SLM Reflex/LLM 전략으로 자동 라우팅한다.
     Manager->SendEventReport(OwnerNPC->AgentID, Payload);
     LocalEventQueue.Empty();
+    PendingReflexAction.Reset(); // 실제 발신된 뒤에만 소비 — WaitingLLM 지연 시엔 다음 flush 로 이월
 }
 
 void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
@@ -242,22 +245,33 @@ void UNPCStateComponent::UpdateAffinity(const FString& TargetID, int32 NewScore)
         *GetOwner()->GetName(), *TargetID, NewScore);
 }
 
-float UNPCStateComponent::GetAffinityMultiplier(const FString& TargetID) const
+ENPCRelation UNPCStateComponent::GetRelation(const FString& TargetID) const
 {
     const int32* Score = AffinityCache.Find(TargetID);
-    if (!Score) 
+    if (!Score)
     {
-        return AffinityDefaultMultiplier; // 캐시(Target)가 없으면 기본 중립 배율 처리
+        return ENPCRelation::Neutral; // 캐시(Target)가 없으면 중립 취급
     }
 
-    if (*Score >= AffinityFriendlyThreshold)
+    if (*Score >= AffinityFriendlyThreshold) return ENPCRelation::Friendly;
+    if (*Score <= AffinityHostileThreshold)  return ENPCRelation::Hostile;
+    return ENPCRelation::Neutral;
+}
+
+float UNPCStateComponent::GetAffinityMultiplier(const FString& TargetID) const
+{
+    // 관계 판정은 GetRelation 단일 소스. 여기선 배율로 옮기기만 한다.
+    switch (GetRelation(TargetID))
     {
-        return 0.0f; // 우호적(Friendly): 위협이 아님
+    case ENPCRelation::Friendly: return 0.0f; // 우호적: 위협이 아님
+    case ENPCRelation::Hostile:  return 1.0f; // 적대적: 최대 위협
+    default:                     return AffinityDefaultMultiplier; // 중립·미캐싱
     }
-    else if (*Score <= AffinityHostileThreshold)
-    {
-        return 1.0f; // 적대적(Hostile): 최대 위협
-    }
-    
-    return AffinityDefaultMultiplier; // 중립(Neutral)
+}
+
+void UNPCStateComponent::NoteReflexAction(EAction ReflexAction)
+{
+    // 한 flush 안에 반사가 여러 번 나면 마지막 것만 남긴다 — LLM 에 필요한 건
+    // "이미 최소 반응을 했다"는 사실이지 반사 전수 목록이 아니다.
+    PendingReflexAction = UEnum::GetDisplayValueAsText(ReflexAction).ToString();
 }

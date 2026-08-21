@@ -47,8 +47,12 @@ logging.basicConfig(
 logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
 
-# SLM Reflex(긴급 반사) 발동 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
-# 이 미만(친화적/저위협 perception)은 반사 생략 → 불필요한 SLM 호출·로그 방지.
+# emergency 통보 게이트 danger 임계. C++ CombatDangerThreshold(0.5) 와 정합.
+# 이 미만(친화적/저위협 perception)은 호감도 감점 대상도 아니라 통보만 하고 끝낸다.
+#
+# 이름이 SLM 인 것은 잔재다 — SLM 반사는 2026-08-19 제거됐고 이 상수는 통보 게이트로 유임됐다.
+# 리네임하지 말 것: env var 키로도 읽히므로 이름을 바꾸면 기존 배포·실행 스크립트의
+# 오버라이드가 **조용히** 무시된다(에러 없이 기본값 0.5 로 돌아감).
 SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
 
 
@@ -266,54 +270,6 @@ async def _process_llm_message(raw_data: str) -> str:
         return json.dumps({"error": "Internal server error", "detail": str(e)})
 
 
-# NOTE: 이전에 존재했던 @app.websocket("/ws/slm") 엔드포인트는 제거됨.
-# 모든 emergency_report는 /ws/llm으로 들어오고, _handle_emergency_report 내부에서
-# _handle_slm_reflex로 자동 라우팅됨 → 단일 채널로 통합.
-
-_REFLEX_FACIAL: dict = {
-    "Attack": "Angry",
-    "Block": "Fear",
-    "Dodge": "Surprised",
-    "Flee": "Fear",
-    "SignalAllies": "Surprised",
-    "Scan": "Surprised",
-}
-
-# Few-shot raw 프롬프트 — gemma e4b thinking 우회 (location_decision 과 동일 패턴).
-# chat template 경유 시 thinking 토큰이 num_predict 예산을 잠식해 response="" 로 잘림
-# (Memo 실측: num_predict=20 에서 done_reason="length" + 빈 응답).
-# raw=true + Answer: 프라이밍으로 다음 한 단어만 생성시킨다.
-_REFLEX_PROMPT = """\
-Task: choose one immediate reaction for an NPC detecting a threat.
-Actions: Attack, Block, Dodge, Flee, SignalAllies, Scan
-Rules: Hostile(affinity<=-30): Attack if close, Dodge/Block if taking damage. \
-Neutral: Scan to assess, SignalAllies if close. Friendly: Scan only.
-
-Example 1:
-Threat: target=Bandit affinity=-60(Hostile) sense=Sight dist=2.5m danger=0.90
-Answer: Attack
-
-Example 2:
-Threat: target=Player affinity=-45(Hostile) sense=Damage dist=1.2m danger=0.95
-Answer: Dodge
-
-Example 3:
-Threat: target=Wolf affinity=0(Neutral) sense=Hearing dist=18.0m danger=0.60
-Answer: Scan
-
-Example 4:
-Threat: target=Stranger affinity=-10(Neutral) sense=Sight dist=6.0m danger=0.75
-Answer: SignalAllies
-
-Example 5:
-Threat: target=Goblin affinity=-70(Hostile) sense=Sight dist=8.0m danger=0.80 others=GoblinArcher(Sight,15.0m)
-Answer: Attack
-
-Example 6:
-Threat: target={target_id} affinity={affinity_score}({affinity_tag}) sense={sense} dist={dist:.1f}m danger={danger:.2f}{extra_lines}
-Answer:"""
-
-
 def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
     """액션 없는 기본 ModeActionRequest JSON — 폴백/무행동 공통 응답."""
     return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
@@ -341,97 +297,24 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
             logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
 
 
-async def _infer_reflex_action(prompt: str) -> str:
-    """SLM raw 호출 → 유효 반사 액션 1개. 파싱/호출 실패 시 안전 폴백 "Scan"."""
-    # list — 여러 키워드 동시 포함 시 폴백 매칭 우선순위를 결정론적으로 고정 (set 순서 비결정 방지).
-    valid = ["Attack", "Block", "Dodge", "Flee", "SignalAllies", "Scan"]
-    try:
-        raw_text, _llm_ms = await _ollama_raw_generate(prompt)
-        logger.info(f"[SLM] Reflex LLM {_llm_ms:.0f}ms raw={raw_text!r}")
-        tokens = raw_text.split()
-        text = tokens[0] if tokens else ""
+def _record_reflex_memory(agent_id: str, reflex_action: str) -> None:
+    """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다 (SPEC_reflex_table §3.4).
 
-        # capitalize() 는 SignalAllies → Signalallies 로 PascalCase 를 깨뜨림 → lower 매핑으로 매칭
-        valid_map = {a.lower(): a for a in valid}
-        if text.lower() in valid_map:
-            return valid_map[text.lower()]
-        if text:
-            # 키워드 검색 폴백 (SLM이 잡담을 끼워넣은 경우)
-            text_l = raw_text.lower()
-            for a in valid:
-                if a.lower() in text_l:
-                    return a
-    except Exception as e:
-        logger.error(f"[SLM] 추론 실패, 안전 폴백(Scan) 사용: {e}")
-    return "Scan"
-
-
-async def _handle_slm_reflex(payload: EmergencyReportPayload) -> str:
+    LLM 은 반사가 일어난 걸 모른다. 기록해두지 않으면 다음 replan 이 '이제 공격을 시작하라'
+    같은 한 박자 늦은 지시를 만든다. 기억에 남겨두면 plan 이 '전투 돌입'이 아니라
+    '전투 지속·전술' 수준에서 시작한다. 전투 승리 보고와 같은 패턴.
     """
-    SLM 반사 행동 결정 (목표 500ms).
-    LangGraph 없이 단일 경량 SLM 호출로 즉각 전투/회피 액션 생성.
-    """
-    from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
+    from .utils.memory_manager import get_memory
 
-    agent_id = payload.agent_id
-    perceptions = payload.perceptions
+    def _write() -> None:
+        try:
+            get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 반사적으로 {reflex_action}을(를) 실행했다.")
+        except Exception as e:
+            # to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다.
+            logger.error(f"[Main] 반사 이력 메모리 기록 실패: {e}")
 
-    if not perceptions:
-        batch = ActionBatch(
-            AgentID=agent_id,
-            Mode="Combat",
-            Actions=[GameAction(ActionType="Scan", FacialState="Surprised", Parameters={})],
-        )
-        return ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch}).model_dump_json()
-
-    # 플레이어 적대 행동에 따른 호감도 감소.
-    # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
-    # 반영된 채 잘리면 호감도가 어중간하게 남는다(다른 상태 쓰기는 전부 spawn_background
-    # 독립 태스크라 취소 전파 없음).
-    await asyncio.shield(_apply_hostile_affinity(agent_id, perceptions))
-
-    top = max(perceptions, key=lambda p: p.danger_score)
-
-    # 가장 위협적인 대상의 현재 호감도 조회 (SLM 프롬프트와 폴백 로직에 사용)
-    top_relation = await db_manager.get_affinity(agent_id, top.target_id) if top.target_id else None
-    top_score = top_relation.affinity_score if top_relation else 0
-    top_tag = top_relation.reputation_tag if top_relation else "Neutral"
-
-    # 한 줄 포맷 유지 — few-shot 예시와 형태가 어긋나면 모델이 형식을 깨기 쉬움.
-    extra_lines = ""
-    if len(perceptions) > 1:
-        others = [f"{p.target_id}({p.sense_type},{p.distance:.1f}m)" for p in perceptions[1:3]]
-        extra_lines = " others=" + ",".join(others)
-
-    prompt = _REFLEX_PROMPT.format(
-        target_id=top.target_id,
-        affinity_score=top_score,
-        affinity_tag=top_tag,
-        sense=top.sense_type,
-        dist=top.distance,
-        danger=top.danger_score,
-        extra_lines=extra_lines,
-    )
-
-    # SLM 결과를 신뢰. 호출 자체가 실패한 예외 상황에만 안전한 기본 액션(Scan)으로 폴백.
-    action_type = await _infer_reflex_action(prompt)
-
-    params: dict = {}
-    if action_type == "Attack":
-        params["target_id"] = top.target_id
-    elif action_type in {"Move", "Flee"}:
-        params["style"] = "Run"
-
-    facial = _REFLEX_FACIAL.get(action_type, "Neutral")
-    batch = ActionBatch(
-        AgentID=agent_id,
-        Mode="Combat",
-        Actions=[GameAction(ActionType=action_type, FacialState=facial, Parameters=params)],
-    )
-    result = ModeActionRequest(Mode="Combat", ActionBatches={agent_id: batch})
-
-    logger.info(f"[SLM] Reflex: {agent_id} → {action_type} (danger={top.danger_score:.2f})")
-    return result.model_dump_json()
+    spawn_background(asyncio.to_thread(_write), label="reflex-memory")
+    logger.info(f"[Main] 반사 이력 기록: npc={agent_id}, action={reflex_action}")
 
 
 async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
@@ -472,21 +355,37 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
 
         logger.info(f"[Main] 긴급 보고 수신. npc={payload.agent_id}, perceptions={len(payload.perceptions)}")
 
+        # ── 반사 이력 기록 ────────────────────────────────────────────
+        # 반사는 UE5 가 이미 실행했다. 여기서 할 일은 그 사실을 기억에 남겨,
+        # 다음 replan 이 "아직 아무것도 안 했다" 전제로 중복 지시를 내리는 것을 막는 것뿐.
+        if payload.reflex_action:
+            _record_reflex_memory(payload.agent_id, payload.reflex_action)
+
         # ── danger 게이트 ──────────────────────────────────────────────
-        # SLM Reflex 는 "긴급 전투(0.5초 반사)" 용. 친화적/저위협(예: 호감도 높은
-        # 플레이어를 시야에 둠, danger<0.5) perception 까지 매번 SLM 을 때리면
-        # 낭비·로그도배. 최고 danger 가 임계 미만이면 반사 생략(무행동).
+        # 임계 미만이면 호감도 감점 대상도 아니다(_apply_hostile_affinity 자체가 danger>=0.5 필터).
         max_danger = max((p.danger_score for p in payload.perceptions), default=0.0)
         if max_danger < SLM_REFLEX_DANGER_THRESHOLD:
             logger.info(
-                f"[Main] 비긴급(maxdanger={max_danger:.2f}<{SLM_REFLEX_DANGER_THRESHOLD}) "
-                f"— SLM Reflex 생략. npc={payload.agent_id}"
+                f"[Main] 비긴급(maxdanger={max_danger:.2f}<{SLM_REFLEX_DANGER_THRESHOLD}) — 통보만. "
+                f"npc={payload.agent_id}"
             )
             return _empty_batch_json()
 
-        # ── [핵심 최적화] 긴급 전투 상황의 0.5초 반사 신경(Reflex) 라우팅 ──
-        logger.info(f"[Main] LangGraph 우회: {payload.agent_id}의 긴급 상황을 SLM Reflex로 즉시 처리합니다.")
-        return await _handle_slm_reflex(payload)
+        # ── 통보 전용 처리 ────────────────────────────────────────────
+        # 반사 판단은 C++ 척수반사 테이블이 0ms 로 끝냈다(SPEC_reflex_table).
+        # 서버는 인지·호감도만 갱신하고 행동은 만들지 않는다 — 후속 행동은
+        # replan 플래그가 강제하는 다음 prompt 의 LLM 몫(combat_victory 와 동일 사상).
+        #
+        # 빈 배치를 돌려주는 것이 핵심이다. 여기서 Mode 를 실어 보내면 C++ 이
+        # 방금 올린 Combat 을 되돌린다 — UE5 쪽에도 빈 배치 Mode 스킵 가드가 있지만,
+        # 애초에 행동 없는 응답이 모드를 바꾸려 들면 안 된다.
+        #
+        # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
+        # 반영된 채 잘리면 호감도가 어중간하게 남는다.
+        await asyncio.shield(_apply_hostile_affinity(payload.agent_id, payload.perceptions))
+
+        logger.info(f"[Main] 긴급 통보 처리 완료(maxdanger={max_danger:.2f}) — 무행동 반환. npc={payload.agent_id}")
+        return _empty_batch_json()
 
     except Exception as e:
         logger.error(f"[Main] _handle_emergency_report 실행 중 치명적 오류: {e}")

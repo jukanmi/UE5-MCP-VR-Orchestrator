@@ -125,6 +125,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void ReportCombatVictory(const FString& DefeatedTargetID);
 
+    /** 척수반사가 방금 실행한 액션을 다음 emergency_report 에 실어 보내도록 표시(SPEC_reflex_table §3.4).
+     *  LLM 이 "이미 반응했다"를 모른 채 replan 하면 한 박자 늦은 중복 지시가 나오기 때문.
+     *  flush 시 1회 소비되고 비워진다. */
+    void NoteReflexAction(EAction ReflexAction);
+
     // --- Affinity (호감도) ---
     
     // [의도(Why)] 파이썬 서버가 계산한 타겟과의 호감도(Affinity)를 로컬 캐싱하여, 퍼셉션(시각/청각) 이벤트 발생 시 대상에 대한 즉각적인 위험도(Multiplier) 판단에 사용합니다.
@@ -144,6 +149,12 @@ public:
     // NPCManager 등이 서버로부터 호감도 업데이트를 받을 때 호출
     UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
     void UpdateAffinity(const FString& TargetID, int32 NewScore);
+
+    /** 호감도 임계값으로 분류한 관계 — 관계 판정의 단일 소유자.
+     *  캐시에 없는 대상(파이썬이 아직 호감도를 안 준 경우)은 Neutral 로 본다.
+     *  GetAffinityMultiplier 는 이 결과를 배율로 옮길 뿐이니, 새 임계 비교를 따로 짜지 말 것. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
+    ENPCRelation GetRelation(const FString& TargetID) const;
 
     // 타겟 ID를 기반으로 호감도에 따른 위험도 배율 반환 (아군: 0.0, 적군: 1.0, 중립: 0.5)
     UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
@@ -220,6 +231,9 @@ private:
     // --- Event Debounce ---
     FTimerHandle EventDebounceTimer;
     TArray<FPerceptionData> LocalEventQueue;
+
+    /** NoteReflexAction 이 채우고 FlushEventReport 가 1회 소비하는 반사 이력(EAction 이름). */
+    FString PendingReflexAction;
 
     UFUNCTION()
     void FlushEventReport();
