@@ -155,7 +155,7 @@ OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/speech/
 OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/gen_*.py
 OmniAgent_VR_System/CognitiveEngine/finetune/deploy/out*/
 OmniAgent_VR_System/CognitiveEngine/finetune/train/outputs/
-OmniAgent_VR_System/CognitiveEngine/finetune/**/unsloth_compiled_cache/
+**/unsloth_compiled_cache/
 *.gguf
 *.parquet
 *.tar.gz
