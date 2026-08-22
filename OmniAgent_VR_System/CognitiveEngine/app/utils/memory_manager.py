@@ -13,7 +13,7 @@ import os
 import json
 import threading
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from .llm_factory import get_llm
 
@@ -29,6 +29,7 @@ MAX_TOKENS_PER_NPC = 2000  # NPC당 최대 토큰 예산 (한글 가중 추정 �
 SUMMARIZE_THRESHOLD = 0.8  # 80% 도달 시 요약 트리거
 # 5→8: 1회 요약당 더 많이 압축 — e2b 호출 횟수와 '요약의 요약' 반복 열화 감소.
 ENTRIES_TO_SUMMARIZE = 8  # 1회 요약 대상 최오래된 항목 수
+SUMMARIZE_DEBOUNCE_S = 10.0  # 요약 idle 디퍼 — 대화가 이어지는 동안 계속 밀림
 # 토큰/문자 비율 (gemma 계열 근사): 한글 0.6, 영문·기호 0.25(=4자/토큰).
 HANGUL_TOKEN_RATIO = 0.6
 OTHER_TOKEN_RATIO = 0.25
@@ -72,6 +73,7 @@ class ConversationMemory:
         self.entries: List[MemoryEntry] = []
         # add_conversation 이 to_thread 로 멀티스레드 실행되므로 동일 NPC 동시 쓰기/파일저장 보호.
         self.lock = threading.Lock()
+        self._summarize_timer: Optional[threading.Timer] = None
         self._load_from_file()
 
     @property
@@ -126,9 +128,30 @@ class ConversationMemory:
         # 메모리 수정 + 파일 저장을 원자적으로 — 동시 쓰기로 인한 파일 손상/유실 방지.
         with self.lock:
             self.entries.append(entry)
-            # 토큰 예산 초과 시 요약으로 압축
-            self._check_and_summarize()
             self._save_to_file()
+            # 토큰 예산 초과 시 요약을 idle 후로 디퍼 — 대화 저장 직후 GPU 경합 방지.
+            threshold = int(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD)
+            if self.estimate_total_tokens() >= threshold:
+                self._schedule_summarize_locked()
+
+    def _schedule_summarize_locked(self):
+        """기존 타이머 취소 후 재예약 — lock 보유 중에만 호출할 것.
+        대화가 이어지는 동안 타이머가 계속 밀린다(디바운스)."""
+        if self._summarize_timer is not None:
+            self._summarize_timer.cancel()
+        t = threading.Timer(SUMMARIZE_DEBOUNCE_S, self._run_deferred_summarize)
+        t.daemon = True  # 프로세스 종료 시 미발화 타이머 유실 허용 — 항목 자체는 이미 저장됨
+        self._summarize_timer = t
+        t.start()
+
+    def _run_deferred_summarize(self):
+        """타이머 콜백 — 워커 스레드에서 실행. lock 획득 후 요약 수행."""
+        with self.lock:
+            self._summarize_timer = None
+            before = len(self.entries)
+            self._check_and_summarize()
+            if len(self.entries) != before:
+                self._save_to_file()
 
     def _check_and_summarize(self):
         """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다."""

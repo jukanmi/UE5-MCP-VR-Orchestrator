@@ -121,6 +121,8 @@ _ws_send_lock = asyncio.Lock()
 # Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
 # TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
 _ollama_client = None
+_last_core_prewarm: float = 0.0
+_CORE_PREWARM_THROTTLE_S = 30.0  # keep_alive(30s) 와 동일 — 윈도 내 중복 웜업 무의미
 
 
 def _get_ollama_client():
@@ -154,6 +156,31 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
     elapsed_ms = (_t.perf_counter() - _llm_start) * 1000.0
     raw_text = (resp.json().get("response") or "").strip()
     return raw_text, elapsed_ms
+
+
+async def _prewarm_core_llm() -> None:
+    """Stage2 12B 를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
+    throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
+    global _last_core_prewarm
+    import time as _t
+
+    now = _t.monotonic()
+    if now - _last_core_prewarm < _CORE_PREWARM_THROTTLE_S:
+        return
+    _last_core_prewarm = now
+    try:
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        model_id = llm_factory.MODELS[llm_factory.STAGE2_MODEL]
+        # prompt 키 없음 = Ollama 로드콜 전용 (342ms) — num_predict=1 생성(3.7s) 아님.
+        # keep_alive 는 llm_factory core 분기 값과 반드시 일치시킬 것 — 다르면 squat 정책 오버라이드.
+        # raise_for_status 하지 말 것 — 4xx/5xx 도 무해 폴백.
+        await _get_ollama_client().post(
+            f"{ollama_base}/api/generate",
+            json={"model": model_id, "keep_alive": "30s"},
+        )
+        logger.info("[Prewarm] 12B core 로드콜 완료")
+    except Exception as exc:
+        logger.warning(f"[Prewarm] 12B 웜업 실패(무해 폴백): {exc}")
 
 
 @app.get("/")
@@ -468,6 +495,11 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     ):
         logger.info("[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)")
         requires_replan = True
+
+    # replan 확정 직후 12B 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
+    # 실패해도 기존 콜드 경로 폴백이므로 오류 전파 없음.
+    if requires_replan:
+        spawn_background(_prewarm_core_llm(), label="core-prewarm")
 
     async with _world_state_lock:
         world_snap = _cached_world_state
