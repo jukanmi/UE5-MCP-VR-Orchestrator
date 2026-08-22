@@ -116,6 +116,8 @@ def update_affinity_sync(source_id: str, target_id: str, score_delta: int, inter
     초회 접근 시에는 데이터가 없을 수 있으므로 이 함수를 쓰기 전에 get_affinity를 먼저 호출했음을 가정함.
     """
     key = (source_id, target_id)
+    # 조회~가감~태그 재계산을 한 락 안에서 처리 — 락을 중간에 놓으면 같은 쌍에 대한
+    # 동시 delta 가 서로를 덮어써 read-modify-write lost update 가 발생한다.
     with _cache_lock:
         relation = _affinity_cache.get(key)
         if relation is None:
@@ -126,34 +128,37 @@ def update_affinity_sync(source_id: str, target_id: str, score_delta: int, inter
             relation = NPCRelation(source_id=source_id, target_id=target_id)
             _affinity_cache[key] = relation
 
-    # 스코어 클램핑 (-100 ~ 100)
-    new_score = relation.affinity_score + score_delta
-    relation.affinity_score = max(-100, min(100, new_score))
+        # 스코어 클램핑 (-100 ~ 100)
+        new_score = relation.affinity_score + score_delta
+        relation.affinity_score = max(-100, min(100, new_score))
 
-    # pydantic v2 필드 validation은 할당시 자동 실행되지 않으므로 수동 변경이 필요하거나,
-    # setter로 동작하게 할 수 있음. 간단하게 수동 재계산:
-    if relation.affinity_score <= -30:
-        relation.reputation_tag = "Hostile"
-    elif relation.affinity_score >= 30:
-        relation.reputation_tag = "Friendly"
-    else:
-        relation.reputation_tag = "Neutral"
+        # pydantic v2 필드 validation은 할당시 자동 실행되지 않으므로 수동 변경이 필요하거나,
+        # setter로 동작하게 할 수 있음. 간단하게 수동 재계산:
+        if relation.affinity_score <= -30:
+            relation.reputation_tag = "Hostile"
+        elif relation.affinity_score >= 30:
+            relation.reputation_tag = "Friendly"
+        else:
+            relation.reputation_tag = "Neutral"
 
-    relation.last_interaction = interaction_summary
-    relation.is_dirty = True
+        relation.last_interaction = interaction_summary
+        relation.is_dirty = True
     logger.debug(f"[DBManager] 캐시 업데이트 (Dirty Mark): {key} -> Score: {relation.affinity_score}")
 
 
 def get_relations_from_cache(source_id: str) -> list:
     """캐시에 있는 source_id의 모든 관계를 동기적으로 반환 (state_update 응답용)."""
+    # 순회 중 to_thread 워커가 키를 추가하면 RuntimeError: dictionary changed size
+    # during iteration — _flush_dirty_cache 와 동일하게 락 하에 스냅샷을 뜬다.
+    with _cache_lock:
+        snapshot = [rel for (src, _), rel in _affinity_cache.items() if src == source_id]
     return [
         {
             "target_id": rel.target_id,
             "affinity_score": rel.affinity_score,
             "reputation_tag": rel.reputation_tag,
         }
-        for (src, _), rel in _affinity_cache.items()
-        if src == source_id
+        for rel in snapshot
     ]
 
 
@@ -177,7 +182,8 @@ async def set_affinity_direct(
         last_interaction=interaction_summary,
         is_dirty=False,
     )
-    _affinity_cache[(source_id, target_id)] = relation
+    with _cache_lock:
+        _affinity_cache[(source_id, target_id)] = relation
 
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -203,7 +209,8 @@ async def set_affinity_direct(
 
 async def delete_affinity(source_id: str, target_id: str) -> None:
     """호감도 레코드 삭제 (캐시 + DB)."""
-    _affinity_cache.pop((source_id, target_id), None)
+    with _cache_lock:
+        _affinity_cache.pop((source_id, target_id), None)
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM npc_relations WHERE source_id=? AND target_id=?", (source_id, target_id))

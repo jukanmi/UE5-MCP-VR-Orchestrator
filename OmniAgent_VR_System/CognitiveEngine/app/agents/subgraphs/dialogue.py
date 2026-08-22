@@ -227,7 +227,10 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     clean_query = _vr_get(vr_context, "voice_transcript", "") or ""
 
     rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
-    chat_history = get_conversation_context(npc_id, k=5)
+    # 캐시 미스 시 ConversationMemory._load_from_file 이 동기 JSON read 를 수행한다.
+    # 위 load_persona/retrieve_context 와 마찬가지로 오프로드하지 않으면 이벤트 루프가
+    # 멈춰 동시 처리 중인 다른 NPC 까지 전부 지연된다.
+    chat_history = await asyncio.to_thread(get_conversation_context, npc_id, 5)
 
     # NPC 인벤토리 — UE5 가 prompt 마다 동적 전송(npc_id → items). 없으면 "None".
     # 주입 목적: NPC 가 보유 아이템만 GiveItem/HandObject 하도록 근거 제공.
