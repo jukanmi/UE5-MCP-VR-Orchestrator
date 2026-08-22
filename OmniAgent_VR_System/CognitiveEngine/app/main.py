@@ -11,7 +11,7 @@ import yaml
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ValidationError
-from typing import Optional
+from typing import Dict, Optional
 from contextlib import asynccontextmanager
 
 from .schemas.envelope import (
@@ -111,7 +111,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-_cached_world_state: Optional[dict] = None
+# state_update 는 NPC 마다 자기 owner_agent_id 기준 payload 를 보낸다. 전역 1개로 두면
+# 마지막에 보고한 NPC 의 perception 이 다른 NPC 의 프롬프트에 주입돼 지식 격리가 깨진다.
+# owner_agent_id(소문자) → payload 로 분리 보관하고, 프롬프트 조립 시 대상 NPC 것만 꺼낸다.
+_cached_world_states: Dict[str, dict] = {}
 _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
@@ -506,7 +509,8 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         spawn_background(_prewarm_core_llm(), label="core-prewarm")
 
     async with _world_state_lock:
-        world_snap = _cached_world_state
+        # 대상 NPC 자신의 최신 상태만 주입 — 없으면 None(프롬프트에서 "Unknown" 처리).
+        world_snap = _cached_world_states.get(target_npc_from_payload.lower()) if target_npc_from_payload else None
     async with _action_history_lock:
         history_snap = list(_failed_action_history)
         _failed_action_history.clear()
@@ -651,12 +655,10 @@ async def _dispatch_npc_audio(
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:
-    global _cached_world_state
-
     try:
         state_payload = envelope.parse_state_update_payload()
         async with _world_state_lock:
-            _cached_world_state = state_payload.model_dump()
+            _cached_world_states[state_payload.owner_agent_id.lower()] = state_payload.model_dump()
         logger.debug(
             f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, threat_level={state_payload.threat_level}"
         )
