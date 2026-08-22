@@ -407,6 +407,10 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         # 방금 올린 Combat 을 되돌린다 — UE5 쪽에도 빈 배치 Mode 스킵 가드가 있지만,
         # 애초에 행동 없는 응답이 모드를 바꾸려 들면 안 된다.
         #
+        # 전투 진입 확정 — 다음 replan 이 12B 를 필요로 하기 전에 선제 웜업.
+        # replan 훅보다 리드타임이 길어 11s 로드가 완전히 숨을 가능성이 있는 유일 지점.
+        spawn_background(_prewarm_core_llm(), label="core-prewarm")
+
         # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
         # 반영된 채 잘리면 호감도가 어중간하게 남는다.
         await asyncio.shield(_apply_hostile_affinity(payload.agent_id, payload.perceptions))
