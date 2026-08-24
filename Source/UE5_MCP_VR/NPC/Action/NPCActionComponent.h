@@ -41,6 +41,7 @@ class AFurnitureActor;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
+class UInventoryComponent;
 class UAnimMontage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
@@ -660,7 +661,12 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount);
-    
+
+    /** GiveItem 수령처 해석 — TargetActor 의 UInventoryComponent 우선, 없으면 플레이어 폰 폴백.
+     *  NPC↔NPC 전달도 같은 경로를 탄다. */
+    UInventoryComponent* ResolveReceiverInventory(AActor* TargetActor) const;
+
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteComfort(AActor* TargetActor);
     

@@ -15,6 +15,8 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
+#include "../../Inventory/InventoryComponent.h"
 #include "../../Inventory/ItemManager.h"
 #include "Perception/AISense_Hearing.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
@@ -2119,18 +2121,72 @@ void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveI
 
 void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount)
 {
-    if (InventoryComponent && InventoryComponent->HasItem(ItemID, Amount))
+    if (!InventoryComponent || !InventoryComponent->HasItem(ItemID, Amount))
     {
-        InventoryComponent->RemoveItem(ItemID, Amount);
-        ExecuteTurnTo(FVector::ZeroVector, TargetActor);
-        BasePlayActionMedia(TEXT("Give"));
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달: %s"), *ItemID);
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음: %s"), *ItemID);
+        return;
     }
-    else { UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음: %s"), *ItemID); }
+
+    // 차감 전에 원본 데이터·수령처를 모두 확보 — 하나라도 없으면 건드리지 않는다(증발 방지).
+    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+
+    FItemData Data;
+    if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 전달 중단 — 아이템 데이터 없음: %s"), *ItemID);
+        return;
+    }
+
+    UInventoryComponent* ReceiverInv = ResolveReceiverInventory(TargetActor);
+    if (!ReceiverInv)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전달 중단 — 수령 대상 인벤토리 없음: %s"), *ItemID);
+        return;
+    }
+
+    // 수령 실패(무게·슬롯 초과)면 NPC 보유분을 그대로 두고 종료.
+    if (!ReceiverInv->AddItem(Data, Amount))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달 실패(수령 인벤 공간·무게 부족): %s"), *ItemID);
+        return;
+    }
+
+    InventoryComponent->RemoveItem(ItemID, Amount);
+    ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+    BasePlayActionMedia(TEXT("Give"));
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달: %s x%d"), *ItemID, Amount);
+}
+
+UInventoryComponent* UNPCActionComponent::ResolveReceiverInventory(AActor* TargetActor) const
+{
+    // 1순위 — LLM 이 지정한 대상 액터(NPC↔NPC 전달도 그대로 동작).
+    if (IsValid(TargetActor))
+    {
+        if (UInventoryComponent* Inv = TargetActor->FindComponentByClass<UInventoryComponent>())
+        {
+            return Inv;
+        }
+    }
+
+    // 2순위 — 대상 미지정/인벤 없음이면 플레이어 폰 폴백(GiveItem 은 대부분 플레이어 대상).
+    if (UWorld* World = GetWorld())
+    {
+        if (APlayerController* PC = World->GetFirstPlayerController())
+        {
+            if (APawn* PlayerPawn = PC->GetPawn())
+            {
+                return PlayerPawn->FindComponentByClass<UInventoryComponent>();
+            }
+        }
+    }
+    return nullptr;
 }
 
 void UNPCActionComponent::ExecuteComfort(AActor* TargetActor) { BaseComfort(TargetActor); }
 
+// HandObject = "손에 들어 보여주기" 연출 전용 — 소유권은 이동하지 않는다.
+// 실제 아이템 이전은 GiveItem 이 담당(여기서 플레이어 인벤에 넣으면 아이템이 복제됨).
 void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 {
     if (InventoryComponent && InventoryComponent->HasItem(ItemID))
