@@ -159,6 +159,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_VoiceInput;
 
+    /** 왼손 Y버튼 → 인벤토리 HUD 열기/닫기 토글 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_InventoryToggle;
+
     // ============================================================================
     // 이동 설정
     // ============================================================================
@@ -170,6 +174,14 @@ public:
     /** 조이스틱 회전 입력 데드존. 이 미만은 무시. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "0.05", ClampMax = "0.5"))
     float TurnInputDeadzone = 0.15f;
+
+    /** 달리기 진입 스틱 magnitude 임계. 별도 입력 액션 없이 스틱을 끝까지 밀면 Sprint. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Locomotion", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+    float SprintThreshold = 0.9f;
+
+    /** 현재 달리는 중인지. Standing 자세에서만 SprintSpeed 가 적용됨(ApplyMovementSpeed). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Locomotion")
+    bool bIsSprinting = false;
 
     // ============================================================================
     // 전투
@@ -380,12 +392,18 @@ public:
 private:
     // --- 입력 핸들러 ---
     void OnMove(const FInputActionValue& Value);
+
+    /** 스틱 놓음(Completed/Canceled) — Sprint 해제. OnMove 는 Triggered 전용이라
+     *  입력이 0이 되는 순간 호출되지 않으므로 해제는 반드시 여기서. */
+    void OnMoveReleased(const FInputActionValue& Value);
+
     void OnTurn(const FInputActionValue& Value);
     void OnTurnReleased(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
     void OnInteract(const FInputActionValue& Value);
     void OnVoiceStart(const FInputActionValue& Value);
     void OnVoiceStop(const FInputActionValue& Value);
+    void OnInventoryToggle(const FInputActionValue& Value);
 
     /** ASR transcript 확정 → NPCManager::SendPlayerDialogue 로 전달. */
     void HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript);
@@ -399,6 +417,9 @@ private:
 
     /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
     float TurnAxisInput = 0.f;
+
+    /** Sprint 상태 갱신 — 값이 바뀔 때만 ApplyMovementSpeed() 재적용(매 Triggered 마다 쓰기 방지). */
+    void SetSprinting(bool bNewSprinting);
 
     // --- 자세 시스템 내부 상태 ---
 
@@ -449,6 +470,20 @@ private:
 
     /** 기상 — 점유 해제 + 좌석 전방 반보 이탈(의자 콜리전 끼임 방지). */
     void StandUpFromFurniture();
+
+    // --- 월드 아이템 픽업 (Interact) ---
+    /** Interact 시 픽업 판정 반경(cm) — 이내 최근접 ADroppedItemBase 를 줍는다. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (ClampMin = "30.0", ClampMax = "300.0"))
+    float PickupInteractRange = 150.f;
+
+    /** 반경 내 최근접 드랍 아이템을 인벤토리로 획득. 성공 시 true — OnInteract 가 착석·NPC 감지 생략.
+     *  탐색은 ItemManager::GetItemsInRange(등록된 월드 아이템 풀) — NPC 픽업과 동일 원천. */
+    bool TryPickupNearby();
+
+    // --- 인벤토리 HUD ---
+    /** 인벤토리 패널 열림 상태 — HUD 위젯과 동기. */
+    UPROPERTY(BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
+    bool bInventoryOpen = false;
 
     /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
     UFUNCTION(Exec)

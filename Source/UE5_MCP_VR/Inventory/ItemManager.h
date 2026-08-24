@@ -15,7 +15,9 @@ struct FDroppedItemData
     FString ItemInstanceID;
 
     // DataAsset ID 혹은 클래스 식별자 (어떤 종류의 아이템인지 명시)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Item")
+    // EditAnywhere — 월드에 직접 배치한 드랍 아이템의 종류를 에디터에서 지정해야 픽업 시 DataTable 조회가 된다.
+    // (InstanceID/ItemActor 는 BeginPlay 가 발급하므로 계속 읽기 전용)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Item")
     FString ItemTemplateID;
 
     // 실제 월드에 스폰된 액터 포인터 (Dangling 방지를 위해 코드에서 IsValid 체크 필수)

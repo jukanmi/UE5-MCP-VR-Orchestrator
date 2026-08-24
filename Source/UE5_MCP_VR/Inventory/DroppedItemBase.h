@@ -34,6 +34,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Data")
     FDroppedItemData ItemData;
 
+    // 이 액터 하나가 나타내는 수량. 획득 시 인벤토리에 이 개수만큼 들어갑니다(포션 3개 묶음 등).
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Data", meta = (ClampMin = "1"))
+    int32 Amount = 1;
+
     //외부(NPC, Player) 액터가 이 아이템을 획득했을 때 파괴 동작 수동 호출
     UFUNCTION(BlueprintCallable, Category = "Item|Action")
     void ConsumeItem();

@@ -32,6 +32,8 @@
 #include "VoiceInputComponent.h"
 #include "../NPC/Struct/NPCActionKeys.h"
 #include "../Inventory/InventoryComponent.h"
+#include "../Inventory/DroppedItemBase.h"
+#include "../Inventory/ItemManager.h"
 #include "../UI/PlayerHUDWidget.h"
 #include "Blueprint/UserWidget.h"
 
@@ -426,7 +428,13 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
-        if (IA_Move)          EIC->BindAction(IA_Move,          ETriggerEvent::Triggered, this, &AVRPawn::OnMove);
+        if (IA_Move)
+        {
+            EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &AVRPawn::OnMove);
+            // Triggered 는 입력이 0이 되면 안 오므로, Sprint 해제는 Completed/Canceled 에서.
+            EIC->BindAction(IA_Move, ETriggerEvent::Completed, this, &AVRPawn::OnMoveReleased);
+            EIC->BindAction(IA_Move, ETriggerEvent::Canceled,  this, &AVRPawn::OnMoveReleased);
+        }
         if (IA_SnapTurn)
         {
             // 부드러운 연속 회전 — Triggered로 입력값 갱신, Completed/Canceled에서 0 리셋.
@@ -443,6 +451,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
             EIC->BindAction(IA_VoiceInput, ETriggerEvent::Completed, this, &AVRPawn::OnVoiceStop);
             EIC->BindAction(IA_VoiceInput, ETriggerEvent::Canceled,  this, &AVRPawn::OnVoiceStop);
         }
+        if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
     }
 }
 
@@ -453,10 +462,21 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AVRPawn::OnMove(const FInputActionValue& Value)
 {
     // 착석 중 스틱 이동 잠금 — 기상은 Interact 재입력(토글)만.
-    if (SeatedFurniture.IsValid()) return;
+    if (SeatedFurniture.IsValid())
+    {
+        SetSprinting(false);
+        return;
+    }
 
     FVector2D Input = Value.Get<FVector2D>();
-    if (Input.IsNearlyZero()) return;
+    if (Input.IsNearlyZero())
+    {
+        SetSprinting(false);
+        return;
+    }
+
+    // 스틱을 끝까지 밀면 달리기 — 별도 입력 액션 없이 magnitude 로만 판정.
+    SetSprinting(Input.Size() > SprintThreshold);
 
     // HMD Yaw 기준으로 이동 방향 계산 (컨트롤러 회전이 아닌 시선 방향)
     const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
@@ -468,6 +488,20 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
 
     RemoveStateTag(TAG_State_Idle);
     AddStateTag(TAG_State_Action_Common_Move);
+}
+
+void AVRPawn::OnMoveReleased(const FInputActionValue& /*Value*/)
+{
+    SetSprinting(false);
+}
+
+void AVRPawn::SetSprinting(bool bNewSprinting)
+{
+    if (bIsSprinting == bNewSprinting) return;
+
+    bIsSprinting = bNewSprinting;
+    // Crouching/Prone 은 ApplyMovementSpeed 가 자세 분기에서 자체 속도를 쓰므로 Sprint 가 자동 억제된다.
+    ApplyMovementSpeed();
 }
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
@@ -690,6 +724,12 @@ void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
         return;
     }
 
+    // 근접 드랍 아이템 획득 — 착석·NPC 감지보다 우선(발밑 아이템을 두고 앉는 오작동 방지).
+    if (TryPickupNearby())
+    {
+        return;
+    }
+
     // 근접 빈 가구가 있으면 착석 우선, 없으면 기존 NPC 대화 타겟팅.
     if (TrySitOnNearbyFurniture())
     {
@@ -697,6 +737,63 @@ void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
     }
 
     DetectNearbyNPC();
+}
+
+bool AVRPawn::TryPickupNearby()
+{
+    if (!Inventory) return false;
+
+    UGameInstance* GI = GetGameInstance();
+    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    if (!ItemManager) return false;
+
+    // 등록된 월드 아이템 풀에서 반경 내 후보 조회 — NPC ExecutePickUp 과 동일 원천.
+    const FVector Origin = GetActorLocation();
+    ADroppedItemBase* Nearest = nullptr;
+    float NearestDistSq = TNumericLimits<float>::Max();
+
+    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(Origin, PickupInteractRange))
+    {
+        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
+        if (!IsValid(Dropped)) continue;
+
+        const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
+        if (DistSq < NearestDistSq)
+        {
+            NearestDistSq = DistSq;
+            Nearest = Dropped;
+        }
+    }
+    if (!Nearest) return false;
+
+    // TemplateID → 마스터 DataTable 원본 데이터. 미등록 ID 면 줍지 않고 남겨둔다.
+    FItemData Data;
+    if (!ItemManager->GetItemDataByID(Nearest->ItemData.ItemTemplateID, Data))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 픽업 실패 — 아이템 데이터 없음: %s"),
+            *Nearest->ItemData.ItemTemplateID);
+        return false;
+    }
+
+    // 무게/슬롯 초과 시 실패 — 월드 액터를 남겨 다시 시도할 수 있게 한다.
+    if (!Inventory->AddItem(Data, Nearest->Amount))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업 실패(공간·무게 부족): %s"), *Data.ItemID);
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업: %s x%d"), *Data.ItemID, Nearest->Amount);
+    // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
+    Nearest->ConsumeItem();
+    // HUD 갱신은 Inventory->OnInventoryChanged → PlayerHUDWidget 델리게이트가 자동 처리.
+    return true;
+}
+
+void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
+{
+    if (!HUDWidget) return;
+
+    bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
 }
 
 bool AVRPawn::TrySitOnNearbyFurniture()
@@ -841,7 +938,8 @@ void AVRPawn::ApplyMovementSpeed()
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
-        MC->MaxWalkSpeed = Base;
+        // Sprint 는 선 자세에서만 — 웅크림/포복은 아래 분기가 각자 속도를 덮어써 자동 억제.
+        MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base;
         break;
     case EVRPosture::Crouching:
         MC->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed;

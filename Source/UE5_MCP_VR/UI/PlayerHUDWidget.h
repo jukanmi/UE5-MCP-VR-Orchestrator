@@ -18,6 +18,7 @@
 
 class UProgressBar;
 class UTextBlock;
+class UWidget;
 class UInventoryComponent;
 
 UCLASS()
@@ -67,6 +68,29 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
     void RequestInventoryRefresh();
 
+    // --- Inventory 열기/닫기 ---
+
+    /** 인벤토리 패널 — WBP 에 "InventoryPanel" 이름 위젯 배치 시 자동 바인딩(선택).
+     *  바인딩되면 C++ 가 Visible/Collapsed 를 직접 토글하므로 WBP 구현이 불필요. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UWidget* InventoryPanel;
+
+    /** 현재 인벤토리 패널이 열려 있는지. */
+    UFUNCTION(BlueprintPure, Category = "HUD|Inventory")
+    bool IsInventoryVisible() const { return bInventoryVisible; }
+
+    /** 인벤토리 패널 표시 상태 지정. 열 때 슬롯 UI 를 1회 갱신한다. */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
+    void SetInventoryPanelVisible(bool bVisible);
+
+    /** 열림/닫힘 토글 — 토글 후의 상태를 반환. */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
+    bool ToggleInventoryVisibility();
+
+    /** 표시 상태 변경 알림 — InventoryPanel 미바인딩 시 WBP 가 직접 패널을 처리. */
+    UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Inventory")
+    void OnInventoryPanelVisibilityChanged(bool bVisible);
+
 protected:
     /** 소유 폰 캐시 (NativeConstruct 에서 1회 해석). */
     UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -77,4 +101,8 @@ protected:
     void TryBindInventoryDelegate();
 
     bool bInventoryDelegateBound = false;
+
+    /** 인벤토리 패널 표시 상태 — 시작은 닫힘. */
+    UPROPERTY(BlueprintReadOnly, Category = "HUD|Inventory")
+    bool bInventoryVisible = false;
 };

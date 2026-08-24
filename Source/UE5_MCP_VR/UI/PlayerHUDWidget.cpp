@@ -2,6 +2,7 @@
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
 #include "../Core/Entity.h"               // IPlayerBase / UPlayerBase
 #include "../Inventory/InventoryComponent.h"
@@ -18,6 +19,9 @@ void UPlayerHUDWidget::NativeConstruct()
 
     // 초기 인벤토리 UI 1회 구성.
     RequestInventoryRefresh();
+
+    // 인벤토리 패널은 닫힌 상태로 시작 — WBP 에서 Hidden 지정을 깜빡해도 코드가 확정.
+    SetInventoryPanelVisible(false);
 }
 
 void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -103,6 +107,35 @@ TArray<FInventorySlot> UPlayerHUDWidget::GetInventorySlots() const
 void UPlayerHUDWidget::RequestInventoryRefresh()
 {
     OnInventoryUpdated();
+}
+
+// ============================================================================
+// Inventory — 열기/닫기
+// ============================================================================
+
+void UPlayerHUDWidget::SetInventoryPanelVisible(bool bVisible)
+{
+    bInventoryVisible = bVisible;
+
+    if (InventoryPanel)
+    {
+        // Collapsed — 닫힌 패널이 레이아웃 공간을 먹지 않게(HP 바 밀림 방지).
+        InventoryPanel->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    }
+
+    // 닫힌 동안의 변경분을 열 때 한 번에 반영.
+    if (bVisible)
+    {
+        RequestInventoryRefresh();
+    }
+
+    OnInventoryPanelVisibilityChanged(bVisible);
+}
+
+bool UPlayerHUDWidget::ToggleInventoryVisibility()
+{
+    SetInventoryPanelVisible(!bInventoryVisible);
+    return bInventoryVisible;
 }
 
 void UPlayerHUDWidget::TryBindInventoryDelegate()
