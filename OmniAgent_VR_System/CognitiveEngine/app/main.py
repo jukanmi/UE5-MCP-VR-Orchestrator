@@ -11,7 +11,7 @@ import yaml
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ValidationError
-from typing import Optional
+from typing import Dict, Optional
 from contextlib import asynccontextmanager
 
 from .schemas.envelope import (
@@ -111,7 +111,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-_cached_world_state: Optional[dict] = None
+# state_update 는 NPC 마다 자기 owner_agent_id 기준 payload 를 보낸다. 전역 1개로 두면
+# 마지막에 보고한 NPC 의 perception 이 다른 NPC 의 프롬프트에 주입돼 지식 격리가 깨진다.
+# owner_agent_id(소문자) → payload 로 분리 보관하고, 프롬프트 조립 시 대상 NPC 것만 꺼낸다.
+_cached_world_states: Dict[str, dict] = {}
 _failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
 _action_history_lock = asyncio.Lock()
@@ -121,6 +124,8 @@ _ws_send_lock = asyncio.Lock()
 # Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
 # TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
 _ollama_client = None
+_last_core_prewarm: float = 0.0
+_CORE_PREWARM_THROTTLE_S = 30.0  # keep_alive(30s) 와 동일 — 윈도 내 중복 웜업 무의미
 
 
 def _get_ollama_client():
@@ -154,6 +159,31 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
     elapsed_ms = (_t.perf_counter() - _llm_start) * 1000.0
     raw_text = (resp.json().get("response") or "").strip()
     return raw_text, elapsed_ms
+
+
+async def _prewarm_core_llm() -> None:
+    """Stage2 12B 를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
+    throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
+    global _last_core_prewarm
+    import time as _t
+
+    now = _t.monotonic()
+    if now - _last_core_prewarm < _CORE_PREWARM_THROTTLE_S:
+        return
+    _last_core_prewarm = now
+    try:
+        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        model_id = llm_factory.MODELS[llm_factory.STAGE2_MODEL]
+        # prompt 키 없음 = Ollama 로드콜 전용 (342ms) — num_predict=1 생성(3.7s) 아님.
+        # keep_alive 는 llm_factory core 분기 값과 반드시 일치시킬 것 — 다르면 squat 정책 오버라이드.
+        # raise_for_status 하지 말 것 — 4xx/5xx 도 무해 폴백.
+        await _get_ollama_client().post(
+            f"{ollama_base}/api/generate",
+            json={"model": model_id, "keep_alive": "30s"},
+        )
+        logger.info("[Prewarm] 12B core 로드콜 완료")
+    except Exception as exc:
+        logger.warning(f"[Prewarm] 12B 웜업 실패(무해 폴백): {exc}")
 
 
 @app.get("/")
@@ -380,6 +410,10 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         # 방금 올린 Combat 을 되돌린다 — UE5 쪽에도 빈 배치 Mode 스킵 가드가 있지만,
         # 애초에 행동 없는 응답이 모드를 바꾸려 들면 안 된다.
         #
+        # 전투 진입 확정 — 다음 replan 이 12B 를 필요로 하기 전에 선제 웜업.
+        # replan 훅보다 리드타임이 길어 11s 로드가 완전히 숨을 가능성이 있는 유일 지점.
+        spawn_background(_prewarm_core_llm(), label="core-prewarm")
+
         # shield: WS 끊김으로 이 태스크가 취소돼도 감점 루프는 끝까지 — 일부 perception 만
         # 반영된 채 잘리면 호감도가 어중간하게 남는다.
         await asyncio.shield(_apply_hostile_affinity(payload.agent_id, payload.perceptions))
@@ -469,8 +503,14 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         logger.info("[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)")
         requires_replan = True
 
+    # replan 확정 직후 12B 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
+    # 실패해도 기존 콜드 경로 폴백이므로 오류 전파 없음.
+    if requires_replan:
+        spawn_background(_prewarm_core_llm(), label="core-prewarm")
+
     async with _world_state_lock:
-        world_snap = _cached_world_state
+        # 대상 NPC 자신의 최신 상태만 주입 — 없으면 None(프롬프트에서 "Unknown" 처리).
+        world_snap = _cached_world_states.get(target_npc_from_payload.lower()) if target_npc_from_payload else None
     async with _action_history_lock:
         history_snap = list(_failed_action_history)
         _failed_action_history.clear()
@@ -615,12 +655,10 @@ async def _dispatch_npc_audio(
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:
-    global _cached_world_state
-
     try:
         state_payload = envelope.parse_state_update_payload()
         async with _world_state_lock:
-            _cached_world_state = state_payload.model_dump()
+            _cached_world_states[state_payload.owner_agent_id.lower()] = state_payload.model_dump()
         logger.debug(
             f"[Main] 월드 상태 캐시 갱신 완료. msg_id={envelope.msg_id}, threat_level={state_payload.threat_level}"
         )

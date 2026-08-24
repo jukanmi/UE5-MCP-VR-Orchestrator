@@ -13,7 +13,7 @@ import os
 import json
 import threading
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from .llm_factory import get_llm
 
@@ -29,6 +29,7 @@ MAX_TOKENS_PER_NPC = 2000  # NPC당 최대 토큰 예산 (한글 가중 추정 �
 SUMMARIZE_THRESHOLD = 0.8  # 80% 도달 시 요약 트리거
 # 5→8: 1회 요약당 더 많이 압축 — e2b 호출 횟수와 '요약의 요약' 반복 열화 감소.
 ENTRIES_TO_SUMMARIZE = 8  # 1회 요약 대상 최오래된 항목 수
+SUMMARIZE_DEBOUNCE_S = 10.0  # 요약 idle 디퍼 — 대화가 이어지는 동안 계속 밀림
 # 토큰/문자 비율 (gemma 계열 근사): 한글 0.6, 영문·기호 0.25(=4자/토큰).
 HANGUL_TOKEN_RATIO = 0.6
 OTHER_TOKEN_RATIO = 0.25
@@ -72,6 +73,10 @@ class ConversationMemory:
         self.entries: List[MemoryEntry] = []
         # add_conversation 이 to_thread 로 멀티스레드 실행되므로 동일 NPC 동시 쓰기/파일저장 보호.
         self.lock = threading.Lock()
+        self._summarize_timer: Optional[threading.Timer] = None
+        # 요약은 락 밖에서 LLM 을 호출하므로 그 사이 타이머가 또 발화할 수 있다.
+        # 중복 요약(같은 항목 이중 압축) 방지용 진행 플래그.
+        self._summarizing: bool = False
         self._load_from_file()
 
     @property
@@ -126,36 +131,88 @@ class ConversationMemory:
         # 메모리 수정 + 파일 저장을 원자적으로 — 동시 쓰기로 인한 파일 손상/유실 방지.
         with self.lock:
             self.entries.append(entry)
-            # 토큰 예산 초과 시 요약으로 압축
-            self._check_and_summarize()
             self._save_to_file()
+            # 토큰 예산 초과 시 요약을 idle 후로 디퍼 — 대화 저장 직후 GPU 경합 방지.
+            threshold = int(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD)
+            if self.estimate_total_tokens() >= threshold:
+                self._schedule_summarize_locked()
 
-    def _check_and_summarize(self):
-        """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다."""
+    def _schedule_summarize_locked(self):
+        """기존 타이머 취소 후 재예약 — lock 보유 중에만 호출할 것.
+        대화가 이어지는 동안 타이머가 계속 밀린다(디바운스)."""
+        if self._summarize_timer is not None:
+            self._summarize_timer.cancel()
+        t = threading.Timer(SUMMARIZE_DEBOUNCE_S, self._run_deferred_summarize)
+        t.daemon = True  # 프로세스 종료 시 미발화 타이머 유실 허용 — 항목 자체는 이미 저장됨
+        self._summarize_timer = t
+        t.start()
+
+    def _run_deferred_summarize(self):
+        """타이머 콜백 — 워커 스레드에서 실행.
+
+        WHY 락을 통째로 잡지 않는가: 요약은 내부에서 llm.invoke(최대 30초 블로킹)를
+        호출한다. 그 구간에 self.lock 을 쥐고 있으면 같은 NPC 의 add_entry 가 전부
+        30초씩 대기해 대화 저장이 멈춘다. 락은 짧은 리스트 조작에만 잡는다.
+        """
+        with self.lock:
+            self._summarize_timer = None
+            if self._summarizing:
+                # 이전 요약이 LLM 대기 중 — 중복 실행하면 같은 항목을 두 번 압축한다.
+                return
+            self._summarizing = True
+        try:
+            if self._check_and_summarize():
+                with self.lock:
+                    self._save_to_file()
+        finally:
+            with self.lock:
+                self._summarizing = False
+
+    def _check_and_summarize(self) -> bool:
+        """토큰 예산이 임계치를 초과했는지 확인하고, 임계치 아래로 내려올 때까지 반복 요약한다.
+
+        반환: 항목이 실제로 압축됐으면 True(호출자가 파일 저장). 락 미보유 상태로 호출할 것.
+        """
         threshold = int(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD)
+        changed = False
 
-        while self.estimate_total_tokens() >= threshold:
-            non_summary_count = sum(1 for e in self.entries if not e.is_summary)
-            if non_summary_count < ENTRIES_TO_SUMMARIZE:
-                # 요약할 non-summary 항목이 부족하면 더 이상 진행 불가
-                break
-            current_tokens = self.estimate_total_tokens()
+        while True:
+            with self.lock:
+                current_tokens = self.estimate_total_tokens()
+                if current_tokens < threshold:
+                    break
+                non_summary_count = sum(1 for e in self.entries if not e.is_summary)
+                if non_summary_count < ENTRIES_TO_SUMMARIZE:
+                    # 요약할 non-summary 항목이 부족하면 더 이상 진행 불가
+                    break
             print(f"[Memory] {self.agent_id} 토큰 임계치 도달 ({current_tokens}/{MAX_TOKENS_PER_NPC}), 요약 중...")
-            self._summarize_oldest_entries()
+            if not self._summarize_oldest_entries():
+                # 요약 실패(LLM 에러 등) — 무한 루프 방지를 위해 중단
+                break
+            changed = True
+        return changed
 
-    def _summarize_oldest_entries(self):
+    def _summarize_oldest_entries(self) -> bool:
         """
         오래된 non-summary 항목 + 기존 summary 항목을 모두 묶어 1개 summary로 압축.
         WHY: summary를 누적 추가하면 summary끼리 토큰을 잠식해 무한 요약 루프가 발생함.
              항상 summary가 최대 1개만 유지되도록 기존 summary를 새 요약에 병합한다.
+
+        3단계 구성 — 압축 대상 스냅샷(락) → LLM 호출(락 밖) → 스플라이스(락).
+        반환: 실제로 압축했으면 True.
         """
-        non_summary = [e for e in self.entries if not e.is_summary]
+        # 1) 락 하에 압축 대상만 스냅샷 — 짧은 리스트 조작뿐이라 대기가 길지 않다.
+        with self.lock:
+            non_summary = [e for e in self.entries if not e.is_summary]
 
-        if len(non_summary) < ENTRIES_TO_SUMMARIZE:
-            return
+            if len(non_summary) < ENTRIES_TO_SUMMARIZE:
+                return False
 
-        existing_summaries = [e for e in self.entries if e.is_summary]
-        to_compress = non_summary[:ENTRIES_TO_SUMMARIZE]
+            existing_summaries = [e for e in self.entries if e.is_summary]
+            to_compress = non_summary[:ENTRIES_TO_SUMMARIZE]
+            targets = existing_summaries + to_compress
+
+        # 이후 lines/LLM 호출은 위에서 뜬 스냅샷만 읽으므로 락 밖에서 수행한다.
 
         lines = []
         for e in existing_summaries:
@@ -179,11 +236,16 @@ class ConversationMemory:
 
             response = llm.invoke(summary_prompt)
             summary_text = response.content if hasattr(response, "content") else str(response)
+        except Exception as e:
+            print(f"[Memory] 요약 실패: {e}")
+            return False
 
-            # 기존 summary + 압축 대상 non-summary 모두 제거 후 단일 summary로 교체
-            for entry in existing_summaries + to_compress:
-                self.entries.remove(entry)
-
+        # 3) 락 재획득 후 스플라이스 — LLM 대기 중 추가된 항목은 건드리지 않는다.
+        #    MemoryEntry 는 dataclass(eq=True)라 list.remove 는 값이 같은 다른 항목을
+        #    지울 수 있다. id() 기준으로 스냅샷한 대상만 정확히 제거한다.
+        with self.lock:
+            target_ids = {id(e) for e in targets}
+            self.entries = [e for e in self.entries if id(e) not in target_ids]
             self.entries.insert(
                 0,
                 MemoryEntry(
@@ -193,9 +255,8 @@ class ConversationMemory:
                     is_summary=True,
                 ),
             )
-            print(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
-        except Exception as e:
-            print(f"[Memory] 요약 실패: {e}")
+        print(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
+        return True
 
     def get_recent_entries(self, k: int = 5) -> List[MemoryEntry]:
         """최근 k개 항목 반환."""
@@ -221,14 +282,21 @@ class ConversationMemory:
 # 글로벌 메모리 캐시 (NPC당 1개 인스턴스)
 # ─────────────────────────────────────────────────────────────────────────────
 _memory_cache: Dict[str, ConversationMemory] = {}
+# get_memory 는 to_thread 워커 여러 개에서 동시 호출된다. check-then-set 을 그대로 두면
+# 같은 NPC 에 ConversationMemory 인스턴스가 2개 생기고, 각자 자기 self.lock 으로
+# 동일한 conversation_memory.json 을 덮어써 대화가 유실된다.
+_memory_cache_lock = threading.Lock()
 
 
 def get_memory(agent_id: str) -> ConversationMemory:
     """NPC ID로 메모리 인스턴스를 가져온다. 없으면 새로 생성."""
     agent_lower = agent_id.lower()
-    if agent_lower not in _memory_cache:
-        _memory_cache[agent_lower] = ConversationMemory(agent_id)
-    return _memory_cache[agent_lower]
+    with _memory_cache_lock:
+        memory = _memory_cache.get(agent_lower)
+        if memory is None:
+            memory = ConversationMemory(agent_id)
+            _memory_cache[agent_lower] = memory
+    return memory
 
 
 def add_conversation(agent_id: str, player_input: str, npc_response: str):
