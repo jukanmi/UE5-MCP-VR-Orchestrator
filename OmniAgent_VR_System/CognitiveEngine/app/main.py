@@ -328,7 +328,7 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
 
 
 def _record_reflex_memory(agent_id: str, reflex_action: str) -> None:
-    """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다 (SPEC_reflex_table §3.4).
+    """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다.
 
     LLM 은 반사가 일어난 걸 모른다. 기록해두지 않으면 다음 replan 이 '이제 공격을 시작하라'
     같은 한 박자 늦은 지시를 만든다. 기억에 남겨두면 plan 이 '전투 돌입'이 아니라

@@ -7,7 +7,7 @@
 //   → HandleAsrMessage 가 OnTranscriptReady 브로드캐스트 → 폰이 SendPlayerDialogue 로 전달.
 //
 // 리샘플 정책: UE 는 마이크 네이티브 레이트(보통 48kHz) 그대로 전송하고 start.sample_rate 에
-// 명시한다. 16kHz 리샘플은 Python(ASR) 책임. (CLAUDE.md §0 결정)
+// 명시한다. 16kHz 리샘플은 Python(ASR) 책임.
 #pragma once
 
 #include <atomic>

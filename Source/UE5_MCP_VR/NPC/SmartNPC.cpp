@@ -263,7 +263,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
             return ActualDamage;
         }
 
-        // 비치사 피격 → 동역학 반응. 데미지·인지는 이미 적용됨(반응 분기와 무관 — §5.D 데미지 상시).
+        // 비치사 피격 → 동역학 반응. 데미지·인지는 이미 적용됨 — 어느 반응으로 갈라지든 데미지 적용은 상시다.
         // ReactToHit: 강타=Knockdown(전신 래그돌→기상) / 약타=Flinch(상체 PD 복귀).
         ReactToHit(ActualDamage);
 
@@ -370,8 +370,8 @@ void ASmartNPC::HandleDeath()
         C->UnPossess();
     }
 
-    // 5. 패시브 래그돌 — 사망 몽타주 대신 물리 시뮬로 자연 붕괴(§5 VR 실감형).
-    //    진행 중이던 넉다운/기상은 정리(타이머·동시카운트). 이미 시뮬 중이면 EnterRagdoll 이 임펄스만 갱신(§6).
+    // 5. 패시브 래그돌 — 사망 몽타주 대신 물리 시뮬로 자연 붕괴(VR 실감 우선).
+    //    진행 중이던 넉다운/기상은 정리(타이머·동시카운트). 이미 시뮬 중이면 EnterRagdoll 이 임펄스만 갱신(중복 진입 아님).
     if (KnockdownPhase != EKnockdownPhase::None)
     {
         GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
@@ -649,7 +649,7 @@ void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
 }
 
 // ====================================================================
-// 액티브 래그돌 (§3) — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
+// 액티브 래그돌 — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
 // ====================================================================
 
 UNPCManager* ASmartNPC::GetNPCManager() const
@@ -688,7 +688,7 @@ void ASmartNPC::EnterRagdoll(bool bFatal)
         CMC->DisableMovement();
     }
 
-    // 순수 래그돌 — 직전 Flinch 가 남긴 상체 PD 제거(§6: PD 가 서기 애니로 당기면 낙하 충돌).
+    // 순수 래그돌 — 직전 Flinch 가 남긴 상체 PD 제거. PD 가 남아 있으면 서기 애니가 몸을 당겨 낙하 충돌이 깨진다.
     // 기본 FPhysicalAnimationData 는 전 강도 0 → 사실상 PD off.
     if (PhysicalAnim)
     {
@@ -740,7 +740,7 @@ void ASmartNPC::Flinch()
     USkeletalMeshComponent* MeshComp = GetMesh();
     if (!MeshComp || !PhysicalAnim || bIsDead) return;
 
-    // 넉다운/기상 중에는 약타 반응 생략(§4) — 전신 래그돌이 우선.
+    // 넉다운/기상 중에는 약타 반응 생략 — 전신 래그돌이 우선.
     if (KnockdownPhase != EKnockdownPhase::None) return;
 
     // 1) PD — 시뮬 본을 매 프레임 애니 포즈로 끌어당김(위치는 자유, 방향만 복원).
@@ -785,7 +785,7 @@ void ASmartNPC::TickFlinchRamp(float DeltaSeconds)
     }
 }
 
-// 강타 — 전신 래그돌 + AI 정지 + 안착 후 기상. 넉다운/기상 중 재호출 시 재진입(저글, 가드 없음 §5.C.6).
+// 강타 — 전신 래그돌 + AI 정지 + 안착 후 기상. 넉다운/기상 중 재호출 시 재진입(저글 허용 — 가드 없음이 의도).
 void ASmartNPC::Knockdown()
 {
     if (bIsDead) return;
@@ -952,7 +952,7 @@ void ASmartNPC::BeginGetUp()
     }
     else
     {
-        // 폴백(§8) — 몽타주 미할당 시 즉시 블렌드 복귀. 짧은 타이머로 마무리.
+        // 폴백 — 몽타주 미할당 시 즉시 블렌드 복귀. 짧은 타이머로 마무리.
         GetWorldTimerManager().SetTimer(GetUpMontageTimer, this, &ASmartNPC::FinishGetUp, 0.5f, false);
     }
 

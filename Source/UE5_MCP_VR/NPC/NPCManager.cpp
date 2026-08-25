@@ -235,7 +235,7 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         return;
     }
 
-    // PromptPayload 조립 — payload 키는 snake_case (CLAUDE.md §1)
+    // PromptPayload 조립 — payload 키는 snake_case
     const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
     Payload->SetStringField(TEXT("player_id"), PlayerID);
     Payload->SetStringField(TEXT("voice_transcript"), Text);
@@ -419,7 +419,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
-    // npc_audio_response — TTS 통합 계획서 §3. 액션 배치와 분리된 별도 메시지.
+    // npc_audio_response — TTS 오디오 전달. 액션 배치와 분리된 별도 메시지.
     {
         FString NpcId, WsUrl, DialogueText, Emotion;
         int32 SampleRate = 16000;
@@ -512,7 +512,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     // ── 계획 캐싱 회신 수신 (Multi-NPC Cached Planning) ──────────────────
     // NpcPlans(PascalCase) 가 있으면 재계획 응답 → 해당 NPC 의 CurrentPlan 저장.
     // PlanAchieved(PascalCase) 가 있으면 e4b 가 plan 달성 감지 → FlagPlanAchieved() → 다음 턴 재계획.
-    // 키: PascalCase 최상위(NpcPlans/ActionBatches/PlanAchieved), plan 내부 snake_case — §1.
+    // 키: PascalCase 최상위(NpcPlans/ActionBatches/PlanAchieved), plan 내부 snake_case.
     {
         const TSharedPtr<FJsonObject>* NpcPlansObj = nullptr;
         const bool bHasPlans = Root->TryGetObjectField(TEXT("NpcPlans"), NpcPlansObj);

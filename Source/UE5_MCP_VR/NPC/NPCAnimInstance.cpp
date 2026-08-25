@@ -20,7 +20,7 @@ void UNPCAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ACharacter* Owner = Cast<ACharacter>(GetOwningActor());
     if (!Owner) return;
 
-    // 자세는 NPCStateComponent 가 단일 소스 — 여기선 읽어서 미러만 한다(§8).
+    // 자세는 NPCStateComponent 가 단일 소스 — 여기선 읽어서 미러만 한다.
     // Initialize 시점에 소유자가 미완성이었을 수 있어(스폰 순서) 캐시 실패 시 한 번 더 시도.
     if (!CachedStateComponent.IsValid())
     {

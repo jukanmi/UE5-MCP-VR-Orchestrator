@@ -112,7 +112,7 @@ namespace
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
         {
-            // §6: 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
+            // 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
             GameplayTagUtils::ResetAllStates(NPC->GameplayTags);
             NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
         }
@@ -150,7 +150,7 @@ UNPCActionComponent::UNPCActionComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
 
-    // === 척수반사 기본 룰 (SPEC_reflex_table §3.2) ===
+    // === 척수반사 기본 룰 ===
     // 위에서부터 처음 맞는 하나만 발동한다 — 좁은 조건이 먼저.
     // 거리 상한은 감지 반경(SightRadius 3000 / HearingRange 3000) 안에서만 의미가 있다.
     {
@@ -554,7 +554,7 @@ void UNPCActionComponent::ReleaseOccupiedFurniture()
 
 void UNPCActionComponent::ResetPostureFlags()
 {
-    // Sit/Sleep 점유 해제 — 자세와 동일 라이프사이클(지속 상태, §6).
+    // Sit/Sleep 점유 해제 — 자세와 동일 라이프사이클(지속 상태).
     ReleaseOccupiedFurniture();
 
     if (!StateComponent) return;
@@ -2058,7 +2058,7 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
     case EAction::Move:
     {
-        // 계산 목적지로 BaseMove 직접(EQS 미사용 §4) — 타겟 기준 자기쪽 Ideal 링 위 지점.
+        // 계산 목적지로 BaseMove 직접(EQS 미사용) — 타겟 기준 자기쪽 Ideal 링 위 지점.
         FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
         if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
         const FVector Dest = TargetActor->GetActorLocation() + AwayDir * SpacingIdealRange;
@@ -2372,12 +2372,12 @@ void UNPCActionComponent::ExecuteStandUp()
         return;
     }
 
-    // 점유 가구 반납 — 자세와 동일 라이프사이클(§6). BaseLieUp/BaseSitUp 은 플래그만 내리므로
+    // 점유 가구 반납 — 자세와 동일 라이프사이클. BaseLieUp/BaseSitUp 은 플래그만 내리므로
     // 여기서 반납하지 않으면 가구가 영구 점유로 남아 다른 NPC 가 못 쓴다.
     ReleaseOccupiedFurniture();
 
     // 눕기가 앉기보다 우선 — 둘 다 서 있을 수 없는 조합이나 플래그가 어긋난 경우의 방어.
-    // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인(§3).
+    // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인.
     if (bLie) BaseLieUp();
     else      BaseSitUp();
 }

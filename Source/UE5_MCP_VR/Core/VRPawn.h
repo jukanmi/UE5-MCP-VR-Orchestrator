@@ -95,7 +95,7 @@ public:
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    // §4 동역학 근접 — 손 본 소켓에 부착된 타격 구체. NPC overlap 시 손 속도로 ½mv² 데미지.
+    // 동역학 근접 — 손 본 소켓에 부착된 타격 구체. NPC overlap 시 손 속도로 ½mv² 데미지.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereLeft;
 
@@ -190,7 +190,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
-    // ── §4 동역학 데미지 튜닝 (Damage = clamp(½·m·v² · Scale, 0, Cap), v 는 m/s) ──
+    // ── 동역학 데미지 튜닝 (Damage = clamp(½·m·v² · Scale, 0, Cap), v 는 m/s) ──
 
     /** 근접 손 무기 질량(kg) — ½mv² 의 m. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
@@ -290,7 +290,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "60.0"))
     float MinCapsuleHalfHeight = 22.f;
 
-    /** 캡슐·VR Origin Z 보간 속도. 높을수록 빠르게 따라감. PDF §VInterp 권장 8 */
+    /** 캡슐·VR Origin Z 보간 속도. 높을수록 빠르게 따라감. 권장값 8 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "1.0", ClampMax = "20.0"))
     float HeightInterpSpeed = 8.f;
 
@@ -498,7 +498,7 @@ private:
     UFUNCTION()
     void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-    // §4 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
+    // 동역학 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
     // 본 소켓 패시브 overlap 은 애니 본에서 이벤트 누락이 잦아 능동 쿼리로 대체.
     void TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand);
 

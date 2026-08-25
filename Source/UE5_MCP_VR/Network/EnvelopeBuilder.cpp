@@ -18,9 +18,9 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
         case EEnvelopeType::EmergencyReport: return TEXT("emergency_report");
         case EEnvelopeType::LocationDecision: return TEXT("location_decision");
         default:
-            // 새 EEnvelopeType 추가 후 여기 미반영 시 도달(§5 위반 신호) — prompt 폴백은
+            // 새 EEnvelopeType 추가 후 여기 미반영 시 도달(새 Envelope 타입을 양쪽에 동시 반영하지 않았다는 신호) — prompt 폴백은
             // Python 이 엉뚱한 핸들러로 라우팅하는 무음 장애가 되므로 Error 로 승격.
-            UE_LOG(LogTemp, Error, TEXT("[EnvelopeBuilder] 알 수 없는 EEnvelopeType(%d) — 'prompt' 폴백. EnvelopeTypeToString 분기 추가 필요(§5)."),
+            UE_LOG(LogTemp, Error, TEXT("[EnvelopeBuilder] 알 수 없는 EEnvelopeType(%d) — 'prompt' 폴백. EnvelopeTypeToString 분기 추가 필요."),
                    static_cast<int32>(Type));
             return TEXT("prompt");
     }

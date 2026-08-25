@@ -9,7 +9,7 @@ class UStaticMeshComponent;
 class UProjectileMovementComponent;
 
 /**
- * [의도(Why)] §4 동역학 데미지의 원거리 무기. VRPawn 의 IA_Attack 으로 발사되며,
+ * [의도(Why)] 동역학 데미지의 원거리 무기. VRPawn 의 IA_Attack 으로 발사되며,
  *  명중 시 자신의 운동에너지(½·m·v²)를 데미지로 환산해 FPointDamageEvent 로 전달한다.
  *  부위 인지(HitInfo.BoneName)·래그돌 임펄스(ShotDirection)는 SmartNPC::TakeDamage 가
  *  근접 스윙과 동일하게 처리 — 데미지 전달 규약을 FPointDamageEvent 로 단일화.

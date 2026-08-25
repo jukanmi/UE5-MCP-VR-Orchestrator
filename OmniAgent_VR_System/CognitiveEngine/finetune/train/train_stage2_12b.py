@@ -1,4 +1,4 @@
-r"""Stage2 12B plan QLoRA 학습 (SPEC_finetune §3.3) — unsloth.
+r"""Stage2 12B plan QLoRA 학습 — unsloth.
 
 Blackwell 안정화·mojibake/pickle 회피는 train_stage1_e4b.py 와 동일 이식(2026-07-21 검증).
 
@@ -8,7 +8,7 @@ Blackwell 안정화·mojibake/pickle 회피는 train_stage1_e4b.py 와 동일 �
         --data data/processed/stage2_12b_train.jsonl \
         --output train/outputs/stage2_12b
 
-⚠️ 검열 회귀 스팟체크(SPEC §3.3 게이트) — 현 배포본은 abliterated Q4_K_M.
+⚠️ 검열 회귀 스팟체크(censorship_check.py 게이트) — 현 배포본은 abliterated Q4_K_M.
 학습 후 전투/폭력 held-out 세트로 거부·순화 응답 확인 필수(eval/censorship_check.py 별도).
 """
 import argparse
@@ -57,7 +57,7 @@ DATA = args.data if os.path.isabs(args.data) else os.path.join(HERE, args.data)
 OUT = args.output if os.path.isabs(args.output) else os.path.join(HERE, args.output)
 
 MAX_SEQ_LENGTH = 1024  # Blackwell+WSL2 seq>1024 크래시 실측(chatbot/e4b 공통)
-LORA_R = 16            # SPEC §3.3 — e4b(32)보다 낮음, 12B 4bit VRAM 여유 고려
+LORA_R = 16            # e4b(32)보다 낮음, 12B 4bit VRAM 여유 고려
 LORA_ALPHA = 16
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 LEARNING_RATE = 1.0e-4

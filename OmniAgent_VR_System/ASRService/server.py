@@ -18,7 +18,7 @@ PROTOCOL:
         { "type": "final", "request_id": "...", "target_npc_id": "Skadi",
           "transcript": "<인식 결과>", "duration_ms": 1234, "language": "KR" }
 
-설계 결정(§0):
+설계 결정:
   - 모델: large-v3 / device=cuda / compute=float16 (한국어 품질 우선).
   - 리샘플: UE 는 네이티브 레이트로 보내고, 여기서 soxr 로 16kHz 변환(whisper 입력 규격).
   - partial(중간 결과)은 미구현 — end 시 final 단발. (M3 후보)
@@ -56,7 +56,7 @@ BYTES_PER_SAMPLE = 2  # pcm_s16le
 # end 누락 클라이언트의 무한 스트리밍 → OOM/DoS 방지. 48kHz·16bit·120초 ≈ 11.5MB 상한.
 MAX_AUDIO_BUF_BYTES = 48000 * BYTES_PER_SAMPLE * 120
 
-# ── faster-whisper 설정 (§0 결정) ────────────────────────────────────────────
+# ── faster-whisper 설정 ────────────────────────────────────────────
 # 환경변수로 오버라이드 가능 — CPU 환경은 WHISPER_DEVICE=cpu WHISPER_COMPUTE=int8.
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "large-v3")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cuda")

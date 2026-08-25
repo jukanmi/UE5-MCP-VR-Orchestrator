@@ -146,7 +146,7 @@ class EmergencyReportPayload(BaseModel):
     report_type: str = "perception"
     # C++ 척수반사가 이 보고 직전에 실행한 액션 이름("Attack" 등). 미발동이면 C++ 이 필드를
     # 생략하므로 빈 문자열. 채워져 있으면 메모리에 Event 로 남겨 다음 replan 이 중복 지시를
-    # 내지 않게 한다(SPEC_reflex_table §3.4).
+    # 내지 않게 한다.
     reflex_action: str = ""
 
 

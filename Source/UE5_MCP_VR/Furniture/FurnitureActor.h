@@ -20,7 +20,7 @@ enum class EFurnitureType : uint8
  *
  * BeginPlay 에서 FurnitureManager 에 자기 등록, EndPlay 에서 해제(DroppedItemBase 패턴).
  * 메시는 BP 파생에서 RootComponent 하위에 추가하고 SeatPoint 를 그에 맞춰 정렬한다.
- * 좌표 변환은 GetSeatTransform() 하나로 일원화(§9 — BlueprintPure C++ getter).
+ * 좌표 변환은 GetSeatTransform() 하나로 일원화(BlueprintPure C++ getter — 에디터 수작업 대신 코드로 확정).
  */
 UCLASS(Blueprintable, BlueprintType)
 class UE5_MCP_VR_API AFurnitureActor : public AActor

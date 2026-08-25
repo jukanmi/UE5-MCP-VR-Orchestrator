@@ -306,7 +306,7 @@ private:
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
 
-    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지 §6) ---
+    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지) ---
     /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
     EAction LastCombatChoice = EAction::Idle;
 
@@ -430,7 +430,7 @@ public:
      *  이동 중단 시 ClearActiveActionState 가 리셋(점유 전이므로 Release 불필요). */
     TWeakObjectPtr<AFurnitureActor> PendingFurnitureTarget;
 
-    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(§6, bIsSit/bIsLie 와 동일 라이프사이클). */
+    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(bIsSit/bIsLie 와 동일 라이프사이클). */
     TWeakObjectPtr<AFurnitureActor> OccupiedFurniture;
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
@@ -451,7 +451,7 @@ public:
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
 
     /** Dodge 등속 이동 — 몽타주 재생 성공 시 마찰·제동 0 후 RunSpeed×배율로 Launch(고정 방향 감쇠 없이 유지).
-     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로(§6) — 정상 종료·중단·워치독 전부 커버. */
+     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로 — 정상 종료·중단·워치독 전부 커버. */
     void StartDodgeMove(const FVector& Direction);
     void StopDodgeMove();
     bool bDodgeMoveActive = false;
@@ -514,7 +514,7 @@ public:
     // 큐가 빈 Combat 상태에서 STTask_PrepareNextAction 이 호출하는 C++ 척수 반사층.
     // LLM 재상담 없음 — 가중치 확률 + DiceSystem 주사위로 다음 전투 행동을 주입한다.
     // 성격 차별화는 스탯 파생(Strength→공격, Agility→회피/기동, Fear·Bravery→도주)
-    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음(§9).
+    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음.
     // ============================================================================
 
     /** Combat 중 다음 행동을 선택해 ActionQueue 에 주입. 페이싱 간격 미충족·후보 전멸 시 false.
@@ -628,7 +628,7 @@ public:
     bool TryReflexReact(ESenseType Sense, const FString& EventType, const FString& SourceID,
                         float BaseDanger, float Distance, const FVector& StimulusLoc);
 
-    /** 반사 룰 테이블. 기본값은 생성자에서 확정(CLAUDE.md §9 — 바이너리에만 두지 말 것).
+    /** 반사 룰 테이블. 기본값은 생성자에서 확정(바이너리에만 두지 말 것).
      *  위에서부터 검사해 **처음 맞는 룰 하나만** 발동하므로, 좁은 조건을 위에 둘 것. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
     TArray<FReflexRule> ReflexRules;

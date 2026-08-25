@@ -23,7 +23,7 @@ VECTORSTORE_PATH = os.path.join(KNOWLEDGE_BASE_PATH, "vectorstores")
 # Cache for loaded vector stores
 _vectorstore_cache = {}
 
-# chunk_category 로 인정되는 서브폴더명 (PDF 설계서 §5)
+# chunk_category 로 인정되는 서브폴더명
 _KNOWN_CATEGORIES = {"lore", "persona", "history"}
 
 
@@ -73,7 +73,7 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
 
     try:
         # Load all documents from the NPC's knowledge folder.
-        # 서브폴더 구조: knowledge/<npc>/{lore,persona,history}/*.md (PDF 설계서 §5 chunk_category)
+        # 서브폴더 구조: knowledge/<npc>/{lore,persona,history}/*.md (서브폴더명 = chunk_category)
         loader = DirectoryLoader(
             knowledge_path, glob="**/*.md", loader_cls=TextLoader, loader_kwargs={"encoding": "utf-8"}
         )

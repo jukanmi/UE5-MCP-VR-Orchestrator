@@ -33,7 +33,7 @@ public:
 
     // --- Posture (NPCStateComponent 미러) ---
     // SitDown/LieDown 몽타주는 진입 모션일 뿐 — 블렌드아웃 후 자세를 붙잡는 건 AnimGraph 상태머신.
-    // 이 두 플래그가 Locomotion↔Sit_Idle/Lie_Idle 전이 조건. 단일 소스는 NPCStateComponent(§8).
+    // 이 두 플래그가 Locomotion↔Sit_Idle/Lie_Idle 전이 조건. 단일 소스는 NPCStateComponent.
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Posture")
     bool bIsSit = false;

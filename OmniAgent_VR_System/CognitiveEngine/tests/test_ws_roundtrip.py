@@ -91,7 +91,7 @@ def _validate_batch(raw: str) -> list:
                 if not isinstance(v, str):
                     problems.append(f"{agent_id}/{act.ActionType}: Parameters[{k}] 가 str 아님({type(v).__name__})")
                 if k != k.lower():
-                    problems.append(f"{agent_id}/{act.ActionType}: Parameters 키 {k} snake_case 위반(§1)")
+                    problems.append(f"{agent_id}/{act.ActionType}: Parameters 키 {k} snake_case 위반")
             tid = act.Parameters.get("target_id")
             if tid and tid not in VALID_TARGETS:
                 # Stage1 target enum grammar 가 강제하는 계약 — 폴백 경로에선 자유문자열

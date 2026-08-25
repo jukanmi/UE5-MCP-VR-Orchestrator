@@ -164,7 +164,7 @@ void UNPCStateComponent::FlushEventReport()
         RefinedEvents.Add(LocalEventQueue[i]);
     }
 
-    // 반사 이력 동봉(§3.4) — 통보와 같은 배로 보내야 다음 replan 이 "이미 반응함"에서 출발한다.
+    // 반사 이력 동봉 — 통보와 같은 배로 보내야 다음 replan 이 "이미 반응함"에서 출발한다.
     FString Payload = UMCPJsonUtils::SerializePerceptionReport(
         OwnerNPC->AgentID, RefinedEvents, TEXT(""), PendingReflexAction);
     if (Payload.IsEmpty())

@@ -1,7 +1,7 @@
-"""UE5(C++) ↔ Python 계약 동기화 검사 — CLAUDE.md §3(EAction)·§5(Envelope) 자동화.
+"""UE5(C++) ↔ Python 계약 동기화 검사 — 새 EAction·새 Envelope 타입의 양쪽 동시 수정 자동 검사.
 
 C++ 빌드 없이 소스 텍스트 파싱으로 양쪽 enum/키를 비교한다.
-한쪽만 수정하면 "메시지 무음 무시"(§5)·"액션 무음 no-op"(§3)이 되므로
+한쪽만 수정하면 "메시지 무음 무시"·"액션 무음 no-op"이 되므로
 여기서 diff 를 즉시 드러내는 것이 목적. 소스 파일 경로가 깨지면 skip 이 아니라
 실패한다(경로 이동도 계약 위반 신호).
 """
@@ -55,7 +55,7 @@ def _umeta_enum_entries(header_text: str, enum_name: str) -> set:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §3 EAction — NPCActionTypes.h ↔ schemas/actions.py
+# EAction — NPCActionTypes.h ↔ schemas/actions.py
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -64,7 +64,7 @@ def test_eaction_enum_matches_cpp():
     py = set(get_args(EAction))
     assert cpp == py, (
         f"EAction 불일치 — C++ 에만: {sorted(cpp - py)} / Python 에만: {sorted(py - cpp)}. "
-        "§3: 새 EAction 은 NPCActionTypes.h·actions.py 양쪽 동시 수정(/add-eaction)."
+        "새 EAction 은 NPCActionTypes.h·actions.py 양쪽 동시 수정(/add-eaction)."
     )
 
 
@@ -98,7 +98,7 @@ def test_param_keys_exist_in_cpp():
     py_keys = {param_key for param_key, _field in DIALOGUE_ACTION_FIELD_MAP}
     py_keys |= {"text"}  # Dialogue 필수 파라미터 (ACTION_REQUIRED_PARAMS)
     missing = {k for k in py_keys if f'TEXT("{k}")' not in header}
-    assert not missing, f"NPCActionKeys.h 에 없는 Python 송신 키: {sorted(missing)} (§1 — 리터럴/철자 확인)"
+    assert not missing, f"NPCActionKeys.h 에 없는 Python 송신 키: {sorted(missing)} (리터럴/철자 확인)"
 
 
 def test_move_style_vocabulary_matches_cpp():
@@ -131,7 +131,7 @@ def test_move_style_vocabulary_matches_cpp():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §5 Envelope — EnvelopeBuilder ↔ schemas/envelope.py ↔ main.py 수신 분기
+# Envelope — EnvelopeBuilder ↔ schemas/envelope.py ↔ main.py 수신 분기
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -160,12 +160,12 @@ def test_envelope_wire_strings_match_python():
     py_wires = {t.value for t in EEnvelopeType}
     assert cpp_wires == py_wires, (
         f"Envelope wire 불일치 — C++ 에만: {sorted(cpp_wires - py_wires)} / Python 에만: {sorted(py_wires - cpp_wires)}. "
-        "§5: EnvelopeBuilder·envelope.py·수신 분기 동시 수정(/add-envelope)."
+        "EnvelopeBuilder·envelope.py·수신 분기 동시 수정(/add-envelope)."
     )
 
 
 def test_all_envelope_types_dispatched_in_main():
-    """envelope.py 에 타입 추가 후 main.py 수신 분기 누락 시 메시지 무음 무시 — §5 핵심 함정."""
+    """envelope.py 에 타입 추가 후 main.py 수신 분기 누락 시 메시지 무음 무시 — 핵심 함정."""
     main_src = _read(MAIN_PY)
     missing = [t.name for t in EEnvelopeType if f"EEnvelopeType.{t.name}" not in main_src]
-    assert not missing, f"main.py 수신 분기에 없는 EEnvelopeType: {missing} (§5 — /add-envelope 체크리스트)"
+    assert not missing, f"main.py 수신 분기에 없는 EEnvelopeType: {missing} (/add-envelope 체크리스트)"

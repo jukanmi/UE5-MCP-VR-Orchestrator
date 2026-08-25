@@ -1,5 +1,5 @@
 // File: NPCAudioStreamComponent.h
-// Role: NPC 음성 스트림 수신·재생 컴포넌트 (TTS 통합 계획서 §5).
+// Role: NPC 음성 스트림 수신·재생 컴포넌트 (TTS 오디오 재생).
 //
 // WHY:
 //   - Orchestrator 가 보낸 NpcAudioResponse 의 audio_stream.url 로
@@ -11,7 +11,7 @@
 //   - 외부에서 PlayFromUrl(Url, SampleRate, Channels) 호출
 //
 // NOTE:
-//   - 본 컴포넌트는 Blackboard 를 쓰지 않는다 (CLAUDE.md §2). 재생 상태가 BT 에
+//   - 본 컴포넌트는 Blackboard 를 쓰지 않는다 (BB 쓰기는 AI 컨트롤러만). 재생 상태가 BT 에
 //     영향을 줘야 하면 SmartNPCAIController 가 본 컴포넌트의 델리게이트를 구독해 BB 를 쓴다.
 
 #pragma once

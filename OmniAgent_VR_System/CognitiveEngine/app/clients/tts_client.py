@@ -3,9 +3,9 @@ File: clients/tts_client.py
 Role: TTSService(M1 stub / M2 VibeVoice) 호출용 HTTP 클라이언트.
 
 WHY:
-  - 명세서 §5.3 / vibevoice-dev-spec §6 의 REST 합성 등록 단계만 책임진다.
+  - REST 합성 등록 단계만 책임진다.
   - 실제 오디오 스트림은 UE5가 응답에 담긴 ws_url 로 직접 연결해서 받는다
-    (TTS 통합 계획서 §9: 별도 NpcAudioResponse 타입 결정).
+    (응답은 별도 NpcAudioResponse 타입으로 전달).
 
 USAGE:
     info = await tts_client.synthesize(text="...", voice_id="ko_guard_01")
@@ -25,7 +25,7 @@ logger = logging.getLogger("tts_client")
 
 TTS_BASE_URL = os.environ.get("TTS_BASE_URL", "http://127.0.0.1:8001")
 TTS_TIMEOUT_SEC = float(os.environ.get("TTS_TIMEOUT_SEC", "3.0"))
-# 단기 백오프 1회 재시도 (PDF 설계서 §6.2): timeout/HTTP500/연결오류 시 0.2s 후 1번만.
+# 단기 백오프 1회 재시도: timeout/HTTP500/연결오류 시 0.2s 후 1번만.
 # VR TTFA<600ms 예산 보호를 위해 고정 0.2s, 재시도 1회로 제한.
 TTS_RETRY_BACKOFF_SEC = 0.2
 TTS_MAX_ATTEMPTS = 2

@@ -211,7 +211,7 @@ void ASmartNPCAIController::HandleCombatTargetDead(AActor* DeadTarget)
         StateComp->ReportCombatVictory(DeadTarget ? DeadTarget->GetName() : TEXT("Unknown"));
     }
 
-    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유 §2).
+    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유).
     if (UBlackboardComponent* BB = GetBlackboardComponent())
     {
         BB->ClearValue(Key_TargetActor);
@@ -450,7 +450,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
 
-            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지, SPEC §8).
+            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지).
             if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
             {
                 if (NPC->StateComponent && NPC->StateComponent->GetBehaviorMode() == ENPCBehaviorMode::Combat)

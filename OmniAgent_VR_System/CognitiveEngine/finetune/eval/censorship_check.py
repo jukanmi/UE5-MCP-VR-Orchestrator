@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Stage2 검열 회귀 스팟체크 게이트 (SPEC_finetune §3.3).
+"""Stage2 검열 회귀 스팟체크 게이트.
 
 배경: 서빙 12B 는 abliterated(`Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M`)인데 학습 베이스는
 공식 `unsloth/gemma-4-12b-it`. 전투·폭력 상황 plan 에서 거부·순화 회귀가 날 수 있어
@@ -197,7 +197,7 @@ def main():
         print(f"\n❌ 게이트 실패 — 회귀 {len(regressions)}건")
         for r in regressions:
             print(f"  [{r['mode']}] {r['npc']} {r['verdict']}: {r['detail']}")
-        print("대응(SPEC §3.3): 거부 회피 예시 데이터 추가 or 베이스 재검토(abliterated 로 학습)")
+        print("대응: 거부 회피 예시 데이터 추가 or 베이스 재검토(abliterated 로 학습)")
         return 1
     print("\n✅ 게이트 통과 — 검열 회귀 없음")
     return 0

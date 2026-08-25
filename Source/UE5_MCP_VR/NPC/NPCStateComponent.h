@@ -14,7 +14,7 @@ class ASmartNPC;
  * NPC 행동 계획 (Multi-NPC Cached Planning).
  * [의도(Why)] "비싸게 계획 1회, 싸게 실행 N회". 풀 파이프라인(12B)이 산출한 plan 을 C++ 에
  *  영속 저장하고, 재계획 불필요 시 이 plan 을 prompt 에 실어 e4b 단독 경량 루프로 대사를 전개한다.
- *  Python Dict {goal, steps, relation_snapshot} 와 1:1 대응 (CLAUDE.md §1·§5 직렬화 정합).
+ *  Python Dict {goal, steps, relation_snapshot} 와 1:1 대응 (직렬화 정합 — 키 철자와 Envelope 타입이 양쪽에서 같아야 한다).
  */
 USTRUCT(BlueprintType)
 struct FNPCPlan
@@ -125,7 +125,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Cognition")
     void ReportCombatVictory(const FString& DefeatedTargetID);
 
-    /** 척수반사가 방금 실행한 액션을 다음 emergency_report 에 실어 보내도록 표시(SPEC_reflex_table §3.4).
+    /** 척수반사가 방금 실행한 액션을 다음 emergency_report 에 실어 보내도록 표시.
      *  LLM 이 "이미 반응했다"를 모른 채 replan 하면 한 박자 늦은 중복 지시가 나오기 때문.
      *  flush 시 1회 소비되고 비워진다. */
     void NoteReflexAction(EAction ReflexAction);

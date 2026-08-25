@@ -12,7 +12,7 @@ import pytest
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# §3.1 _prewarm_core_llm
+# _prewarm_core_llm
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _make_main_module():
@@ -109,7 +109,7 @@ def test_prewarm_body_has_no_prompt_key():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# §3.2 memory_manager 디바운스
+# memory_manager 디바운스
 # ──────────────────────────────────────────────────────────────────────────────
 
 from app.utils.memory_manager import ConversationMemory, SUMMARIZE_DEBOUNCE_S

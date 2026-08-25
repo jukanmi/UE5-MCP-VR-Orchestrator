@@ -52,7 +52,7 @@ public:
     static bool ParseAffinityUpdateFromObject(
         const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations);
 
-    /** npc_audio_response 메시지 파싱 (TTS 통합 계획서 §3).
+    /** npc_audio_response 메시지 파싱 (Python → UE5 TTS 오디오 전달).
      *  성공 시 OutNpcId/OutWsUrl/OutSampleRate/OutChannels/OutDialogue/OutEmotion 채움.
      *  type 이 "npc_audio_response" 가 아니면 false 반환 (조용히 패스). */
     static bool ParseNpcAudioResponseFromObject(

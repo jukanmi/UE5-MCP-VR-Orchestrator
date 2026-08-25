@@ -8,7 +8,7 @@ class AController;
 struct FHitResult;
 
 /**
- * §4 동역학 데미지 공용 헬퍼 — 근접 스윙(VRPawn)·투사체(KineticProjectile) 단일 소스.
+ * 동역학 데미지 공용 헬퍼 — 근접 스윙(VRPawn)·투사체(KineticProjectile) 단일 소스.
  * 운동에너지 ½mv² 를 HP 데미지로 환산하고, 부위 인지·래그돌 임펄스를 위해
  * FPointDamageEvent(본 이름·발사 방향 포함)로 SmartNPC 에 전달한다.
  */

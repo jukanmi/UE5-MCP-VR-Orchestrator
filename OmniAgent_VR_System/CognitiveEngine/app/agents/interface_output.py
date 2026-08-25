@@ -20,7 +20,7 @@
 ║                                                                              ║
 ║ [C++ 연동 핵심]                                                               ║
 ║   - ActionType 은 C++ Enum(EAction) 과 1:1 대응 (Stage1 Literal 로 보장)     ║
-║   - Parameters 키(target_id/target_loc/item/style)는 snake_case (§1 규칙)    ║
+║   - Parameters 키(target_id/target_loc/item/style)는 snake_case              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -147,7 +147,7 @@ def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits
         )
     ]
 
-    # 필드→Parameters 키 매핑은 DIALOGUE_ACTION_FIELD_MAP 단일 소스 (§1 snake_case).
+    # 필드→Parameters 키 매핑은 DIALOGUE_ACTION_FIELD_MAP 단일 소스 (snake_case).
     # 빈 값은 생략 — C++ ExecuteInteraction 이 필수 파라미터 누락 시 견고 폴백 or Rules 제거.
     for act in resp.actions:
         params: Dict[str, str] = {}
