@@ -29,8 +29,10 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
     Super::NativeTick(MyGeometry, InDeltaTime);
 
     // 폰이 늦게 소유되거나 리스폰/빙의 전환으로 교체될 수 있어 매 틱 보정.
+    // null 은 무시한다 — 빙의 전환 중 한 프레임만 비는 경우가 있어, 그대로 반영하면
+    // 멀쩡한 OwnerPawn 을 지우고 인벤토리 델리게이트까지 끊어 UI 가 영구히 멈춘다.
     APawn* CurrentPawn = GetOwningPlayerPawn();
-    if (CurrentPawn != OwnerPawn)
+    if (CurrentPawn && CurrentPawn != OwnerPawn)
     {
         // 구 폰 유효 시 인벤토리 델리게이트 해제 — Unpossess 후 빙의 전환 누수 방지
         if (IsValid(OwnerPawn))

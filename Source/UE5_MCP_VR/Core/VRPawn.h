@@ -20,6 +20,8 @@ class UInventoryComponent;
 class UPlayerHUDWidget;
 class USphereComponent;
 class AKineticProjectile;
+class UWidgetComponent;
+class UWidgetInteractionComponent;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
 UENUM(BlueprintType)
@@ -117,6 +119,42 @@ public:
     /** 생성된 HUD 인스턴스 (런타임). */
     UPROPERTY(BlueprintReadOnly, Category = "UI")
     UPlayerHUDWidget* HUDWidget;
+
+    /** HUD 를 3D 공간에 띄우는 위젯 컴포넌트 — 왼손 컨트롤러 부착.
+     *  AddToViewport 는 VR 에서 쓰면 안 된다: OpenXR 은 양안을 한 장의 스테레오 타깃에
+     *  렌더하고 Slate 오버레이는 그 위에 한 번만 합성되므로, 화면 공간 위젯은 한쪽 눈에만
+     *  뜨거나 좌우로 늘어져 보인다. 월드 공간 위젯은 씬과 같이 양안 렌더되어 정상. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+    UWidgetComponent* HUDWidgetComp;
+
+    /** 오른손 UI 포인터 — 왼손 패널의 슬롯을 조준·클릭. 월드 공간 위젯은 마우스가 없으므로
+     *  이 컴포넌트가 광선을 쏴 가상 포인터 이벤트로 변환한다. 없으면 패널이 보이기만 하고
+     *  아무것도 눌리지 않는다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+    UWidgetInteractionComponent* HUDInteractor;
+
+    /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+    FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
+
+    /** 패널 회전 추가 오프셋. 매 Tick 계산되는 HMD 정면 회전 위에 얹힌다.
+     *  0 이면 정확히 카메라를 마주본다 — 살짝 눕히고 싶을 때만 Pitch 를 준다.
+     *  컨트롤러 회전을 그대로 쓰지 않는 이유: Grip 포즈 축이 손등 방향과 30~40° 어긋나 있어
+     *  고정 오프셋으로는 손목 각도가 바뀔 때마다 패널이 틀어진다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+    FRotator HUDPanelRotation = FRotator::ZeroRotator;
+
+    /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+    FVector2D HUDPanelDrawSize = FVector2D(600.f, 400.f);
+
+    /** 패널 월드 스케일. 기본값은 600x400px → 약 24x16cm (손에 들린 태블릿 크기). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float HUDPanelScale = 0.04f;
+
+    /** UI 포인터 광선 길이(cm). 손 패널까지만 닿으면 되므로 짧게. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "20.0", ClampMax = "500.0"))
+    float HUDInteractionDistance = 150.f;
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
@@ -400,6 +438,9 @@ private:
     void OnTurn(const FInputActionValue& Value);
     void OnTurnReleased(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
+
+    /** 트리거 뗌 — 인벤토리 열림 중 눌렀던 UI 포인터를 놓는다. 닫힘 상태에선 no-op. */
+    void OnAttackReleased(const FInputActionValue& Value);
     void OnInteract(const FInputActionValue& Value);
     void OnVoiceStart(const FInputActionValue& Value);
     void OnVoiceStop(const FInputActionValue& Value);
@@ -485,6 +526,17 @@ private:
     UPROPERTY(BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
     bool bInventoryOpen = false;
 
+    /** 매 Tick — 패널이 HMD 를 마주보도록 월드 회전 갱신(열림 중에만).
+     *  WidgetComponent 의 가시면은 +X 쪽이므로 X 축을 카메라로 향하게 한다. */
+    void UpdateHUDPanelFacing();
+
+    /** 패널·포인터 표시 동기 — 열림일 때만 위젯 컴포넌트와 광선을 켠다.
+     *  닫힘 상태에서 포인터를 켜두면 손을 흔들 때 슬롯이 호버되어 오작동한다. */
+    void ApplyInventoryPresentation(bool bOpen);
+
+    /** 트리거로 UI 를 누른 상태인지 — 열림 중에만 true. 닫을 때 강제 릴리즈에 쓴다. */
+    bool bPointerPressed = false;
+
     /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
     UFUNCTION(Exec)
     void SendNPCDialogue(const FString& Text);
@@ -493,6 +545,11 @@ private:
      *  팔 뻗은 자세에서 호출해 비율 확인. Reach > ArmLen 이면 아바타 팔이 짧음. */
     UFUNCTION(Exec)
     void LogIKMetrics();
+
+    /** 콘솔 진단 — 인벤토리 실제 내용 + HUD 위젯 연결 상태 덤프.
+     *  픽업이 안 먹은 건지, 먹었는데 UI 가 안 그려진 건지 한 번에 갈라준다. */
+    UFUNCTION(Exec)
+    void DumpInventoryHUD();
 
     // --- 전투 ---
     UFUNCTION()

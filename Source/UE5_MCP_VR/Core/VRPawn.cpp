@@ -36,6 +36,8 @@
 #include "../Inventory/ItemManager.h"
 #include "../UI/PlayerHUDWidget.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/WidgetComponent.h"
+#include "Components/WidgetInteractionComponent.h"
 
 // ============================================================================
 // 생성자
@@ -101,6 +103,29 @@ AVRPawn::AVRPawn()
 
     // 인벤토리 컴포넌트
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
+
+    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯.
+    // 화면 공간(AddToViewport)은 VR 에서 한쪽 눈에만 뜨거나 늘어져 보이므로 쓰지 않는다.
+    // 카메라 부착(head-lock)도 피한다 — 시야에 고정된 패널은 멀미를 유발한다.
+    HUDWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HUDWidgetComp"));
+    HUDWidgetComp->SetupAttachment(MotionControllerLeft);
+    HUDWidgetComp->SetRelativeLocation(HUDPanelLocation);
+    // 회전은 매 Tick UpdateHUDPanelFacing() 이 HMD 정면으로 덮어쓴다.
+    HUDWidgetComp->SetDrawSize(HUDPanelDrawSize);
+    HUDWidgetComp->SetRelativeScale3D(FVector(HUDPanelScale));
+    HUDWidgetComp->SetTwoSided(true);           // 손을 뒤집어도 사라지지 않게
+    HUDWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    HUDWidgetComp->SetVisibility(false);        // 인벤토리 토글로만 표시
+
+    // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
+    // 광선이 패널을 빗나간다.
+    HUDInteractor = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("HUDInteractor"));
+    HUDInteractor->SetupAttachment(MotionControllerRightAim);
+    HUDInteractor->InteractionDistance = HUDInteractionDistance;
+    HUDInteractor->InteractionSource = EWidgetInteractionSource::World;
+    HUDInteractor->bEnableHitTesting = true;
+    HUDInteractor->bShowDebug = false;          // 조준이 안 맞을 때 켜서 광선 확인
+    HUDInteractor->SetActive(false);            // 인벤토리 열림 중에만 활성
 
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
@@ -171,21 +196,25 @@ void AVRPawn::BeginPlay()
     // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
     StartCalibration();
 
-    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만
-    if (HUDWidgetClass)
+    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만.
+    // 위젯은 뷰포트가 아니라 왼손 패널(HUDWidgetComp)에 실린다. 화면 공간 위젯은
+    // 스테레오 렌더 타깃 위에 한 번만 합성되어 한쪽 눈에만 보이기 때문.
+    if (HUDWidgetClass && HUDWidgetComp)
     {
         if (APlayerController* PC = Cast<APlayerController>(GetController()))
         {
             if (PC->IsLocalController())
             {
-                HUDWidget = CreateWidget<UPlayerHUDWidget>(PC, HUDWidgetClass);
-                if (HUDWidget)
-                {
-                    HUDWidget->AddToViewport();
-                }
+                HUDWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
+                HUDWidgetComp->SetWidgetClass(HUDWidgetClass);
+                HUDWidgetComp->InitWidget();
+                HUDWidget = Cast<UPlayerHUDWidget>(HUDWidgetComp->GetUserWidgetObject());
             }
         }
     }
+
+    // 시작은 닫힘 — 패널·포인터 모두 꺼진 상태로 맞춘다.
+    ApplyInventoryPresentation(false);
 }
 
 // ============================================================================
@@ -199,6 +228,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateSmoothTurn(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
+    UpdateHUDPanelFacing();
 
     // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
     // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -442,7 +472,13 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
             EIC->BindAction(IA_SnapTurn, ETriggerEvent::Completed, this, &AVRPawn::OnTurnReleased);
             EIC->BindAction(IA_SnapTurn, ETriggerEvent::Canceled,  this, &AVRPawn::OnTurnReleased);
         }
-        if (IA_Attack)        EIC->BindAction(IA_Attack,        ETriggerEvent::Started,   this, &AVRPawn::OnAttack);
+        if (IA_Attack)
+        {
+            EIC->BindAction(IA_Attack, ETriggerEvent::Started,   this, &AVRPawn::OnAttack);
+            // 인벤토리 열림 중에는 같은 트리거가 UI 클릭이 된다 — 뗌도 받아야 포인터가 눌린 채 남지 않는다.
+            EIC->BindAction(IA_Attack, ETriggerEvent::Completed, this, &AVRPawn::OnAttackReleased);
+            EIC->BindAction(IA_Attack, ETriggerEvent::Canceled,  this, &AVRPawn::OnAttackReleased);
+        }
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
         if (IA_VoiceInput)
         {
@@ -563,6 +599,15 @@ void AVRPawn::SyncCapsuleToHMD()
 
 void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 {
+    // 인벤토리 열림 중 트리거는 UI 클릭 — 투사체를 쏘지 않는다.
+    // 안 막으면 슬롯을 누를 때마다 손앞으로 발사체가 나간다.
+    if (bInventoryOpen && HUDInteractor)
+    {
+        HUDInteractor->PressPointerKey(EKeys::LeftMouseButton);
+        bPointerPressed = true;
+        return;
+    }
+
     RemoveStateTag(TAG_State_Idle);
     AddStateTag(TAG_State_Action_Combat_Attack);
 
@@ -605,6 +650,13 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
     }
     RemoveStateTag(TAG_State_Action_Combat_Attack);
     AddStateTag(TAG_State_Idle);
+}
+
+void AVRPawn::OnAttackReleased(const FInputActionValue& /*Value*/)
+{
+    if (!bPointerPressed || !HUDInteractor) return;
+    HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
+    bPointerPressed = false;
 }
 
 void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
@@ -789,11 +841,83 @@ bool AVRPawn::TryPickupNearby()
     return true;
 }
 
+void AVRPawn::DumpInventoryHUD()
+{
+    auto Report = [this](const FString& Line)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[InvDump] %s"), *Line);
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Yellow, FString::Printf(TEXT("[InvDump] %s"), *Line));
+    };
+
+    if (!Inventory)
+    {
+        Report(TEXT("Inventory 컴포넌트 없음"));
+        return;
+    }
+
+    Report(FString::Printf(TEXT("슬롯 %d개"), Inventory->InventorySlots.Num()));
+    for (const FInventorySlot& Slot : Inventory->InventorySlots)
+    {
+        Report(FString::Printf(TEXT("  - %s x%d"), *Slot.ItemData.ItemID, Slot.Count));
+    }
+
+    Report(FString::Printf(TEXT("HUDWidget=%s  HUDWidgetComp=%s  visible=%d  open=%d"),
+        HUDWidget ? TEXT("OK") : TEXT("NULL"),
+        HUDWidgetComp ? TEXT("OK") : TEXT("NULL"),
+        HUDWidgetComp ? (HUDWidgetComp->IsVisible() ? 1 : 0) : -1,
+        bInventoryOpen ? 1 : 0));
+
+    if (HUDWidget)
+    {
+        // 위젯이 폰을 못 잡으면 슬롯 조회가 통째로 빈 배열이 된다 — UI 무반응의 주 원인.
+        Report(FString::Printf(TEXT("위젯 OwnerPawn=%s  위젯이 본 슬롯 %d개  패널열림=%d"),
+            HUDWidget->GetOwningPlayerPawn() ? *HUDWidget->GetOwningPlayerPawn()->GetName() : TEXT("NULL"),
+            HUDWidget->GetInventorySlots().Num(),
+            HUDWidget->IsInventoryVisible() ? 1 : 0));
+    }
+}
+
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
     if (!HUDWidget) return;
 
     bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
+    ApplyInventoryPresentation(bInventoryOpen);
+}
+
+void AVRPawn::UpdateHUDPanelFacing()
+{
+    if (!bInventoryOpen || !HUDWidgetComp || !VRCamera) return;
+
+    // 위치는 왼손을 따라가고 회전만 HMD 를 향한다. 손목을 어떻게 돌려도 정면으로 읽힌다.
+    const FVector PanelLoc = HUDWidgetComp->GetComponentLocation();
+    const FVector CamLoc   = VRCamera->GetComponentLocation();
+    const FVector ToCam    = CamLoc - PanelLoc;
+    if (ToCam.IsNearlyZero()) return;
+
+    // Rotation() 은 X 축을 ToCam 방향에 맞추고 Roll 0 — 패널이 기울지 않는다.
+    const FQuat LookAt = ToCam.Rotation().Quaternion();
+    HUDWidgetComp->SetWorldRotation(LookAt * HUDPanelRotation.Quaternion());
+}
+
+void AVRPawn::ApplyInventoryPresentation(bool bOpen)
+{
+    if (HUDWidgetComp)
+    {
+        HUDWidgetComp->SetVisibility(bOpen);
+    }
+
+    if (HUDInteractor)
+    {
+        // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
+        if (!bOpen && bPointerPressed)
+        {
+            HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
+            bPointerPressed = false;
+        }
+        HUDInteractor->SetActive(bOpen);
+        HUDInteractor->SetVisibility(bOpen);
+    }
 }
 
 bool AVRPawn::TrySitOnNearbyFurniture()
