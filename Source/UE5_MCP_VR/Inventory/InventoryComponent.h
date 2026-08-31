@@ -55,7 +55,10 @@ public:
     float MaximumWeightLimit = 50.0f;
 
     // 튜토리얼이나 기본 지급 장비를 일괄 적용하기 위해 스폰 시점에 미리 가져올 에셋들의 DataTable Row 이름입니다.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Config")
+    // GetOptions — 에디터에서 직접 타이핑하는 대신 DT_ItemRegistry 행 목록에서 고른다.
+    // 오타는 조회 실패로 조용히 지급 누락이 되므로(로그만 남음) 입력 자체를 막는 편이 낫다.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Config",
+              meta = (GetOptions = "/Script/UE5_MCP_VR.ItemRegistryOptions.GetItemIDOptions"))
     TArray<FString> InitialDefaultItems;
 
     // 드랍 시 스폰할 액터 클래스. 아이템이 FItemData::WorldMeshClass 로 자기 BP 를 지정했다면 그쪽이 우선한다.

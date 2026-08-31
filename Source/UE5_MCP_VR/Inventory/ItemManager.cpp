@@ -5,6 +5,7 @@
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
 #include "ItemDataAsset.h"
+#include "ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
 
 void UItemManager::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -149,7 +150,7 @@ bool UItemManager::GetItemDataByID(const FString& InTemplateID, FItemData& OutIt
     if (!GlobalItemDataTable)
     {
         // 최후의 수단: 만약 블루프린트에서 세팅이 안되었다면, 기본 컨벤션 경로에서 동적으로 로드 시도
-        UDataTable* LoadedTable = Cast<UDataTable>(StaticLoadObject(UDataTable::StaticClass(), nullptr, TEXT("/Game/Data/Items/DT_ItemRegistry.DT_ItemRegistry")));
+        UDataTable* LoadedTable = Cast<UDataTable>(StaticLoadObject(UDataTable::StaticClass(), nullptr, ItemRegistryPaths::DefaultItemTable));
         if (!LoadedTable)
         {
             UE_LOG(LogTemp, Error, TEXT("[ItemManager] GlobalItemDataTable이 설정되지 않았으며, 기본 경로(/Game/Data/Items/DT_ItemRegistry)에서도 테이블을 찾을 수 없습니다!"));
