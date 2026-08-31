@@ -1,10 +1,17 @@
-"""아이템 레지스트리(ItemRegistry.csv) 기반 ComfyUI 아이콘 일괄 생성 스크립트."""
+"""아이템 레지스트리(ItemRegistry.csv) 기반 ComfyUI 2D 아이콘 클린 아이솔레이션 생성기 (v3).
+
+특징:
+- 피규어/스탠드/받침대/캐릭터/사람 강력 차단 네거티브 가중치 (1.6)
+- 순수 단일 2D 게임 인벤토리 스프라이트 아이콘 포지티브 튜닝
+- 72종 전수 명사 중심 클린 프롬프트
+- 모델 자동/수동 선택 지원 (waiIllustriousSDXL 또는 counterfeitxl)
+"""
 
 import asyncio
 import csv
 import json
 import os
-import re
+import random
 import sys
 import time
 from urllib.parse import urlencode
@@ -17,107 +24,120 @@ if sys.platform == "win32":
 
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188").rstrip("/")
 CSV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Content/Data/Items/ItemRegistry.csv"))
-OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Content/UI/Icons/Items"))
+# 원본 PNG 는 Content/ 밖에 둔다 — Content 안에 있으면 UE 가 자동 임포트를 걸어
+# 같은 그림이 png 와 uasset 두 벌로 저장소에 쌓인다. 임포트 결과만 /Game/UI/Icons/Items 로 들어간다.
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Art/Icons/Items"))
 
-# 아이템별 영문 프롬프트 매핑 힌트 (더 선명하고 정확한 2D RPG 게임 아이콘 생성용)
+# 72종 전수 순수 물품 명사 묘사 (캐릭터/소품 유발 단어 완전 배제)
 ITEM_PROMPT_HINTS = {
-    "Bread": "a loaf of rustic rye bread on a wooden table, fantasy rpg food icon, crisp crust",
-    "Bandage": "rolled linen cloth bandage with a clean medical herb leaf, rpg healing item icon",
-    "WaterSkin": "a leather waterskin canteen with a brass cap and strap, adventuring gear icon",
-    "CoinPouch": "a small leather pouch overflowing with shiny silver coins, rpg money icon",
-    "Torch": "a wooden torch with burning bright flame and resin, dark background, glowing light",
-    "KnightSword": "a gleaming steel knight longsword with ornate silver hilt and crossguard, game icon",
-    "Shield_Knight": "a heraldic medieval knight heater shield with royal crest emblem, polished steel",
-    "HealthPotion": "a glass flask filled with glowing red liquid healing potion, cork stopper, magic sparkle",
-    "OathScroll": "an antique parchment oath scroll tied with a red wax knight crest seal",
-    "Cutlass_Pirate": "a curved pirate cutlass sword with a brass basket hilt, maritime weapon icon",
-    "Pistol": "a vintage flintlock pistol with engraved wood stock and brass barrel, antique firearm",
-    "RumBottle": "a dark glass bottle of aged sugarcane rum with a skull pirate label",
-    "TreasureKey": "an ornate antique rusty iron skeleton key for a pirate treasure chest",
-    "HerbTea": "a steaming ceramic mug of soothing herbal tea with mint and chamomile leaves",
-    "SmokeBomb": "a small ceramic ninja smoke bomb grenade with a burning fuse, emitting dark mist",
-    "HerbBasket": "a woven wicker basket filled with fresh green medicinal herbs and flowers",
-    "Compass": "an antique brass pocket compass with ornate nautical navigation needle",
-    "StarMap": "an astrological celestial star map chart plate with glowing constellation lines",
-    "NavDagger": "a sleek sailor navigation dagger with brass crossguard and leather grip",
-    "Telescope": "an antique brass collapsible spyglass telescope, nautical astronomy tool",
-    "GuardSpear": "a medieval town guard spear halberd with polished steel spearhead and wooden shaft",
-    "GuardShield": "a sturdy wooden guard tower kite shield with iron reinforced rim",
-    "Whistle": "a shiny metal security whistle on a cord, guard emergency alarm tool",
-    "PassDoc": "an official wax-sealed royal checkpoint travel permit passport document",
-    "Rock": "a rugged gray mineral stone rock pebble, rough texture, single object",
-    "IronIngot": "a single polished rectangular refined iron metal ingot bar, metallic sheen",
-    "WaterBucket": "a rustic wooden bucket filled with clear splashing fresh water",
-    "HonorFlower": "a delicate glowing blue mountain wild flower blossom of honor, fantasy herb",
-    "DivingHelmet": "an antique copper brass diving helmet with round glass viewing portholes",
-    "GoldChest": "an ornate wooden treasure chest overflowing with gold coins and jewels, iron bands",
-    "Microphone": "a crystal studio microphone with a silver stand, glowing translucent quartz body",
-    "SoftBlanket": "a folded soft cream wool blanket with knitted texture and fringed edge",
-    "ShipWheel": "a sturdy oak ship steering wheel helm with brass hub and eight spokes",
-    "BrokenCompass": "a cracked antique brass compass with a bent broken needle and shattered glass",
-    "BribeCoin": "a few tarnished silver bribe coins stacked, dim shady lighting",
-    "MagnifyingGlass": "an antique brass handled magnifying glass with a clear convex lens",
-    "GoldCoins": "a heavy velvet pouch spilling stacks of shining gold coins",
-    "MagicGem": "a faceted glowing violet magic gemstone radiating arcane light",
-    "AncientScroll": "a weathered papyrus scroll covered in ancient runic script, frayed edges",
-    "QuillPen": "a white feather quill pen resting beside a small inkpot",
-    "Glasses": "a pair of round wire-rimmed scholar spectacles with thin brass frames",
-    "PoisonDagger": "a slender assassin dagger with a blackened blade dripping green venom",
-    "Lockpick": "a set of slim steel lockpick tools in a leather roll, thief gear",
-    "SmokeVial": "a small glass throwing vial filled with swirling dense gray smoke",
-    "HolyWater": "a blessed crystal vial of glowing holy water with a golden cross stopper",
-    "HolyBook": "a thick leather-bound holy scripture with gold leaf edges and an embossed goddess emblem",
-    "ForgeHammer": "a heavy blacksmith forging hammer with a scarred steel head and worn wooden handle",
-    "Whetstone": "a rectangular gray sharpening whetstone block with worn honed surface",
-    "AlchemistryVial": "an empty clear glass alchemy test tube in a small wooden rack",
-    "HerbExtract": "a small vial of thick concentrated green herbal extract, cork stopper",
-    "Antidote": "a teal glass antidote vial with a snake emblem label, cure potion",
-    "Lute": "a wooden renaissance lute with a rounded body and taut strings, bard instrument",
-    "FeatherCap": "a velvet bard cap with a long colorful plume feather",
-    "WineCup": "an engraved silver wine goblet filled with dark red wine",
-    "TrapDisarmKit": "a compact trap disarming toolkit with pliers, wire cutters and picks in a leather case",
-    "HuntingBow": "a curved wooden hunting bow with a taut bowstring and leather grip",
-    "TarBucket": "a wooden bucket of thick black pitch tar with a coating brush",
-    "ShipBoard": "a stack of thick oak repair planks for a ship deck, cut lumber",
-    "RepairHammer": "a carpenter claw hammer with a steel head and oak handle, beside iron nails",
-    "CrystalBall": "a polished fortune telling crystal ball on an ornate silver stand, swirling mist inside",
-    "ProphecyScroll": "an ominous prophecy scroll with faded arcane glyphs and a cracked black wax seal",
-    "StarPendant": "a silver star-shaped pendant on a fine chain, glowing with starlight",
-    "ManaPotion": "a glass flask filled with glowing blue mana liquid, cork stopper, arcane sparkle",
-    "Rations": "dried jerky strips and hard travel biscuits wrapped in cloth, adventurer rations",
-    "SpellScroll": "a rolled magic spell scroll bound with a glowing rune ribbon",
-    "Rope": "a coiled thick hemp rope with frayed ends, climbing gear",
-    "Lantern": "an antique brass oil lantern with a glass pane and warm burning flame",
-    "SkinningKnife": "a small curved skinning knife with a bone handle, hunting tool",
-    "Arrow_Bundle": "a bundle of feathered wooden arrows tied together, steel broadheads",
-    "IronOre": "a chunk of raw iron ore rock with rust-colored metallic veins",
-    "Plank": "a stack of cut wooden planks, planed lumber boards",
-    "Leather": "a rolled piece of tanned brown leather hide with stitched edge",
+    # 코어 베이스라인 5종
+    "Bread": "a single freshly baked golden brown crusty bread loaf, bakery food, floating in dark void, no cutting board, no table, no wood base",
+    "Bandage": "a single roll of clean white linen medical gauze bandage cloth, first aid supply, floating in dark void, no bottle, no capsule, no potion",
+    "WaterSkin": "a single curved medieval brown leather waterskin canteen bota bag with wooden plug and leather strap, floating in dark void, no metal flask",
+    "CoinPouch": "a single tied medieval brown leather coin pouch drawstring purse filled with gold coins, fantasy RPG item, floating in dark void",
+    "Torch": "a single wooden handheld torch stick with burning glowing flame",
+    # 코어 5인 전용
+    "KnightSword": "a single medieval broadsword weapon with sharp double-edged steel blade, ornate silver crossguard, black leather grip, fantasy RPG weapon, floating in dark void",
+    "Shield_Knight": "a single medieval knight heater shield with polished steel plate and painted golden lion crest, defensive armor plate, floating in dark void",
+    "HealthPotion": "a single round glass potion flask bottle filled with glowing red liquid healing potion with cork stopper, floating in dark void",
+    "OathScroll": "a single rolled antique parchment paper scroll tied with red wax seal ribbon, floating in dark void",
+    "Cutlass_Pirate": "a single curved pirate cutlass sabre sword with steel blade and golden d-guard knuckle handle, pirate weapon, floating diagonally in dark void, no basket, no bowl",
+    "Pistol": "a single antique wooden flintlock pistol handgun with engraved brass barrel, floating in dark void",
+    "RumBottle": "a single vintage dark glass rum liquor bottle with cork stopper, floating in dark void",
+    "TreasureKey": "a single ornate antique brass skeleton key with decorative circular bow and notched bit, pirate treasure key, floating diagonally in dark void, single key, no extra keys",
+    "HerbTea": "a single ceramic teacup filled with hot herbal green tea, floating in dark void",
+    "SmokeBomb": "a single spherical black ceramic smoke bomb grenade with lit burning fuse, emitting dark gray smoke clouds, ninja tool, floating in dark void, no person, no character, no girl",
+    "HerbBasket": "a single small woven wicker basket filled with fresh green medicinal herbs, floating in dark void",
+    "Compass": "a single antique brass pocket compass with glass face and needle, floating in dark void",
+    "StarMap": "a single circular bronze astrological star map plate with engraved celestial lines, floating in dark void",
+    "NavDagger": "a single sleek sailor navigation dagger knife weapon with steel blade and brass hilt, floating in dark void",
+    "Telescope": "a single cylindrical antique brass collapsible spyglass telescope, side profile view showing full extended brass tube, optical tool, floating diagonally in dark void",
+    "GuardSpear": "a single long medieval polearm guard spear weapon with polished steel spearhead tip and long straight wooden shaft, pole weapon, floating diagonally in dark void, no sword",
+    "GuardShield": "a single large medieval wooden kite shield armor with iron banding and heavy rivets, front view, defensive gear, floating vertically in dark void, no lantern, no crystal",
+    "Whistle": "a single shiny silver metallic pea whistle with mouthpiece and hanging ring, security guard whistle tool, floating in dark void, no medallion, no chain",
+    "PassDoc": "a single official wax-sealed paper travel pass permit passport certificate, floating in dark void",
+    "Leather": "a single flat square sheet of brown tanned leather hide pelt, rough textured animal hide, floating in dark void",
+    # 크래프팅/파밍/퀘스트 기초
+    "Rock": "a single rough natural gray granite mineral stone rock pebble, raw stone, floating in dark void, no crystal, no magic, no blue glow",
+    "IronIngot": "a single rectangular solid iron metal ingot brick bar with smooth gray metallic surface and bevel edges, blacksmith crafting ingot, floating diagonally in dark void, no pillar, no needle",
+    "WaterBucket": "a single rustic wooden bucket with metal handle filled with water",
+    "HonorFlower": "a single glowing blue wild flower blossom with stem and petals",
+    "DivingHelmet": "a single antique heavy brass copper deep sea diving helmet with round front glass porthole grill and copper bolts, steampunk gear, floating in dark void, no base, no stand, no pedestal, no frame",
+    "GoldChest": "a single closed wooden treasure chest bound with gold trim and padlock",
+    "Microphone": "a single magical handheld blue crystal microphone wand staff, cylindrical silver metal handle with glowing round blue crystal sphere top, fantasy audio wand, floating vertically in dark void",
+    "SoftBlanket": "a single neatly folded thick fluffy soft wool blanket, plaid pattern, cozy bedding item, floating in dark void, no orb, no ball, no crystal",
+    "ShipWheel": "a single wooden maritime ship steering wheel helm",
+    "BrokenCompass": "a single antique tarnished brass pocket compass with shattered cracked glass dial face and bent broken needle, weathered damaged compass, floating in dark void",
+    "BribeCoin": "a single shiny stamped silver coin token",
+    # 보조 10인 전용
+    "MagnifyingGlass": "a single brass handheld magnifying glass with clear lens",
+    "GoldCoins": "a single heavy velvet coin pouch overflowing with gleaming gold coins",
+    "MagicGem": "a single faceted cut glowing blue magic crystal gem",
+    "AncientScroll": "a single weathered ancient parchment scroll with glowing runes",
+    "QuillPen": "a single elegant feather quill pen with sharp metal writing nib",
+    "Glasses": "a single pair of round wireframe gold reading spectacles glasses with clear glass lenses, scholar accessory item, floating in dark void, no person, no character, no girl, no face, no head, no book",
+    "PoisonDagger": "a single curved sharp assassin dagger knife blade coated with dripping glowing green toxic venom poison, rogue weapon, floating diagonally in dark void, no bottle, no potion",
+    "Lockpick": "a single pair of slender steel thief lockpick tools with tension wrench and pick needle, rogue burglar tool, floating in dark void, no fork, no knife, no cutlery",
+    "SmokeVial": "a single small glass vial bottle containing swirling dark purple smoke mist with cork stopper, potion item, floating in dark void, no stand, no pedestal, no base",
+    "HolyWater": "a single ornate crystal holy water flask with golden cross cap",
+    "HolyBook": "a single thick leather-bound scripture book with golden holy cross",
+    "ForgeHammer": "a single heavy blacksmith steel sledge hammer with square metal hammerhead and sturdy wooden handle, crafting tool, floating diagonally in dark void, no anvil, no machine, no base",
+    "Whetstone": "a single rectangular fine-grain sharpening whetstone waterstone block for sharpening knives, blade honing tool, floating diagonally in dark void, no spear, no shovel",
+    "AlchemistryVial": "a single clear glass alchemy test tube vial filled with amber liquid",
+    "HerbExtract": "a single dropper bottle of concentrated green herbal medicine liquid",
+    "Antidote": "a single glass medicine bottle filled with glowing green cure antidote",
+    "Lute": "a single wooden acoustic musical lute instrument with strings",
+    "FeatherCap": "a single stylish medieval bard feathered beret cap hat adorned with a tall colorful ostrich feather, velvet fabric, headwear item, floating in dark void, no person, no character, no girl, no face",
+    "WineCup": "a single ornate silver goblet wine chalice cup",
+    "TrapDisarmKit": "a single open leather tool roll case containing medieval thief wire cutters, pliers, tension probes, trap disarming toolkit, floating in dark void, no laser, no tech",
+    "HuntingBow": "a single wooden curved hunting recurve bow weapon with taut bowstring and leather grip, archery weapon, floating diagonally in dark void, no stand, no pedestal, no base",
+    "TarBucket": "a single rusty iron bucket filled with thick viscous black tar pitch, shipbuilding repair material, floating in dark void, no water, no blue",
+    "ShipBoard": "a single flat rectangular sturdy wooden ship plank board",
+    "RepairHammer": "a single wooden carpenter claw repair hammer with steel hammerhead and wooden handle, woodworking tool, floating diagonally in dark void, single hammer, no second hammer, no ground",
+    "CrystalBall": "a single mystical glowing translucent crystal sphere ball",
+    "ProphecyScroll": "a single dark mystical parchment scroll tied with purple cord",
+    "StarPendant": "a single silver necklace pendant shaped like an eight-pointed star",
+    # 범용 소모품/원자재
+    "ManaPotion": "a single round glass potion bottle filled with glowing blue magical mana liquid with cork",
+    "Rations": "a single brown canvas survival ration pack with dried beef jerky and hardtack biscuit, fantasy travel food, floating in dark void, no plastic wrapper, no modern bag",
+    "SpellScroll": "a single rolled antique magic parchment spell scroll glowing with arcane blue runic energy, tied with leather cord, floating in dark void, no book, no sword",
+    "Rope": "a single coiled bundle roll of thick brown braided hemp rope cord, adventuring survival gear, floating in dark void, no fruit, no pumpkin, no red",
+    "Lantern": "a single vintage metal oil lantern with glass casing and burning flame inside",
+    "SkinningKnife": "a single small curved steel hunting skinning knife with sharp blade and bone handle, hunter field tool, floating diagonally in dark void, no person, no character, no human, no girl",
+    "Arrow_Bundle": "a single leather quiver bundle filled with straight wooden hunting arrows with feather fletching and steel arrowheads, archery gear, floating diagonally in dark void, no snowflake, no star",
+    "IronOre": "a single chunk of raw unrefined gray iron mineral rock ore with metallic flecks",
+    "Plank": "a single smooth cut rectangular lumber timber wood plank",
+    "Leather": "a single rolled sheet of tanned brown animal leather hide",
 }
 
 
-def build_icon_prompt(item_id: str, item_type: str) -> str:
-    """아이템 정보로부터 최적의 RPG 아이콘 프롬프트를 조립합니다."""
+def build_icon_prompt(item_id: str, display_name: str, desc: str, item_type: str) -> str:
     hint = ITEM_PROMPT_HINTS.get(item_id)
     if not hint:
-        # 폴백은 ItemID 를 띄어쓰기로 풀어 쓴 영문만 쓴다.
-        # DisplayName·Description 은 한국어라 SDXL 의 CLIP 이 해석하지 못하고
-        # 무의미한 토큰으로 들어가 엉뚱한 그림이 나온다.
-        words = re.sub(r"[_\d]+", " ", item_id)
-        words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", words).lower().strip()
-        hint = f"a detailed {words}, {item_type.lower()} item"
+        hint = f"a single {item_id}, floating in dark void"
 
-    # 고품질 아이콘 스타일 태그 결합
     positive_prompt = (
-        f"game item icon, {hint}, "
-        "isolated on dark neutral studio background, 2d game art, high quality, sharp focus, "
-        "detailed texture, professional digital painting, fantasy rpg inventory asset, clean lighting, 8k resolution"
+        f"{hint}, "
+        "masterpiece, high quality digital fantasy art, single centered object, isolated on dark plain background, "
+        "clean lighting, sharp details, 8k resolution"
     )
     return positive_prompt
 
 
+def get_negative_prompt() -> str:
+    return (
+        "(pedestal, stand, base, plinth, platform, table, desk, ground, floor, surface, tray, plate, board:1.6), "
+        "(figure, figurine, statue, miniature, model:1.6), "
+        "(person, human, man, woman, girl, boy, character, body, hands, fingers:1.7), "
+        "(barrel, keg, dice, puddle, spill, clutter, extra objects, multiple objects:1.6), "
+        "(scene, environment, room, interior, landscape, horizon, outdoor, sky, wall:1.5), "
+        "(frame, border, emblem, badge, crest, medal, sticker, UI box, dialog, window:1.6), "
+        "(text, label, watermark, signature, font, letters, numbers:1.6), "
+        "blurry, low quality, cropped, out of frame, realistic photo"
+    )
+
+
 async def get_best_checkpoint(client: httpx.AsyncClient) -> str:
-    """ComfyUI에서 최적의 SDXL 모델을 찾습니다."""
     try:
         resp = await client.get(f"{COMFYUI_URL}/object_info/CheckpointLoaderSimple")
         if resp.status_code == 200:
@@ -128,16 +148,7 @@ async def get_best_checkpoint(client: httpx.AsyncClient) -> str:
                 .get("required", {})
                 .get("ckpt_name", [[]])[0]
             )
-            # 카툰/일러스트/SDXL 우선 선택
-            preferred = [
-                c
-                for c in ckpts
-                if "wai" in c.lower()
-                or "counterfeit" in c.lower()
-                or "nova" in c.lower()
-                or "pony" in c.lower()
-                or "xl" in c.lower()
-            ]
+            preferred = [c for c in ckpts if "counterfeit" in c.lower() or "nova" in c.lower()]
             if preferred:
                 return preferred[0]
             if ckpts:
@@ -147,32 +158,28 @@ async def get_best_checkpoint(client: httpx.AsyncClient) -> str:
     return "SDXL/counterfeitxl_v25.safetensors"
 
 
-async def generate_single_item(client: httpx.AsyncClient, item: dict, checkpoint: str, index: int, total: int) -> bool:
-    """단일 아이템의 아이콘 이미지를 생성하고 저장합니다."""
+async def generate_single_item(
+    client: httpx.AsyncClient, item: dict, checkpoint: str, index: int, total: int, force: bool = False
+) -> bool:
     item_id = item["ItemID"]
     display_name = item["DisplayName"]
     out_file = os.path.join(OUTPUT_DIR, f"{item_id}.png")
 
-    if os.path.exists(out_file):
+    if not force and os.path.exists(out_file):
         print(f"[{index}/{total}] ⏩ {display_name}({item_id}) 이미 존재함 -> 건너뜀")
         return True
 
-    prompt_text = build_icon_prompt(item_id, item["ItemType"])
-    negative_text = (
-        "blurry, low quality, deformed, disfigured, text, watermark, signature, cropped, bad anatomy, frame, border"
-    )
-
-    import random
+    prompt_text = build_icon_prompt(item_id, display_name, item.get("Description", ""), item.get("ItemType", ""))
+    negative_text = get_negative_prompt()
 
     seed = random.randint(1, 1000000000)
 
-    # 512x512 또는 768x768 아이콘 해상도 (인벤토리 슬롯에 최적화)
     workflow = {
         "3": {
             "inputs": {
                 "seed": seed,
-                "steps": 20,
-                "cfg": 6.5,
+                "steps": 25,
+                "cfg": 7.5,
                 "sampler_name": "euler_ancestral",
                 "scheduler": "normal",
                 "denoise": 1.0,
@@ -194,7 +201,6 @@ async def generate_single_item(client: httpx.AsyncClient, item: dict, checkpoint
     print(f"[{index}/{total}] 🎨 생성 시작: {display_name} ({item_id})...")
     start_time = time.time()
 
-    # 1. 큐 등록
     resp = await client.post(f"{COMFYUI_URL}/prompt", json={"prompt": workflow, "client_id": f"batch_{item_id}"})
     if resp.status_code != 200:
         print(f"[{index}/{total}] ❌ 큐 등록 실패: {resp.text}")
@@ -202,7 +208,6 @@ async def generate_single_item(client: httpx.AsyncClient, item: dict, checkpoint
 
     prompt_id = resp.json().get("prompt_id")
 
-    # 2. 완료 대기
     while time.time() - start_time < 90:
         await asyncio.sleep(0.8)
         hist_resp = await client.get(f"{COMFYUI_URL}/history/{prompt_id}")
@@ -214,7 +219,6 @@ async def generate_single_item(client: httpx.AsyncClient, item: dict, checkpoint
                 if "9" in outputs and "images" in outputs["9"]:
                     img_info = outputs["9"]["images"][0]
                     img_url = f"{COMFYUI_URL}/view?{urlencode(img_info)}"
-                    # 이미지 다운로드
                     img_data = await client.get(img_url)
                     if img_data.status_code == 200:
                         with open(out_file, "wb") as f:
@@ -227,7 +231,7 @@ async def generate_single_item(client: httpx.AsyncClient, item: dict, checkpoint
     return False
 
 
-async def main(limit: int = 0):
+async def main(target: str = "sample"):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     if not os.path.exists(CSV_PATH):
@@ -235,28 +239,36 @@ async def main(limit: int = 0):
         return
 
     items = []
-    # utf-8-sig — CSV 에 BOM 이 있어 utf-8 로 읽으면 첫 헤더가 "﻿Name" 이 된다.
     with open(CSV_PATH, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row.get("ItemID"):
                 items.append(row)
 
-    if limit > 0:
-        items = items[:limit]
+    if target == "sample":
+        target_ids = ["KnightSword", "HealthPotion", "Pistol", "Leather", "Shield_Knight"]
+        items = [item for item in items if item["ItemID"] in target_ids]
+        force = True
+        print("=== [클린 아이솔레이션 v3 표본 검증 모드 (5종)] ===")
+    elif target == "all" or target == "force":
+        force = True
+        print(f"=== [클린 아이솔레이션 v3 전량 72종 모드 (덮어쓰기={force})] ===")
+    else:
+        target_ids = [t.strip() for t in target.split(",")]
+        items = [item for item in items if item["ItemID"] in target_ids]
+        force = True
+        print(f"=== [지정 아이템 재생성 모드 ({len(items)}종): {', '.join(target_ids)}] ===")
 
     total = len(items)
-    print(f"=== 아이템 아이콘 일괄 생성 시작 (총 {total}종) ===")
     print(f"출력 경로: {OUTPUT_DIR}\n")
 
     async with httpx.AsyncClient(timeout=120) as client:
-        # 가용 체크포인트 선택
         checkpoint = await get_best_checkpoint(client)
         print(f"사용 모델: {checkpoint}\n")
 
         success_count = 0
         for i, item in enumerate(items, 1):
-            success = await generate_single_item(client, item, checkpoint, i, total)
+            success = await generate_single_item(client, item, checkpoint, i, total, force=force)
             if success:
                 success_count += 1
 
@@ -264,5 +276,5 @@ async def main(limit: int = 0):
 
 
 if __name__ == "__main__":
-    limit_arg = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-    asyncio.run(main(limit_arg))
+    mode_arg = sys.argv[1] if len(sys.argv) > 1 else "sample"
+    asyncio.run(main(mode_arg))
