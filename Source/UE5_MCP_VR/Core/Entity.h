@@ -67,6 +67,13 @@ public:
             Category = "Character|Attributes")
   FCharacterAttributesBase GetAttributes() const;
 
+  // 자원(HP/마나/스태미나) 증감. GetAttributes 가 값 반환이라 외부에서 스탯을 쓸 수
+  // 없으므로, 소비 아이템 같은 외부 효과는 이 경로로 구현체에 위임한다.
+  // 구현체는 자기 멤버에 FGameResources::ApplyDelta 를 적용한다(0~Max 클램프·사망 가드 포함).
+  UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
+            Category = "Character|Attributes")
+  void ApplyResourceDelta(float DeltaHealth, float DeltaMana, float DeltaStamina);
+
   UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
             Category = "Character|Tags")
   void SetStateTag(FGameplayTag Tag);

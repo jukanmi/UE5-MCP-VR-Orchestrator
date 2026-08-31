@@ -401,6 +401,8 @@ public:
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
+    virtual void ApplyResourceDelta_Implementation(float DeltaHealth, float DeltaMana, float DeltaStamina) override
+    { CurrentStats.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
     virtual FString GetPlayerName_Implementation() const override { return GetName(); }
     virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }

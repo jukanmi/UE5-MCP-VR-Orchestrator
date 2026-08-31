@@ -189,6 +189,8 @@ public:
 
     // ICharacterBase
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return NPCAttributes; }
+    virtual void ApplyResourceDelta_Implementation(float DeltaHealth, float DeltaMana, float DeltaStamina) override
+    { NPCAttributes.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override;
 
     // INPC

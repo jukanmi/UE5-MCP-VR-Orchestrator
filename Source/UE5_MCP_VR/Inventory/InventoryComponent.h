@@ -58,6 +58,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Config")
     TArray<FString> InitialDefaultItems;
 
+    // 드랍 시 스폰할 액터 클래스. 아이템이 FItemData::WorldMeshClass 로 자기 BP 를 지정했다면 그쪽이 우선한다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    TSubclassOf<class ADroppedItemBase> DroppedItemClass;
+
+    // WorldMesh·WorldMeshClass 가 모두 빈 아이템의 드랍·장착 폴백 메시(기본 큐브).
+    // 아이템 72종의 메시 에셋이 아직 없어서, 이게 없으면 드랍 액터가 보이지 않는다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    TSoftObjectPtr<UStaticMesh> DefaultDropMesh;
+
+    // 장착 메시를 붙일 소켓 이름. 스켈레톤이 바뀌어도 C++ 수정 없이 대응하도록 노출.
+    // 기본값은 Mixamo X_Bot 손 본 이름 — 이 스켈레톤엔 손 소켓 에셋이 없고(2026-08-31 실측),
+    // 부착은 소켓이 없으면 동명 본을 찾으므로 본 이름으로 붙인다(MeleeSphere 부착과 같은 방식).
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    FName MainHandSocket = TEXT("RightHand");
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    FName OffHandSocket = TEXT("LeftHand");
+
     // --- Runtime Data (Play 중 변화) ---
 
     // 실제 인벤토리 슬롯 배열 (Blueprint에서 조회 가능)
@@ -104,6 +122,23 @@ public:
     bool RemoveItem(const FString& ItemID, int32 Amount = 1);
 
     /**
+     * 소비 아이템을 1개 사용합니다.
+     * - 회복량(HealthRestore/ManaRestore/StaminaRestore)을 소유자에게 적용하고 수량을 차감합니다.
+     * - Consumable 이 아니거나 소유자가 ICharacterBase 가 아니면 차감 없이 실패(false).
+     * - 회복량이 전부 0 이어도 성공합니다(연막탄처럼 회복이 아닌 소비템).
+     */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
+    bool UseItem(const FString& ItemID);
+
+    /**
+     * 아이템을 월드에 버립니다.
+     * - 소유자 전방 발밑에 드랍 액터를 스폰한 뒤 인벤토리에서 차감합니다.
+     * - 스폰이 실패하면 차감하지 않습니다(아이템 증발 방지).
+     */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
+    bool DropItem(const FString& ItemID, int32 Amount = 1);
+
+    /**
      * 특정 아이템을 일정 수량 이상 가지고 있는지 확인합니다.
      */
     UFUNCTION(BlueprintPure, Category = "Inventory|Check")
@@ -148,6 +183,24 @@ public:
     void CalculateWeight();
 
 protected:
+    // 장착 슬롯별로 소유자 메시에 붙여둔 비주얼 컴포넌트. 해제 시 파괴 대상을 찾는 유일한 근거.
+    UPROPERTY(Transient)
+    TMap<EEquipmentSlot, TObjectPtr<UStaticMeshComponent>> AttachedMeshes;
+
+    // 드랍·장착에 쓸 메시 결정: WorldMesh → (개별 BP 경로가 아니면) DefaultDropMesh 순.
+    UStaticMesh* ResolveItemMesh(const FItemData& Data) const;
+
+    // 장착 아이템 메시를 소유자 손 소켓에 부착. 소켓·메시가 없으면 경고만 남기고 건너뛴다
+    // (비주얼 실패가 장착 자체를 막으면 안 된다).
+    void AttachEquipmentMesh(EEquipmentSlot Slot, const FItemData& Data);
+
+    // 해당 슬롯에 부착해 둔 메시 컴포넌트 파괴. 슬롯 교체는 EquipItem 이 먼저 부르는
+    // UnequipItem 을 타고 여기로 오므로, 부착 경로에서 중복 파괴하지 말 것.
+    void DetachEquipmentMesh(EEquipmentSlot Slot);
+
+    // 슬롯 → 소켓 이름. MainHand/OffHand 외 부위는 방어구 미도입이라 NAME_None.
+    FName GetSocketNameForSlot(EEquipmentSlot Slot) const;
+
     // 기존 인벤토리에 같은 아이템이 있다면 잔여 공간(MaxStack)만큼 채워넣어 슬롯 낭비를 방지합니다.
     int32 TryStackItemsExisting(const FItemData& TargetItem, int32 RemainingAmount);
 

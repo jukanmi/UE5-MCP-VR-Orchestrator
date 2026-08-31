@@ -85,6 +85,23 @@ struct UE5_MCP_VR_API FItemData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stats")
     int32 BaseValue = 10;
 
+    // --- Consume ---
+    // 소비(Consumable) 시 사용자의 자원을 얼마나 회복시키는지. 0 이면 해당 자원 미회복.
+    // 세 값이 전부 0 이어도 소비는 성공 처리한다 — 연막탄·주문서처럼 회복이 아닌
+    // 효과를 가진 소비템이 있고, 그 효과는 아직 미구현이라 여기에 담을 자리가 없다.
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Consume",
+              meta = (EditCondition = "ItemType == EItemType::Consumable"))
+    float HealthRestore = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Consume",
+              meta = (EditCondition = "ItemType == EItemType::Consumable"))
+    float ManaRestore = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Consume",
+              meta = (EditCondition = "ItemType == EItemType::Consumable"))
+    float StaminaRestore = 0.f;
+
     // --- Durability ---
 
     // 내구도 사용 여부
@@ -115,7 +132,14 @@ struct UE5_MCP_VR_API FItemData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TSoftObjectPtr<UTexture2D> Icon;
 
-    // 월드에 표시될 3D 모델 (필드에 떨어뜨리거나 상호작용할 때 사용)
+    // 드랍 스폰·손 소켓 부착에 공용으로 쓰는 스태틱 메시.
+    // 아이템 72종에 BP 를 하나씩 만드는 대신 메시만 갈아끼우는 간편 경로다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
+    TSoftObjectPtr<UStaticMesh> WorldMesh;
+
+    // 월드에 표시될 3D 모델 (필드에 떨어뜨리거나 상호작용할 때 사용).
+    // 고유 물리·상호작용이 필요한 아이템만 개별 BP 를 지정하는 고급 경로 —
+    // WorldMesh 가 비었을 때만 참조한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TSoftClassPtr<AActor> WorldMeshClass;
     

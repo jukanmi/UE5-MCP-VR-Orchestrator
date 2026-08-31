@@ -1,7 +1,23 @@
 #include "InventoryComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StaticMesh.h"
 #include "ItemManager.h"
+#include "DroppedItemBase.h"
+#include "../Core/Entity.h"
+#include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+
+namespace
+{
+    // 드랍 위치 — 소유자 전방 이 거리의 발밑에 스폰한다. 손 닿는 거리이면서 자기 캡슐과 안 겹치는 값.
+    constexpr float DropForwardDistance = 100.f;
+
+    // 발밑에서 살짝 띄워 스폰 — 바닥과 겹친 채 물리를 켜면 튕겨 날아간다.
+    constexpr float DropGroundClearance = 20.f;
+}
 
 // 기본 생성자 (Empty Slot 배열 초기화)
 UInventoryComponent::UInventoryComponent()
@@ -9,6 +25,12 @@ UInventoryComponent::UInventoryComponent()
     PrimaryComponentTick.bCanEverTick = false;
     MaxSlotCapacity = 10;
     MaximumWeightLimit = 50.0f;
+
+    // 드랍 스폰 기본값 — 네이티브 클래스가 생성자에서 물리·충돌·상호작용 구체를 이미 갖춘다.
+    DroppedItemClass = ADroppedItemBase::StaticClass();
+
+    // 아이템별 메시 에셋이 확보되기 전까지 전 아이템이 이 큐브로 떨어진다.
+    DefaultDropMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
 }
 
 // 초기 아이템 지급
@@ -174,6 +196,136 @@ bool UInventoryComponent::RemoveItem(const FString& ItemID, int32 Amount)
     }
 
     return (RemainingToRemove == 0); // 요청 수량을 모두 제거했으면 참
+}
+
+// 아이템 사용 (소비 효과)
+bool UInventoryComponent::UseItem(const FString& ItemID)
+{
+    const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
+    if (SlotIndex == INDEX_NONE)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Use Failed: Item %s not found."), *ItemID);
+        return false;
+    }
+
+    // 차감하면 슬롯이 비어 회복량을 읽을 수 없다 — 값으로 먼저 복사해 둔다.
+    const FItemData Data = InventorySlots[SlotIndex].ItemData;
+
+    if (Data.ItemType != EItemType::Consumable)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Use Failed: %s is not consumable."), *ItemID);
+        return false;
+    }
+
+    AActor* OwnerActor = GetOwner();
+    if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UCharacterBase::StaticClass()))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Use Failed: Owner cannot receive resources (%s)."), *ItemID);
+        return false;
+    }
+
+    // 차감 성공 후에만 효과 적용 — 순서가 바뀌면 실패 시 회복만 공짜로 남는다.
+    if (!RemoveItem(ItemID, 1)) return false;
+
+    ICharacterBase::Execute_ApplyResourceDelta(OwnerActor, Data.HealthRestore, Data.ManaRestore, Data.StaminaRestore);
+
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] Used %s — HP %+.0f / MP %+.0f / SP %+.0f"),
+           *ItemID, Data.HealthRestore, Data.ManaRestore, Data.StaminaRestore);
+    return true;
+}
+
+// 아이템 드랍 (월드 스폰)
+bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
+{
+    if (Amount <= 0) return false;
+
+    const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
+    if (SlotIndex == INDEX_NONE || !HasItem(ItemID, Amount))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Failed: %s x%d not held."), *ItemID, Amount);
+        return false;
+    }
+
+    const FItemData Data = InventorySlots[SlotIndex].ItemData;
+
+    AActor* OwnerActor = GetOwner();
+    UWorld* World = GetWorld();
+    if (!IsValid(OwnerActor) || !World) return false;
+
+    // 스폰 지점: 소유자 전방 발밑. 벽 너머로 던져지지 않게 트레이스로 막힘을 확인한다.
+    const ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor);
+    const float CapsuleHalfHeight = (OwnerCharacter && OwnerCharacter->GetCapsuleComponent())
+        ? OwnerCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f;
+
+    const FVector FeetLocation = OwnerActor->GetActorLocation()
+        - FVector(0.f, 0.f, CapsuleHalfHeight - DropGroundClearance);
+    FVector SpawnLocation = FeetLocation + OwnerActor->GetActorForwardVector() * DropForwardDistance;
+
+    FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(InventoryDrop), false, OwnerActor);
+    FHitResult BlockingHit;
+    if (World->LineTraceSingleByChannel(BlockingHit, FeetLocation, SpawnLocation, ECC_WorldStatic, TraceParams))
+    {
+        SpawnLocation = FeetLocation;
+    }
+
+    // 스폰 클래스: 아이템이 고유 BP(WorldMeshClass)를 지정했으면 그쪽이 우선.
+    // 단 그 BP 가 ADroppedItemBase 파생이 아니면 ItemManager 등록·픽업 경로를 못 타므로 무시한다.
+    UClass* SpawnClass = DroppedItemClass ? DroppedItemClass.Get() : ADroppedItemBase::StaticClass();
+    bool bUsingItemOwnBlueprint = false;
+    if (!Data.WorldMeshClass.IsNull())
+    {
+        if (UClass* CustomClass = Data.WorldMeshClass.LoadSynchronous())
+        {
+            if (CustomClass->IsChildOf(ADroppedItemBase::StaticClass()))
+            {
+                SpawnClass = CustomClass;
+                bUsingItemOwnBlueprint = true;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[Inventory] %s 의 WorldMeshClass 가 ADroppedItemBase 파생이 아니라 무시합니다."), *ItemID);
+            }
+        }
+    }
+
+    // Deferred 스폰 — ADroppedItemBase::BeginPlay 가 ItemTemplateID 로 ItemManager 에 등록한다.
+    // FinishSpawning 전에 ID 를 넣지 않으면 "DefaultEntity_Unknown" 으로 등록돼 NPC·픽업이 종류를 모른다.
+    const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
+    ADroppedItemBase* Dropped = World->SpawnActorDeferred<ADroppedItemBase>(
+        SpawnClass, SpawnTransform, OwnerActor, nullptr,
+        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+
+    if (!Dropped)
+    {
+        // 스폰 실패 시 차감하지 않는다 — 여기서 먼저 지우면 아이템이 증발한다.
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Failed: spawn failed for %s."), *ItemID);
+        return false;
+    }
+
+    Dropped->ItemData.ItemTemplateID = ItemID;
+    Dropped->Amount = Amount;
+
+    // 고유 BP 는 자기 메시를 이미 갖고 있으므로 덮어쓰지 않는다.
+    if (!bUsingItemOwnBlueprint && Dropped->ItemMesh)
+    {
+        if (UStaticMesh* Mesh = ResolveItemMesh(Data))
+        {
+            Dropped->ItemMesh->SetStaticMesh(Mesh);
+        }
+    }
+
+    Dropped->FinishSpawning(SpawnTransform);
+
+    if (!RemoveItem(ItemID, Amount))
+    {
+        // 위 HasItem 검사를 통과했다면 도달 불가. 도달했다면 스폰분을 되돌려 복제를 막는다.
+        UE_LOG(LogTemp, Error, TEXT("[Inventory] Drop 차감 실패 — 스폰한 %s 를 되돌립니다."), *ItemID);
+        Dropped->Destroy();
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] Dropped %s x%d"), *ItemID, Amount);
+    return true;
 }
 
 int32 UInventoryComponent::GetSlotIndexByItemID(const FString& ItemID) const
@@ -354,6 +506,7 @@ bool UInventoryComponent::EquipItem(const FString& ItemID, EEquipmentSlot Target
     }
     
     EquipmentSlots.Add(TargetSlot, NewEquipSlot);
+    AttachEquipmentMesh(TargetSlot, NewEquipSlot.ItemData);
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Equipped %s to Slot %d"), *ItemID, (int32)TargetSlot);
 
     OnInventoryChanged.Broadcast();
@@ -375,6 +528,7 @@ bool UInventoryComponent::UnequipItem(EEquipmentSlot TargetSlot)
     }
 
     EquipmentSlots.Remove(TargetSlot);
+    DetachEquipmentMesh(TargetSlot);
 
     // 2. 무게 이중 계산 보정 (AddItem에서 올라간 무게 상쇄)
     // Count 기준 — EquipItem 이 현재 1개 고정이지만 하드코딩 1.0f 는 불변식 위반 시 무게 드리프트
@@ -415,4 +569,75 @@ FInventorySlot UInventoryComponent::GetEquippedItem(EEquipmentSlot TargetSlot) c
 {
     const FInventorySlot* FoundSlot = EquipmentSlots.Find(TargetSlot);
     return FoundSlot ? *FoundSlot : FInventorySlot();
+}
+
+// --- Visual Implementation ---
+
+UStaticMesh* UInventoryComponent::ResolveItemMesh(const FItemData& Data) const
+{
+    if (!Data.WorldMesh.IsNull())
+    {
+        if (UStaticMesh* Mesh = Data.WorldMesh.LoadSynchronous())
+        {
+            return Mesh;
+        }
+    }
+
+    return DefaultDropMesh.IsNull() ? nullptr : DefaultDropMesh.LoadSynchronous();
+}
+
+FName UInventoryComponent::GetSocketNameForSlot(EEquipmentSlot Slot) const
+{
+    switch (Slot)
+    {
+    case EEquipmentSlot::MainHand: return MainHandSocket;
+    case EEquipmentSlot::OffHand:  return OffHandSocket;
+    default:                       return NAME_None;   // 방어구 부위는 부착 대상 없음
+    }
+}
+
+void UInventoryComponent::AttachEquipmentMesh(EEquipmentSlot Slot, const FItemData& Data)
+{
+    const FName SocketName = GetSocketNameForSlot(Slot);
+    if (SocketName.IsNone()) return;
+
+    const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
+
+    // 비주얼 실패는 장착 데이터까지 되돌리지 않는다 — 로그만 남기고 넘어간다.
+    if (!OwnerMesh || !OwnerMesh->DoesSocketExist(SocketName))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 장착 메시 부착 생략 — 소켓 %s 없음(%s)."),
+               *SocketName.ToString(), *Data.ItemID);
+        return;
+    }
+
+    UStaticMesh* Mesh = ResolveItemMesh(Data);
+    if (!Mesh)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 장착 메시 부착 생략 — 메시 없음(%s)."), *Data.ItemID);
+        return;
+    }
+
+    UStaticMeshComponent* AttachedMesh = NewObject<UStaticMeshComponent>(GetOwner());
+    AttachedMesh->SetStaticMesh(Mesh);
+
+    // 손에 붙은 장식물이 캡슐·NPC 인지를 방해하지 않도록 충돌은 끈다(타격 판정은 MeleeSphere 담당).
+    AttachedMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    AttachedMesh->RegisterComponent();
+    AttachedMesh->AttachToComponent(OwnerMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, SocketName);
+
+    AttachedMeshes.Add(Slot, AttachedMesh);
+}
+
+void UInventoryComponent::DetachEquipmentMesh(EEquipmentSlot Slot)
+{
+    if (TObjectPtr<UStaticMeshComponent>* Found = AttachedMeshes.Find(Slot))
+    {
+        if (IsValid(*Found))
+        {
+            (*Found)->DestroyComponent();
+        }
+        AttachedMeshes.Remove(Slot);
+    }
 }

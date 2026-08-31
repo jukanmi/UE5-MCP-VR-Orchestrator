@@ -86,6 +86,17 @@ struct FGameResources
     // Helper: Is Alive?
     bool IsAlive() const { return Health > 0.0f; }
 
+    // Helper: 자원 증감 후 0~Max 클램프. 소비 아이템 회복이 이 경로로만 자원을 건드린다.
+    // 사망(Health<=0) 상태에선 통째로 무시 — 시체를 포션으로 살리는 건 리스폰 경로의 몫이다.
+    void ApplyDelta(float DeltaHealth, float DeltaMana, float DeltaStamina)
+    {
+        if (!IsAlive()) return;
+
+        Health  = FMath::Clamp(Health  + DeltaHealth,  0.0f, MaxHealth);
+        Mana    = FMath::Clamp(Mana    + DeltaMana,    0.0f, MaxMana);
+        Stamina = FMath::Clamp(Stamina + DeltaStamina, 0.0f, MaxStamina);
+    }
+
     // Helper: Resource Percentages
     float GetHealthPercent() const { return MaxHealth > 0 ? Health / MaxHealth : 0.0f; }
     float GetManaPercent() const { return MaxMana > 0 ? Mana / MaxMana : 0.0f; }

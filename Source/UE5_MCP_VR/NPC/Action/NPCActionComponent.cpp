@@ -1718,7 +1718,8 @@ void UNPCActionComponent::ExecuteScan(FVector TargetLocation, AActor* TargetActo
 
 void UNPCActionComponent::ExecuteUseItem(const FString& ItemID)
 {
-    if (InventoryComponent && InventoryComponent->RemoveItem(ItemID, 1))
+    // UseItem 이 회복 효과 적용까지 담당 — 실패(미보유·비소비템)면 몽타주도 재생하지 않는다.
+    if (InventoryComponent && InventoryComponent->UseItem(ItemID))
     {
         BasePlayActionMedia(TEXT("Eat"));
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 사용: %s"), *ItemID);
@@ -2227,28 +2228,17 @@ void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID)
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter || !InventoryComponent) return;
 
-    if (!InventoryComponent->RemoveItem(TargetTemplateID, 1))
+    // 월드 스폰·ItemManager 등록·차감은 DropItem 이 일괄 처리한다.
+    // 스폰이 실패하면 인벤토리를 건드리지 않으므로 여기서 되돌릴 것이 없다.
+    if (!InventoryComponent->DropItem(TargetTemplateID, 1))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 실패 (인벤토리 없음): %s"), *TargetTemplateID);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 실패: %s"), *TargetTemplateID);
         return;
     }
 
     BasePlayActionMedia(TEXT("Drop"));
     UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f);
-
-    UGameInstance* GI = OwnerCharacter->GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-    if (!IsValid(ItemManager)) return;
-
-    // TODO: TargetTemplateID → BP 클래스 매핑 후 SpawnActor 구현
-    AActor* SpawnedItem = nullptr;
-    if (IsValid(SpawnedItem))
-    {
-        const FString UUID = FGuid::NewGuid().ToString();
-        ItemManager->RegisterDroppedItem(UUID, SpawnedItem, TargetTemplateID);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍 등록: %s / %s"), *TargetTemplateID, *UUID);
-    }
-    else { UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 스폰 미구현(TODO): %s"), *TargetTemplateID); }
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍: %s"), *TargetTemplateID);
 }
 
 void UNPCActionComponent::ExecuteCraft(const TArray<FString>& ItemIDs)
