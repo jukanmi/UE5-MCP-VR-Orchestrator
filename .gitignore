@@ -159,3 +159,6 @@ OmniAgent_VR_System/CognitiveEngine/finetune/train/outputs/
 *.gguf
 *.parquet
 *.tar.gz
+
+# ComfyUI MCP 생성물 — 재생성 가능한 산출물이라 추적하지 않는다
+tools/comfyui_mcp/outputs/
