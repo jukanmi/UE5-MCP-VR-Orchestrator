@@ -48,7 +48,7 @@ class UCharacterBase : public UInterface {
 };
 
 // [주의] I* 인터페이스 클래스에는 멤버 변수를 선언할 수 없습니다.
-// StateTags, EntityID 등의 데이터는 구현 클래스(ASmartNPC, AVRPlayerCharacter
+// StateTags, EntityID 등의 데이터는 구현 클래스(ASmartNPC, AVRPawn
 // 등)에서 관리하세요.
 class UE5_MCP_VR_API ICharacterBase : public IGameplayTagAssetInterface {
   GENERATED_BODY()

@@ -321,7 +321,7 @@ void ASmartNPC::PerformAttackHit()
         Ev.HitInfo.Location    = Impact;
         Target->TakeDamage(Damage, Ev, GetController(), this);
 
-        // 넉백 + 햅틱(피격 효과). VRPawn=VR 컨트롤러 럼블, VRPlayerCharacter(레거시)=넉백만.
+        // 넉백 + 햅틱(피격 효과). 햅틱은 AVRPawn 캐스트 성공 시에만 — 그 외 폰은 넉백만.
         if (ACharacter* TargetChar = Cast<ACharacter>(Target))
         {
             if (NPCKnockbackSpeed > 0.f)

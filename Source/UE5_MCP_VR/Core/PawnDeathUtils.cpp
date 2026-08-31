@@ -9,14 +9,12 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 
-void PawnDeathUtils::SaveCheckpoint(const FPlayerAttributes& Stats, bool bRequireAlive,
+void PawnDeathUtils::SaveCheckpoint(const FPlayerAttributes& Stats,
                                     const FVector& Location, const FRotator& Rotation,
                                     bool& bHasCheckpoint, FVector& OutLocation,
                                     FRotator& OutRotation, float& OutHP,
                                     const TCHAR* LogContext)
 {
-    if (bRequireAlive && !Stats.Resources.IsAlive()) return;
-
     bHasCheckpoint = true;
     OutLocation    = Location;
     OutRotation    = Rotation;
@@ -27,7 +25,7 @@ void PawnDeathUtils::SaveCheckpoint(const FPlayerAttributes& Stats, bool bRequir
 }
 
 void PawnDeathUtils::HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
-                                 bool bClearCursor, float RespawnDelay,
+                                 float RespawnDelay,
                                  FTimerHandle& RespawnTimer, FTimerDelegate RespawnDelegate,
                                  const TCHAR* LogContext)
 {
@@ -41,11 +39,6 @@ void PawnDeathUtils::HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
     if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
     {
         Pawn->DisableInput(PC);
-        if (bClearCursor)
-        {
-            PC->bShowMouseCursor = false;
-            PC->SetInputMode(FInputModeGameOnly());
-        }
     }
 
     // 충돌/메시 비활성화

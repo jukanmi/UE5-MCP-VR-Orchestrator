@@ -925,7 +925,7 @@ bool AVRPawn::TrySitOnNearbyFurniture()
     UFurnitureManager* Mgr = UFurnitureManager::Get(this);
     if (!Mgr) return false;
 
-    // 반경 내 최근접 빈 착석 가구(Seat/Bed) — 탐색은 매니저 공용 헬퍼(VRPlayerCharacter 와 공유).
+    // 반경 내 최근접 빈 착석 가구(Seat/Bed) — 탐색은 매니저 공용 헬퍼.
     AFurnitureActor* Nearest = Mgr->FindNearestVacantSitable(GetActorLocation(), FurnitureInteractRange);
     if (!Nearest || !Nearest->TryOccupy(this)) return false;
 
@@ -1107,7 +1107,7 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
 void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    PawnDeathUtils::SaveCheckpoint(CurrentStats, /*bRequireAlive*/false,
+    PawnDeathUtils::SaveCheckpoint(CurrentStats,
         Location, Rotation, bHasCheckpoint, CheckpointLocation,
         CheckpointRotation, CheckpointHP, TEXT("VRPawn"));
 }
@@ -1118,7 +1118,7 @@ void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 
 void AVRPawn::HandleDeath()
 {
-    PawnDeathUtils::HandleDeath(this, GameplayTags, /*bClearCursor*/false,
+    PawnDeathUtils::HandleDeath(this, GameplayTags,
         RespawnDelay, RespawnTimerHandle,
         FTimerDelegate::CreateUObject(this, &AVRPawn::Respawn), TEXT("VRPawn"));
 }

@@ -1,9 +1,9 @@
 // PlayerHUDWidget — 플레이어 HP 바 + 인벤토리 슬롯 표시 HUD.
 //
-// 구체 플레이어 클래스(AVRPlayerCharacter / AVRPawn)에 의존하지 않는다:
-//   - HP   : 소유 폰의 IPlayerBase::GetPlayerAttributes (양 클래스 모두 구현)
+// 구체 플레이어 클래스(AVRPawn 등)에 의존하지 않는다:
+//   - HP   : 소유 폰의 IPlayerBase::GetPlayerAttributes
 //   - 인벤토리: 소유 폰의 UInventoryComponent (FindComponentByClass)
-// 덕분에 두 플레이어 타입 모두 동일 위젯으로 동작.
+// 덕분에 IPlayerBase 를 구현한 폰이면 어느 것이든 동일 위젯으로 동작.
 //
 // WBP 사용법:
 //   - 이 클래스를 부모로 하는 WBP 작성.

@@ -175,7 +175,7 @@ bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
         return TargetNPC->bIsDead;
     }
 
-    // 플레이어(VRPawn/VRPlayerCharacter) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
+    // 플레이어(VRPawn) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
     if (const IGameplayTagAssetInterface* TagOwner = Cast<IGameplayTagAssetInterface>(Target))
     {
         return TagOwner->HasMatchingGameplayTag(TAG_State_Condition_Dead);

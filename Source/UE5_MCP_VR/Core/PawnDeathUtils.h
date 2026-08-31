@@ -8,19 +8,14 @@
 class ACharacter;
 
 /**
- * VRPawn·VRPlayerCharacter 공통 사망/리스폰/체크포인트 헬퍼.
- * 두 폰에 글자 단위로 복붙돼 있던 HandleDeath/Respawn/SaveCheckpoint 본문 단일화.
+ * 플레이어 폰 사망/리스폰/체크포인트 공통 헬퍼.
  * (GameplayTags·CurrentStats·Checkpoint 필드는 각 폰이 보유 — 본 헬퍼는 인자로 받아 로직만 공유.)
- *
- * 폰별 차이는 플래그/인자로 흡수:
- *  - bRequireAlive : 사망 시 체크포인트 저장 스킵 여부(플레이어 폰만 true)
- *  - bClearCursor  : 사망 시 마우스 커서·InputMode 정리 여부(플랫스크린 폰만 true)
- *  - LogContext    : 로그 접두( "VRPawn" / "VRPlayerCharacter" )
+ * LogContext 는 로그 접두(예: "VRPawn").
  */
 namespace PawnDeathUtils
 {
-    /** 현재 위치/HP 를 체크포인트로 저장. bRequireAlive=true 면 사망 상태에선 저장 스킵. */
-    void SaveCheckpoint(const FPlayerAttributes& Stats, bool bRequireAlive,
+    /** 현재 위치/HP 를 체크포인트로 저장. */
+    void SaveCheckpoint(const FPlayerAttributes& Stats,
                         const FVector& Location, const FRotator& Rotation,
                         bool& bHasCheckpoint, FVector& OutLocation,
                         FRotator& OutRotation, float& OutHP,
@@ -29,7 +24,7 @@ namespace PawnDeathUtils
     /** 사망 처리: Dead 태그 세팅·입력차단·충돌off·메시숨김·리스폰 타이머 예약.
      *  RespawnDelegate = 각 폰의 Respawn() 바인딩(FTimerDelegate::CreateUObject). */
     void HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
-                     bool bClearCursor, float RespawnDelay,
+                     float RespawnDelay,
                      FTimerHandle& RespawnTimer, FTimerDelegate RespawnDelegate,
                      const TCHAR* LogContext);
 
