@@ -54,6 +54,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
     float MaximumWeightLimit = 50.0f;
 
+    // 한 슬롯에 쌓을 수 있는 상한. 아이템 데이터의 MaxStack 과 비교해 작은 쪽이 실제 상한이 된다.
+    // 마스터 테이블은 돌멩이 64·빵 16처럼 종류마다 제각각인데, 슬롯 UI 는 두 자리 수를
+    // 넘어가면 읽기 어렵고 소지 한도도 종류에 따라 들쭉날쭉해진다. 여기서 일괄로 눌러 둔다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config", meta = (ClampMin = "1"))
+    int32 MaxStackLimit = 10;
+
     // 튜토리얼이나 기본 지급 장비를 일괄 적용하기 위해 스폰 시점에 미리 가져올 에셋들의 DataTable Row 이름입니다.
     // GetOptions — 에디터에서 직접 타이핑하는 대신 DT_ItemRegistry 행 목록에서 고른다.
     // 오타는 조회 실패로 조용히 지급 누락이 되므로(로그만 남음) 입력 자체를 막는 편이 낫다.
@@ -146,6 +152,41 @@ public:
      */
     UFUNCTION(BlueprintPure, Category = "Inventory|Check")
     bool HasItem(const FString& ItemID, int32 Amount = 1);
+
+    /**
+     * 특정 아이템의 총 보유 수량 (인벤토리 + 장착 중). HasItem 과 같은 기준입니다.
+     */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetItemCount(const FString& ItemID) const;
+
+    /**
+     * 특정 아이템 중 인벤토리 슬롯에만 들어 있는 수량 (장착분 제외).
+     * 버리기·건네주기처럼 실제로 슬롯에서 빼내야 하는 동작의 판정 기준입니다.
+     */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetItemCountInSlots(const FString& ItemID) const;
+
+    /** 아이템이 들어 있는 슬롯 수. */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetUsedSlotCount() const;
+
+    /** 비어 있는 슬롯 수. */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetFreeSlotCount() const;
+
+    /** 인벤토리에 든 아이템 총 개수(수량 합계, 장착분 제외). */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetTotalItemCount() const;
+
+    /**
+     * 이 아이템을 지금 몇 개까지 더 받을 수 있는지 (슬롯 여유 + 스택 상한 기준, 무게 미포함).
+     */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetRemainingCapacityFor(const FItemData& Item) const;
+
+    /** 이 아이템의 실제 스택 상한 = min(아이템 데이터 MaxStack, MaxStackLimit). */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    int32 GetEffectiveMaxStack(const FItemData& Item) const;
 
     /**
      * 아이템 수리

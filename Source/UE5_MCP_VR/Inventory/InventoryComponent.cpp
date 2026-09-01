@@ -73,10 +73,15 @@ bool UInventoryComponent::AddItem(const FItemData& ItemData, int32 Amount, bool 
         return false;
     }
 
+    // 실패 시 되돌리기 위한 스냅샷. 부분 적재 상태로 false 를 내면 호출측이 전부
+    // "아무것도 안 들어갔다"로 해석해 원본을 그대로 남기므로 아이템이 복제된다
+    // (월드 픽업은 액터를 남기고, NPC 전달은 준 쪽 재고를 유지한다).
+    const TArray<FInventorySlot> SlotsBackup = InventorySlots;
+
     int32 RemainingAmount = Amount;
 
     // 1. 스택 가능한 아이템이면 기존 슬롯에 합치기 시도
-    if (ItemData.MaxStack > 1) 
+    if (GetEffectiveMaxStack(ItemData) > 1)
     {
         RemainingAmount = TryStackItemsExisting(ItemData, RemainingAmount);
     }
@@ -87,20 +92,13 @@ bool UInventoryComponent::AddItem(const FItemData& ItemData, int32 Amount, bool 
         RemainingAmount = TryStoreInEmptySlots(ItemData, RemainingAmount);
     }
 
-    // 공간 부족 검증
+    // 공간 부족 검증 — 한 개라도 못 넣으면 전량 취소
     if (RemainingAmount > 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Slots Full! Cannot add %d more of %s"), RemainingAmount, *ItemData.ItemID);
-        
-        // 추가 성공한 만큼만 무게 반영
-        float PartialWeightAdded = ItemData.Weight * static_cast<float>(Amount - RemainingAmount);
-        CurrentWeight += PartialWeightAdded;
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Slots Full! Cannot add %d of %s (%d 개 부족하여 전량 취소)"),
+               Amount, *ItemData.ItemID, RemainingAmount);
 
-        // 부분 추가라도 슬롯이 변했으면 알림
-        if (RemainingAmount < Amount)
-        {
-            OnInventoryChanged.Broadcast();
-        }
+        InventorySlots = SlotsBackup;
         return false;
     }
 
@@ -121,7 +119,7 @@ int32 UInventoryComponent::TryStackItemsExisting(const FItemData& TargetItem, in
             break; // 더 이상 채울 수 있는 기존 스택이 없음
         }
 
-        int32 AvailableSpace = TargetItem.MaxStack - InventorySlots[StackableSlotIndex].Count;
+        int32 AvailableSpace = GetEffectiveMaxStack(TargetItem) - InventorySlots[StackableSlotIndex].Count;
         int32 AmountToAdd = FMath::Min(RemainingAmount, AvailableSpace);
 
         InventorySlots[StackableSlotIndex].Count += AmountToAdd;
@@ -141,7 +139,7 @@ int32 UInventoryComponent::TryStoreInEmptySlots(const FItemData& TargetItem, int
             break; // 더 이상 빈 슬롯 없음
         }
 
-        int32 AmountToAdd = FMath::Min(RemainingAmount, TargetItem.MaxStack);
+        int32 AmountToAdd = FMath::Min(RemainingAmount, GetEffectiveMaxStack(TargetItem));
         InventorySlots[EmptySlotIndex].ItemData = TargetItem;
         InventorySlots[EmptySlotIndex].Count = AmountToAdd;
         
@@ -198,6 +196,87 @@ bool UInventoryComponent::RemoveItem(const FString& ItemID, int32 Amount)
     return (RemainingToRemove == 0); // 요청 수량을 모두 제거했으면 참
 }
 
+// --- 수량 조회 ---
+
+int32 UInventoryComponent::GetEffectiveMaxStack(const FItemData& Item) const
+{
+    // 아이템 데이터가 1(장비 등)이면 그쪽이 이긴다 — 상한은 늘리는 값이 아니라 누르는 값이다.
+    return FMath::Max(1, FMath::Min(Item.MaxStack, MaxStackLimit));
+}
+
+int32 UInventoryComponent::GetItemCountInSlots(const FString& ItemID) const
+{
+    int32 Total = 0;
+    for (const FInventorySlot& Slot : InventorySlots)
+    {
+        if (!Slot.IsEmpty() && Slot.ItemData.ItemID == ItemID)
+        {
+            Total += Slot.Count;
+        }
+    }
+    return Total;
+}
+
+int32 UInventoryComponent::GetItemCount(const FString& ItemID) const
+{
+    int32 Total = GetItemCountInSlots(ItemID);
+    for (const auto& Pair : EquipmentSlots)
+    {
+        const FInventorySlot& Slot = Pair.Value;
+        if (!Slot.IsEmpty() && Slot.ItemData.ItemID == ItemID)
+        {
+            Total += Slot.Count;
+        }
+    }
+    return Total;
+}
+
+int32 UInventoryComponent::GetUsedSlotCount() const
+{
+    int32 Used = 0;
+    for (const FInventorySlot& Slot : InventorySlots)
+    {
+        if (!Slot.IsEmpty()) ++Used;
+    }
+    return Used;
+}
+
+int32 UInventoryComponent::GetFreeSlotCount() const
+{
+    return InventorySlots.Num() - GetUsedSlotCount();
+}
+
+int32 UInventoryComponent::GetTotalItemCount() const
+{
+    int32 Total = 0;
+    for (const FInventorySlot& Slot : InventorySlots)
+    {
+        if (!Slot.IsEmpty()) Total += Slot.Count;
+    }
+    return Total;
+}
+
+int32 UInventoryComponent::GetRemainingCapacityFor(const FItemData& Item) const
+{
+    if (!Item.IsValidItem()) return 0;
+
+    const int32 StackLimit = GetEffectiveMaxStack(Item);
+
+    int32 Capacity = 0;
+    for (const FInventorySlot& Slot : InventorySlots)
+    {
+        if (Slot.IsEmpty())
+        {
+            Capacity += StackLimit;
+        }
+        else if (Slot.ItemData.ItemID == Item.ItemID)
+        {
+            Capacity += FMath::Max(0, StackLimit - Slot.Count);
+        }
+    }
+    return Capacity;
+}
+
 // 아이템 사용 (소비 효과)
 bool UInventoryComponent::UseItem(const FString& ItemID)
 {
@@ -239,10 +318,12 @@ bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
 {
     if (Amount <= 0) return false;
 
+    // 장착분을 세는 HasItem 으로 판정하면 슬롯에 없는 수량을 있다고 보고,
+    // 뒤이은 RemoveItem 이 일부만 차감한 채 실패해 스폰분과 어긋난다.
     const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
-    if (SlotIndex == INDEX_NONE || !HasItem(ItemID, Amount))
+    if (SlotIndex == INDEX_NONE || GetItemCountInSlots(ItemID) < Amount)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Failed: %s x%d not held."), *ItemID, Amount);
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Failed: %s x%d not held in slots."), *ItemID, Amount);
         return false;
     }
 
@@ -343,25 +424,10 @@ int32 UInventoryComponent::GetSlotIndexByItemID(const FString& ItemID) const
 // 아이템 보유 검사
 bool UInventoryComponent::HasItem(const FString& ItemID, int32 Amount)
 {
-    int32 TotalCount = 0;
-    for (const FInventorySlot& Slot : InventorySlots)
-    {
-        if (!Slot.IsEmpty() && Slot.ItemData.ItemID == ItemID)
-        {
-            TotalCount += Slot.Count;
-        }
-    }
     // 장착 중 아이템도 보유로 집계 — CalculateWeight 와 동일 기준.
     // (장착만 하면 HasItem=false 가 되어 거래/퀘스트 판정이 어긋나는 문제 방지)
-    for (const auto& Pair : EquipmentSlots)
-    {
-        const FInventorySlot& Slot = Pair.Value;
-        if (!Slot.IsEmpty() && Slot.ItemData.ItemID == ItemID)
-        {
-            TotalCount += Slot.Count;
-        }
-    }
-    return (TotalCount >= Amount);
+    // 슬롯에서 실제로 빼내야 하는 동작은 이걸 쓰면 안 된다 — GetItemCountInSlots 로 볼 것.
+    return GetItemCount(ItemID) >= Amount;
 }
 
 // 무게 재계산 크로스체크용
@@ -405,7 +471,7 @@ int32 UInventoryComponent::GetStackableSlotIndex(const FItemData& TargetItem) co
     {
         if (!InventorySlots[i].IsEmpty() && InventorySlots[i].ItemData.ItemID == TargetItem.ItemID)
         {
-            if (InventorySlots[i].Count < TargetItem.MaxStack)
+            if (InventorySlots[i].Count < GetEffectiveMaxStack(TargetItem))
             {
                 return i;
             }

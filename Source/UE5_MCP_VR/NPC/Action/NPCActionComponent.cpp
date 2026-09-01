@@ -2122,9 +2122,10 @@ void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveI
 
 void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount)
 {
-    if (!InventoryComponent || !InventoryComponent->HasItem(ItemID, Amount))
+    // 슬롯 보유분만 본다 — 장착 중인 물건은 차감 경로가 닿지 않아 여기서 걸러야 한다.
+    if (!InventoryComponent || InventoryComponent->GetItemCountInSlots(ItemID) < Amount)
     {
-        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음: %s"), *ItemID);
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음(슬롯 기준): %s"), *ItemID);
         return;
     }
 
@@ -2153,7 +2154,16 @@ void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& It
         return;
     }
 
-    InventoryComponent->RemoveItem(ItemID, Amount);
+    // 차감 실패를 무시하면 아이템이 복제된다 — 보유 판정(HasItem)은 장착분까지 세는데
+    // 차감은 인벤토리 슬롯만 뒤지므로, 들고 있는 물건을 주라고 하면 준 쪽이 그대로 쥔 채
+    // 받는 쪽에도 새로 생긴다. 되돌려서 원상복구한다.
+    if (!InventoryComponent->RemoveItem(ItemID, Amount))
+    {
+        ReceiverInv->RemoveItem(ItemID, Amount);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전달 취소 — 슬롯에서 차감 실패(장착 중 추정): %s"), *ItemID);
+        return;
+    }
+
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
     BasePlayActionMedia(TEXT("Give"));
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달: %s x%d"), *ItemID, Amount);
