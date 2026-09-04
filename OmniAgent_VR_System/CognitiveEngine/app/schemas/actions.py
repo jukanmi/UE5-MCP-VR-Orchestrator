@@ -91,6 +91,13 @@ class DialogueActionItem(BaseModel):
     # 어휘 단일 소스는 C++ EMoveType(NPCActionTypes.h) — Walk/Run/Sprint/Crouch.
     # ParseMoveStyle 이 미매칭 값을 Walk 로 폴백하며 경고 로그를 남긴다.
     style: str = Field(default="", description="Modifier: Walk/Run/Sprint/Crouch for Move, emote name for Emote")
+    # 수량·거래 필드. C++ 는 전부 문자열로 읽어 Atoi 로 바꾸므로(NPCActionComponent 의
+    # ExecuteInteraction) int 로 선언하면 안 된다 — 숫자로 오면 문자열 파싱이 실패한다.
+    amount: str = Field(default="", description="Quantity as a digit string, e.g. '3'; '' if none")
+    give_item: str = Field(default="", description="Item to hand over in a trade; '' if none")
+    give_amount: str = Field(default="", description="Quantity to hand over as a digit string; '' if none")
+    get_item: str = Field(default="", description="Item to receive in a trade; '' if none")
+    get_amount: str = Field(default="", description="Quantity to receive as a digit string; '' if none")
 
 
 # DialogueActionItem 필드 ↔ 키 매핑 단일 소스 — (GameAction.Parameters 키, 필드명).
@@ -101,7 +108,17 @@ DIALOGUE_ACTION_FIELD_MAP: tuple = (
     ("target_loc", "loc"),
     ("item", "item"),
     ("style", "style"),
+    ("amount", "amount"),
+    ("give_item_id", "give_item"),
+    ("give_amount", "give_amount"),
+    ("get_item_id", "get_item"),
+    ("get_amount", "get_amount"),
 )
+
+# 전용 아이템 필드를 쓰는 액션 — 여기서는 범용 item 을 버린다.
+# 필드가 늘면 LLM 이 단일 아이템을 item 과 give_item 양쪽에 넣는 일이 생기는데,
+# C++ 은 둘 다 읽으므로 엉뚱한 아이템이 섞인다.
+ITEM_FIELD_EXCLUSIVE_ACTIONS: frozenset = frozenset({"GiveItem", "Trade"})
 
 
 class NPCPlanItem(BaseModel):
@@ -233,7 +250,8 @@ ACTION_REQUIRED_PARAMS: Dict[str, list] = {
     "Unequip": [("item", "target_id")],
     "Attack": [("target_id",)],
     "Trade": [("target_id",), ("give_item_id", "item")],
-    "GiveItem": [("target_id",), ("item",)],
+    # give_item_id 를 쓰면 interface_output 이 item 을 떨구므로 item 만 요구하면 액션이 통째로 제거된다.
+    "GiveItem": [("target_id",), ("give_item_id", "item")],
     "Comfort": [("target_id",)],
     "HandObject": [("item", "target_id")],
     "PickUp": [("target_loc",)],
