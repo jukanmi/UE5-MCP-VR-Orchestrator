@@ -56,7 +56,6 @@ ITEM_PROMPT_HINTS = {
     "GuardShield": "a single large medieval wooden kite shield armor with iron banding and heavy rivets, front view, defensive gear, floating vertically in dark void, no lantern, no crystal",
     "Whistle": "a single shiny silver metallic pea whistle with mouthpiece and hanging ring, security guard whistle tool, floating in dark void, no medallion, no chain",
     "PassDoc": "a single official wax-sealed paper travel pass permit passport certificate, floating in dark void",
-    "Leather": "a single flat square sheet of brown tanned leather hide pelt, rough textured animal hide, floating in dark void",
     # 크래프팅/파밍/퀘스트 기초
     "Rock": "a single rough natural gray granite mineral stone rock pebble, raw stone, floating in dark void, no crystal, no magic, no blue glow",
     "IronIngot": "a single rectangular solid iron metal ingot brick bar with smooth gray metallic surface and bevel edges, blacksmith crafting ingot, floating diagonally in dark void, no pillar, no needle",

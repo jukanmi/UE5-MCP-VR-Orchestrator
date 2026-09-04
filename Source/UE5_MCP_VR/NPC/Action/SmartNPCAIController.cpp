@@ -145,6 +145,19 @@ void ASmartNPCAIController::OnUnPossess()
     Super::OnUnPossess();
 }
 
+void ASmartNPCAIController::UpdateEQSBlackboardParams(float SearchRadius, float CoverWeight,
+    float DistanceWeight, float AggressionWeight, float SafeDistance)
+{
+    UBlackboardComponent* BB = GetBlackboardComponent();
+    if (!BB) return;
+
+    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     SearchRadius);
+    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      CoverWeight);
+    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   DistanceWeight);
+    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), AggressionWeight);
+    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     SafeDistance);
+}
+
 void ASmartNPCAIController::PauseAI()
 {
     // StateTree 정지 — 진행 task 의 ExitState 호출. 넉다운 동안 새 액션 주입 차단.

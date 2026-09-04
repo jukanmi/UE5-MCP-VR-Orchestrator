@@ -18,6 +18,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/Subsystems/ItemManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 #include "Perception/AISense_Hearing.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQuery.h"
@@ -54,6 +55,10 @@ namespace
                 return FName("State.Action.Common.Unequip");
             case EAction::Dialogue:
                 return FName("State.Action.Common.Dialogue");
+            case EAction::Wait:
+                return FName("State.Action.Common.Wait");
+            case EAction::Idle:
+                return FName("State.Idle");
 
             // Combat
             case EAction::Attack:
@@ -90,18 +95,28 @@ namespace
                 return FName("State.Action.Task.Drop");
             case EAction::Repair:
                 return FName("State.Action.Task.Repair");
+            case EAction::Craft:
+                return FName("State.Action.Task.Craft");
 
             // Investigation
             case EAction::Investigate:
                 return FName("State.Action.Investigation.Investigate");
             case EAction::Track:
                 return FName("State.Action.Investigation.Track");
+            case EAction::Scout:
+                return FName("State.Action.Investigation.Scout");
 
             // Lifestyle
-            // 주의: Sit/Sleep/Read/Pray 는 .ini 에 태그가 등록돼 있는데도 여기 매핑이 없어
-            // 런타임에 태그를 못 받는다(기존 갭, 2026-08-02 발견 — 별건으로 정리 필요).
             case EAction::StandUp:
                 return FName("State.Action.Lifestyle.StandUp");
+            case EAction::Sit:
+                return FName("State.Action.Lifestyle.Sit");
+            case EAction::Sleep:
+                return FName("State.Action.Lifestyle.Sleep");
+            case EAction::Read:
+                return FName("State.Action.Lifestyle.Read");
+            case EAction::Pray:
+                return FName("State.Action.Lifestyle.Pray");
 
             default:
                 return NAME_None;
@@ -1209,15 +1224,11 @@ void UNPCActionComponent::UpdateEQSParams()
 {
     ASmartNPCAIController* AICtrl = GetOwnerAIController();
     if (!AICtrl || !StateComponent) return;
-    UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
-    if (!BB) return;
 
+    // Blackboard 쓰기는 컨트롤러 소관이라 값만 넘긴다.
     const FEQSWeights W = ComputeEQSWeights();
-    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     W.SearchRadius);
-    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      W.CoverWeight);
-    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   W.DistanceWeight);
-    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), W.AggressionWeight);
-    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     W.SafeDistance);
+    AICtrl->UpdateEQSBlackboardParams(W.SearchRadius, W.CoverWeight, W.DistanceWeight,
+        W.AggressionWeight, W.SafeDistance);
 
     UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, DistWt:%.2f, AggWt:%.2f"),
         W.SearchRadius, W.CoverWeight, W.DistanceWeight, W.AggressionWeight);
@@ -1571,11 +1582,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     // Python 은 이 값을 그대로 응답에 echo. UE5 는 응답 처리 시 현재 generation 과 비교해 stale 차단.
     Payload->SetNumberField(TEXT("request_gen"),     static_cast<double>(TacticalQueryGeneration));
 
-    FString PayloadStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
-    FJsonSerializer::Serialize(Payload.ToSharedRef(), Writer);
-
-    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadStr);
+    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(Payload);
 
     // 후보 시각화 — Manager/서버 연결 여부와 무관하게 항상 실행
     DrawEQSCandidates(Pruned, EQSDebugDuration);
@@ -2221,15 +2228,28 @@ void UNPCActionComponent::ExecutePickUp(FVector Location)
     UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
     if (!ItemManager || !InventoryComponent) return;
 
-    for (const auto& Pair : BaseDetectEntityInRange(100.f, EEntityType::Item))
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
+
+    // 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
+    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {
+        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
+        if (!IsValid(Dropped)) continue;
+
         FItemData Data;
-        if (ItemManager->GetItemDataByID(Pair.Key, Data))
+        if (!ItemManager->GetItemDataByID(Dropped->ItemData.ItemTemplateID, Data))
         {
-            InventoryComponent->AddItem(Data, Pair.Value);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Pair.Key, Pair.Value);
+            UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Dropped->ItemData.ItemTemplateID);
+            continue;
         }
-        else { UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Pair.Key); }
+
+        // 실패 시 액터를 남겨 다시 시도할 수 있게 한다.
+        if (!InventoryComponent->AddItem(Data, Dropped->Amount)) continue;
+
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Data.ItemID, Dropped->Amount);
+        // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
+        Dropped->ConsumeItem();
     }
 }
 

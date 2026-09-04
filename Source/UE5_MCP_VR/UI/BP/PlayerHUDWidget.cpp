@@ -45,16 +45,32 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
         OwnerPawn = CurrentPawn;
         bInventoryDelegateBound = false;
         TryBindInventoryDelegate();
+        CachedHealth = -1.f;   // 폰이 바뀌었으니 다음 비교는 무조건 갱신
     }
 
-    if (HealthBar)
+    // HP 는 대개 프레임 간 변하지 않는다. 매 틱 SetText 하면 폰트 셰이핑이 다시 돌아
+    // VR 90Hz 에서 그대로 프레임을 갉아먹는다. 속성 조회도 틱당 1회로 줄인다.
+    if (IsValid(OwnerPawn) && OwnerPawn->Implements<UPlayerBase>())
     {
-        HealthBar->SetPercent(GetHealthPercent());
-    }
-    if (HealthText)
-    {
-        HealthText->SetText(FText::FromString(
-            FString::Printf(TEXT("%.0f / %.0f"), GetCurrentHealth(), GetMaxHealth())));
+        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
+        const float CurrentHP = Attr.Resources.Health;
+        const float MaxHP     = Attr.Resources.MaxHealth;
+
+        if (!FMath::IsNearlyEqual(CurrentHP, CachedHealth) || !FMath::IsNearlyEqual(MaxHP, CachedMaxHealth))
+        {
+            CachedHealth = CurrentHP;
+            CachedMaxHealth = MaxHP;
+
+            if (HealthBar)
+            {
+                HealthBar->SetPercent(MaxHP > KINDA_SMALL_NUMBER ? FMath::Clamp(CurrentHP / MaxHP, 0.f, 1.f) : 0.f);
+            }
+            if (HealthText)
+            {
+                HealthText->SetText(FText::FromString(
+                    FString::Printf(TEXT("%.0f / %.0f"), CurrentHP, MaxHP)));
+            }
+        }
     }
 }
 

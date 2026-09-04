@@ -437,6 +437,9 @@ private:
      *  입력이 0이 되는 순간 호출되지 않으므로 해제는 반드시 여기서. */
     void OnMoveReleased(const FInputActionValue& Value);
 
+    /** 이동 종료 시 Move 태그를 회수하고 Idle 로 되돌린다. */
+    void StopMoveState();
+
     void OnTurn(const FInputActionValue& Value);
     void OnTurnReleased(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);

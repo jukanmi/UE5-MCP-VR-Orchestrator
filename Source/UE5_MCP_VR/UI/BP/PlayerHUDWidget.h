@@ -102,6 +102,10 @@ protected:
 
     bool bInventoryDelegateBound = false;
 
+    /** 직전 프레임 HP — 값이 그대로면 위젯을 건드리지 않는다. -1 은 강제 갱신 표시. */
+    float CachedHealth = -1.f;
+    float CachedMaxHealth = -1.f;
+
     /** 인벤토리 패널 표시 상태 — 시작은 닫힘. */
     UPROPERTY(BlueprintReadOnly, Category = "HUD|Inventory")
     bool bInventoryVisible = false;

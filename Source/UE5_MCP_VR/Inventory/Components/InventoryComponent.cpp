@@ -153,6 +153,15 @@ bool UInventoryComponent::RemoveItem(const FString& ItemID, int32 Amount)
 {
     if (Amount <= 0) return false;
 
+    // 보유량을 먼저 확인하지 않으면 부족분만큼 차감한 뒤 false 를 반환한다.
+    // 호출부(거래·제작)는 실패로 보고 취소하는데 아이템은 이미 사라진 뒤라 영구 증발한다.
+    const int32 Held = GetItemCountInSlots(ItemID);
+    if (Held < Amount)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Remove Failed: %s held %d < requested %d"), *ItemID, Held, Amount);
+        return false;
+    }
+
     int32 RemainingToRemove = Amount;
     float WeightRemoved = 0.0f;
 
@@ -200,6 +209,9 @@ bool UInventoryComponent::RemoveItem(const FString& ItemID, int32 Amount)
 
 int32 UInventoryComponent::GetEffectiveMaxStack(const FItemData& Item) const
 {
+    // 장비·내구도 아이템은 개체마다 상태가 달라 겹치면 안 된다. CSV 의 MaxStack 이 잘못 들어와도 막는다.
+    if (Item.ItemType == EItemType::Equipment || Item.bHasDurability) return 1;
+
     // 아이템 데이터가 1(장비 등)이면 그쪽이 이긴다 — 상한은 늘리는 값이 아니라 누르는 값이다.
     return FMath::Max(1, FMath::Min(Item.MaxStack, MaxStackLimit));
 }
@@ -328,6 +340,13 @@ bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
     }
 
     const FItemData Data = InventorySlots[SlotIndex].ItemData;
+
+    // Quest 는 정의상 버릴 수 없는 스토리 필수 아이템이다.
+    if (Data.ItemType == EItemType::Quest)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Rejected: quest item %s"), *ItemID);
+        return false;
+    }
 
     AActor* OwnerActor = GetOwner();
     UWorld* World = GetWorld();
@@ -548,17 +567,9 @@ bool UInventoryComponent::EquipItem(const FString& ItemID, EEquipmentSlot Target
         }
     }
 
-    // 기존 장비가 있다면 착용 해제 (Swap)
-    if (EquipmentSlots.Contains(TargetSlot))
-    {
-        if (!UnequipItem(TargetSlot))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Inventory] Equip Failed: Cannot unequip existing item."));
-            return false;
-        }
-    }
-
-    // 슬롯 분리: 인벤토리 -> 장비창
+    // 슬롯 분리를 먼저 한다. 벗은 장비는 UnequipItem 이 인벤토리로 되돌리는데,
+    // 슬롯이 꽉 찬 상태(10/10)에서 벗기부터 하면 되돌릴 자리가 없어 교체가 통째로 실패한다.
+    const FInventorySlot OriginalSlot = TargetInvSlot;
     FInventorySlot NewEquipSlot = TargetInvSlot;
     NewEquipSlot.Count = 1; // 1개 착용
 
@@ -570,7 +581,18 @@ bool UInventoryComponent::EquipItem(const FString& ItemID, EEquipmentSlot Target
     {
         InventorySlots[SlotIndex] = FInventorySlot(); // 슬롯 클리어
     }
-    
+
+    // 기존 장비가 있다면 착용 해제 (Swap) — 위에서 비운 자리로 돌아온다.
+    if (EquipmentSlots.Contains(TargetSlot))
+    {
+        if (!UnequipItem(TargetSlot))
+        {
+            InventorySlots[SlotIndex] = OriginalSlot; // 분리 취소
+            UE_LOG(LogTemp, Warning, TEXT("[Inventory] Equip Failed: Cannot unequip existing item."));
+            return false;
+        }
+    }
+
     EquipmentSlots.Add(TargetSlot, NewEquipSlot);
     AttachEquipmentMesh(TargetSlot, NewEquipSlot.ItemData);
     UE_LOG(LogTemp, Log, TEXT("[Inventory] Equipped %s to Slot %d"), *ItemID, (int32)TargetSlot);
@@ -666,6 +688,9 @@ void UInventoryComponent::AttachEquipmentMesh(EEquipmentSlot Slot, const FItemDa
 {
     const FName SocketName = GetSocketNameForSlot(Slot);
     if (SocketName.IsNone()) return;
+
+    // 같은 슬롯에 두 번 부착하면 이전 컴포넌트가 떨어지지 않고 그대로 남는다.
+    DetachEquipmentMesh(Slot);
 
     const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;

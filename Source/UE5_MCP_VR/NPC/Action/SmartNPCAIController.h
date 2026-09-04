@@ -91,6 +91,10 @@ public:
 	/** 기상 후 AI 재개 — StateTree 재시작(루트부터 위협 재평가). BB·소유는 유지됨. */
 	void ResumeAI();
 
+	/** EQS 전술 가중치를 Blackboard 에 반영한다. Blackboard 쓰기는 이 클래스에서만 한다. */
+	void UpdateEQSBlackboardParams(float SearchRadius, float CoverWeight, float DistanceWeight,
+		float AggressionWeight, float SafeDistance);
+
 	// --- Blackboard Keys ---
 	// Target Location Vector (e.g. for MoveTo)
 	static const FName Key_TargetLocation;

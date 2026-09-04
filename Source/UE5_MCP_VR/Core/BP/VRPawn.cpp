@@ -114,7 +114,12 @@ AVRPawn::AVRPawn()
     HUDWidgetComp->SetDrawSize(HUDPanelDrawSize);
     HUDWidgetComp->SetRelativeScale3D(FVector(HUDPanelScale));
     HUDWidgetComp->SetTwoSided(true);           // 손을 뒤집어도 사라지지 않게
-    HUDWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    // HUDInteractor 가 World 모드라 물리 레이로 위젯을 찾는다. 콜리전을 끄면 광선이
+    // 패널을 관통해 클릭·호버가 전혀 전달되지 않는다. 이동·물리에는 관여하지 않도록
+    // QueryOnly 로 두고 Visibility 채널만 막는다.
+    HUDWidgetComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    HUDWidgetComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+    HUDWidgetComp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
     HUDWidgetComp->SetVisibility(false);        // 인벤토리 토글로만 표시
 
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
@@ -508,6 +513,7 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
     if (Input.IsNearlyZero())
     {
         SetSprinting(false);
+        StopMoveState();
         return;
     }
 
@@ -529,6 +535,15 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
 void AVRPawn::OnMoveReleased(const FInputActionValue& /*Value*/)
 {
     SetSprinting(false);
+    StopMoveState();
+}
+
+// 스틱을 놓거나 입력이 0 이 되는 경로가 둘이라 태그 회수를 한 곳에 모은다.
+// 회수하지 않으면 한 번 움직인 뒤 영구히 Move 상태로 남아 AI 인지·StateTree 분기가 어긋난다.
+void AVRPawn::StopMoveState()
+{
+    RemoveStateTag(TAG_State_Action_Common_Move);
+    AddStateTag(TAG_State_Idle);
 }
 
 void AVRPawn::SetSprinting(bool bNewSprinting)
@@ -1118,6 +1133,17 @@ void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 
 void AVRPawn::HandleDeath()
 {
+    // 앉은 채 죽으면 가구가 계속 점유 상태로 남아 아무도 못 쓴다.
+    StandUpFromFurniture();
+
+    if (bInventoryOpen)
+    {
+        bInventoryOpen = false;
+        ApplyInventoryPresentation(false);
+    }
+    SetSprinting(false);
+    StopMoveState();
+
     PawnDeathUtils::HandleDeath(this, GameplayTags,
         RespawnDelay, RespawnTimerHandle,
         FTimerDelegate::CreateUObject(this, &AVRPawn::Respawn), TEXT("VRPawn"));
@@ -1127,6 +1153,12 @@ void AVRPawn::Respawn()
 {
     PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
         CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPawn"));
+
+    // 텔레포트 전 손 위치가 남아 있으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다.
+    // 근거리 리스폰은 9000cm/s 글리치 가드에도 걸리지 않아 허위 타격이 나간다.
+    bHandVelInit = false;
+    HandVelLeft  = FVector::ZeroVector;
+    HandVelRight = FVector::ZeroVector;
 }
 
 // ============================================================================
