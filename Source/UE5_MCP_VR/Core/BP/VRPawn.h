@@ -144,11 +144,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
     FRotator HUDPanelRotation = FRotator::ZeroRotator;
 
-    /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준). */
+    /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
+     *  세로는 인벤토리 패널(350px)과 상태 게이지(112px)가 함께 들어갈 만큼 필요하다 —
+     *  모자라면 인벤토리를 연 순간 아래쪽 게이지가 캔버스 밖으로 잘려 나간다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector2D HUDPanelDrawSize = FVector2D(600.f, 400.f);
+    FVector2D HUDPanelDrawSize = FVector2D(600.f, 500.f);
 
-    /** 패널 월드 스케일. 기본값은 600x400px → 약 24x16cm (손에 들린 태블릿 크기). */
+    /** 패널 월드 스케일. 기본값은 600x500px → 약 24x20cm (손에 들린 태블릿 크기). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float HUDPanelScale = 0.04f;
 
@@ -220,6 +222,31 @@ public:
     /** 현재 달리는 중인지. Standing 자세에서만 SprintSpeed 가 적용됨(ApplyMovementSpeed). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Locomotion")
     bool bIsSprinting = false;
+
+    // ============================================================================
+    // 스태미나 — Sprint 소모·고갈·회복
+    // ============================================================================
+
+    /** Sprint 지속 시 초당 스태미나 소모량. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stamina", meta = (ClampMin = "0.0"))
+    float SprintStaminaCostPerSec = 12.0f;
+
+    /** Sprint 중단 후 회복이 시작되기까지의 지연(초). 회복 속도 자체는 신규 값을 만들지 않고
+     *  스탯 파생값인 Resources.StaminaRegen 을 그대로 쓴다(캐릭터 능력치가 회복력에 반영됨). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stamina", meta = (ClampMin = "0.0"))
+    float StaminaRegenDelaySec = 1.5f;
+
+    /** 고갈 후 Sprint 재허용 임계 — MaxStamina 대비 비율. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stamina", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float SprintUnlockStaminaRatio = 0.25f;
+
+    /** 고갈로 강제 해제된 상태. 회복이 SprintUnlockStaminaRatio 를 넘을 때까지 Sprint 재진입 차단.
+     *  이게 없으면 고갈→해제→즉시재시도 가 매 틱 반복되며 덜덜 떨린다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Stamina")
+    bool bStaminaExhausted = false;
+
+    /** 마지막으로 스태미나를 소모한 뒤 흐른 시간(초). StaminaRegenDelaySec 비교용. */
+    float TimeSinceSprintStopped = 0.f;
 
     // ============================================================================
     // 전투
@@ -466,6 +493,9 @@ private:
 
     /** Sprint 상태 갱신 — 값이 바뀔 때만 ApplyMovementSpeed() 재적용(매 Triggered 마다 쓰기 방지). */
     void SetSprinting(bool bNewSprinting);
+
+    /** 매 Tick — Sprint 스태미나 소모 / 지연 후 회복 / 고갈 해제 판정 */
+    void UpdateStamina(float DeltaTime);
 
     // --- 자세 시스템 내부 상태 ---
 

@@ -46,6 +46,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
         bInventoryDelegateBound = false;
         TryBindInventoryDelegate();
         CachedHealth = -1.f;   // 폰이 바뀌었으니 다음 비교는 무조건 갱신
+        CachedStamina = -1.f;
     }
 
     // HP 는 대개 프레임 간 변하지 않는다. 매 틱 SetText 하면 폰트 셰이핑이 다시 돌아
@@ -69,6 +70,32 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
             {
                 HealthText->SetText(FText::FromString(
                     FString::Printf(TEXT("%.0f / %.0f"), CurrentHP, MaxHP)));
+            }
+        }
+
+        // 스태미나는 HP 와 달리 Sprint 중 매 프레임 연속으로 변한다. 바는 그대로 반영하되
+        // 텍스트는 정수부가 바뀔 때만 갱신한다 — 매 틱 SetText 는 폰트 셰이핑을 다시 돌려
+        // VR 90Hz 에서 프레임을 갉아먹는데, 소수점은 어차피 표시하지도 않는다.
+        const float CurrentSP = Attr.Resources.Stamina;
+        const float MaxSP     = Attr.Resources.MaxStamina;
+
+        if (!FMath::IsNearlyEqual(CurrentSP, CachedStamina) || !FMath::IsNearlyEqual(MaxSP, CachedMaxStamina))
+        {
+            const bool bTextChanged =
+                FMath::FloorToInt(CurrentSP) != FMath::FloorToInt(CachedStamina) ||
+                !FMath::IsNearlyEqual(MaxSP, CachedMaxStamina);
+
+            CachedStamina = CurrentSP;
+            CachedMaxStamina = MaxSP;
+
+            if (StaminaBar)
+            {
+                StaminaBar->SetPercent(MaxSP > KINDA_SMALL_NUMBER ? FMath::Clamp(CurrentSP / MaxSP, 0.f, 1.f) : 0.f);
+            }
+            if (StaminaText && bTextChanged)
+            {
+                StaminaText->SetText(FText::FromString(
+                    FString::Printf(TEXT("%.0f / %.0f"), CurrentSP, MaxSP)));
             }
         }
     }
@@ -102,6 +129,36 @@ float UPlayerHUDWidget::GetHealthPercent() const
 {
     const float Max = GetMaxHealth();
     return Max > KINDA_SMALL_NUMBER ? FMath::Clamp(GetCurrentHealth() / Max, 0.f, 1.f) : 0.f;
+}
+
+// ============================================================================
+// 스태미나 — HP 와 동일하게 IPlayerBase 경유
+// ============================================================================
+
+float UPlayerHUDWidget::GetCurrentStamina() const
+{
+    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
+    {
+        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
+        return Attr.Resources.Stamina;
+    }
+    return 0.f;
+}
+
+float UPlayerHUDWidget::GetMaxStamina() const
+{
+    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
+    {
+        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
+        return Attr.Resources.MaxStamina;
+    }
+    return 0.f;
+}
+
+float UPlayerHUDWidget::GetStaminaPercent() const
+{
+    const float Max = GetMaxStamina();
+    return Max > KINDA_SMALL_NUMBER ? FMath::Clamp(GetCurrentStamina() / Max, 0.f, 1.f) : 0.f;
 }
 
 // ============================================================================

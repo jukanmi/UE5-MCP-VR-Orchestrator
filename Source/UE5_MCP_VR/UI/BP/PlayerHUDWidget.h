@@ -1,13 +1,14 @@
-// PlayerHUDWidget — 플레이어 HP 바 + 인벤토리 슬롯 표시 HUD.
+// PlayerHUDWidget — 플레이어 HP·스태미나 바 + 인벤토리 슬롯 표시 HUD.
 //
 // 구체 플레이어 클래스(AVRPawn 등)에 의존하지 않는다:
-//   - HP   : 소유 폰의 IPlayerBase::GetPlayerAttributes
+//   - HP/스태미나 : 소유 폰의 IPlayerBase::GetPlayerAttributes
 //   - 인벤토리: 소유 폰의 UInventoryComponent (FindComponentByClass)
 // 덕분에 IPlayerBase 를 구현한 폰이면 어느 것이든 동일 위젯으로 동작.
 //
 // WBP 사용법:
 //   - 이 클래스를 부모로 하는 WBP 작성.
-//   - (선택) "HealthBar"(UProgressBar) / "HealthText"(UTextBlock) 이름 위젯 배치 → 자동 바인딩.
+//   - (선택) "HealthBar"/"StaminaBar"(UProgressBar) · "HealthText"/"StaminaText"(UTextBlock)
+//     이름 위젯 배치 → 자동 바인딩.
 //   - 인벤토리 슬롯 UI 는 OnInventoryUpdated 이벤트에서 GetInventorySlots() 로 재구성.
 #pragma once
 
@@ -49,6 +50,26 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "HUD|Health")
     float GetMaxHealth() const;
+
+    // --- Stamina ---
+
+    /** 스태미나 진행 바 — WBP 에 같은 이름 UProgressBar 배치 시 자동 바인딩(선택). */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UProgressBar* StaminaBar;
+
+    /** 스태미나 수치 텍스트 — WBP 에 같은 이름 UTextBlock 배치 시 자동 바인딩(선택). */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* StaminaText;
+
+    /** 현재 스태미나 비율 0~1 (MaxStamina 0 이면 0). */
+    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
+    float GetStaminaPercent() const;
+
+    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
+    float GetCurrentStamina() const;
+
+    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
+    float GetMaxStamina() const;
 
     // --- Inventory ---
 
@@ -105,6 +126,10 @@ protected:
     /** 직전 프레임 HP — 값이 그대로면 위젯을 건드리지 않는다. -1 은 강제 갱신 표시. */
     float CachedHealth = -1.f;
     float CachedMaxHealth = -1.f;
+
+    /** 직전 프레임 스태미나. 바는 이 값 비교로, 텍스트는 정수부 비교로 갱신을 거른다. */
+    float CachedStamina = -1.f;
+    float CachedMaxStamina = -1.f;
 
     /** 인벤토리 패널 표시 상태 — 시작은 닫힘. */
     UPROPERTY(BlueprintReadOnly, Category = "HUD|Inventory")

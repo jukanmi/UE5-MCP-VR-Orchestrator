@@ -120,7 +120,9 @@ AVRPawn::AVRPawn()
     HUDWidgetComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
     HUDWidgetComp->SetCollisionResponseToAllChannels(ECR_Ignore);
     HUDWidgetComp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-    HUDWidgetComp->SetVisibility(false);        // 인벤토리 토글로만 표시
+    // 패널은 항상 켜 둔다 — HP·스태미나 게이지가 실려 있어 인벤토리와 수명이 다르다.
+    // 인벤토리 슬롯만 위젯 안에서 Collapsed 로 접힌다(UPlayerHUDWidget::SetInventoryPanelVisible).
+    HUDWidgetComp->SetVisibility(true);
 
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
     // 광선이 패널을 빗나간다.
@@ -218,7 +220,14 @@ void AVRPawn::BeginPlay()
         }
     }
 
-    // 시작은 닫힘 — 패널·포인터 모두 꺼진 상태로 맞춘다.
+    // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
+    if (HUDWidgetComp)
+    {
+        HUDWidgetComp->SetVisibility(true);
+    }
+
+    // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
+    // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
     ApplyInventoryPresentation(false);
 }
 
@@ -234,6 +243,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
     UpdateHUDPanelFacing();
+    UpdateStamina(DeltaTime);
 
     // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
     // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -548,11 +558,51 @@ void AVRPawn::StopMoveState()
 
 void AVRPawn::SetSprinting(bool bNewSprinting)
 {
+    // 스태미나 고갈 중에는 진입 요청을 무시한다. 해제는 회복이 SprintUnlockStaminaRatio 를
+    // 넘을 때(UpdateStamina) 이뤄지므로, 그 전까지 스틱을 끝까지 밀어도 Walk 로 남는다.
+    if (bNewSprinting && bStaminaExhausted) return;
+
     if (bIsSprinting == bNewSprinting) return;
 
     bIsSprinting = bNewSprinting;
     // Crouching/Prone 은 ApplyMovementSpeed 가 자세 분기에서 자체 속도를 쓰므로 Sprint 가 자동 억제된다.
     ApplyMovementSpeed();
+}
+
+void AVRPawn::UpdateStamina(float DeltaTime)
+{
+    FGameResources& Res = CurrentStats.Resources;
+
+    // 소모 조건 셋 — Sprint 중 + 선 자세 + 실제로 이동 중.
+    //  · 자세: Crouching/Prone 은 ApplyMovementSpeed 가 Sprint 속도를 안 쓰므로 소모도 없어야 한다.
+    //  · 실제 이동: 벽에 막혀 제자리인데 스틱만 최대로 밀고 있을 때 스태미나가 마르는 건 부자연스럽다.
+    const bool bConsuming = bIsSprinting
+        && CurrentPosture == EVRPosture::Standing
+        && GetVelocity().SizeSquared2D() > KINDA_SMALL_NUMBER;
+
+    if (bConsuming)
+    {
+        TimeSinceSprintStopped = 0.f;
+        Res.Stamina = FMath::Max(0.f, Res.Stamina - SprintStaminaCostPerSec * DeltaTime);
+
+        if (Res.Stamina <= 0.f)
+        {
+            bStaminaExhausted = true;
+            SetSprinting(false);   // ApplyMovementSpeed() 가 Walk 로 되돌린다
+        }
+        return;
+    }
+
+    // 회복 — 중단 직후 즉시 차오르면 끊어 달리기로 무한 Sprint 가 되므로 지연을 둔다.
+    TimeSinceSprintStopped += DeltaTime;
+    if (TimeSinceSprintStopped < StaminaRegenDelaySec) return;
+
+    Res.Stamina = FMath::Min(Res.MaxStamina, Res.Stamina + Res.StaminaRegen * DeltaTime);
+
+    if (bStaminaExhausted && Res.Stamina >= Res.MaxStamina * SprintUnlockStaminaRatio)
+    {
+        bStaminaExhausted = false;
+    }
 }
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
@@ -902,7 +952,7 @@ void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 
 void AVRPawn::UpdateHUDPanelFacing()
 {
-    if (!bInventoryOpen || !HUDWidgetComp || !VRCamera) return;
+    if (!HUDWidgetComp || !VRCamera) return;   // 패널이 상시 표시라 인벤토리 개폐와 무관하게 매 Tick 정면 유지
 
     // 위치는 왼손을 따라가고 회전만 HMD 를 향한다. 손목을 어떻게 돌려도 정면으로 읽힌다.
     const FVector PanelLoc = HUDWidgetComp->GetComponentLocation();
@@ -917,11 +967,8 @@ void AVRPawn::UpdateHUDPanelFacing()
 
 void AVRPawn::ApplyInventoryPresentation(bool bOpen)
 {
-    if (HUDWidgetComp)
-    {
-        HUDWidgetComp->SetVisibility(bOpen);
-    }
-
+    // HUDWidgetComp 는 여기서 건드리지 않는다 — 패널에 HP·스태미나 게이지가 상시 표시되고,
+    // 인벤토리 슬롯만 위젯 내부에서 접힌다. 컴포넌트를 통째로 숨기면 게이지까지 같이 사라진다.
     if (HUDInteractor)
     {
         // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
