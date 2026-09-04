@@ -4,7 +4,7 @@
 #include "JsonObjectConverter.h" // FJsonObjectConverter용
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
-#include "ItemDataAsset.h"
+#include "BP/ItemDataAsset.h"
 #include "ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
 
 void UItemManager::Initialize(FSubsystemCollectionBase& Collection)

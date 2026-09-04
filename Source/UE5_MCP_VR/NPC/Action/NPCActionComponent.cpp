@@ -4,7 +4,7 @@
 #include "../NPCInventoryComponent.h"
 #include "SmartNPCAIController.h"
 #include "../Struct/NPCActionKeys.h"
-#include "../NPCActionDataAsset.h"
+#include "../BP/NPCActionDataAsset.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -22,12 +22,12 @@
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
-#include "../SmartNPC.h"
+#include "../BP/SmartNPC.h"
 #include "../../Network/EnvelopeBuilder.h"
 #include "../NPCManager.h"
 #include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
-#include "../../Furniture/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
+#include "../../Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif

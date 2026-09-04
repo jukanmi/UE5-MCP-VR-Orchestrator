@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ItemManager.h"
-#include "../Core/Entity.h"
+#include "../ItemManager.h"
+#include "../../Core/Entity.h"
 #include "DroppedItemBase.generated.h"
 
 // [의도(Why)] 월드 상에 드랍되어 물리적으로 동작하고, ItemManager에 의해 글로벌하게 추적되는 기본 아이템 블루프린트용 부모 클래스입니다.

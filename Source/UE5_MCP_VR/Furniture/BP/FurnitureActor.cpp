@@ -1,5 +1,5 @@
 #include "FurnitureActor.h"
-#include "FurnitureManager.h"
+#include "../FurnitureManager.h"
 #include "Components/SceneComponent.h"
 #include "Engine/GameInstance.h"
 

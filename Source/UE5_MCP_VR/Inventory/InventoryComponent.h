@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "ItemDataAsset.h"
+#include "BP/ItemDataAsset.h"
 #include "InventoryComponent.generated.h"
 
 /**

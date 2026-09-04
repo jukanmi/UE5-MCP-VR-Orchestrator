@@ -1,7 +1,7 @@
 #include "SmartNPCAIController.h"
 #include "NPCActionComponent.h"
 #include "../NPCStateComponent.h"
-#include "../SmartNPC.h"
+#include "../BP/SmartNPC.h"
 #include "../../Core/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"

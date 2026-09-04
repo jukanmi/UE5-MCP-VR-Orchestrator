@@ -3,7 +3,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "ItemManager.h"
-#include "DroppedItemBase.h"
+#include "BP/DroppedItemBase.h"
 #include "../Core/Entity.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"

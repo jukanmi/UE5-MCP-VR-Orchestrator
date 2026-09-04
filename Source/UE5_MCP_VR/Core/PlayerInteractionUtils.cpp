@@ -5,7 +5,7 @@
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
-#include "../NPC/SmartNPC.h"
+#include "../NPC/BP/SmartNPC.h"
 #include "../NPC/NPCManager.h"
 
 FString PlayerInteractionUtils::FindNearestNPCId(const AActor* Origin, float Radius)

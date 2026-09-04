@@ -1,5 +1,5 @@
 #include "NPCAnimInstance.h"
-#include "NPCStateComponent.h"
+#include "../NPCStateComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 

@@ -1,5 +1,5 @@
 #include "AnimNotifyState_NPCAttackHit.h"
-#include "SmartNPC.h"
+#include "BP/SmartNPC.h"
 #include "Components/SkeletalMeshComponent.h"
 
 void UAnimNotifyState_NPCAttackHit::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,

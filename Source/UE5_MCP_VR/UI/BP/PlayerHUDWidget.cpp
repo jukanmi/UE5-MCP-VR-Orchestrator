@@ -4,8 +4,8 @@
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
-#include "../Core/Entity.h"               // IPlayerBase / UPlayerBase
-#include "../Inventory/InventoryComponent.h"
+#include "../../Core/Entity.h"               // IPlayerBase / UPlayerBase
+#include "../../Inventory/InventoryComponent.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {

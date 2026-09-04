@@ -4,7 +4,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "../Utils/DiceSystem.h"
-#include "SmartNPC.h"
+#include "BP/SmartNPC.h"
 #include "NPCManager.h"
 #include "Engine/GameInstance.h"
 #include "../Network/MCPJsonUtils.h"

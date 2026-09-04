@@ -1,7 +1,7 @@
 #include "KineticDamage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/DamageEvents.h"
-#include "../NPC/SmartNPC.h"
+#include "../NPC/BP/SmartNPC.h"
 
 void KineticDamage::ApplyToNPC(ASmartNPC* NPC, float Damage, const FVector& ImpactPoint,
     const FVector& ShotDirection, AController* InstigatorController, AActor* Causer,

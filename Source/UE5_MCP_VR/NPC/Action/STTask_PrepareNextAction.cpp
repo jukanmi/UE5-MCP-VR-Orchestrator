@@ -3,7 +3,7 @@
 #include "StateTreeExecutionContext.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "SmartNPCAIController.h"
-#include "../SmartNPC.h"
+#include "../BP/SmartNPC.h"
 #include "NPCActionComponent.h"
 #include "../Struct/NPCActionKeys.h"
 
