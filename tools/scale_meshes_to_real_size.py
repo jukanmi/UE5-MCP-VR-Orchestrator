@@ -116,6 +116,11 @@ def scale_one(path: str, target_cm: float):
     return current_max, new_max, factor
 
 
+# 바닥에 놓였을 때 눈에 들어오는 하한. 동전·호루라기처럼 현실 치수가 4~8cm 인 것들은
+# 실제 크기로 두면 플레이어가 찾지 못한다. 표에는 현실 치수를 남기고 적용할 때만 끌어올린다.
+MIN_VISIBLE_CM = 15
+
+
 def main():
     names = sorted(os.path.splitext(f)[0] for f in os.listdir(MESH_DIR) if f.endswith(".glb"))
     missing = [n for n in names if n not in TARGET_SIZE_CM]
@@ -125,7 +130,7 @@ def main():
 
     print(f"=== {len(names)}종 현실 치수 리스케일 ===")
     for n in names:
-        target = TARGET_SIZE_CM[n]
+        target = max(TARGET_SIZE_CM[n], MIN_VISIBLE_CM)
         result = scale_one(os.path.join(MESH_DIR, f"{n}.glb"), target)
         if result is None:
             print(f"  {n:18s} 건너뜀 (크기 0)")
