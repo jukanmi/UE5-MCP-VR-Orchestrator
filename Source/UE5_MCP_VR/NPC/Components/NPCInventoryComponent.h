@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "../Inventory/InventoryComponent.h"
+#include "Inventory/Components/InventoryComponent.h"
 #include "NPCInventoryComponent.generated.h"
 
 

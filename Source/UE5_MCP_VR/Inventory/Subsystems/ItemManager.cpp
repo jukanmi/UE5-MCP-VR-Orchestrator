@@ -1,11 +1,11 @@
-#include "ItemManager.h"
+#include "Inventory/Subsystems/ItemManager.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "JsonObjectConverter.h" // FJsonObjectConverter용
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
-#include "BP/ItemDataAsset.h"
-#include "ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
+#include "Inventory/BP/ItemDataAsset.h"
+#include "Inventory/Types/ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
 
 void UItemManager::Initialize(FSubsystemCollectionBase& Collection)
 {

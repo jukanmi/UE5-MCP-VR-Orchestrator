@@ -1,4 +1,4 @@
-#include "NPCInventoryComponent.h"
+#include "NPC/Components/NPCInventoryComponent.h"
 #include "JsonObjectConverter.h"
 
 UNPCInventoryComponent::UNPCInventoryComponent()

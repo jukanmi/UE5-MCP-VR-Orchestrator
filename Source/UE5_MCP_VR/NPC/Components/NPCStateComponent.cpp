@@ -1,13 +1,13 @@
-#include "NPCStateComponent.h"
-#include "Action/SmartNPCAIController.h"
-#include "Action/NPCActionComponent.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Action/NPCActionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
-#include "../Utils/DiceSystem.h"
-#include "BP/SmartNPC.h"
-#include "NPCManager.h"
+#include "Utils/DiceSystem.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Subsystems/NPCManager.h"
 #include "Engine/GameInstance.h"
-#include "../Network/MCPJsonUtils.h"
+#include "Network/MCPJsonUtils.h"
 
 UNPCStateComponent::UNPCStateComponent()
 {

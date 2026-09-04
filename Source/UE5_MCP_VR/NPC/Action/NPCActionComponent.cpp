@@ -1,10 +1,10 @@
-#include "NPCActionComponent.h"
-#include "../../Core/GameplayTagUtils.h"
-#include "../NPCStateComponent.h"
-#include "../NPCInventoryComponent.h"
-#include "SmartNPCAIController.h"
-#include "../Struct/NPCActionKeys.h"
-#include "../BP/NPCActionDataAsset.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Components/NPCInventoryComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "NPC/BP/NPCActionDataAsset.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -16,18 +16,18 @@
 #include "Serialization/JsonSerializer.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
-#include "../../Inventory/InventoryComponent.h"
-#include "../../Inventory/ItemManager.h"
+#include "Inventory/Components/InventoryComponent.h"
+#include "Inventory/Subsystems/ItemManager.h"
 #include "Perception/AISense_Hearing.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
-#include "../BP/SmartNPC.h"
-#include "../../Network/EnvelopeBuilder.h"
-#include "../NPCManager.h"
-#include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
+#include "NPC/BP/SmartNPC.h"
+#include "Network/EnvelopeBuilder.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
-#include "../../Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
+#include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif

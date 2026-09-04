@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "../Entity.h"
+#include "Core/Interfaces/Entity.h"
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "NativeGameplayTags.h"
-#include "../PlayerGameplayTags.h"
+#include "Core/Types/PlayerGameplayTags.h"
 #include "VRPawn.generated.h"
 
 class UCameraComponent;

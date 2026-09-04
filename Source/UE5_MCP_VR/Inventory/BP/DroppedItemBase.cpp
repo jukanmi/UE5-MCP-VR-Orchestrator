@@ -1,7 +1,7 @@
-#include "DroppedItemBase.h"
+#include "Inventory/BP/DroppedItemBase.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
-#include "../ItemManager.h"
+#include "Inventory/Subsystems/ItemManager.h"
 #include "Engine/GameInstance.h"
 
 ADroppedItemBase::ADroppedItemBase()

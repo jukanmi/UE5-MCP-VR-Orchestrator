@@ -1,11 +1,11 @@
-#include "PlayerHUDWidget.h"
+#include "UI/BP/PlayerHUDWidget.h"
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
-#include "../../Core/Entity.h"               // IPlayerBase / UPlayerBase
-#include "../../Inventory/InventoryComponent.h"
+#include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
+#include "Inventory/Components/InventoryComponent.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {

@@ -1,11 +1,11 @@
-#include "SmartNPCAIController.h"
-#include "NPCActionComponent.h"
-#include "../NPCStateComponent.h"
-#include "../BP/SmartNPC.h"
-#include "../../Core/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/BP/SmartNPC.h"
+#include "Core/Types/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
-#include "MCPStateTreeAIComponent.h"
+#include "NPC/Action/MCPStateTreeAIComponent.h"
 #include "StateTree.h"
 #include "GameplayTagAssetInterface.h"
 #include "Perception/AISense_Sight.h"

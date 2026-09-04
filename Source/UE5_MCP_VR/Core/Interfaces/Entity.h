@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CharacterAttributes.h"
+#include "Core/Types/CharacterAttributes.h"
 #include "CoreMinimal.h"
 #include "GameplayTagAssetInterface.h"
 #include "GameplayTagContainer.h"

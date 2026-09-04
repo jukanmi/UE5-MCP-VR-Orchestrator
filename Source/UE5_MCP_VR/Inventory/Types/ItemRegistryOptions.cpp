@@ -1,7 +1,7 @@
-#include "ItemRegistryOptions.h"
+#include "Inventory/Types/ItemRegistryOptions.h"
 
 #include "Engine/DataTable.h"
-#include "BP/ItemDataAsset.h"
+#include "Inventory/BP/ItemDataAsset.h"
 
 TArray<FString> UItemRegistryOptions::GetItemIDOptions()
 {

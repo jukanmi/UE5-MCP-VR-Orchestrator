@@ -1,12 +1,12 @@
-#include "SmartNPC.h"
-#include "../../Core/GameplayTagUtils.h"
-#include "../NPCManager.h"
-#include "../Action/SmartNPCAIController.h"
-#include "../Struct/NPCActionKeys.h"
-#include "../NPCStateComponent.h"
-#include "../Action/NPCActionComponent.h"
-#include "NPCActionDataAsset.h"
-#include "../NPCInventoryComponent.h"
+#include "NPC/BP/SmartNPC.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/BP/NPCActionDataAsset.h"
+#include "NPC/Components/NPCInventoryComponent.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Kismet/GameplayStatics.h"
@@ -24,12 +24,12 @@
 #include "PhysicsEngine/PhysicalAnimationComponent.h"  // 액티브 래그돌 PD(Flinch)
 #include "Animation/AnimMontage.h"  // 기상 몽타주
 #include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
-#include "../NPCAudioStreamComponent.h"
-#include "../../UI/NPCDialogueWidget.h"
+#include "NPC/Components/NPCAudioStreamComponent.h"
+#include "UI/Widgets/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
-#include "../../Core/KineticDamage.h"   // 공격 판정 — NPC 타겟 데미지 일괄(ApplyToNPC)
-#include "../../Core/BP/VRPawn.h"          // 플레이어 피격 햅틱(PlayHitReceivedFeedback)
+#include "Core/Physics/KineticDamage.h"   // 공격 판정 — NPC 타겟 데미지 일괄(ApplyToNPC)
+#include "Core/BP/VRPawn.h"          // 플레이어 피격 햅틱(PlayHitReceivedFeedback)
 
 // 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
 // Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.

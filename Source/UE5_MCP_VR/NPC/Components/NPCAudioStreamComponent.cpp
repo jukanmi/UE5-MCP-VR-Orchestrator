@@ -1,7 +1,7 @@
 // File: NPCAudioStreamComponent.cpp
 // 구현 노트는 헤더 참조. 본 파일은 IWebSocket 청크 → USoundWaveProcedural::QueueAudio 경로만 책임.
 
-#include "NPCAudioStreamComponent.h"
+#include "NPC/Components/NPCAudioStreamComponent.h"
 
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -12,8 +12,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Misc/Base64.h"
 
-#include "Struct/NPCActionKeys.h"
-#include "../Network/OmniAgentConfig.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "Network/OmniAgentConfig.h"
 
 UNPCAudioStreamComponent::UNPCAudioStreamComponent()
 {

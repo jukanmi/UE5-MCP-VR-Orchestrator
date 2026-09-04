@@ -1,4 +1,4 @@
-#include "NPCDialogueWidget.h"
+#include "UI/Widgets/NPCDialogueWidget.h"
 
 #include "Components/TextBlock.h"
 

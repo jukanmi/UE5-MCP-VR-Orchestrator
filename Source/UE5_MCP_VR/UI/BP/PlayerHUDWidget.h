@@ -13,7 +13,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "../../Inventory/InventoryComponent.h" // FInventorySlot (UFUNCTION 반환 타입 노출)
+#include "Inventory/Components/InventoryComponent.h" // FInventorySlot (UFUNCTION 반환 타입 노출)
 #include "PlayerHUDWidget.generated.h"
 
 class UProgressBar;

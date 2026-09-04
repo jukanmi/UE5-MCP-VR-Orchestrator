@@ -1,4 +1,4 @@
-#include "VoiceInputComponent.h"
+#include "Core/Components/VoiceInputComponent.h"
 
 #include "WebSocketsModule.h"
 #include "IWebSocket.h"

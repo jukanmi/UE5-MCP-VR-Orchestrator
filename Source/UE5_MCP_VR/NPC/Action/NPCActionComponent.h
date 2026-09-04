@@ -2,9 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
-#include "../Struct/NPCActionTypes.h" // Enums
-#include "../BP/NPCActionDataAsset.h"
+#include "Network/MCPJsonUtils.h" // FGameAction, FActionBatch
+#include "NPC/Struct/NPCActionTypes.h" // Enums
+#include "NPC/BP/NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "EnvironmentQuery/EnvQueryTypes.h"
 #include "Navigation/PathFollowingComponent.h"

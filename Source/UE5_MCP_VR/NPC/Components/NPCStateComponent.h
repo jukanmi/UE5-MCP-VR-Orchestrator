@@ -2,9 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../Core/CharacterAttributes.h"      // FNPCAttributes, FCharacterAttributesBase
-#include "../Core/GameStateData.h"            // FPerceptionData
-#include "Struct/NPCActionTypes.h"             // EFacialState
+#include "Core/Types/CharacterAttributes.h"      // FNPCAttributes, FCharacterAttributesBase
+#include "Core/Types/GameStateData.h"            // FPerceptionData
+#include "NPC/Struct/NPCActionTypes.h"             // EFacialState
 #include "NPCStateComponent.generated.h"
 
 class ASmartNPCAIController;

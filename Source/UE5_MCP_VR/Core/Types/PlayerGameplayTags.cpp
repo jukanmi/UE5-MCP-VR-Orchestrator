@@ -1,4 +1,4 @@
-#include "PlayerGameplayTags.h"
+#include "Core/Types/PlayerGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_State_Idle, "State.Idle")
 UE_DEFINE_GAMEPLAY_TAG(TAG_State_Action_Common_Move, "State.Action.Common.Move")

@@ -1,11 +1,11 @@
-#include "STTask_PrepareNextAction.h"
+#include "NPC/Action/STTask_PrepareNextAction.h"
 #include "StateTreeLinker.h"
 #include "StateTreeExecutionContext.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "SmartNPCAIController.h"
-#include "../BP/SmartNPC.h"
-#include "NPCActionComponent.h"
-#include "../Struct/NPCActionKeys.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Struct/NPCActionKeys.h"
 
 bool FSTTask_PrepareNextAction::Link(FStateTreeLinker& Linker)
 {

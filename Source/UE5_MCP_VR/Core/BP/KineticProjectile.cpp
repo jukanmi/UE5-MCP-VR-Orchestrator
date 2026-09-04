@@ -1,9 +1,9 @@
-#include "KineticProjectile.h"
+#include "Core/BP/KineticProjectile.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "../../NPC/BP/SmartNPC.h"
-#include "../KineticDamage.h"
+#include "NPC/BP/SmartNPC.h"
+#include "Core/Physics/KineticDamage.h"
 
 AKineticProjectile::AKineticProjectile()
 {

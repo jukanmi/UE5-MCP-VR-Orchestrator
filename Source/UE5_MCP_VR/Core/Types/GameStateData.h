@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../NPC/Struct/NPCActionTypes.h"
+#include "NPC/Struct/NPCActionTypes.h"
 #include "CoreMinimal.h"
-#include "Entity.h"
+#include "Core/Interfaces/Entity.h"
 #include "GameStateData.generated.h"
 
 /**

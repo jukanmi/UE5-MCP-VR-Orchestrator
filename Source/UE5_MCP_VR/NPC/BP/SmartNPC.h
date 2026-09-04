@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Engine/TimerHandle.h"
-#include "../../Core/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
-#include "../NPCStateComponent.h"  // FNPCPlan (OnPlanUpdated 핸들러 시그니처용)
+#include "Core/Interfaces/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
+#include "NPC/Components/NPCStateComponent.h"  // FNPCPlan (OnPlanUpdated 핸들러 시그니처용)
 
 #include "SmartNPC.generated.h"
 

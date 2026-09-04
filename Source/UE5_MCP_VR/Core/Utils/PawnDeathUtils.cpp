@@ -1,6 +1,6 @@
-#include "PawnDeathUtils.h"
-#include "GameplayTagUtils.h"
-#include "PlayerGameplayTags.h"      // TAG_State_Idle / TAG_State_Condition_Dead
+#include "Core/Utils/PawnDeathUtils.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "Core/Types/PlayerGameplayTags.h"      // TAG_State_Idle / TAG_State_Condition_Dead
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"

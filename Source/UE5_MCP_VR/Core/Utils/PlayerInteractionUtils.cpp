@@ -1,12 +1,12 @@
-#include "PlayerInteractionUtils.h"
+#include "Core/Utils/PlayerInteractionUtils.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
-#include "../NPC/BP/SmartNPC.h"
-#include "../NPC/NPCManager.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Subsystems/NPCManager.h"
 
 FString PlayerInteractionUtils::FindNearestNPCId(const AActor* Origin, float Radius)
 {

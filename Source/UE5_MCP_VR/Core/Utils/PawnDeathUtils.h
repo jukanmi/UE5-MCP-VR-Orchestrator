@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Entity.h"                  // FPlayerAttributes
+#include "Core/Interfaces/Entity.h"                  // FPlayerAttributes
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"            // FTimerHandle / FTimerDelegate
 

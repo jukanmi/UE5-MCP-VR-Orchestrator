@@ -4,7 +4,7 @@
 #include "Dom/JsonValue.h"
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
-#include "../NPC/Struct/NPCActionKeys.h"
+#include "NPC/Struct/NPCActionKeys.h"
 
 namespace
 {
