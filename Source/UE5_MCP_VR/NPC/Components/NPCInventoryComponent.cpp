@@ -36,18 +36,24 @@ FString UNPCInventoryComponent::GetInventoryJson() const
         }
     }
 
-    // 2. Equipment Slots (Requested to be included or just kept internal?
-    // User context implies we might want to show equipped items too, 
-    // but originally GetInventoryJson only scanned Slots.
-    // Let's stick to the previous behavior unless specifically asked to change context.
-    // However, since they are now separate containers, LLM might lose context of what is equipped
-    // if we don't include it. 
-    // *Correction*: In the previous session, the user seemed to be refactoring Equipment 
-    // and I noticed "GetInventoryJson" didn't include equipment.
-    // I should probably add it now or leave it as is. 
-    // User instruction was "Separate generic from NPC LLM logic".
-    // I will preserve the existing logic (Iterating Slots) for now to avoid side effects.
-    // If the user wants to see equipped items in LLM, that's a separate task.
+    // 2. Equipment Slots — 장착 중인 아이템은 InventorySlots 에서 빠져나가 있어
+    // 여기를 순회하지 않으면 LLM 컨텍스트에서 완전히 사라진다("들고 있는 검을 잊는다").
+    for (const auto& Pair : EquipmentSlots)
+    {
+        const FInventorySlot& EqSlot = Pair.Value;
+        if (EqSlot.IsEmpty()) continue;
+
+        TSharedPtr<FJsonObject> JsonObj = MakeShareable(new FJsonObject);
+        JsonObj->SetStringField(TEXT("id"), EqSlot.ItemData.ItemID);
+        JsonObj->SetStringField(TEXT("name"), EqSlot.ItemData.DisplayName.ToString());
+        JsonObj->SetStringField(TEXT("desc"), EqSlot.ItemData.Description);
+        JsonObj->SetNumberField(TEXT("count"), EqSlot.Count);
+        JsonObj->SetNumberField(TEXT("weight"), EqSlot.ItemData.Weight);
+        JsonObj->SetStringField(TEXT("type"), TEXT("item"));
+        JsonObj->SetBoolField(TEXT("equipped"), true);
+
+        JsonArray.Add(MakeShareable(new FJsonValueObject(JsonObj)));
+    }
 
     FString OutputString;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
