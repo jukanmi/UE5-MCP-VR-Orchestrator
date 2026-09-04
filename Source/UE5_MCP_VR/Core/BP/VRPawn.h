@@ -405,6 +405,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
 
+    /** 메시 정면 보정 오프셋 (Mixamo X_Bot 등 표준 스켈레탈 메시는 -90도 회전 시 캐릭터 전방 정렬). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
+    float BodyMeshYawOffset = -90.f;
+
+    /** 몸(메시) 회전 추종 보간 속도 (0이면 HMD 시선과 즉시 1:1 동기화, >0이면 부드럽게 추종). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0"))
+    float BodyRotationInterpSpeed = 0.f;
+
     // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
     // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
 
@@ -487,6 +495,9 @@ private:
 
     /** 오른 조이스틱 X 입력만큼 액터를 매 프레임 연속 회전 — 매 Tick 호출 */
     void UpdateSmoothTurn(float DeltaTime);
+
+    /** 아바타 몸(스켈레탈 메시)이 HMD(헤드셋) 시선 Yaw를 항상 바라보도록 정렬 — 매 Tick 호출 */
+    void UpdateBodyRotation(float DeltaTime);
 
     /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
     float TurnAxisInput = 0.f;
@@ -585,6 +596,10 @@ private:
      *  픽업이 안 먹은 건지, 먹었는데 UI 가 안 그려진 건지 한 번에 갈라준다. */
     UFUNCTION(Exec)
     void DumpInventoryHUD();
+
+    /** 콘솔에서 인벤토리 패널 열기/닫기 토글 (에디터 디버그용). 콘솔창에 ToggleInventory 입력. */
+    UFUNCTION(Exec)
+    void ToggleInventory();
 
     // --- 전투 ---
     UFUNCTION()

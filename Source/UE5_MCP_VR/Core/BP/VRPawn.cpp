@@ -240,6 +240,7 @@ void AVRPawn::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
     SyncCapsuleToHMD();
     UpdateSmoothTurn(DeltaTime);
+    UpdateBodyRotation(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
     UpdateHUDPanelFacing();
@@ -632,6 +633,30 @@ void AVRPawn::UpdateSmoothTurn(float DeltaTime)
                                 PivotBefore.Y - PivotAfter.Y, 0.f));
 }
 
+void AVRPawn::UpdateBodyRotation(float DeltaTime)
+{
+    if (!VRCamera || !GetMesh()) return;
+
+    // 착석 중에는 의자 방향을 유지하고 고개만 회전
+    if (SeatedFurniture.IsValid()) return;
+
+    // HMD(헤드셋)가 바라보는 수평 월드 각도
+    const float CameraYaw = VRCamera->GetComponentRotation().Yaw;
+    const float DesiredYaw = CameraYaw + BodyMeshYawOffset;
+
+    if (BodyRotationInterpSpeed > 0.f && DeltaTime > KINDA_SMALL_NUMBER)
+    {
+        const FRotator CurrentRot = GetMesh()->GetComponentRotation();
+        const FRotator TargetRot(0.f, DesiredYaw, 0.f);
+        const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, BodyRotationInterpSpeed);
+        GetMesh()->SetWorldRotation(FRotator(0.f, NewRot.Yaw, 0.f));
+    }
+    else
+    {
+        GetMesh()->SetWorldRotation(FRotator(0.f, DesiredYaw, 0.f));
+    }
+}
+
 void AVRPawn::SyncCapsuleToHMD()
 {
     // 표준 VR 패턴: 캡슐(액터)을 HMD의 월드 XY 위치 아래로 따라가게 하되,
@@ -948,6 +973,11 @@ void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 
     bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
     ApplyInventoryPresentation(bInventoryOpen);
+}
+
+void AVRPawn::ToggleInventory()
+{
+    OnInventoryToggle(FInputActionValue());
 }
 
 void AVRPawn::UpdateHUDPanelFacing()
