@@ -203,6 +203,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_InventoryToggle;
 
+    /** 오른손 B버튼 → 대쉬. 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_Dash;
+
     // ============================================================================
     // 이동 설정
     // ============================================================================
@@ -247,6 +251,30 @@ public:
 
     /** 마지막으로 스태미나를 소모한 뒤 흐른 시간(초). StaminaRegenDelaySec 비교용. */
     float TimeSinceSprintStopped = 0.f;
+
+    // ============================================================================
+    // 대쉬 — 짧은 등속 회피 이동
+    // ============================================================================
+
+    /** 1회 대쉬 이동 거리(cm). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "50.0"))
+    float DashDistance = 300.f;
+
+    /** 대쉬 지속 시간(초). 속도는 DashDistance/DashDuration 으로 파생된다.
+     *  VR 멀미는 빠른 직선 이동이 만드는 시야 광류에서 오므로 노출 시간이 짧을수록 덜하다.
+     *  이 값을 하한(0.02)까지 낮추면 사실상 순간이동이 된다 — 대쉬가 불편하면 코드가 아니라
+     *  이 값을 먼저 줄인다. 화면 터널 비네트로 완화하는 통상적인 방법은 이 프로젝트 렌더
+     *  경로에서 PostProcess 가 동작하지 않아 쓸 수 없다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "0.02", ClampMax = "1.0"))
+    float DashDuration = 0.15f;
+
+    /** 연속 대쉬 최소 간격(초). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "0.0"))
+    float DashCooldownSec = 0.8f;
+
+    /** 1회 대쉬 스태미나 소모량. 모자라면 발동하지 않는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "0.0"))
+    float DashStaminaCost = 20.f;
 
     // ============================================================================
     // 전투
@@ -507,6 +535,29 @@ private:
 
     /** 매 Tick — Sprint 스태미나 소모 / 지연 후 회복 / 고갈 해제 판정 */
     void UpdateStamina(float DeltaTime);
+
+    /** 대쉬 입력(B버튼) — 쿨다운·스태미나·자세 검사 후 등속 이동 시작 */
+    void OnDash(const FInputActionValue& Value);
+
+    /** 매 Tick — 대쉬 잔여 시간 소진 시 StopDash */
+    void UpdateDash(float DeltaTime);
+
+    /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
+    void StopDash();
+
+    bool bDashActive = false;
+    float DashTimeRemaining = 0.f;
+
+    /** 마지막 대쉬 시각(초). 쿨다운 비교용. 첫 대쉬가 막히지 않게 충분히 과거로 초기화. */
+    float LastDashTime = -1000.f;
+
+    /** 대쉬 중 0 으로 덮어쓰는 이동 파라미터 원본 — StopDash 가 되돌린다. */
+    float SavedGroundFriction = 0.f;
+    float SavedBrakingDecelWalking = 0.f;
+    float SavedBrakingFrictionFactor = 0.f;
+
+    /** 직전 왼손 스틱 입력. 대쉬 방향 산출용 — 입력 핸들러가 갱신한다. */
+    FVector2D LastMoveInput = FVector2D::ZeroVector;
 
     // --- 자세 시스템 내부 상태 ---
 

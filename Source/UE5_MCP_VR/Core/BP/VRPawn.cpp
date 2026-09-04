@@ -245,6 +245,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateDynamicCapsule(DeltaTime);
     UpdateHUDPanelFacing();
     UpdateStamina(DeltaTime);
+    UpdateDash(DeltaTime);
 
     // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
     // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -504,6 +505,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
             EIC->BindAction(IA_VoiceInput, ETriggerEvent::Canceled,  this, &AVRPawn::OnVoiceStop);
         }
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
+        if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
     }
 }
 
@@ -517,6 +519,7 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
     if (SeatedFurniture.IsValid())
     {
         SetSprinting(false);
+        LastMoveInput = FVector2D::ZeroVector;
         return;
     }
 
@@ -525,8 +528,12 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
     {
         SetSprinting(false);
         StopMoveState();
+        LastMoveInput = FVector2D::ZeroVector;
         return;
     }
+
+    // 대쉬 방향 산출용 — OnDash 는 입력 이벤트가 따로 와서 스틱 값을 직접 볼 수 없다.
+    LastMoveInput = Input;
 
     // 스틱을 끝까지 밀면 달리기 — 별도 입력 액션 없이 magnitude 로만 판정.
     SetSprinting(Input.Size() > SprintThreshold);
@@ -547,6 +554,7 @@ void AVRPawn::OnMoveReleased(const FInputActionValue& /*Value*/)
 {
     SetSprinting(false);
     StopMoveState();
+    LastMoveInput = FVector2D::ZeroVector;
 }
 
 // 스틱을 놓거나 입력이 0 이 되는 경로가 둘이라 태그 회수를 한 곳에 모은다.
@@ -604,6 +612,86 @@ void AVRPawn::UpdateStamina(float DeltaTime)
     {
         bStaminaExhausted = false;
     }
+}
+
+void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
+{
+    if (SeatedFurniture.IsValid()) return;
+
+    // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
+    if (CurrentPosture != EVRPosture::Standing) return;
+
+    UWorld* World = GetWorld();
+    UCharacterMovementComponent* MC = GetCharacterMovement();
+    if (!World || !MC || !VRCamera) return;
+
+    const float Now = World->GetTimeSeconds();
+    if (bDashActive || Now - LastDashTime < DashCooldownSec) return;
+
+    FGameResources& Res = CurrentStats.Resources;
+    if (bStaminaExhausted || Res.Stamina < DashStaminaCost) return;
+
+    // 방향 — 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면.
+    // 이동과 같은 기준(HMD Yaw)으로 풀어야 스틱을 민 쪽과 튀어나가는 쪽이 일치한다.
+    const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
+    const FVector Forward = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X);
+    const FVector Right   = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y);
+
+    FVector Dir = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal2D();
+    if (Dir.IsNearlyZero()) Dir = Forward;
+
+    Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
+    if (Res.Stamina <= 0.f)
+    {
+        bStaminaExhausted = true;
+        SetSprinting(false);
+    }
+    TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
+
+    // 마찰·제동을 0 으로 두면 Launch 속도가 감쇠 없이 유지돼 등속 이동이 된다.
+    // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
+    SavedGroundFriction        = MC->GroundFriction;
+    SavedBrakingDecelWalking   = MC->BrakingDecelerationWalking;
+    SavedBrakingFrictionFactor = MC->BrakingFrictionFactor;
+    MC->GroundFriction             = 0.f;
+    MC->BrakingDecelerationWalking = 0.f;
+    MC->BrakingFrictionFactor      = 0.f;
+
+    bDashActive = true;
+    DashTimeRemaining = DashDuration;
+    LastDashTime = Now;
+
+    const float DashSpeed = DashDistance / FMath::Max(KINDA_SMALL_NUMBER, DashDuration);
+    LaunchCharacter(Dir * DashSpeed, true, false);   // Z 미오버라이드 — 중력 유지
+}
+
+void AVRPawn::UpdateDash(float DeltaTime)
+{
+    if (!bDashActive) return;
+
+    DashTimeRemaining -= DeltaTime;
+    if (DashTimeRemaining <= 0.f)
+    {
+        StopDash();
+    }
+}
+
+void AVRPawn::StopDash()
+{
+    if (!bDashActive) return;
+    bDashActive = false;
+    DashTimeRemaining = 0.f;
+
+    UCharacterMovementComponent* MC = GetCharacterMovement();
+    if (!MC) return;
+
+    MC->GroundFriction             = SavedGroundFriction;
+    MC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
+    MC->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
+
+    // 마찰 원복만으론 몇 프레임 더 미끄러진다 — 수평 잔류 속도를 즉시 제거(낙하 Z 는 유지).
+    MC->Velocity.X = 0.f;
+    MC->Velocity.Y = 0.f;
 }
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
