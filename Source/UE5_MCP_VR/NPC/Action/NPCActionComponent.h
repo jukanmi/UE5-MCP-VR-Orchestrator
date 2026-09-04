@@ -433,6 +433,14 @@ public:
     /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(bIsSit/bIsLie 와 동일 라이프사이클). */
     TWeakObjectPtr<AFurnitureActor> OccupiedFurniture;
 
+    /** ExecutePickUp 이 걸어서 도착한 뒤에만 탐색하도록 하는 플래그. BaseMove 직후 곧장
+     *  검사하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다. */
+    bool bPendingPickup = false;
+
+    /** OnMoveActionCompleted 도착 처리에서 실제 탐색·습득을 수행한다(bPendingPickup 소비).
+     *  범위 내 여러 개가 있어도 액션 1회당 1개 묶음만 줍는다. */
+    void PerformPickupAtDestination();
+
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
      *  없으면 즉시 OnActionCompleted. 도착 실패 시에도 OnActionCompleted로 큐를 푼다. */
@@ -680,7 +688,7 @@ public:
     void ExecutePickUp(FVector Location);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteDrop(const FString& ItemID);
+    void ExecuteDrop(const FString& ItemID, int32 Amount);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteCraft(const TArray<FString>& ItemIDs);

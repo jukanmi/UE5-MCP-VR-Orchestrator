@@ -548,6 +548,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    bPendingPickup = false; // 이동 중단 시 스테일 플래그가 다음 액션에서 잘못 발동하는 것 방지
     PendingFurnitureTarget.Reset(); // 이동 중단 시 스테일 가구 목적지 방지 — 점유 전이라 Release 불필요
     StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
@@ -1094,13 +1095,18 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
     // Social
     case EAction::Trade:        ExecuteTrade(TargetActor, GiveItemID.IsEmpty() ? ItemID : GiveItemID, GiveAmount, GetItemID, GetAmount); break;
-    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, ItemID, Amount); break;
+    // give_item_id 가 있으면 그걸 우선한다 — interface_output 이 GiveItem/Trade 에서
+    // item 키를 지우므로(배타성 처리), ItemID 만 보면 986행 TargetID 폴백에 걸려
+    // "Player" 를 아이템으로 오인한다. 수량도 명시된 give_amount 를 우선한다 —
+    // 둘 다 미기재 시 Max(1,·) 라 부재를 값으로 구분할 수 없어 원본 문자열로 판정한다.
+    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, GiveItemID.IsEmpty() ? ItemID : GiveItemID,
+                                     !Params.FindRef(NPCActionKeys::Key_GiveAmount).IsEmpty() ? GiveAmount : Amount); break;
     case EAction::Comfort:      ExecuteComfort(TargetActor); break;
     case EAction::HandObject:   ExecuteHandObject(ItemID); break;
 
     // Task
     case EAction::PickUp:       ExecutePickUp(Location); break;
-    case EAction::Drop:         ExecuteDrop(ItemID); break;
+    case EAction::Drop:         ExecuteDrop(ItemID, Amount); break;
     case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
     case EAction::Repair:       ExecuteRepair(ItemID); break;
     
@@ -1782,6 +1788,24 @@ void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FP
             if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
                 PFC->OnRequestFinished.RemoveAll(this);
 
+    if (bPendingPickup)
+    {
+        bPendingPickup = false;
+
+        // 도착에 성공했을 때만 탐색한다 — 실패·중단 시 엉뚱한 위치에서 줍지 않는다.
+        if (Result.IsSuccess())
+        {
+            PerformPickupAtDestination();
+        }
+
+        // 성공 시 종료 콜백이 OnActionCompleted 호출, 미등록이면 여기서 즉시 완료.
+        if (!PlayActionMediaWithPosture(TEXT("PickUp")))
+        {
+            OnActionCompleted();
+        }
+        return;
+    }
+
     if (Result.IsSuccess() && !PendingMoveMediaKey.IsEmpty())
     {
         const FString MediaKey = PendingMoveMediaKey;
@@ -2225,9 +2249,14 @@ void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 
 void UNPCActionComponent::ExecutePickUp(FVector Location)
 {
+    // 탐색은 도착 후 OnMoveActionCompleted → PerformPickupAtDestination 이 수행한다.
+    // 여기서 즉시 하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다.
+    bPendingPickup = true;
     BaseMove(Location, EMoveType::Walk);
-    BasePlayActionMedia(TEXT("PickUp"));
+}
 
+void UNPCActionComponent::PerformPickupAtDestination()
+{
     UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
     UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
     if (!ItemManager || !InventoryComponent) return;
@@ -2254,17 +2283,18 @@ void UNPCActionComponent::ExecutePickUp(FVector Location)
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Data.ItemID, Dropped->Amount);
         // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
         Dropped->ConsumeItem();
+        break; // 액션 1회당 1개 묶음만 줍는다 — 범위 내 전부 쓸어 담지 않는다.
     }
 }
 
-void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID)
+void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID, int32 Amount)
 {
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter || !InventoryComponent) return;
 
     // 월드 스폰·ItemManager 등록·차감은 DropItem 이 일괄 처리한다.
     // 스폰이 실패하면 인벤토리를 건드리지 않으므로 여기서 되돌릴 것이 없다.
-    if (!InventoryComponent->DropItem(TargetTemplateID, 1))
+    if (!InventoryComponent->DropItem(TargetTemplateID, Amount))
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 실패: %s"), *TargetTemplateID);
         return;
