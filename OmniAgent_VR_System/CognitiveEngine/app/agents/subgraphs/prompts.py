@@ -67,6 +67,10 @@ For EACH === NPC: <id> === section in the input, produce one plan entry.
 
 Base the plan ONLY on facts already present in each NPC's section — do NOT invent new lore.
 
+Output format example (structure only — never copy these values):
+{"npcs":[{"npc_id":"Elara","goal":"플레이어에게 약초 값을 받아내기","steps":["약초 가격 제시","플레이어 반응 확인","흥정 마무리"]}]}
+The npc_id belongs ONLY in npc_id. goal and steps must never contain the npc_id.
+
 Input format:
 === NPC: <id> ===
 <npc response with [Mode:]/[Action:] tags>"""
