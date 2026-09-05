@@ -78,9 +78,6 @@ void UNPCDialogueUIComponent::ShowSubtitle(const FString& Text, bool bWaitForAud
 {
     if (Text.IsEmpty()) return;
 
-    // 응답이 왔으니 점 애니메이션은 끝. 말풍선을 숨기지는 않는다 — 바로 진짜 대사로 덮인다.
-    ClearThinkingTimers();
-
     // 액션 dialogue 후 같은 발화의 TTS 가 뒤따라 오는 경우 — 같은 텍스트면 깜빡임 없이 이어감.
     const bool bSameText = (Text == CurrentSubtitleText);
     CurrentSubtitleText = Text;
@@ -136,66 +133,6 @@ void UNPCDialogueUIComponent::HideSubtitle()
     GetWorld()->GetTimerManager().ClearTimer(SubtitleHideTimer);
     CurrentSubtitleText.Reset();
     ApplySubtitle(false);
-}
-
-void UNPCDialogueUIComponent::ShowThinking()
-{
-    // 사망한 NPC 는 대답하지 않는다 — 죽은 머리 위에 점이 도는 것을 막는다.
-    AActor* Owner = GetOwner();
-    if (!Owner || !IsValid(Owner)) return;
-
-    bThinking = true;
-    ThinkingDotCount = 0;
-
-    FTimerManager& Timers = GetWorld()->GetTimerManager();
-
-    // 즉시 한 번 찍고 이후 간격마다 늘린다 — 첫 점까지 기다리면 반응이 없는 것처럼 보인다.
-    TickThinkingDots();
-    Timers.SetTimer(ThinkingDotTimer, this, &UNPCDialogueUIComponent::TickThinkingDots,
-                    ThinkingDotInterval, true);
-
-    // 응답이 영영 안 오는 경우(백엔드 다운·메시지 유실)에 말풍선이 남지 않도록.
-    Timers.SetTimer(ThinkingTimeoutTimer, this, &UNPCDialogueUIComponent::HandleThinkingTimeout,
-                    ThinkingTimeoutSec, false);
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCDialogueUI] %s 대기 표시 시작"), *GetSpeakerName());
-}
-
-void UNPCDialogueUIComponent::TickThinkingDots()
-{
-    ThinkingDotCount = (ThinkingDotCount % 3) + 1;
-
-    // 자막 경로를 그대로 재사용한다 — 위젯 초기화·빌보드 틱 관리가 이미 그 안에 있다.
-    CurrentSubtitleText = FString::ChrN(ThinkingDotCount, TEXT('.'));
-    ApplySubtitle(true);
-}
-
-void UNPCDialogueUIComponent::ClearThinkingTimers()
-{
-    if (!bThinking) return;
-
-    bThinking = false;
-    FTimerManager& Timers = GetWorld()->GetTimerManager();
-    Timers.ClearTimer(ThinkingDotTimer);
-    Timers.ClearTimer(ThinkingTimeoutTimer);
-}
-
-void UNPCDialogueUIComponent::StopThinking()
-{
-    if (!bThinking) return;
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCDialogueUI] %s 대기 표시 해제"), *GetSpeakerName());
-    ClearThinkingTimers();
-
-    // 대사 없이 끝난 경우 — 점만 남겨두지 않는다.
-    HideSubtitle();
-}
-
-void UNPCDialogueUIComponent::HandleThinkingTimeout()
-{
-    UE_LOG(LogTemp, Warning, TEXT("[NPCDialogueUI] %s — LLM 응답 %.0f초 무응답, 대기 표시 해제"),
-           *GetSpeakerName(), ThinkingTimeoutSec);
-    StopThinking();
 }
 
 void UNPCDialogueUIComponent::ApplySubtitle(bool bShow)

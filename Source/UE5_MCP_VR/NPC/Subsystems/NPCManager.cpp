@@ -29,12 +29,6 @@ void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& Act
 {
     if (ASmartNPC* TargetNPC = GetValidNPC(TargetAgentID))
     {
-        // 이 NPC 앞으로 온 실제 응답이 도착한 지점 — 여기서 대기 표시를 끝낸다.
-        // 수신 진입점(OnLLMMessageReceived)에서 agent_id 만 보고 풀면 안 된다:
-        // 주기적으로 오가는 state_update 응답도 agent_id 를 달고 오므로 점이 켜지자마자 꺼진다.
-        // 대사가 있는 응답은 ShowSubtitle 이 덮으므로 여기 해제는 액션만 있는 응답을 위한 것.
-        TargetNPC->StopThinking();
-
         TargetNPC->ExecuteActionBatch(ActionBatch);
     }
     else
@@ -372,12 +366,6 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
 
     const FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadStr);
     SendEnvelopePromptToLLM(Envelope);
-
-    // 응답까지 수 초가 걸린다. 그동안 아무 표시가 없으면 플레이어는 말이 씹힌 줄 안다.
-    if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
-    {
-        TargetNPC->ShowThinking();
-    }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
 }

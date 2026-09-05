@@ -119,7 +119,7 @@ public:
 
     // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
-    /** 말풍선 컴포넌트 — 자막 텍스트·표시 타이머·TTS 싱크·Thinking 점 애니메이션까지 전부 이쪽 소유.
+    /** 말풍선 컴포넌트 — 자막 텍스트·표시 타이머·TTS 싱크까지 전부 이쪽 소유.
      *  액터는 "무엇을 말할지"만 넘기고 "언제까지 띄울지"는 관여하지 않는다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Dialogue")
     UNPCDialogueUIComponent* DialogueWidgetComp;
@@ -132,14 +132,6 @@ public:
     /** 말풍선 숨김 + 텍스트 클리어. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void HideSubtitle();
-
-    /** LLM 응답 대기 표시 시작. 사망 상태면 무시한다 — 죽은 머리 위에 점이 돌면 안 된다. */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
-    void ShowThinking();
-
-    /** 대기 표시 해제. 응답 도착·타임아웃 양쪽에서 호출된다. */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
-    void StopThinking();
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

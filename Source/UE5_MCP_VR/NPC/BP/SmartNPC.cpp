@@ -543,18 +543,6 @@ void ASmartNPC::HideSubtitle()
     if (DialogueWidgetComp) DialogueWidgetComp->HideSubtitle();
 }
 
-void ASmartNPC::ShowThinking()
-{
-    // 사망 판정만 액터가 한다 — 죽었는지는 말풍선이 아니라 NPC 가 아는 사실이다.
-    if (bIsDead || !DialogueWidgetComp) return;
-    DialogueWidgetComp->ShowThinking();
-}
-
-void ASmartNPC::StopThinking()
-{
-    if (DialogueWidgetComp) DialogueWidgetComp->StopThinking();
-}
-
 // === Plan 갱신 로그 알림 ===
 
 void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
