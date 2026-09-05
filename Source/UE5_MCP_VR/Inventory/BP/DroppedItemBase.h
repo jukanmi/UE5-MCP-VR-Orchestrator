@@ -50,6 +50,40 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Item|Action")
     void ConsumeItem();
 
+    /**
+     * 손에서 놓아 던진다 — 물리·충돌을 되살리고 속도를 실은 뒤, 짧은 창 동안만 타격 판정을 켠다.
+     * 데미지 계수는 던진 쪽(VRPawn)의 동역학 튜닝을 그대로 받는다. 근접 스윙과 같은 값으로
+     * 맞아야 "같은 손으로 때린 것"의 세기가 무기 종류만으로 갈리기 때문.
+     */
+    UFUNCTION(BlueprintCallable, Category = "Item|Action")
+    void LaunchThrown(const FVector& Velocity, AActor* Thrower,
+                      float DamageScale, float MaxDamage, float MinSpeedMs);
+
+    /** 던진 뒤 타격 판정이 살아 있는 시간(초). 굴러다니는 아이템이 계속 때리지 않게 한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Throw", meta = (ClampMin = "0.1"))
+    float ThrowDamageWindow = 2.0f;
+
+protected:
+    /** 던진 아이템이 무언가에 부딪혔을 때 — 창이 살아 있고 상대가 NPC 면 ½mv² 데미지. */
+    UFUNCTION()
+    void OnMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+                   FVector NormalImpulse, const FHitResult& Hit);
+
+    /** 타격 창 종료 — 던진 사람 참조를 지우는 것이 곧 "이제 안 때린다"는 상태다. */
+    void EndThrowWindow();
+
+    /** 던진 액터. 유효하면 타격 창이 살아 있다는 뜻이며, 자기 자신을 때리지 않게 걸러내는 데도 쓴다. */
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AActor> ThrownBy;
+
+    // 던진 쪽에서 주입받은 동역학 계수 — 근접 스윙과 같은 튜닝을 공유한다.
+    float ThrowDamageScale = 1.f;
+    float ThrowMaxDamage = 100.f;
+    float ThrowMinSpeedMs = 2.f;
+
+    FTimerHandle ThrowWindowTimer;
+
+public:
     // === IItem 인터페이스 구현 ===
     virtual FString GetEntityID_Implementation() const override { return ItemData.ItemInstanceID; }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Item; }

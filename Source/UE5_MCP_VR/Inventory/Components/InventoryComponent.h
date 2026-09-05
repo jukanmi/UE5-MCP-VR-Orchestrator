@@ -103,6 +103,16 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
     FOnInventoryChanged OnInventoryChanged;
 
+    /** UI 에서 지금 고른 슬롯 인덱스. 폰(스틱 조작)이 쓰고 HUD 위젯이 읽어 강조 표시한다.
+     *  폰이 아니라 여기 있는 이유: HUD 위젯이 구체 폰 타입을 모르게 설계돼 있어(컴포넌트로만 접근)
+     *  선택 상태를 폰에 두면 위젯이 읽을 길이 없다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Inventory|State")
+    int32 SelectedSlotIndex = 0;
+
+    /** 선택 슬롯 지정 — 범위를 벗어나면 순환한다. 변경 시 OnInventoryChanged 로 UI 갱신. */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
+    void SetSelectedSlot(int32 NewIndex);
+
 
     // --- Public API ---
 
@@ -146,6 +156,23 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
     bool DropItem(const FString& ItemID, int32 Amount = 1);
+
+    /**
+     * 슬롯 클릭 한 번으로 아이템을 발동합니다. (인벤토리 UI 진입점)
+     * - Consumable 이면 UseItem, Equipment 면 EquipItem 으로 넘깁니다.
+     * - General/Quest 는 지금 할 수 있는 동작이 없어 실패(false).
+     * - UI 가 아이템 종류를 보고 분기하지 않게 하려는 것 — 분기 규칙이 늘어나도 C++ 한 곳만 고친다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
+    bool ActivateItem(const FString& ItemID);
+
+    /**
+     * 아이템 1종을 월드 액터로 스폰한다(인벤토리는 건드리지 않는다).
+     * 드랍(발밑)과 손에 꺼내기(손 위치)가 스폰 클래스 결정·메시 주입·ItemManager 등록 절차를
+     * 공유하도록 분리해 둔 것. 차감은 호출측 책임 — 스폰 성공을 확인한 뒤에 빼야 증발하지 않는다.
+     */
+    ADroppedItemBase* SpawnItemActor(const FItemData& Data, const FString& ItemID,
+                                     const FTransform& SpawnTransform, int32 Amount);
 
     /**
      * 특정 아이템을 일정 수량 이상 가지고 있는지 확인합니다.

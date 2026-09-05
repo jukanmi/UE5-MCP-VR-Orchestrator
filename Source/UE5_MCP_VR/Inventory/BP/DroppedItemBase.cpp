@@ -7,6 +7,12 @@
 #include "Engine/GameInstance.h"
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
+#include "Core/Physics/KineticDamage.h"
+#include "NPC/BP/SmartNPC.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 
 ADroppedItemBase::ADroppedItemBase()
 {
@@ -33,6 +39,10 @@ ADroppedItemBase::ADroppedItemBase()
     InteractionSphere->SetupAttachment(RootComponent);
     InteractionSphere->SetSphereRadius(100.f); 
     InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+
+    // 던진 아이템 타격 — 히트 이벤트 자체는 LaunchThrown 이 켠다(SetNotifyRigidBodyCollision).
+    // 바인딩은 생성자에서 한 번만 해 두면 되고, 창이 닫힌 뒤엔 ThrownBy 가 비어 있어 무시된다.
+    ItemMesh->OnComponentHit.AddDynamic(this, &ADroppedItemBase::OnMeshHit);
 }
 
 void ADroppedItemBase::SyncMeshFromItemData()
@@ -108,6 +118,71 @@ void ADroppedItemBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
+                                    float DamageScale, float MaxDamage, float MinSpeedMs)
+{
+    if (!ItemMesh) return;
+
+    ThrowDamageScale = DamageScale;
+    ThrowMaxDamage = MaxDamage;
+    ThrowMinSpeedMs = MinSpeedMs;
+    ThrownBy = Thrower;
+
+    // 쥘 때 껐던 콜리전·물리를 되돌린다. 프로파일을 다시 지정하는 이유는 SetCollisionEnabled 만으로는
+    // 쥐는 동안 바뀐 채널 응답이 복구되지 않기 때문.
+    ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+    ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+    ItemMesh->SetSimulatePhysics(true);
+    // 물리 바디의 Hit 이벤트는 기본으로 꺼져 있다 — 켜지 않으면 OnComponentHit 이 아예 안 온다.
+    ItemMesh->SetNotifyRigidBodyCollision(true);
+    ItemMesh->SetPhysicsLinearVelocity(Velocity);
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(ThrowWindowTimer, this, &ADroppedItemBase::EndThrowWindow,
+                                          ThrowDamageWindow, false);
+    }
+}
+
+void ADroppedItemBase::EndThrowWindow()
+{
+    ThrownBy = nullptr;
+    if (ItemMesh) ItemMesh->SetNotifyRigidBodyCollision(false);
+}
+
+void ADroppedItemBase::OnMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+                                 FVector NormalImpulse, const FHitResult& Hit)
+{
+    AActor* Thrower = ThrownBy.Get();
+    if (!Thrower || OtherActor == Thrower) return;
+
+    ASmartNPC* NPC = Cast<ASmartNPC>(OtherActor);
+    if (!NPC || !ItemMesh) return;
+
+    const float MassKg = FMath::Max(ItemMesh->GetMass(), 0.01f);
+
+    // 충격량 J = m·Δv 에서 충돌 속도를 역산한다. 히트 콜백 시점의 GetPhysicsLinearVelocity 는
+    // 이미 충돌 반영 후 값이라 실제 접근 속도보다 작게 나온다.
+    // ponytail: 반발계수를 1로 가정해 최대 2배까지 과대평가된다. 체감이 세면 KineticDamageScale 로 낮추고,
+    //           정밀도가 더 필요해지면 던진 창 동안 틱으로 직전 프레임 속도를 샘플링할 것.
+    const float SpeedMs = (NormalImpulse.Size() / MassKg) / 100.f;
+    if (SpeedMs < ThrowMinSpeedMs) return;
+
+    const float Damage = KineticDamage::Compute(MassKg, SpeedMs, ThrowDamageScale, ThrowMaxDamage);
+
+    APawn* ThrowerPawn = Cast<APawn>(Thrower);
+    AController* InstigatorController = ThrowerPawn ? ThrowerPawn->GetController() : nullptr;
+
+    KineticDamage::ApplyToNPC(NPC, Damage, Hit.ImpactPoint, -Hit.ImpactNormal,
+                              InstigatorController, this, &Hit);
+
+    UE_LOG(LogTemp, Log, TEXT("[DroppedItemBase] 투척 명중 %s → %s: %.1f dmg (%.2f kg, %.2f m/s)"),
+           *ItemData.ItemTemplateID, *NPC->GetName(), Damage, MassKg, SpeedMs);
+
+    // 한 번 맞히면 창을 닫는다 — 같은 던짐으로 튕기며 여러 번 때리지 않게.
+    EndThrowWindow();
 }
 
 void ADroppedItemBase::ConsumeItem()

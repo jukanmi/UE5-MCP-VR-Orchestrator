@@ -325,6 +325,108 @@ bool UInventoryComponent::UseItem(const FString& ItemID)
     return true;
 }
 
+void UInventoryComponent::SetSelectedSlot(int32 NewIndex)
+{
+    const int32 Num = InventorySlots.Num();
+    if (Num <= 0) return;
+
+    // 끝에서 반대편으로 돌아온다 — 칸 수가 적어 경계에서 막히면 조작이 답답하다.
+    const int32 Wrapped = ((NewIndex % Num) + Num) % Num;
+    if (Wrapped == SelectedSlotIndex) return;
+
+    SelectedSlotIndex = Wrapped;
+    OnInventoryChanged.Broadcast();
+}
+
+// 슬롯 클릭 진입점 — 종류를 보고 사용/장착으로 넘긴다
+bool UInventoryComponent::ActivateItem(const FString& ItemID)
+{
+    const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
+    if (SlotIndex == INDEX_NONE)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Activate Failed: Item %s not found."), *ItemID);
+        return false;
+    }
+
+    switch (InventorySlots[SlotIndex].ItemData.ItemType)
+    {
+    case EItemType::Consumable:
+        return UseItem(ItemID);
+
+    // 슬롯 미지정 — EquipItem 이 아이템 데이터의 EquipSlot 을 본다.
+    case EItemType::Equipment:
+        return EquipItem(ItemID);
+
+    // Quest 는 손에 꺼내면 던져서 버릴 수 있게 되므로 제외한다(DropItem 도 같은 이유로 막는다).
+    case EItemType::General:
+    {
+        AActor* OwnerActor = GetOwner();
+        if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerBase::StaticClass()))
+        {
+            return IPlayerBase::Execute_TakeItemInHand(OwnerActor, ItemID);
+        }
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s — 소유자가 손에 들 수 없음."), *ItemID);
+        return false;
+    }
+
+    default:
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s has no action (Quest)."), *ItemID);
+        return false;
+    }
+}
+
+// 월드 액터 스폰 공용 경로 — 드랍(발밑)·손에 꺼내기(손)가 같은 절차를 쓴다.
+ADroppedItemBase* UInventoryComponent::SpawnItemActor(const FItemData& Data, const FString& ItemID,
+                                                      const FTransform& SpawnTransform, int32 Amount)
+{
+    AActor* OwnerActor = GetOwner();
+    UWorld* World = GetWorld();
+    if (!IsValid(OwnerActor) || !World) return nullptr;
+
+    // 스폰 클래스: 아이템이 고유 BP(WorldMeshClass)를 지정했으면 그쪽이 우선.
+    // 단 그 BP 가 ADroppedItemBase 파생이 아니면 ItemManager 등록·픽업 경로를 못 타므로 무시한다.
+    UClass* SpawnClass = DroppedItemClass ? DroppedItemClass.Get() : ADroppedItemBase::StaticClass();
+    bool bUsingItemOwnBlueprint = false;
+    if (!Data.WorldMeshClass.IsNull())
+    {
+        if (UClass* CustomClass = Data.WorldMeshClass.LoadSynchronous())
+        {
+            if (CustomClass->IsChildOf(ADroppedItemBase::StaticClass()))
+            {
+                SpawnClass = CustomClass;
+                bUsingItemOwnBlueprint = true;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[Inventory] %s 의 WorldMeshClass 가 ADroppedItemBase 파생이 아니라 무시합니다."), *ItemID);
+            }
+        }
+    }
+
+    // Deferred 스폰 — ADroppedItemBase::BeginPlay 가 ItemTemplateID 로 ItemManager 에 등록한다.
+    // FinishSpawning 전에 ID 를 넣지 않으면 "DefaultEntity_Unknown" 으로 등록돼 NPC·픽업이 종류를 모른다.
+    ADroppedItemBase* Spawned = World->SpawnActorDeferred<ADroppedItemBase>(
+        SpawnClass, SpawnTransform, OwnerActor, nullptr,
+        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+
+    if (!Spawned) return nullptr;
+
+    Spawned->ItemData.ItemTemplateID = ItemID;
+    Spawned->Amount = Amount;
+
+    // 고유 BP 는 자기 메시를 이미 갖고 있으므로 덮어쓰지 않는다.
+    if (!bUsingItemOwnBlueprint && Spawned->ItemMesh)
+    {
+        if (UStaticMesh* Mesh = ResolveItemMesh(Data))
+        {
+            Spawned->ItemMesh->SetStaticMesh(Mesh);
+        }
+    }
+
+    Spawned->FinishSpawning(SpawnTransform);
+    return Spawned;
+}
+
 // 아이템 드랍 (월드 스폰)
 bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
 {
@@ -368,32 +470,8 @@ bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
         SpawnLocation = FeetLocation;
     }
 
-    // 스폰 클래스: 아이템이 고유 BP(WorldMeshClass)를 지정했으면 그쪽이 우선.
-    // 단 그 BP 가 ADroppedItemBase 파생이 아니면 ItemManager 등록·픽업 경로를 못 타므로 무시한다.
-    UClass* SpawnClass = DroppedItemClass ? DroppedItemClass.Get() : ADroppedItemBase::StaticClass();
-    bool bUsingItemOwnBlueprint = false;
-    if (!Data.WorldMeshClass.IsNull())
-    {
-        if (UClass* CustomClass = Data.WorldMeshClass.LoadSynchronous())
-        {
-            if (CustomClass->IsChildOf(ADroppedItemBase::StaticClass()))
-            {
-                SpawnClass = CustomClass;
-                bUsingItemOwnBlueprint = true;
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[Inventory] %s 의 WorldMeshClass 가 ADroppedItemBase 파생이 아니라 무시합니다."), *ItemID);
-            }
-        }
-    }
-
-    // Deferred 스폰 — ADroppedItemBase::BeginPlay 가 ItemTemplateID 로 ItemManager 에 등록한다.
-    // FinishSpawning 전에 ID 를 넣지 않으면 "DefaultEntity_Unknown" 으로 등록돼 NPC·픽업이 종류를 모른다.
-    const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
-    ADroppedItemBase* Dropped = World->SpawnActorDeferred<ADroppedItemBase>(
-        SpawnClass, SpawnTransform, OwnerActor, nullptr,
-        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+    ADroppedItemBase* Dropped = SpawnItemActor(Data, ItemID,
+        FTransform(FRotator::ZeroRotator, SpawnLocation), Amount);
 
     if (!Dropped)
     {
@@ -401,20 +479,6 @@ bool UInventoryComponent::DropItem(const FString& ItemID, int32 Amount)
         UE_LOG(LogTemp, Warning, TEXT("[Inventory] Drop Failed: spawn failed for %s."), *ItemID);
         return false;
     }
-
-    Dropped->ItemData.ItemTemplateID = ItemID;
-    Dropped->Amount = Amount;
-
-    // 고유 BP 는 자기 메시를 이미 갖고 있으므로 덮어쓰지 않는다.
-    if (!bUsingItemOwnBlueprint && Dropped->ItemMesh)
-    {
-        if (UStaticMesh* Mesh = ResolveItemMesh(Data))
-        {
-            Dropped->ItemMesh->SetStaticMesh(Mesh);
-        }
-    }
-
-    Dropped->FinishSpawning(SpawnTransform);
 
     if (!RemoveItem(ItemID, Amount))
     {
@@ -717,6 +781,11 @@ void UInventoryComponent::AttachEquipmentMesh(EEquipmentSlot Slot, const FItemDa
     AttachedMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     AttachedMesh->RegisterComponent();
     AttachedMesh->AttachToComponent(OwnerMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, SocketName);
+
+    // 손안 자세는 손으로 쥘 때와 같은 값을 쓴다 — 장착과 쥐기가 다른 각도로 붙으면
+    // 인벤토리에서 꺼내 든 검과 장착한 검이 다른 물건처럼 보인다.
+    AttachedMesh->SetRelativeLocation(Data.HoldOffset);
+    AttachedMesh->SetRelativeRotation(Data.HoldRotation);
 
     AttachedMeshes.Add(Slot, AttachedMesh);
 }

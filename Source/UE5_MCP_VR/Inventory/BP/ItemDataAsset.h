@@ -142,6 +142,15 @@ struct UE5_MCP_VR_API FItemData : public FTableRowBase
     // WorldMesh 가 비었을 때만 참조한다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
     TSoftClassPtr<AActor> WorldMeshClass;
+
+    // 손에 쥐거나 장착했을 때 손 본 기준 위치·회전 보정.
+    // 생성 메시라 원점과 축이 아이템마다 제각각이라 전역 한 쌍으로는 절대 맞지 않는다
+    // (검은 자루가, 방패는 손잡이 안쪽이 손바닥에 와야 한다). 0 이면 폰의 기본값을 쓴다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
+    FVector HoldOffset = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Visual")
+    FRotator HoldRotation = FRotator::ZeroRotator;
     
     // 유효성 검사용 (비어있는 구조체인지 확인)
     bool IsValidItem() const

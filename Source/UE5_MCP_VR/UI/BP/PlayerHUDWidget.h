@@ -19,6 +19,8 @@
 
 class UProgressBar;
 class UTextBlock;
+class UBorder;
+class UPanelWidget;
 class UWidget;
 class UInventoryComponent;
 
@@ -85,9 +87,33 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Inventory")
     void OnInventoryUpdated();
 
-    /** 인벤토리 UI 갱신 요청 — OnInventoryUpdated 브로드캐스트. */
+    /** 인벤토리 UI 갱신 요청 — OnInventoryUpdated 브로드캐스트 후 선택 슬롯을 다시 강조한다. */
     UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
     void RequestInventoryRefresh();
+
+    /**
+     * 선택 슬롯 강조 — 슬롯 그리드의 자식을 순회하며 선택된 것만 색을 바꾼다.
+     * WBP 그래프를 건드리지 않으려고 C++ 에서 위젯 트리를 직접 훑는다. 그리드 자식 순서가
+     * 곧 슬롯 인덱스라는 전제(WBP 가 Index 순으로 Add 함)에 기댄다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
+    void ApplySelectionHighlight();
+
+    /** 슬롯 그리드 위젯 이름 — WBP 에서 이름이 바뀌면 여기만 고친다. */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Inventory")
+    FName SlotGridName = TEXT("SlotGrid");
+
+    /** 선택된 슬롯 테두리 색. */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Inventory")
+    FLinearColor SelectedSlotColor = FLinearColor(1.f, 0.85f, 0.2f, 1.f);
+
+    /** 비선택 슬롯 테두리 색(원래 색으로 되돌릴 때 쓴다). */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Inventory")
+    FLinearColor NormalSlotColor = FLinearColor(1.f, 1.f, 1.f, 0.25f);
+
+    /** 테두리(UBorder)가 없는 슬롯 위젯을 위한 대체 강조 — 선택된 칸만 이만큼 커진다. */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Inventory", meta = (ClampMin = "1.0", ClampMax = "1.5"))
+    float SelectedSlotScale = 1.12f;
 
     // --- Inventory 열기/닫기 ---
 

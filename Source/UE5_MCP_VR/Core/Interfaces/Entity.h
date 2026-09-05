@@ -121,4 +121,11 @@ public:
   UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
             Category = "Character|Player")
   FPlayerAttributes GetPlayerAttributes() const;
+
+  // 인벤토리 슬롯의 아이템 1개를 월드 액터로 꺼내 손에 쥔다. 성공 시 인벤토리에서 차감된다.
+  // 인벤토리 컴포넌트가 아니라 여기 있는 이유: 손이 어디고 지금 비었는지는 폰만 안다.
+  // NPC 는 이 인터페이스를 구현하지 않으므로 자연히 제외된다(NPC 는 액션 파이프라인으로 꺼낸다).
+  UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
+            Category = "Character|Player")
+  bool TakeItemInHand(const FString& ItemID);
 };

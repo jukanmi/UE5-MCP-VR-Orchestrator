@@ -146,6 +146,18 @@ cdo.set_editor_property("FurnitureType", "Chair")
 ue_run_python('unreal.AutomationLibrary.take_high_res_screenshot(1280, 720, "probe.png")')
 ```
 
+## 함정
+
+- **`save_asset(path)` 는 저장 안 하고도 `True` 를 반환한다.** 방금 `create_asset` 으로 만든
+  패키지처럼 dirty 플래그가 안 선 경우 `LogFileHelpers: 모든 파일이 이미 저장되었습니다` 만 찍고
+  디스크에 아무것도 안 쓴다. 반환값을 성공으로 믿으면 에셋이 있다고 착각한 채 진행하게 된다
+  (2026-09-05 실측: `IA_Grab` 생성·IMC 매핑·저장이 전부 True 였는데 `.uasset` 파일 자체가 없었음).
+  → **에셋 저장은 항상 `save_asset(path, only_if_is_dirty=False)`**, 확인은 반환값이 아니라
+  `os.path.exists(<디스크 경로>)` 로.
+- **CDO `set_editor_property` 는 클래스에 그 프로퍼티가 없으면 예외 없이 조용히 무시된다.**
+  C++ 에 새 `UPROPERTY` 를 추가했다면 **빌드 후 에디터를 재시작한 뒤** 세팅할 것. 세팅 직후
+  같은 이름으로 `get_editor_property` 해서 값이 돌아오는지 확인한다.
+
 ## 한계
 
 - **함수는 `BlueprintCallable`/`CallInEditor` 여야 한다.** 순수 C++ 내부 함수는 호출 불가

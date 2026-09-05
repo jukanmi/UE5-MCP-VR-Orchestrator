@@ -6,6 +6,9 @@
 #include "GameFramework/Pawn.h"
 #include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
 #include "Inventory/Components/InventoryComponent.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/PanelWidget.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {
@@ -182,6 +185,51 @@ TArray<FInventorySlot> UPlayerHUDWidget::GetInventorySlots() const
 void UPlayerHUDWidget::RequestInventoryRefresh()
 {
     OnInventoryUpdated();
+
+    // 강조는 반드시 BP 갱신 뒤에 — WBP 가 슬롯 위젯을 매번 지우고 새로 만들기 때문에
+    // 먼저 칠하면 그 위젯이 통째로 버려진다.
+    ApplySelectionHighlight();
+}
+
+void UPlayerHUDWidget::ApplySelectionHighlight()
+{
+    UInventoryComponent* Inv = GetInventory();
+    if (!Inv || !WidgetTree) return;
+
+    UPanelWidget* Grid = Cast<UPanelWidget>(WidgetTree->FindWidget(SlotGridName));
+    if (!Grid) return;
+
+    const int32 Selected = Inv->SelectedSlotIndex;
+
+    for (int32 i = 0; i < Grid->GetChildrenCount(); ++i)
+    {
+        UUserWidget* SlotWidget = Cast<UUserWidget>(Grid->GetChildAt(i));
+        if (!SlotWidget) continue;
+
+        const bool bIsSelected = (i == Selected);
+
+        // 테두리 색이 1순위. 슬롯 위젯 안의 첫 UBorder 를 쓴다 — 이름에 기대면 WBP 에서
+        // 한 번 개명하는 순간 조용히 강조가 사라진다.
+        UBorder* Frame = nullptr;
+        if (SlotWidget->WidgetTree)
+        {
+            SlotWidget->WidgetTree->ForEachWidget([&Frame](UWidget* W)
+            {
+                if (!Frame)
+                {
+                    Frame = Cast<UBorder>(W);
+                }
+            });
+        }
+
+        if (Frame)
+        {
+            Frame->SetBrushColor(bIsSelected ? SelectedSlotColor : NormalSlotColor);
+        }
+
+        // 테두리가 없는 슬롯 디자인에서도 뭐가 골라졌는지는 보여야 한다 — 크기로 대신한다.
+        SlotWidget->SetRenderScale(bIsSelected ? FVector2D(SelectedSlotScale) : FVector2D(1.f));
+    }
 }
 
 // ============================================================================
