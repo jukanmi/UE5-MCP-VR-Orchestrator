@@ -295,3 +295,22 @@ bool UMCPJsonUtils::ParseNpcAudioResponseFromObject(
 
     return !OutNpcId.IsEmpty();
 }
+
+bool UMCPJsonUtils::ParseDebugPromptFromObject(
+    const TSharedPtr<FJsonObject>& Root,
+    FString& OutNpcId,
+    FString& OutPlayerId,
+    FString& OutText)
+{
+    if (!Root.IsValid()) return false;
+
+    FString TypeStr;
+    if (!Root->TryGetStringField(NPCActionKeys::Audio_Type, TypeStr)) return false;
+    if (TypeStr != NPCActionKeys::Debug_TypeValue) return false;
+
+    Root->TryGetStringField(NPCActionKeys::Debug_NpcId, OutNpcId);
+    Root->TryGetStringField(NPCActionKeys::Debug_PlayerId, OutPlayerId);
+    Root->TryGetStringField(NPCActionKeys::Debug_Text, OutText);
+
+    return !OutNpcId.IsEmpty() && !OutText.IsEmpty();
+}

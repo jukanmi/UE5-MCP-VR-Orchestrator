@@ -187,12 +187,17 @@ async function talkToNpc() {
   if (!npc || !text) { showToast('NPC ID와 할 말을 입력하세요', false); return; }
   out.textContent = '⏳ LLM 응답 대기 중...';
   try {
-    const res = await fetch(`${API}/api/debug/prompt`, {
+    // UE5 로 넘겨 마이크와 동일 경로로 처리시킨다 — NPC 인벤토리·valid_targets·가구는
+    // UE5 만 알기 때문. 결과 ActionBatch 는 정상 WS 경로로 돌아가 게임에서 실행되므로
+    // 여기로는 오지 않는다.
+    const res = await fetch(`${API}/api/debug/say`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({npc_id: npc, text: text})
     });
-    if (!res.ok) { out.textContent = '❌ ' + res.status + ' ' + await res.text(); return; }
-    out.textContent = formatBatch(await res.json());
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { out.textContent = '❌ ' + res.status + ' ' + (data.detail || await res.text()); return; }
+    out.textContent = `✅ UE5 로 전달됨 — ${data.npc_id}: "${data.text}"
+결과는 게임 화면과 UE5 로그에서 확인하세요.`;
   } catch(e) { out.textContent = '❌ ' + e; }
 }
 function formatBatch(data) {

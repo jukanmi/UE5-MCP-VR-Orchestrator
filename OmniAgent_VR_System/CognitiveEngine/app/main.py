@@ -856,11 +856,17 @@ def _list_personas() -> list[dict]:
     return results
 
 
+# 디버그 페이지는 개발 중 자주 바뀌는데 브라우저가 캐시하면 구 JS 가 남아 없어진
+# 엔드포인트로 계속 쏜다(2026-09-05 실측: 캐시된 페이지가 구 /api/debug/prompt 를 호출해
+# 인벤토리 없는 프롬프트가 나감). 캐시를 원천 차단한다.
+_NO_STORE = {"Cache-Control": "no-store, max-age=0"}
+
+
 @app.get("/debug", response_class=HTMLResponse)
 async def debug_dashboard():
     if os.path.exists(_DEBUG_HTML_PATH):
         with open(_DEBUG_HTML_PATH, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(content=f.read(), headers=_NO_STORE)
     return HTMLResponse(content="<h1>debug.html not found</h1>", status_code=404)
 
 
@@ -869,7 +875,7 @@ async def test_chat_page():
     """UE5 없이 NPC 대화 파이프라인 테스트 — 브라우저 채팅 UI."""
     if os.path.exists(_TEST_CHAT_HTML_PATH):
         with open(_TEST_CHAT_HTML_PATH, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(content=f.read(), headers=_NO_STORE)
     return HTMLResponse(content="<h1>test_chat.html not found</h1>", status_code=404)
 
 
@@ -998,6 +1004,44 @@ class DebugPromptRequest(BaseModel):
 # plan 보유 시 requires_replan=False + current_plan 동봉(e4b 경량 루프), 응답 NpcPlans 로
 # 갱신, PlanAchieved=True 면 삭제 → 다음 턴 재계획. combat 최초 전환 트리거는 미시뮬(단순화).
 _debug_plan_cache: dict = {}
+
+
+@app.post("/api/debug/say")
+async def api_debug_say(req: DebugPromptRequest):
+    """디버그: 브라우저에서 친 말을 UE5 로 넘겨 마이크와 동일한 경로로 처리시킨다.
+
+    서버가 직접 그래프를 돌리지 않는 이유 — NPC 인벤토리·valid_targets·주변 가구·plan
+    캐시는 전부 UE5 가 prompt 마다 조립해 보내는 값이다. 서버가 이를 흉내내면 실제
+    게임과 다른 입력으로 검증하게 되고, 특히 인벤토리가 비어 "그거 없다"만 나온다.
+    전사 텍스트만 넘기면 UE5 가 SendPlayerDialogue 로 평소 prompt 를 쏘므로 그 뒤는
+    마이크 경로와 완전히 같다 — 응답 ActionBatch 도 정상 WS 경로로 돌아가 게임에서 실행된다.
+
+    그래서 결과는 이 응답에 담기지 않는다. 게임 화면·UE5 로그에서 확인할 것.
+    """
+    if _active_llm_ws is None:
+        raise HTTPException(
+            status_code=409,
+            detail="UE5 미연결 — PIE 를 켜고 다시 시도하세요. UE5 없이 파이프라인만 볼 거라면 /test_chat 을 쓰세요.",
+        )
+
+    msg = json.dumps(
+        {
+            "type": "debug_prompt",
+            "npc_id": req.npc_id,
+            "player_id": req.player_id,
+            "text": req.text,
+        },
+        ensure_ascii=False,
+    )
+    try:
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(msg)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[Debug] UE5 전송 실패: {e}")
+        raise HTTPException(status_code=502, detail=f"UE5 전송 실패: {e}")
+
+    logger.info(f"[Debug] UE5 로 전달 — {req.player_id} → {req.npc_id}: \"{req.text}\"")
+    return {"status": "dispatched", "npc_id": req.npc_id, "text": req.text}
 
 
 @app.post("/api/debug/prompt")

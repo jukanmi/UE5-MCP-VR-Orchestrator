@@ -419,6 +419,35 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
+    // debug_prompt — 브라우저 디버그 대시보드가 친 말. 마이크(ASR)와 완전히 같은 경로로
+    // 태우기 위해 여기서 SendPlayerDialogue 를 호출한다. 서버가 대신 그래프를 돌리지 않는
+    // 이유: NPC 인벤토리·valid_targets·주변 가구·plan 캐시는 전부 UE5 가 prompt 마다
+    // 조립해 보내는 값이라, 서버가 흉내내면 실제와 다른 입력으로 검증하게 된다.
+    {
+        FString DebugNpcId, DebugPlayerId, DebugText;
+        if (UMCPJsonUtils::ParseDebugPromptFromObject(Root, DebugNpcId, DebugPlayerId, DebugText))
+        {
+            // 이 콜백은 WebSocket broadcast 루프 안이다. 여기서 곧바로 Send 하면 소켓
+            // 매니저의 리스너 배열을 순회 도중 건드리게 되므로 다음 틱으로 미룬다
+            // (npc_audio_response 의 PlayFromUrl 지연과 같은 이유).
+            if (UWorld* World = GetWorld())
+            {
+                TWeakObjectPtr<UNPCManager> WeakThis(this);
+                World->GetTimerManager().SetTimerForNextTick(
+                    [WeakThis, DebugNpcId, DebugPlayerId, DebugText]()
+                    {
+                        if (UNPCManager* Self = WeakThis.Get())
+                        {
+                            Self->SendPlayerDialogue(
+                                DebugPlayerId.IsEmpty() ? TEXT("Debug_Player") : DebugPlayerId,
+                                DebugNpcId, DebugText);
+                        }
+                    });
+            }
+            return;
+        }
+    }
+
     // npc_audio_response — TTS 오디오 전달. 액션 배치와 분리된 별도 메시지.
     {
         FString NpcId, WsUrl, DialogueText, Emotion;

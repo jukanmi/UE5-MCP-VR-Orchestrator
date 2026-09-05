@@ -63,4 +63,13 @@ public:
         int32& OutChannels,
         FString& OutDialogueText,
         FString& OutEmotion);
+
+    /** debug_prompt 메시지 파싱 (Python 디버그 대시보드 → UE5).
+     *  성공 시 OutNpcId/OutPlayerId/OutText 채움.
+     *  type 이 "debug_prompt" 가 아니면 false 반환 (조용히 패스). */
+    static bool ParseDebugPromptFromObject(
+        const TSharedPtr<FJsonObject>& Root,
+        FString& OutNpcId,
+        FString& OutPlayerId,
+        FString& OutText);
 };

@@ -57,6 +57,13 @@ namespace NPCActionKeys
     inline const FString Audio_Gesture          = TEXT("gesture");
     inline const FString Audio_LookAtPlayer     = TEXT("look_at_player");
 
+    // debug_prompt — 브라우저 디버그 대시보드가 친 말을 Python 이 UE5 로 넘길 때 쓰는 타입.
+    // UE5 가 이걸 받아 SendPlayerDialogue 를 태우므로 그 뒤는 마이크 경로와 동일하다.
+    inline const FString Debug_TypeValue        = TEXT("debug_prompt");
+    inline const FString Debug_NpcId            = TEXT("npc_id");
+    inline const FString Debug_PlayerId         = TEXT("player_id");
+    inline const FString Debug_Text             = TEXT("text");
+
 
     // NPCActionComponent에서 애니메이션 몽타주를 재생하기 위해 데이터 에셋과 매핑되는 고유 키워드들입니다.
     // 기존 String 기반 통신에서 발생하던 결합도를 낮추고 오직 몽타주 매핑 용도로 역할을 제한하였습니다.
