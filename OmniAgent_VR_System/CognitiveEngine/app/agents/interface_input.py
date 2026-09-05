@@ -149,9 +149,17 @@ def _format_plan_context(state: AgentState) -> str:
     plan = ci_get(current_plan, state.get("target_npc"))
     if not (isinstance(plan, dict) and plan.get("goal")):
         return ""
-    steps = plan.get("steps") or []
-    steps_str = "; ".join(steps) if isinstance(steps, list) else str(steps)
-    return f". Current goal: {plan['goal']}. Plan steps: {steps_str}. Stay consistent with this plan."
+    # steps 는 주입하지 않는다. 2026-09-05 실측(같은 오염 plan 을 물린 채 3턴):
+    #   goal+steps → "돌 좀 줘" 에 액션이 통째로 사라짐
+    #   goal 만    → GiveItem 정상 (plan 을 아예 안 넣은 것과 동등)
+    # steps 는 대개 goal 을 문장만 바꿔 3~4회 되풀이한 것이라, 같은 지시가 여러 번
+    # 쌓이면서 이번 턴 요청을 눌러버린다. goal 한 줄이면 연속성에는 충분하다.
+    #
+    # plan 은 배경 참고지 지시가 아니다 — "Stay consistent with this plan" 으로 강하게
+    # 걸었더니 직전 턴 목표가 이번 턴 요청을 이겼다. 우선순위를 명시한다.
+    return (f". Background goal from earlier: {plan['goal']}."
+            f" This is context only — what the player asks THIS turn takes priority."
+            f" If the request does not fit this goal, follow the request and ignore the goal.")
 
 
 def _format_nearby_furniture(vr_context: GesPrompt) -> str:
