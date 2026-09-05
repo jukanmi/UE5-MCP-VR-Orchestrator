@@ -29,6 +29,12 @@ void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& Act
 {
     if (ASmartNPC* TargetNPC = GetValidNPC(TargetAgentID))
     {
+        // 이 NPC 앞으로 온 실제 응답이 도착한 지점 — 여기서 대기 표시를 끝낸다.
+        // 수신 진입점(OnLLMMessageReceived)에서 agent_id 만 보고 풀면 안 된다:
+        // 주기적으로 오가는 state_update 응답도 agent_id 를 달고 오므로 점이 켜지자마자 꺼진다.
+        // 대사가 있는 응답은 ShowSubtitle 이 덮으므로 여기 해제는 액션만 있는 응답을 위한 것.
+        TargetNPC->StopThinking();
+
         TargetNPC->ExecuteActionBatch(ActionBatch);
     }
     else
@@ -400,27 +406,6 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         UE_LOG(LogTemp, Error,
             TEXT("[NPCManager] Malformed LLM JSON. Raw (first 200): %.200s"), *JsonMessage);
         return;
-    }
-
-    // 어떤 타입이든 그 NPC 앞으로 온 응답이면 대기 표시를 끝낸다. 대사가 있는 응답은
-    // ShowSubtitle 이 알아서 덮지만, 액션만 있는 응답은 여기서 풀지 않으면 워치독까지 점이 남는다.
-    {
-        FString RespondingAgent;
-        if (!Root->TryGetStringField(TEXT("agent_id"), RespondingAgent))
-        {
-            const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
-            if (Root->TryGetObjectField(TEXT("payload"), PayloadObj) && PayloadObj)
-            {
-                (*PayloadObj)->TryGetStringField(TEXT("agent_id"), RespondingAgent);
-            }
-        }
-        if (!RespondingAgent.IsEmpty())
-        {
-            if (ASmartNPC* NPC = NPCMap->GetValidNPC(RespondingAgent))
-            {
-                NPC->StopThinking();
-            }
-        }
     }
 
     // state_update 응답 — relations(호감도) 데이터가 포함된 경우 AffinityCache 갱신

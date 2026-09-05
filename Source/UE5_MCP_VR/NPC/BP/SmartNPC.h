@@ -17,6 +17,7 @@ class UStateTree;
 class UBlackboardData;
 class UWidgetComponent;
 class UNPCAudioStreamComponent;
+class UNPCDialogueUIComponent;
 class UPhysicalAnimationComponent;  // 액티브 래그돌 Flinch 상체 PD
 class UAnimMontage;
 struct FActionBatch;
@@ -118,24 +119,13 @@ public:
 
     // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
-    /** NPC 머리 위 대사 말풍선. WBP 클래스·정밀 위치는 BP 에서 지정. */
+    /** 말풍선 컴포넌트 — 자막 텍스트·표시 타이머·TTS 싱크·Thinking 점 애니메이션까지 전부 이쪽 소유.
+     *  액터는 "무엇을 말할지"만 넘기고 "언제까지 띄울지"는 관여하지 않는다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Dialogue")
-    UWidgetComponent* DialogueWidgetComp;
+    UNPCDialogueUIComponent* DialogueWidgetComp;
 
-    /** TTS 음성 없이 표시할 때 기본 노출 시간(초). 텍스트 길이에 비례 가산. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
-    float SubtitleFallbackDuration = 4.0f;
-
-    /** 글자당 추가 노출 시간(초) — 긴 대사 더 오래. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
-    float SubtitlePerCharDuration = 0.05f;
-
-    /** 음성 싱크 모드 안전 상한(초) — Completed 누락(스트림 에러·소켓 끊김) 시 강제 숨김. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
-    float SubtitleMaxDuration = 15.0f;
-
-    /** 머리 위 말풍선에 대사 표시. bWaitForAudio=true 면 텍스트만 세팅하고 TTS 음성 시작 시 표시,
-     *  false 면 즉시 표시 + 폴백 타이머 후 숨김. 동일 발화 재요청은 깜빡임 없이 이어붙임. */
+    /** 머리 위 말풍선에 대사 표시 — 말풍선 컴포넌트로 넘긴다.
+     *  래퍼를 남긴 이유: 호출부(NPCManager·BP)가 NPC 를 통해 말을 거는 형태를 유지하기 위함. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void ShowSubtitle(const FString& Text, bool bWaitForAudio);
 
@@ -143,26 +133,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void HideSubtitle();
 
-    /** LLM 응답 대기 표시 — 말풍선에 점이 하나씩 늘어난다(. → .. → ...).
-     *  응답이 오면 ShowSubtitle 이, 아무것도 안 오면 워치독이 해제한다. */
+    /** LLM 응답 대기 표시 시작. 사망 상태면 무시한다 — 죽은 머리 위에 점이 돌면 안 된다. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void ShowThinking();
 
-    /** 대기 표시 해제 + 말풍선 숨김. 응답 도착·타임아웃 양쪽에서 호출된다. */
+    /** 대기 표시 해제. 응답 도착·타임아웃 양쪽에서 호출된다. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void StopThinking();
-
-    /** 지금 응답 대기 중인지. */
-    UFUNCTION(BlueprintPure, Category = "MCP|Dialogue")
-    bool IsThinking() const { return bThinking; }
-
-    /** 응답 무한 대기 방지 상한(초). 백엔드가 죽거나 메시지를 흘리면 말풍선이 영원히 남는다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
-    float ThinkingTimeoutSec = 30.f;
-
-    /** 점이 늘어나는 간격(초). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
-    float ThinkingDotInterval = 0.35f;
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -367,18 +344,6 @@ private:
     /** 모든 Tick 소비자(affinity·자막·flinch·넉다운)를 OR 해 Tick 켜기/끄기 일원화. */
     void RefreshTickEnabled();
 
-    // --- Dialogue Subtitle 내부 ---
-    UFUNCTION()
-    void HandleSubtitleAudioStarted();
-    UFUNCTION()
-    void HandleSubtitleAudioCompleted();
-
-    /** NPCAudioStreamComponent 델리게이트 1회 바인딩(재바인딩 누수 방지). */
-    void TryBindAudioSubtitle();
-
-    /** 위젯에 현재 텍스트 적용 + 가시성 설정. 표시 중에만 빌보드용 Tick. */
-    void ApplySubtitle(bool bVisible);
-
     // --- Plan 갱신 로그 ---
     /** NPCStateComponent::OnPlanUpdated 구독 핸들러 — plan 갱신 로그 출력. */
     UFUNCTION()
@@ -395,29 +360,7 @@ private:
     TWeakObjectPtr<AActor> CurrentAttackTarget;  // ExecuteAttackAction 이 세팅, 노티파이가 소비
     bool bAttackHitConsumed = false;             // 스윙당 1회 가드(NotifyBegin 리셋)
 
-    /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
-    FString CurrentSubtitleText;
-    /** 응답 대기 중 여부 — 점 애니메이션과 워치독이 살아 있다는 뜻. */
-    bool bThinking = false;
 
-    /** 지금까지 찍은 점 개수(1~3). */
-    int32 ThinkingDotCount = 0;
-
-    FTimerHandle ThinkingDotTimer;
-    FTimerHandle ThinkingTimeoutTimer;
-
-    /** 점 하나 늘려 말풍선에 반영. */
-    void TickThinkingDots();
-
-    /** 대기 타이머만 정리(말풍선은 그대로) — 진짜 대사가 뒤이어 올 때 쓴다. */
-    void ClearThinkingTimers();
-
-    /** 워치독 만료 — 로그 남기고 해제. */
-    void HandleThinkingTimeout();
-
-    bool bSubtitleWaitingForAudio = false;
-    bool bAudioSubtitleBound = false;
-    FTimerHandle SubtitleHideTimer;
 
 public:
 

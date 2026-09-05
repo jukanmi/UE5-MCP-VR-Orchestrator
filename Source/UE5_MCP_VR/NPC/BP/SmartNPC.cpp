@@ -25,6 +25,7 @@
 #include "Animation/AnimMontage.h"  // 기상 몽타주
 #include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
 #include "NPC/Components/NPCAudioStreamComponent.h"
+#include "NPC/Components/NPCDialogueUIComponent.h"
 #include "UI/Widgets/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
@@ -113,13 +114,9 @@ ASmartNPC::ASmartNPC()
     }
 
     // 머리 위 대사 말풍선 (WorldSpace). WBP 클래스·정밀 위치는 BP 에서.
-    DialogueWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("DialogueWidget"));
+    // 위젯 공간·위치·크기·위젯 클래스는 컴포넌트 자신의 기본값이다(UNPCDialogueUIComponent 생성자).
+    DialogueWidgetComp = CreateDefaultSubobject<UNPCDialogueUIComponent>(TEXT("DialogueWidget"));
     DialogueWidgetComp->SetupAttachment(GetMesh());
-    DialogueWidgetComp->SetWidgetSpace(EWidgetSpace::World);
-    DialogueWidgetComp->SetDrawAtDesiredSize(true);
-    DialogueWidgetComp->SetRelativeLocation(FVector(0.f, 0.f, 110.f)); // 머리 위 기본값(에디터 튜닝)
-    DialogueWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    DialogueWidgetComp->SetVisibility(false);
 
     // --- AI NPC 회전 설정 ---
     // 기본 Character는 컨트롤러 Yaw를 따라 회전(bUseControllerRotationYaw=true)하고
@@ -158,9 +155,6 @@ void ASmartNPC::BeginPlay()
     }
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-
-    // 자막 싱크 — 자기 오디오 컴포넌트의 재생 시작/종료 델리게이트 1회 구독.
-    TryBindAudioSubtitle();
 
     // 계획 갱신 구독 — plan 산출 시 로그 알림. 1회 바인딩.
     if (StateComponent && !bPlanUpdatedBound)
@@ -505,17 +499,6 @@ void ASmartNPC::Tick(float DeltaSeconds)
         TickGetUpBlend(DeltaSeconds);
     }
 
-    // 말풍선 빌보드 — 표시 중일 때만 플레이어 카메라 향해 Yaw 정렬(텍스트 직립 유지).
-    if (DialogueWidgetComp && DialogueWidgetComp->IsVisible())
-    {
-        if (APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))
-        {
-            const FVector ToCam = Cam->GetCameraLocation() - DialogueWidgetComp->GetComponentLocation();
-            const float Yaw = ToCam.Rotation().Yaw + 180.f; // 위젯 정면이 카메라를 향하도록
-            DialogueWidgetComp->SetWorldRotation(FRotator(0.f, Yaw, 0.f));
-        }
-    }
-
     if (!bShowAffinityOnScreen || !StateComponent) return;
 
     UWorld* World = GetWorld();
@@ -550,149 +533,26 @@ void ASmartNPC::Tick(float DeltaSeconds)
 
 // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
-void ASmartNPC::TryBindAudioSubtitle()
-{
-    if (bAudioSubtitleBound) return;
-
-    if (UNPCAudioStreamComponent* Audio = FindComponentByClass<UNPCAudioStreamComponent>())
-    {
-        Audio->OnAudioStarted.AddDynamic(this, &ASmartNPC::HandleSubtitleAudioStarted);
-        Audio->OnAudioCompleted.AddDynamic(this, &ASmartNPC::HandleSubtitleAudioCompleted);
-        bAudioSubtitleBound = true;
-    }
-}
-
 void ASmartNPC::ShowSubtitle(const FString& Text, bool bWaitForAudio)
 {
-    if (Text.IsEmpty()) return;
-
-    // 응답이 왔으니 점 애니메이션은 끝. 말풍선을 숨기지는 않는다 — 바로 진짜 대사로 덮인다.
-    ClearThinkingTimers();
-
-    // 액션 dialogue 후 같은 발화의 TTS 가 뒤따라 오는 경우 — 같은 텍스트면 깜빡임 없이 이어감.
-    const bool bSameText = (Text == CurrentSubtitleText);
-    CurrentSubtitleText = Text;
-
-    // 늦게 첨부된 오디오 컴포넌트 대비 바인딩 재시도.
-    TryBindAudioSubtitle();
-
-    if (bWaitForAudio)
-    {
-        // 음성 시작(HandleSubtitleAudioStarted)이 표시를 맡는다.
-        bSubtitleWaitingForAudio = true;
-
-        // 같은 텍스트가 폴백으로 이미 보이는 중이면 유지, 아니면 텍스트만 세팅(숨김) 후 Started 대기.
-        const bool bAlreadyVisible = DialogueWidgetComp && DialogueWidgetComp->IsVisible();
-        ApplySubtitle(bSameText && bAlreadyVisible);
-
-        // 안전 상한 — 음성이 시작/완료되지 않아도(에러·끊김) 영구 표시 방지.
-        GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, SubtitleMaxDuration, false);
-        return;
-    }
-
-    // 즉시 표시 + 길이 비례 폴백 타이머.
-    bSubtitleWaitingForAudio = false;
-    ApplySubtitle(true);
-
-    const float Duration = SubtitleFallbackDuration + SubtitlePerCharDuration * Text.Len();
-    GetWorldTimerManager().ClearTimer(SubtitleHideTimer);
-    GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, Duration, false);
-}
-
-void ASmartNPC::HandleSubtitleAudioStarted()
-{
-    // 음성 재생 시작 — 대기 중이던 자막 표시.
-    if (CurrentSubtitleText.IsEmpty()) return;
-    bSubtitleWaitingForAudio = false;
-    ApplySubtitle(true);
-    // Completed 정상 도착 시 숨김. 누락(에러·끊김) 대비 안전 상한 갱신.
-    GetWorldTimerManager().SetTimer(SubtitleHideTimer, this, &ASmartNPC::HideSubtitle, SubtitleMaxDuration, false);
-}
-
-void ASmartNPC::HandleSubtitleAudioCompleted()
-{
-    HideSubtitle();
+    if (DialogueWidgetComp) DialogueWidgetComp->ShowSubtitle(Text, bWaitForAudio);
 }
 
 void ASmartNPC::HideSubtitle()
 {
-    bSubtitleWaitingForAudio = false;
-    GetWorldTimerManager().ClearTimer(SubtitleHideTimer);
-    CurrentSubtitleText.Reset();
-    ApplySubtitle(false);
+    if (DialogueWidgetComp) DialogueWidgetComp->HideSubtitle();
 }
 
 void ASmartNPC::ShowThinking()
 {
+    // 사망 판정만 액터가 한다 — 죽었는지는 말풍선이 아니라 NPC 가 아는 사실이다.
     if (bIsDead || !DialogueWidgetComp) return;
-
-    bThinking = true;
-    ThinkingDotCount = 0;
-
-    // 즉시 한 번 찍고 이후 간격마다 늘린다 — 첫 점까지 기다리면 반응이 없는 것처럼 보인다.
-    TickThinkingDots();
-    GetWorldTimerManager().SetTimer(ThinkingDotTimer, this, &ASmartNPC::TickThinkingDots,
-                                    ThinkingDotInterval, true);
-
-    // 응답이 영영 안 오는 경우(백엔드 다운·메시지 유실)에 말풍선이 남지 않도록.
-    GetWorldTimerManager().SetTimer(ThinkingTimeoutTimer, this, &ASmartNPC::HandleThinkingTimeout,
-                                    ThinkingTimeoutSec, false);
-}
-
-void ASmartNPC::TickThinkingDots()
-{
-    ThinkingDotCount = (ThinkingDotCount % 3) + 1;
-
-    // 자막 경로를 그대로 재사용한다 — 위젯 초기화·빌보드 틱 관리가 이미 여기 있다.
-    CurrentSubtitleText = FString::ChrN(ThinkingDotCount, TEXT('.'));
-    ApplySubtitle(true);
-}
-
-void ASmartNPC::ClearThinkingTimers()
-{
-    if (!bThinking) return;
-
-    bThinking = false;
-    GetWorldTimerManager().ClearTimer(ThinkingDotTimer);
-    GetWorldTimerManager().ClearTimer(ThinkingTimeoutTimer);
+    DialogueWidgetComp->ShowThinking();
 }
 
 void ASmartNPC::StopThinking()
 {
-    if (!bThinking) return;
-
-    ClearThinkingTimers();
-
-    // 대사 없이 끝난 경우 — 점만 남겨두지 않는다.
-    HideSubtitle();
-}
-
-void ASmartNPC::HandleThinkingTimeout()
-{
-    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s — LLM 응답 %.0f초 무응답, 대기 표시 해제"),
-           *AgentID, ThinkingTimeoutSec);
-    StopThinking();
-}
-
-void ASmartNPC::ApplySubtitle(bool bVisible)
-{
-    if (!DialogueWidgetComp) return;
-
-    // 위젯 오브젝트가 아직 생성 전이면(최초 표시) 강제 초기화. WBP 미지정 시 null 유지 — 디버그 자막 폴백.
-    if (!DialogueWidgetComp->GetUserWidgetObject())
-    {
-        DialogueWidgetComp->InitWidget();
-    }
-
-    if (UNPCDialogueWidget* W = Cast<UNPCDialogueWidget>(DialogueWidgetComp->GetUserWidgetObject()))
-    {
-        W->SetDialogue(AgentID, CurrentSubtitleText);
-    }
-
-    DialogueWidgetComp->SetVisibility(bVisible);
-
-    // 빌보드용 Tick — 표시 중에만. 다른 소비자(호감도·flinch·넉다운) OR 해 일원 관리.
-    RefreshTickEnabled();
+    if (DialogueWidgetComp) DialogueWidgetComp->StopThinking();
 }
 
 // === Plan 갱신 로그 알림 ===
@@ -714,9 +574,9 @@ UNPCManager* ASmartNPC::GetNPCManager() const
 
 void ASmartNPC::RefreshTickEnabled()
 {
+    // 말풍선은 빠졌다 — 자기 컴포넌트가 보일 때만 스스로 틱한다(액터 틱과 수명 분리).
     const bool bWantTick =
         bShowAffinityOnScreen
-        || (DialogueWidgetComp && DialogueWidgetComp->IsVisible())
         || bFlinching
         || (KnockdownPhase != EKnockdownPhase::None);
     SetActorTickEnabled(bWantTick);
