@@ -391,7 +391,24 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
         # 12B 가 간혹 "1. " 번호 접두사를 붙임 — 제거 (실측).
         steps = [re.sub(r"^\s*\d+[.)]\s*", "", s).strip() for s in item.steps if s.strip()]
 
-        plan = {"goal": item.goal.strip(), "steps": steps}
+        # 12B 가 goal 자리에 npc_id 를 그대로 넣는 일이 잦다(2026-09-05 실측: 9/9).
+        # 프롬프트 지시 강화·필드 설명 보강·필드명 변경 셋 다 효과 없었다. 그대로 두면
+        # Stage1 컨텍스트에 "Current goal: Moca" 가 실려 다음 턴 대사를 망친다.
+        # steps 는 대체로 쓸 만하므로 첫 step 으로 대체하고, 그마저 오염이면 plan 을 버린다.
+        goal = item.goal.strip()
+        if goal.casefold() == item.npc_id.strip().casefold():
+            goal = steps[0] if steps else ""
+            print(f"[Dialogue] Stage2 goal 이 npc_id 와 동일 — 첫 step 으로 대체 ({npc_id}): '{goal}'")
+
+        # steps 가 스키마 필드명을 그대로 뱉은 경우(실측: ["Moca","goal","steps"])도 버린다.
+        FIELD_ECHO = {"goal", "steps", "npc_id", item.npc_id.strip().casefold()}
+        steps = [st for st in steps if st.casefold() not in FIELD_ECHO]
+
+        if not goal or not steps:
+            print(f"[Dialogue] Stage2 plan 오염으로 폐기 ({npc_id})")
+            continue
+
+        plan = {"goal": goal, "steps": steps}
         # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
         try:
             relation = await db_manager.get_affinity(npc_id, player_id)
