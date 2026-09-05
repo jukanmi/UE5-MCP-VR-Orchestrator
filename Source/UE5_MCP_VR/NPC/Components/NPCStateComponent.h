@@ -185,6 +185,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
     bool bPlanAchievedPending = false;
 
+    /** 현재 plan 으로 보낸 prompt 턴 수. SetCurrentPlan 에서 0 으로 리셋. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Plan")
+    int32 TurnsOnCurrentPlan = 0;
+
     // plan 갱신 통지 — 머리 위 plan 위젯(WBP)이 GetStateComponent()->OnPlanUpdated 바인딩.
     UPROPERTY(BlueprintAssignable, Category = "NPC|Plan")
     FOnPlanUpdated OnPlanUpdated;
@@ -200,8 +204,12 @@ public:
         CurrentPlan.bIsValid = true;
         bDangerReplanPending = false;
         bPlanAchievedPending = false;
+        TurnsOnCurrentPlan = 0;
         OnPlanUpdated.Broadcast(CurrentPlan);
     }
+
+    /** prompt 를 한 번 보낼 때마다 호출 — 현재 plan 으로 몇 턴을 보냈는지 센다. */
+    void NotePlanTurnElapsed() { ++TurnsOnCurrentPlan; }
 
     // SmartNPCAIController 가 perception 에서 danger ≥ 임계 감지 시 호출 → 다음 prompt 강제 재계획.
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
@@ -211,14 +219,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     void FlagPlanAchieved() { bPlanAchievedPending = true; }
 
-    /** 재계획 필요 판정: plan 없음 OR 전투 전환 감지 OR e4b plan 달성 신호.
-     *  시간 기반(TurnsSinceReplan) 강제 재계획 제거 — plan 있으면 e4b 단독 유지. */
+    /** 한 plan 을 유지할 최대 턴 수. 넘으면 강제 재계획.
+     *  달성 신호(bPlanAchievedPending)만으로는 부족하다 — e4b 가 plan_achieved 를 좀처럼
+     *  올리지 않아 낡은 목표가 무한히 붙어다닌다. 2026-09-05 실측: "가방에 뭐 있어?" 로
+     *  생긴 '확인' 목표가 이후 모든 턴의 대사를 "한번 확인해 보시겠어요?" 로 끌고 갔다.
+     *  값이 작을수록 12B 재계획이 잦아 비용이 오른다 — 대화 3~4턴이 한 주제의 수명. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Plan", meta = (ClampMin = "1"))
+    int32 MaxTurnsPerPlan = 4;
+
+    /** 재계획 필요 판정: plan 없음 OR 전투 전환 감지 OR e4b plan 달성 신호 OR plan 수명 초과. */
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
     bool ShouldReplan() const
     {
         return !CurrentPlan.bIsValid
             || bDangerReplanPending
-            || bPlanAchievedPending;
+            || bPlanAchievedPending
+            || TurnsOnCurrentPlan >= MaxTurnsPerPlan;
     }
 
 protected:

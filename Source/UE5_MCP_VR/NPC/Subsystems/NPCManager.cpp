@@ -253,6 +253,10 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
             bRequiresReplan = StateComp->ShouldReplan();
             if (!bRequiresReplan)
             {
+                // 이 plan 으로 한 턴 더 간다 — 수명 카운터를 올린다. 재계획하는 턴에는
+                // 세지 않는다(Stage2 가 새 plan 을 주면 SetCurrentPlan 이 0 으로 리셋).
+                StateComp->NotePlanTurnElapsed();
+
                 const FNPCPlan& Plan = StateComp->GetCurrentPlan();
                 const TSharedRef<FJsonObject> PlanJson = MakeShared<FJsonObject>();
                 PlanJson->SetStringField(TEXT("goal"), Plan.Goal);
