@@ -566,6 +566,9 @@ void ASmartNPC::ShowSubtitle(const FString& Text, bool bWaitForAudio)
 {
     if (Text.IsEmpty()) return;
 
+    // 응답이 왔으니 점 애니메이션은 끝. 말풍선을 숨기지는 않는다 — 바로 진짜 대사로 덮인다.
+    ClearThinkingTimers();
+
     // 액션 dialogue 후 같은 발화의 TTS 가 뒤따라 오는 경우 — 같은 텍스트면 깜빡임 없이 이어감.
     const bool bSameText = (Text == CurrentSubtitleText);
     CurrentSubtitleText = Text;
@@ -617,6 +620,58 @@ void ASmartNPC::HideSubtitle()
     GetWorldTimerManager().ClearTimer(SubtitleHideTimer);
     CurrentSubtitleText.Reset();
     ApplySubtitle(false);
+}
+
+void ASmartNPC::ShowThinking()
+{
+    if (bIsDead || !DialogueWidgetComp) return;
+
+    bThinking = true;
+    ThinkingDotCount = 0;
+
+    // 즉시 한 번 찍고 이후 간격마다 늘린다 — 첫 점까지 기다리면 반응이 없는 것처럼 보인다.
+    TickThinkingDots();
+    GetWorldTimerManager().SetTimer(ThinkingDotTimer, this, &ASmartNPC::TickThinkingDots,
+                                    ThinkingDotInterval, true);
+
+    // 응답이 영영 안 오는 경우(백엔드 다운·메시지 유실)에 말풍선이 남지 않도록.
+    GetWorldTimerManager().SetTimer(ThinkingTimeoutTimer, this, &ASmartNPC::HandleThinkingTimeout,
+                                    ThinkingTimeoutSec, false);
+}
+
+void ASmartNPC::TickThinkingDots()
+{
+    ThinkingDotCount = (ThinkingDotCount % 3) + 1;
+
+    // 자막 경로를 그대로 재사용한다 — 위젯 초기화·빌보드 틱 관리가 이미 여기 있다.
+    CurrentSubtitleText = FString::ChrN(ThinkingDotCount, TEXT('.'));
+    ApplySubtitle(true);
+}
+
+void ASmartNPC::ClearThinkingTimers()
+{
+    if (!bThinking) return;
+
+    bThinking = false;
+    GetWorldTimerManager().ClearTimer(ThinkingDotTimer);
+    GetWorldTimerManager().ClearTimer(ThinkingTimeoutTimer);
+}
+
+void ASmartNPC::StopThinking()
+{
+    if (!bThinking) return;
+
+    ClearThinkingTimers();
+
+    // 대사 없이 끝난 경우 — 점만 남겨두지 않는다.
+    HideSubtitle();
+}
+
+void ASmartNPC::HandleThinkingTimeout()
+{
+    UE_LOG(LogTemp, Warning, TEXT("[SmartNPC] %s — LLM 응답 %.0f초 무응답, 대기 표시 해제"),
+           *AgentID, ThinkingTimeoutSec);
+    StopThinking();
 }
 
 void ASmartNPC::ApplySubtitle(bool bVisible)

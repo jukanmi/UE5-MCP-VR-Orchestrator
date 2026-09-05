@@ -63,6 +63,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Throw", meta = (ClampMin = "0.1"))
     float ThrowDamageWindow = 2.0f;
 
+    /** 거래 접시에 올라가 잠긴 상태 — 손으로 다시 집을 수 없다(수락/취소로만 소유권이 바뀐다).
+     *  잠금 없이 두면 올려둔 물건을 쥔 채 취소를 눌러 같은 아이템이 손과 인벤토리에 동시에 남는다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Trade")
+    bool bTradeLocked = false;
+
 protected:
     /** 던진 아이템이 무언가에 부딪혔을 때 — 창이 살아 있고 상대가 NPC 면 ½mv² 데미지. */
     UFUNCTION()

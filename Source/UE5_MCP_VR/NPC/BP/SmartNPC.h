@@ -143,6 +143,27 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void HideSubtitle();
 
+    /** LLM 응답 대기 표시 — 말풍선에 점이 하나씩 늘어난다(. → .. → ...).
+     *  응답이 오면 ShowSubtitle 이, 아무것도 안 오면 워치독이 해제한다. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
+    void ShowThinking();
+
+    /** 대기 표시 해제 + 말풍선 숨김. 응답 도착·타임아웃 양쪽에서 호출된다. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
+    void StopThinking();
+
+    /** 지금 응답 대기 중인지. */
+    UFUNCTION(BlueprintPure, Category = "MCP|Dialogue")
+    bool IsThinking() const { return bThinking; }
+
+    /** 응답 무한 대기 방지 상한(초). 백엔드가 죽거나 메시지를 흘리면 말풍선이 영원히 남는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
+    float ThinkingTimeoutSec = 30.f;
+
+    /** 점이 늘어나는 간격(초). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
+    float ThinkingDotInterval = 0.35f;
+
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaSeconds) override;
@@ -376,6 +397,24 @@ private:
 
     /** 현재 표시/대기 중 자막 텍스트(중복 발화 억제용). */
     FString CurrentSubtitleText;
+    /** 응답 대기 중 여부 — 점 애니메이션과 워치독이 살아 있다는 뜻. */
+    bool bThinking = false;
+
+    /** 지금까지 찍은 점 개수(1~3). */
+    int32 ThinkingDotCount = 0;
+
+    FTimerHandle ThinkingDotTimer;
+    FTimerHandle ThinkingTimeoutTimer;
+
+    /** 점 하나 늘려 말풍선에 반영. */
+    void TickThinkingDots();
+
+    /** 대기 타이머만 정리(말풍선은 그대로) — 진짜 대사가 뒤이어 올 때 쓴다. */
+    void ClearThinkingTimers();
+
+    /** 워치독 만료 — 로그 남기고 해제. */
+    void HandleThinkingTimeout();
+
     bool bSubtitleWaitingForAudio = false;
     bool bAudioSubtitleBound = false;
     FTimerHandle SubtitleHideTimer;

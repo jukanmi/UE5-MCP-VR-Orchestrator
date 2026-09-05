@@ -666,6 +666,10 @@ public:
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount);
+
+    /** 거래 테이블이 뜨는 높이(cm, 바닥 기준). 손이 닿아야 하므로 허리~가슴 사이. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Trade")
+    float TradeTableHeight = 90.f;
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount);

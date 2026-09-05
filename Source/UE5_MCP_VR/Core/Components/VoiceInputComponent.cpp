@@ -204,6 +204,7 @@ void UVoiceInputComponent::HandleAudioGenerate(const float* InAudio, int32 NumFr
 
     FScopeLock Lock(&PcmLock);
     PcmQueue.Reserve(PcmQueue.Num() + NumFrames);
+    double SquaredSum = 0.0;
     for (int32 Frame = 0; Frame < NumFrames; ++Frame)
     {
         // 다중 채널 → mono 평균
@@ -213,11 +214,17 @@ void UVoiceInputComponent::HandleAudioGenerate(const float* InAudio, int32 NumFr
             Sum += InAudio[Frame * NumChannels + Ch];
         }
         const float Mono = Sum / NumChannels;
+        SquaredSum += static_cast<double>(Mono) * Mono;
         const int32 S = FMath::RoundToInt(FMath::Clamp(Mono, -1.f, 1.f) * 32767.f);
         const int16 Sample = static_cast<int16>(S);
         PcmQueue.Add(Sample);
         if (bSaveDebugWav) DebugPcmBuffer.Add(Sample);
     }
+
+    // 표시용 입력 세기 — 이 구간의 RMS. 말소리는 대개 0.02~0.2 라 그대로 쓰면 바가 거의 안 움직인다.
+    // sqrt 로 한 번 더 펴서 눈에 보이는 범위로 끌어올린다(정확한 dB 가 아니라 피드백용).
+    const float Rms = FMath::Sqrt(static_cast<float>(SquaredSum / FMath::Max(NumFrames, 1)));
+    InputLevel.store(FMath::Clamp(FMath::Sqrt(Rms) * 1.6f, 0.f, 1.f));
 }
 
 void UVoiceInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)

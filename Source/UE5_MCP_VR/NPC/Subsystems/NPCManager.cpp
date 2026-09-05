@@ -367,6 +367,12 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     const FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadStr);
     SendEnvelopePromptToLLM(Envelope);
 
+    // 응답까지 수 초가 걸린다. 그동안 아무 표시가 없으면 플레이어는 말이 씹힌 줄 안다.
+    if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+    {
+        TargetNPC->ShowThinking();
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
 }
 
@@ -394,6 +400,27 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         UE_LOG(LogTemp, Error,
             TEXT("[NPCManager] Malformed LLM JSON. Raw (first 200): %.200s"), *JsonMessage);
         return;
+    }
+
+    // 어떤 타입이든 그 NPC 앞으로 온 응답이면 대기 표시를 끝낸다. 대사가 있는 응답은
+    // ShowSubtitle 이 알아서 덮지만, 액션만 있는 응답은 여기서 풀지 않으면 워치독까지 점이 남는다.
+    {
+        FString RespondingAgent;
+        if (!Root->TryGetStringField(TEXT("agent_id"), RespondingAgent))
+        {
+            const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
+            if (Root->TryGetObjectField(TEXT("payload"), PayloadObj) && PayloadObj)
+            {
+                (*PayloadObj)->TryGetStringField(TEXT("agent_id"), RespondingAgent);
+            }
+        }
+        if (!RespondingAgent.IsEmpty())
+        {
+            if (ASmartNPC* NPC = NPCMap->GetValidNPC(RespondingAgent))
+            {
+                NPC->StopThinking();
+            }
+        }
     }
 
     // state_update 응답 — relations(호감도) 데이터가 포함된 경우 AffinityCache 갱신

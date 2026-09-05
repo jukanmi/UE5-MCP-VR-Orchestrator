@@ -146,6 +146,16 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     UStaticMeshComponent* PointerDot;
 
+    /** 마이크 입력 표시 — 왼손 옆에 뜨는 작은 구. 말하는 동안만 보이고 입력 세기로 커진다.
+     *  파형 위젯 대신 구 하나인 이유: "들어가고 있다"만 알면 되는데 위젯은 에셋과 틱을 늘린다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
+    UStaticMeshComponent* VoiceLevelOrb;
+
+    /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
+     *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+    UWidgetComponent* ItemTooltipComp;
+
     /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
     FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
@@ -697,6 +707,46 @@ private:
     /** 쥔 아이템을 근처 NPC 인벤토리로 넘긴다. 성공 시 월드 액터는 소비되고 true. */
     bool TryHandOverToNPC(ADroppedItemBase* Item);
 
+    /** 거래 테이블 접시 위에서 놓았는지 — 올라갔으면 true(건네기·던지기로 넘어가지 않는다). */
+    bool TrySnapToTradePlate(ADroppedItemBase* Item);
+
+    /** 오른손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
+    ADroppedItemBase* FindNearestItemNearHand(float Radius) const;
+
+    /** 매 Tick — 손 근처 아이템 이름표를 띄우고 카메라를 향하게 돌린다. */
+    void UpdateItemTooltip();
+
+    /** 매 Tick — 마이크 입력 세기를 왼손 구 크기로 반영(말하는 중에만 표시). */
+    void UpdateVoiceIndicator();
+
+    /** 무음일 때 구 지름(cm). 입력이 커지면 이 값의 최대 3배까지 커진다. */
+    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true", ClampMin = "0.2", ClampMax = "10.0"))
+    float VoiceOrbBaseSize = 1.5f;
+
+    /** 구의 왼손 컨트롤러 기준 위치(cm) — 손등 안쪽, HUD 패널보다 아래. */
+    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true"))
+    FVector VoiceOrbLocation = FVector(2.f, 0.f, 3.f);
+
+    /** 구 색(말하는 중). */
+    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true"))
+    FLinearColor VoiceOrbColor = FLinearColor(0.3f, 1.f, 0.4f, 1.f);
+
+    /** 구 전용 머티리얼 인스턴스 — 포인터와 색을 따로 쓰려면 인스턴스가 따로 필요하다. */
+    UPROPERTY(Transient)
+    UMaterialInstanceDynamic* VoiceOrbMID = nullptr;
+
+    /** 이름표가 뜨는 손-아이템 거리(cm). 쥐기 반경보다 넓어야 "잡을 수 있다"를 미리 알려준다. */
+    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "10.0", ClampMax = "300.0"))
+    float TooltipRange = 70.f;
+
+    /** 아이템 위로 이름표를 띄우는 높이(cm). */
+    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
+    float TooltipHeightOffset = 15.f;
+
+    /** 직전에 이름표를 그린 아이템 — 대상이 바뀔 때만 텍스트를 다시 만든다(매 틱 SetText 는 비싸다). */
+    UPROPERTY(Transient)
+    TObjectPtr<ADroppedItemBase> TooltipTarget;
+
     /** 월드 아이템을 오른손에 쥔 상태로 만든다 — 물리·콜리전 끄고 손 본에 스냅 부착.
      *  그립으로 집을 때와 인벤토리에서 꺼낼 때가 같은 상태로 수렴해야 놓기(던지기·건네기)가 한 경로로 끝난다. */
     void AttachItemToHand(ADroppedItemBase* Item);
@@ -749,6 +799,13 @@ private:
 
     /** 직전 프레임 히트 여부 — 색이 바뀔 때만 파라미터를 쓴다. */
     bool bPointerWasHitting = false;
+
+public:
+    /** 손(모션 컨트롤러) 월드 위치. 거래 패널의 물리 버튼처럼 외부에서 손 근접을 재는 곳이 쓴다. */
+    UFUNCTION(BlueprintPure, Category = "VR")
+    FVector GetHandLocation(bool bRightHand) const;
+
+private:
 
     /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
     UFUNCTION(Exec)

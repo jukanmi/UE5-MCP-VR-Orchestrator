@@ -35,6 +35,8 @@
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
 #include "UI/BP/PlayerHUDWidget.h"
+#include "UI/BP/ItemTooltipWidget.h"
+#include "UI/Trade/TradeSessionActor.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
@@ -156,6 +158,28 @@ AVRPawn::AVRPawn()
     PointerDot->SetCastShadow(false);
     PointerDot->SetVisibility(false);
 
+    // 아이템 이름표 — 월드 공간 위젯 1개를 폰이 들고 다니며 대상 위로 옮긴다.
+    // 루트에 붙이되 위치는 매 틱 월드 좌표로 덮어쓴다(손이 아니라 아이템 위에 떠야 한다).
+    ItemTooltipComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("ItemTooltipComp"));
+    ItemTooltipComp->SetupAttachment(RootComponent);
+    ItemTooltipComp->SetWidgetSpace(EWidgetSpace::World);
+    ItemTooltipComp->SetDrawSize(FVector2D(400.f, 140.f));
+    ItemTooltipComp->SetRelativeScale3D(FVector(0.05f));
+    ItemTooltipComp->SetTwoSided(true);
+    ItemTooltipComp->SetBlendMode(EWidgetBlendMode::Transparent);
+    // 이름표가 광선·물리를 가로채면 안 된다 — 보기만 하는 물건이다.
+    ItemTooltipComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    ItemTooltipComp->SetVisibility(false);
+    ItemTooltipComp->SetWidgetClass(UItemTooltipWidget::StaticClass());
+
+    // 마이크 입력 표시 구 — 왼손(음성 입력이 왼손 X버튼)에 붙인다.
+    VoiceLevelOrb = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VoiceLevelOrb"));
+    VoiceLevelOrb->SetupAttachment(MotionControllerLeft);
+    VoiceLevelOrb->SetRelativeLocation(VoiceOrbLocation);
+    VoiceLevelOrb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    VoiceLevelOrb->SetCastShadow(false);
+    VoiceLevelOrb->SetVisibility(false);
+
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
     bUseControllerRotationPitch = false;
@@ -212,6 +236,21 @@ void AVRPawn::BeginPlay()
 
         // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
         PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
+    }
+
+    // 마이크 표시 구 — 포인터와 같은 엔진 에셋을 쓰되 색은 따로 간다(포인터 색이 같이 바뀌면 안 된다).
+    if (VoiceLevelOrb)
+    {
+        if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+        {
+            VoiceLevelOrb->SetStaticMesh(Sphere);
+        }
+        if (UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial")))
+        {
+            VoiceOrbMID = UMaterialInstanceDynamic::Create(Emissive, this);
+            VoiceOrbMID->SetVectorParameterValue(TEXT("Color"), VoiceOrbColor);
+            VoiceLevelOrb->SetMaterial(0, VoiceOrbMID);
+        }
     }
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
@@ -292,6 +331,8 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateHUDPanelFacing();
     UpdateHUDPanelGaze(DeltaTime);
     UpdatePointerVisual();
+    UpdateItemTooltip();
+    UpdateVoiceIndicator();
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
 
@@ -1349,20 +1390,40 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
         return;
     }
 
+    ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius);
+    if (!Nearest)
+    {
+        // 입력이 왔다는 사실 자체를 남긴다 — 이 로그가 없으면 그립 매핑 문제, 있는데 못 잡으면 거리 문제.
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 그립 — 반경 %.0fcm 내 아이템 없음 (손 %s)"),
+            GrabRadius, *MotionControllerRight->GetComponentLocation().ToCompactString());
+        return;
+    }
+
+    AttachItemToHand(Nearest);
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
+}
+
+ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius) const
+{
+    if (!MotionControllerRight) return nullptr;
+
     UGameInstance* GI = GetGameInstance();
     UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-    if (!ItemManager) return;
+    if (!ItemManager) return nullptr;
 
-    // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 잡혀야 한다.
+    // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
     const FVector HandLoc = MotionControllerRight->GetComponentLocation();
 
     ADroppedItemBase* Nearest = nullptr;
     float NearestDistSq = TNumericLimits<float>::Max();
-    const TArray<FDroppedItemData> Candidates = ItemManager->GetItemsInRange(HandLoc, GrabRadius);
-    for (const FDroppedItemData& Candidate : Candidates)
+    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(HandLoc, Radius))
     {
         ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
         if (!IsValid(Dropped) || !Dropped->ItemMesh) continue;
+
+        // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
+        // 손에 쥔 것이 겹쳐 복사가 된다.
+        if (Dropped->bTradeLocked) continue;
 
         const float DistSq = FVector::DistSquared(HandLoc, Dropped->GetActorLocation());
         if (DistSq < NearestDistSq)
@@ -1371,17 +1432,80 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
             Nearest = Dropped;
         }
     }
+    return Nearest;
+}
 
-    if (!Nearest)
+void AVRPawn::UpdateItemTooltip()
+{
+    if (!ItemTooltipComp || !VRCamera) return;
+
+    // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
+    // 손을 따라다니는 이름표는 시야만 가린다.
+    ADroppedItemBase* Target = IsValid(HeldItem) ? nullptr : FindNearestItemNearHand(TooltipRange);
+
+    if (!Target)
     {
-        // 입력이 왔다는 사실 자체를 남긴다 — 이 로그가 없으면 그립 매핑 문제, 있는데 후보 0 이면 거리 문제.
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 그립 — 반경 %.0fcm 내 아이템 없음 (손 %s, 후보 %d)"),
-            GrabRadius, *HandLoc.ToCompactString(), Candidates.Num());
+        if (ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(false);
+        TooltipTarget = nullptr;
         return;
     }
 
-    AttachItemToHand(Nearest);
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
+    // 대상이 바뀔 때만 텍스트를 다시 만든다 — 매 틱 SetText 는 폰트 셰이핑을 다시 돌려
+    // VR 90Hz 에서 프레임을 갉아먹는다(HUD 게이지와 같은 이유).
+    if (Target != TooltipTarget)
+    {
+        TooltipTarget = Target;
+
+        UGameInstance* GI = GetGameInstance();
+        UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+
+        FItemData Data;
+        if (ItemManager && ItemManager->GetItemDataByID(Target->ItemData.ItemTemplateID, Data))
+        {
+            if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(ItemTooltipComp->GetUserWidgetObject()))
+            {
+                Tooltip->SetItem(Data, Target->Amount);
+            }
+        }
+        else
+        {
+            // 마스터 테이블에 없는 ID 면 이름표를 띄우지 않는다 — 빈 상자만 뜨는 게 더 헷갈린다.
+            ItemTooltipComp->SetVisibility(false);
+            return;
+        }
+    }
+
+    const FVector TooltipLoc = Target->GetActorLocation() + FVector(0.f, 0.f, TooltipHeightOffset);
+    ItemTooltipComp->SetWorldLocation(TooltipLoc);
+
+    // 위젯의 가시면은 +X 라 X 축을 카메라로 향하게 한다(HUD 패널과 같은 규칙).
+    const FVector ToCam = VRCamera->GetComponentLocation() - TooltipLoc;
+    if (!ToCam.IsNearlyZero())
+    {
+        ItemTooltipComp->SetWorldRotation(ToCam.Rotation());
+    }
+
+    if (!ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(true);
+}
+
+void AVRPawn::UpdateVoiceIndicator()
+{
+    if (!VoiceLevelOrb) return;
+
+    const bool bTalking = VoiceInput && VoiceInput->IsTalking();
+    if (!bTalking)
+    {
+        if (VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(false);
+        return;
+    }
+
+    // 무음이어도 구는 보여야 한다 — "녹음 중"이라는 사실 자체가 표시다.
+    // 엔진 기본 구는 지름 100cm 라 실치수/100 이 스케일.
+    const float Level = VoiceInput->GetInputLevel();
+    const float Diameter = VoiceOrbBaseSize * (1.f + 2.f * Level);
+    VoiceLevelOrb->SetRelativeScale3D(FVector(Diameter / 100.f));
+
+    if (!VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(true);
 }
 
 void AVRPawn::AttachItemToHand(ADroppedItemBase* Item)
@@ -1514,12 +1638,34 @@ void AVRPawn::OnGrabRelease(const FInputActionValue& Value)
 
     Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-    // 건네기가 먼저다 — NPC 앞에서 놓았는데 아이템이 얼굴로 날아가면 곤란하다.
+    // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
+    // 빨려 들어가면 수락/취소를 누를 대상이 사라진다.
+    if (TrySnapToTradePlate(Item)) return;
+
+    // 그다음이 건네기 — NPC 앞에서 놓았는데 아이템이 얼굴로 날아가면 곤란하다.
     if (TryHandOverToNPC(Item)) return;
 
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
     Item->LaunchThrown(HandVelRight * ThrowVelocityScale, this,
                        KineticDamageScale, MaxKineticDamage, MeleeStrikeSpeed);
+}
+
+bool AVRPawn::TrySnapToTradePlate(ADroppedItemBase* Item)
+{
+    if (!IsValid(Item)) return false;
+
+    // 세션은 거래 중에만, 그것도 보통 하나만 존재한다. 상시 추적 대신 놓는 순간에만 훑는다.
+    TArray<AActor*> Sessions;
+    UGameplayStatics::GetAllActorsOfClass(this, ATradeSessionActor::StaticClass(), Sessions);
+
+    for (AActor* Actor : Sessions)
+    {
+        if (ATradeSessionActor* Session = Cast<ATradeSessionActor>(Actor))
+        {
+            if (Session->TrySnapItem(Item)) return true;
+        }
+    }
+    return false;
 }
 
 bool AVRPawn::TryHandOverToNPC(ADroppedItemBase* Item)
@@ -1574,6 +1720,12 @@ void AVRPawn::DetectNearbyNPC()
     {
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] 주변 NPC 없음 (기존 타겟 유지: %s)"), *CurrentTargetNPCID);
     }
+}
+
+FVector AVRPawn::GetHandLocation(bool bRightHand) const
+{
+    const UMotionControllerComponent* HandController = bRightHand ? MotionControllerRight : MotionControllerLeft;
+    return HandController ? HandController->GetComponentLocation() : GetActorLocation();
 }
 
 void AVRPawn::SendNPCDialogue(const FString& Text)

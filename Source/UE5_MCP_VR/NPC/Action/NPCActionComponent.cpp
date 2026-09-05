@@ -1,4 +1,5 @@
 #include "NPC/Action/NPCActionComponent.h"
+#include "UI/Trade/TradeSessionActor.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Components/NPCStateComponent.h"
 #include "NPC/Components/NPCInventoryComponent.h"
@@ -2151,8 +2152,41 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
 void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount)
 {
-    // TODO: 레시피 검증 후 GiveItem 실행
-    ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+    // 요구 품목이 없으면 거래가 아니라 그냥 주는 것 — 테이블을 띄울 이유가 없다.
+    APawn* TargetPawn = Cast<APawn>(TargetActor);
+    ASmartNPC* OwnerNpc = Cast<ASmartNPC>(GetOwner());
+    UWorld* World = GetWorld();
+
+    if (GetItemID.IsEmpty() || !TargetPawn || !TargetPawn->IsPlayerControlled() || !OwnerNpc || !World)
+    {
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+        return;
+    }
+
+    // 두 사람 사이 중간, 플레이어 허리 높이에 테이블을 놓는다.
+    const FVector NpcLoc = OwnerNpc->GetActorLocation();
+    const FVector PlayerLoc = TargetPawn->GetActorLocation();
+    const FVector Mid = (NpcLoc + PlayerLoc) * 0.5f;
+    const FRotator FacePlayer = (PlayerLoc - NpcLoc).Rotation();
+    const FTransform SpawnTM(FRotator(0.f, FacePlayer.Yaw, 0.f), Mid + FVector(0.f, 0.f, TradeTableHeight));
+
+    ATradeSessionActor* Session = World->SpawnActorDeferred<ATradeSessionActor>(
+        ATradeSessionActor::StaticClass(), SpawnTM, OwnerNpc, nullptr,
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+    if (!Session)
+    {
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+        return;
+    }
+    Session->FinishSpawning(SpawnTM);
+
+    // 개시 실패(보유분 부족 등)면 테이블만 남기지 않고 지운 뒤 기존 전달 경로로 되돌린다.
+    if (!Session->InitSession(OwnerNpc, TargetPawn, GiveItemID, GiveAmount, GetItemID, GetAmount))
+    {
+        Session->Destroy();
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+    }
 }
 
 void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount)

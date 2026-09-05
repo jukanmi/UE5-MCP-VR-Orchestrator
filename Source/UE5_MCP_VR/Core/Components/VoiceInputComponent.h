@@ -38,6 +38,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "ASR")
     bool IsTalking() const { return bTalking; }
 
+    /** 최근 캡처 구간의 마이크 입력 세기 0~1(RMS). 말하는 중이 아니면 0.
+     *  오디오 스레드가 쓰고 게임 스레드가 읽어 atomic 이다. */
+    UFUNCTION(BlueprintPure, Category = "ASR")
+    float GetInputLevel() const { return bTalking ? InputLevel.load() : 0.f; }
+
     /** ASR 스트리밍 WS 엔드포인트. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ASR")
     FString AsrServerURL = TEXT("ws://127.0.0.1:8002/ws/asr/stream");
@@ -73,6 +78,9 @@ private:
     // 오디오 스레드(HandleAudioGenerate 직전 콜백)에서 쓰고 게임 스레드(SendStartIfReady)에서 읽음.
     // 동기화 없으면 ARM64(Quest)에서 데이터 레이스 → atomic 으로 보호.
     std::atomic<int32> StreamSampleRate{ 48000 };
+
+    /** 마이크 입력 세기(RMS, 0~1). 오디오 스레드 쓰기 / 게임 스레드 읽기. */
+    std::atomic<float> InputLevel{ 0.f };
     FString RequestId;
     FString PendingTargetNpc;
     FString PendingPlayerId;
