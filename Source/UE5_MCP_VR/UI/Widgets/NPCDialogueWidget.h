@@ -5,8 +5,9 @@
 // SetDialogue 로 텍스트를 채운다. 표시/숨김 타이밍·빌보드는 ASmartNPC 가 관리.
 //
 // WBP 사용법:
-//   - 이 클래스를 부모로 하는 WBP 작성(WBP_NPCDialogue).
-//   - (선택) "SpeakerName"/"DialogueText"(UTextBlock) 이름 위젯 배치 → 자동 바인딩.
+//   - WBP 없이 이 클래스를 위젯 클래스로 바로 지정해도 된다 — 트리를 코드로 짓는다.
+//   - 이 클래스를 부모로 하는 WBP 를 만들면 그쪽 트리가 우선이며,
+//     "SpeakerName"/"DialogueText"(UTextBlock) 이름 위젯을 두면 자동 바인딩된다.
 //   - 페이드 등 연출은 OnDialogueSet 이벤트에서.
 #pragma once
 
@@ -37,4 +38,9 @@ public:
     /** WBP 연출 훅(페이드 인 등) — SetDialogue 시 호출. */
     UFUNCTION(BlueprintImplementableEvent, Category = "NPC|Dialogue")
     void OnDialogueSet(const FString& Speaker, const FString& Text);
+
+protected:
+    /** WBP 없이 이 클래스가 그대로 위젯 클래스로 쓰일 때를 위해 트리를 코드로 구성한다.
+     *  디자이너 트리(WBP 파생)가 있으면 그대로 두고 건너뛴다. */
+    virtual TSharedRef<SWidget> RebuildWidget() override;
 };

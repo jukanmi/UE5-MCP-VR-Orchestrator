@@ -34,7 +34,15 @@ namespace
 
 TSharedRef<SWidget> UItemTooltipWidget::RebuildWidget()
 {
-    if (WidgetTree && !WidgetTree->RootWidget)
+    // WidgetTree 는 위젯 블루프린트가 초기화할 때만 채워진다. WBP 없이 이 C++ 클래스를
+    // 그대로 위젯 클래스로 쓰면 null 이라, 없으면 여기서 직접 만든다.
+    // (2026-09-06 실측: 이 가드가 없어 트리가 안 지어지고 빈 위젯만 떠 있었다.)
+    if (!WidgetTree)
+    {
+        WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"));
+    }
+
+    if (!WidgetTree->RootWidget)
     {
         UBorder* Frame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TooltipFrame"));
         Frame->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
