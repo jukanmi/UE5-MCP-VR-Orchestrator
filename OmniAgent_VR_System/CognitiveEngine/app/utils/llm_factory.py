@@ -69,8 +69,17 @@ MODELS = {
     "mid": "qwen3:8b",  # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
     # 경량 구조화 모델 (JSON 추출 등) — LoRA 파인튜닝판(SPEC_finetune M2, 2026-07-21).
     # v3: 3806행 재학습(v2 대비 5배 데이터), gold 재현 6/8→8/8, held-out 0/6→2/6.
-    # 롤백: "gemma4-e4b-dialogue-v2" 로 원복.
-    "gemma4_slm": "gemma4-e4b-dialogue-v3",
+    #
+    # 2026-09-05 v1 으로 되돌림 — 아이템 전달 회귀 때문.
+    # 동일 조건(Moca, 인벤 7종, 대화기록 비움, 질문 3종×2회) 실측:
+    #   v1  "돌 좀 줘"/"붕대 건네줘" → GiveItem  (플레이어 인벤토리에 실제 추가)
+    #   v2  동일 질문             → HandObject (NPC 가 들고만 있음, 인벤 무변화)
+    #   v3  동일 질문             → HandObject (v2 와 동일)
+    # v2 에서 생긴 회귀이며 프롬프트가 아니라 학습 데이터에서 갈린다. HandObject 는
+    # EquipItem 만 하므로 "줘" 요청이 게임상 아무 효과 없이 끝난다.
+    # ItemID 정확도는 세 버전 모두 4/4 로 동일. 대가: v1 은 대사가 다소 장황하다.
+    # 롤백: "gemma4-e4b-dialogue-v3" 로 원복(대사 품질 우선 시).
+    "gemma4_slm": "gemma4-e4b-dialogue-v1",
     "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 폴백 후보 (경량, 로컬 pull 됨)
