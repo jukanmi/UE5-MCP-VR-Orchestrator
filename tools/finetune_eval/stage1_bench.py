@@ -36,12 +36,23 @@ from app.schemas.actions import DialogueResponse                         # noqa:
 NPC = "Moca"
 MEM_PATH = os.path.join("app", "agents", "knowledge", NPC.lower(), "conversation_memory.json")
 
+# 12종 — 목록이 길어져도 ItemID 가 유지되는지 함께 본다(3종에서만 재면 과대평가된다).
 INVENTORY = [
-    {"id": "Rock", "name": "돌멩이", "count": 1},
-    {"id": "Bandage", "name": "붕대", "count": 1},
+    {"id": "Rock", "name": "돌멩이", "count": 5},
+    {"id": "Bandage", "name": "붕대", "count": 2},
     {"id": "WaterSkin", "name": "가죽 물통", "count": 1},
+    {"id": "HealthPotion", "name": "치유 물약", "count": 3},
+    {"id": "ManaPotion", "name": "마나 물약", "count": 1},
+    {"id": "KnightSword", "name": "기사의 검", "count": 1},
+    {"id": "Shield_Knight", "name": "기사의 방패", "count": 1},
+    {"id": "Torch", "name": "횃불", "count": 1},
+    {"id": "HerbTea", "name": "약초 차", "count": 1},
+    {"id": "SmokeBomb", "name": "연막 구슬", "count": 2},
+    {"id": "Lockpick", "name": "자물쇠 따개", "count": 1},
+    {"id": "Rations", "name": "건량", "count": 4},
 ]
-VALID_TARGETS = ["Player", "Self", "Enemy", NPC, "1002"]
+# Elara — 플레이어가 아닌 대상 지정이 되는지 보기 위한 타 NPC.
+VALID_TARGETS = ["Player", "Self", "Enemy", NPC, "Elara", "1002"]
 FURNITURE = [{"id": "1002", "type": "Bed", "occupied": False, "dist_m": 3.2}]
 
 # (플레이어 발화, 기대 동작). 기대는 사람이 읽고 판정하는 라벨이다 — 자동 채점은
@@ -55,6 +66,15 @@ CASES = [
     ("침대에 누워",                 "Sleep/1002"),
     ("그 돌 좀 보여줘",              "HandObject/Rock — 소유권 유지"),
     ("밖에서 큰 소리 나는데 괜찮아?",  "대사만. 액션 없음"),
+    # --- 2차 축: 수량·거래·전투·자기사용·타 NPC 대상 (2026-09-05 추가) ---
+    ("돌 3개만 줘",                 "GiveItem/Rock + amount=3 — 수량 필드"),
+    ("돌 줄테니 빵이랑 바꾸자",       "Trade — give_item_id=Rock, get_item_id=Bread 양쪽"),
+    ("적이다! 싸워!",               "mode=Combat + Attack/Enemy"),
+    ("위험해, 도망쳐!",              "mode=Combat + Flee"),
+    ("검 장착해",                   "Equip/KnightSword"),
+    ("목마르면 물 마셔",             "UseItem/WaterSkin target=Self — 자기사용 (GiveItem 아님)"),
+    ("치유 물약 하나 줘",            "GiveItem/HealthPotion — 12종 목록에서 ItemID 유지"),
+    ("엘라라한테 붕대 좀 갖다줘",     "GiveItem target=Elara — 플레이어가 아닌 대상"),
 ]
 
 # 오염 기록 — 실제로 겪은 실패 문형. 모델이 이걸 복사하는지 본다.
@@ -126,7 +146,9 @@ async def main(models, runs, seed_history):
                         for a in (resp.actions or [])
                     ]
                     echo = " [문형복사]" if ECHO_MARK in (resp.speech or "") else ""
-                    print("    #%d [%.1fs]%s %s" % (i + 1, time.time() - started, echo, resp.speech))
+                    print("    #%d [%.1fs]%s mode=%s facial=%s achieved=%s" % (
+                        i + 1, time.time() - started, echo, resp.mode, resp.facial, resp.plan_achieved))
+                    print("        %s" % resp.speech)
                     print("        %s" % actions)
                 except Exception as e:  # noqa: BLE001
                     print("    #%d 실패: %s: %s" % (i + 1, type(e).__name__, str(e)[:140]))
