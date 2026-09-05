@@ -237,7 +237,12 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     inv_map = _vr_get(vr_context, "npc_inventory", None) or {}
     inv_items = inv_map.get(npc_id, []) or []
     if inv_items:
-        inventory_str = ", ".join(f"{it.get('name', it.get('id', '?'))}×{it.get('count', 1)}" for it in inv_items)
+        # 표시명과 함께 id 를 괄호로 노출한다. GiveItem/UseItem 은 UE5 에서 ItemID 로 조회되는데,
+        # 표시명만 주면(예: "돌멩이") LLM 이 그걸 그대로 give_item_id 에 넣어 조회가 0 건이 되고
+        # "아이템 없음" 으로 죽는다 — 표시명↔id 매핑 근거가 프롬프트에 있어야 한다.
+        inventory_str = ", ".join(
+            f"{it.get('name', '?')}({it.get('id', '?')})×{it.get('count', 1)}" for it in inv_items
+        )
     else:
         inventory_str = "None (empty-handed)"
 
@@ -385,6 +390,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
             continue
         # 12B 가 간혹 "1. " 번호 접두사를 붙임 — 제거 (실측).
         steps = [re.sub(r"^\s*\d+[.)]\s*", "", s).strip() for s in item.steps if s.strip()]
+
         plan = {"goal": item.goal.strip(), "steps": steps}
         # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
         try:

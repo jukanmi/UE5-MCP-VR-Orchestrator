@@ -40,6 +40,8 @@ Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Une
 Use ONLY a type from this list. target MUST be one of: {valid_targets}. Never invent other target names.
 
 YOUR inventory (items you currently hold): {inventory}
+ - Format is DisplayName(ItemID)×count. Speak the DisplayName, but ALWAYS put the ItemID
+   (the value in parentheses) into item/give_item_id/get_item_id fields — never the DisplayName.
  - Only GiveItem/HandObject/UseItem/Equip an item that is in YOUR inventory above.
  - If asked for an item you do NOT have, say so — do NOT emit a give/use action for it.
 
