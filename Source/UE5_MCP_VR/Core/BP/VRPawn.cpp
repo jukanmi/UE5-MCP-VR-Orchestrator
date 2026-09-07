@@ -1531,7 +1531,30 @@ bool AVRPawn::TakeItemInHand_Implementation(const FString& ItemID)
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
+    if (!Inventory) return;
+
+    // 쥔 게 없는데 그 손에 장착품이 있으면, 장착품을 놓는 것으로 본다.
+    // 장착되는 순간 인벤토리 슬롯 목록에서 빠지므로 슬롯을 골라 해제할 방법이 없다 —
+    // 그립을 뗀 손이 곧 대상이라는 규칙이 유일한 회수 경로다.
+    if (!Inventory->GetHeldItem(HandSlot))
+    {
+        if (!Inventory->GetEquippedItem(HandSlot).ItemData.IsValidItem()) return;
+
+        if (bInventoryOpen)
+        {
+            Inventory->UnequipItem(HandSlot);
+            return;
+        }
+
+        // 인벤토리를 닫아 뒀으면 손에서 바닥으로 떨군다. 스폰된 액터가 물리를 켜고 나오므로
+        // 던지는 힘 없이 그 자리에서 떨어진다.
+        const FTransform HandTransform = GetMesh()
+            ? GetMesh()->GetSocketTransform(Inventory->GetSocketNameForSlot(HandSlot))
+            : GetActorTransform();
+
+        Inventory->DropEquippedItem(HandSlot, HandTransform);
+        return;
+    }
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
     // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).
