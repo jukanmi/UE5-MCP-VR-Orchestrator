@@ -9,6 +9,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SphereComponent.h"
 
 namespace
 {
@@ -749,6 +750,14 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlo
     Item->ItemMesh->SetSimulatePhysics(false);
     Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+    // 상호작용 구체도 같이 끈다. 이걸 켠 채로 두면 손에 쥔 물건이 주변 아이템 검색
+    // (ItemManager::GetItemsInRange 의 WorldDynamic 오버랩)에 계속 걸려서, 반대 손으로 다시
+    // 집거나 남이 주워 가는 게 된다 — 쥔 물건은 바닥에 떨어진 물건과 같은 취급이면 안 된다.
+    if (Item->InteractionSphere)
+    {
+        Item->InteractionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+
     Item->AttachToComponent(OwnerMesh,
         FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 
@@ -778,6 +787,13 @@ ADroppedItemBase* UInventoryComponent::ReleaseHeldItem(EEquipmentSlot HandSlot)
     if (!IsValid(Item)) return nullptr;
 
     Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+
+    // 손을 떠나면 다시 찾을 수 있어야 한다(쥘 때 끈 상호작용 구체 복구).
+    if (Item->InteractionSphere)
+    {
+        Item->InteractionSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    }
+
     return Item;
 }
 
