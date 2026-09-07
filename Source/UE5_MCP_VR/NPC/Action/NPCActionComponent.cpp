@@ -94,8 +94,6 @@ namespace
                 return FName("State.Action.Task.PickUp");
             case EAction::Drop:
                 return FName("State.Action.Task.Drop");
-            case EAction::Repair:
-                return FName("State.Action.Task.Repair");
             case EAction::Craft:
                 return FName("State.Action.Task.Craft");
 
@@ -1109,7 +1107,6 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::PickUp:       ExecutePickUp(Location); break;
     case EAction::Drop:         ExecuteDrop(ItemID, Amount); break;
     case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
-    case EAction::Repair:       ExecuteRepair(ItemID); break;
     
     // Investigate
     case EAction::Investigate:  ExecuteInvestigate(Location); break;
@@ -2343,18 +2340,6 @@ void UNPCActionComponent::ExecuteCraft(const TArray<FString>& ItemIDs)
 {
     // TODO: 레시피 검증 및 소모/생성 연동
     BasePlayActionMedia(TEXT("Craft"));
-}
-
-void UNPCActionComponent::ExecuteRepair(const FString& ItemID)
-{
-    BasePlayActionMedia(TEXT("Repair"));
-    if (InventoryComponent && InventoryComponent->HasItem(ItemID))
-    {
-        float Amount = StateComponent ? StateComponent->GetAttributes().BaseStats.Perception : 10.f;
-        InventoryComponent->RepairItem(ItemID, Amount);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 수리: %s"), *ItemID);
-    }
-    else { UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 수리 실패 (미보유): %s"), *ItemID); }
 }
 
 // ==========================================

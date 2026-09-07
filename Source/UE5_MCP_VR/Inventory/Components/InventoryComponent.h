@@ -121,7 +121,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory|Hand")
     ADroppedItemBase* GetHeldItem(EEquipmentSlot HandSlot) const;
 
-    /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip/Repair 성공 시 브로드캐스트. */
+    /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip 성공 시 브로드캐스트. */
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
     FOnInventoryChanged OnInventoryChanged;
 
@@ -260,11 +260,6 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory|Check")
     int32 GetEffectiveMaxStack(const FItemData& Item) const;
 
-    /**
-     * 아이템 수리
-     */
-    UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
-    bool RepairItem(const FString& ItemID, float Amount);
     // --- Equipment API ---
 
     /**

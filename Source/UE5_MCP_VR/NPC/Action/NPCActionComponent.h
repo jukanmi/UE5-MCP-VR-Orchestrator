@@ -696,9 +696,6 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteCraft(const TArray<FString>& ItemIDs);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteRepair(const FString& ItemID);
 
     // ----------------------------------------------------------------------------
     // [5] Investigation Behaviors

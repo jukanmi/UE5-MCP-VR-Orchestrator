@@ -120,7 +120,6 @@ enum class EAction : uint8
 	PickUp       UMETA(DisplayName = "PickUp"),
 	Drop         UMETA(DisplayName = "Drop"),
 	Craft        UMETA(DisplayName = "Craft"),
-	Repair       UMETA(DisplayName = "Repair"),
 
     //Investigation
 	Investigate   UMETA(DisplayName = "Investigate"),

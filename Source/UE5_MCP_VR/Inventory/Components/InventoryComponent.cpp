@@ -583,46 +583,6 @@ int32 UInventoryComponent::GetStackableSlotIndex(const FItemData& TargetItem) co
     return INDEX_NONE;
 }
 
-bool UInventoryComponent::RepairItem(const FString& ItemID, float Amount)
-{
-    int32 SlotIndex = GetSlotIndexByItemID(ItemID);
-    if (SlotIndex == INDEX_NONE)
-    {
-        // 인벤토리에 없으면 장비창 검색 — 장착 중인 아이템도 수리 가능해야 함
-        for (auto& Pair : EquipmentSlots)
-        {
-            FItemData& EquippedData = Pair.Value.ItemData;
-            if (EquippedData.IsValidItem() && EquippedData.ItemID == ItemID)
-            {
-                if (EquippedData.bHasDurability)
-                {
-                    EquippedData.RepairItem(Amount);
-                }
-                UE_LOG(LogTemp, Log, TEXT("[Inventory] Repaired (equipped) %s."), *EquippedData.DisplayName.ToString());
-                OnInventoryChanged.Broadcast();
-                return true;
-            }
-        }
-
-        UE_LOG(LogTemp, Warning, TEXT("[Inventory] Repair Failed: Item %s not found in inventory."), *ItemID);
-        return false;
-    }
-
-    FInventorySlot& TargetSlot = InventorySlots[SlotIndex];
-    FItemData& TargetItemData = TargetSlot.ItemData;
-    
-    if (TargetItemData.bHasDurability)
-    {
-        TargetItemData.RepairItem(Amount);
-    }
-
-    CalculateWeight();
-
-    UE_LOG(LogTemp, Log, TEXT("[Inventory] Repaired %s."), *TargetItemData.DisplayName.ToString());
-    OnInventoryChanged.Broadcast();
-    return true;
-}
-
 // --- Equipment Implementation ---
 
 bool UInventoryComponent::EquipItem(const FString& ItemID, EEquipmentSlot TargetSlot)
