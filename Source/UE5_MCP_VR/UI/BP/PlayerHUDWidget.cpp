@@ -182,6 +182,24 @@ TArray<FInventorySlot> UPlayerHUDWidget::GetInventorySlots() const
     return {};
 }
 
+FInventorySlot UPlayerHUDWidget::GetEquippedSlotItem(EEquipmentSlot EquipSlot) const
+{
+    if (UInventoryComponent* Inv = GetInventory())
+    {
+        return Inv->GetEquippedItem(EquipSlot);
+    }
+    return FInventorySlot();
+}
+
+bool UPlayerHUDWidget::UnequipSlot(EEquipmentSlot EquipSlot)
+{
+    if (UInventoryComponent* Inv = GetInventory())
+    {
+        return Inv->UnequipItem(EquipSlot);
+    }
+    return false;
+}
+
 void UPlayerHUDWidget::RequestInventoryRefresh()
 {
     OnInventoryUpdated();

@@ -83,6 +83,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "HUD|Inventory")
     TArray<FInventorySlot> GetInventorySlots() const;
 
+    /** 특정 장비 슬롯에 장착된 아이템 정보 반환. */
+    UFUNCTION(BlueprintPure, Category = "HUD|Inventory")
+    FInventorySlot GetEquippedSlotItem(EEquipmentSlot EquipSlot) const;
+
+    /** 장비 슬롯의 아이템 해제 — 인벤토리로 되돌리고 비주얼 메시 파괴. */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Inventory")
+    bool UnequipSlot(EEquipmentSlot EquipSlot);
+
     /** 인벤토리 변경 알림 — WBP 가 슬롯 UI 를 다시 그림. 획득/소비 후 RequestInventoryRefresh 호출. */
     UFUNCTION(BlueprintImplementableEvent, Category = "HUD|Inventory")
     void OnInventoryUpdated();
