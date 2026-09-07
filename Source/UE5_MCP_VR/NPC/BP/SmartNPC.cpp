@@ -18,7 +18,6 @@
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Components/WidgetComponent.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"  // 액티브 래그돌 PD(Flinch)
@@ -90,8 +89,7 @@ static void StopBodySimulation(USkeletalMeshComponent* Mesh)
 
 ASmartNPC::ASmartNPC()
 {
-    // Tick은 디버그 머리 위 호감도 표시(bShowAffinityOnScreen=true) 시에만 사용.
-    // BeginPlay에서 플래그 보고 SetActorTickEnabled로 토글하므로 기본은 꺼둠.
+    // Tick 은 Flinch 램프·넉다운 물리 진행 중에만 필요 — RefreshTickEnabled 가 토글.
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
     AgentID = TEXT("UnknownAgent");
@@ -422,70 +420,10 @@ bool ASmartNPC::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase
     return StateComponent->GetAffinityMultiplier(OtherID) >= 1.0f;
 }
 
-void ASmartNPC::Debug_TestPlanHUD()
-{
-    if (!StateComponent)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] %s: StateComponent 없음"), *AgentID);
-        return;
-    }
-
-    FNPCPlan Test;
-    Test.Goal = TEXT("DEBUG TEST PLAN");
-    Test.Steps = { TEXT("step1"), TEXT("step2") };
-    StateComponent->SetCurrentPlan(Test); // → OnPlanUpdated.Broadcast → HandlePlanUpdated 로그
-}
-
-void ASmartNPC::Debug_PrintAffinity()
-{
-    if (!StateComponent)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Affinity] %s: StateComponent 없음"), *AgentID);
-        return;
-    }
-
-    UE_LOG(LogTemp, Warning, TEXT("=== [Affinity] %s (Friendly>=%d, Hostile<=%d) ==="),
-        *AgentID, StateComponent->AffinityFriendlyThreshold, StateComponent->AffinityHostileThreshold);
-
-    if (StateComponent->AffinityCache.Num() == 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  (캐시 비어있음 — 아직 state_update를 받지 못함)"));
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
-                FString::Printf(TEXT("[%s] Affinity: 캐시 없음"), *AgentID));
-        }
-        return;
-    }
-
-    for (const TPair<FString, int32>& Pair : StateComponent->AffinityCache)
-    {
-        const float Mult = StateComponent->GetAffinityMultiplier(Pair.Key);
-        FString Relation = TEXT("Neutral");
-        if (Pair.Value >= StateComponent->AffinityFriendlyThreshold) Relation = TEXT("Friendly");
-        else if (Pair.Value <= StateComponent->AffinityHostileThreshold) Relation = TEXT("Hostile");
-
-        UE_LOG(LogTemp, Warning, TEXT("  %s: score=%d (%s, multiplier=%.2f)"),
-            *Pair.Key, Pair.Value, *Relation, Mult);
-
-        if (GEngine)
-        {
-            FColor LineColor = FColor::White;
-            if (Relation == TEXT("Friendly")) LineColor = FColor::Green;
-            else if (Relation == TEXT("Hostile")) LineColor = FColor::Red;
-
-            GEngine->AddOnScreenDebugMessage(-1, 8.f, LineColor,
-                FString::Printf(TEXT("[%s→%s] %d (%s, mult=%.2f)"),
-                    *AgentID, *Pair.Key, Pair.Value, *Relation, Mult));
-        }
-    }
-}
-
 void ASmartNPC::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
-    // 액티브 래그돌 물리 반응 업데이트 — affinity 디버그 플래그와 독립적으로 항상 처리.
     if (bFlinching)
     {
         TickFlinchRamp(DeltaSeconds);
@@ -497,37 +435,6 @@ void ASmartNPC::Tick(float DeltaSeconds)
     else if (KnockdownPhase == EKnockdownPhase::GettingUp)
     {
         TickGetUpBlend(DeltaSeconds);
-    }
-
-    if (!bShowAffinityOnScreen || !StateComponent) return;
-
-    UWorld* World = GetWorld();
-    if (!World) return;
-
-    // 머리 위 텍스트 오프셋
-    const FVector TextOffset(0.f, 0.f, 110.f);
-    const FVector BaseLoc = GetActorLocation() + TextOffset;
-
-    if (StateComponent->AffinityCache.Num() == 0)
-    {
-        DrawDebugString(World, BaseLoc,
-            FString::Printf(TEXT("[%s] Affinity: (none)"), *AgentID),
-            nullptr, FColor::Yellow, 0.f, true, 0.9f);
-        return;
-    }
-
-    int32 LineIdx = 0;
-    for (const TPair<FString, int32>& Pair : StateComponent->AffinityCache)
-    {
-        FColor LineColor = FColor::White;
-        if (Pair.Value >= StateComponent->AffinityFriendlyThreshold) LineColor = FColor::Green;
-        else if (Pair.Value <= StateComponent->AffinityHostileThreshold) LineColor = FColor::Red;
-
-        const FVector LineLoc = BaseLoc + FVector(0.f, 0.f, -15.f * LineIdx);
-        DrawDebugString(World, LineLoc,
-            FString::Printf(TEXT("%s: %d"), *Pair.Key, Pair.Value),
-            nullptr, LineColor, 0.f, true, 0.9f);
-        ++LineIdx;
     }
 }
 
@@ -564,8 +471,7 @@ void ASmartNPC::RefreshTickEnabled()
 {
     // 말풍선은 빠졌다 — 자기 컴포넌트가 보일 때만 스스로 틱한다(액터 틱과 수명 분리).
     const bool bWantTick =
-        bShowAffinityOnScreen
-        || bFlinching
+        bFlinching
         || (KnockdownPhase != EKnockdownPhase::None);
     SetActorTickEnabled(bWantTick);
 }

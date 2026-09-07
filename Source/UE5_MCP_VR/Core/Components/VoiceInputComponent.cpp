@@ -5,8 +5,6 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
-#include "Misc/FileHelper.h"
-#include "Misc/Paths.h"
 
 UVoiceInputComponent::UVoiceInputComponent()
 {
@@ -32,7 +30,6 @@ void UVoiceInputComponent::StartTalking()
     {
         FScopeLock Lock(&PcmLock);
         PcmQueue.Reset();
-        DebugPcmBuffer.Reset();
     }
 
     // 1) WS 연결
@@ -163,17 +160,6 @@ void UVoiceInputComponent::StopTalking()
 
     SetComponentTickEnabled(false);
 
-    // 디버그 WAV 저장 (bSaveDebugWav 켜져있을 때만)
-    if (bSaveDebugWav)
-    {
-        TArray<int16> CaptureCopy;
-        {
-            FScopeLock Lock(&PcmLock);
-            CaptureCopy = DebugPcmBuffer;
-        }
-        SaveDebugWav(CaptureCopy, StreamSampleRate.load());
-    }
-
     // 소켓은 final 수신까지 열어둠 — HandleAsrMessage(final) 가 CloseSocket 호출.
 }
 
@@ -218,7 +204,6 @@ void UVoiceInputComponent::HandleAudioGenerate(const float* InAudio, int32 NumFr
         const int32 S = FMath::RoundToInt(FMath::Clamp(Mono, -1.f, 1.f) * 32767.f);
         const int16 Sample = static_cast<int16>(S);
         PcmQueue.Add(Sample);
-        if (bSaveDebugWav) DebugPcmBuffer.Add(Sample);
     }
 
     // 표시용 입력 세기 — 이 구간의 RMS. 말소리는 대개 0.02~0.2 라 그대로 쓰면 바가 거의 안 움직인다.
@@ -311,38 +296,4 @@ void UVoiceInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     StopAudioCaptureStream();
     CloseSocket();
     Super::EndPlay(EndPlayReason);
-}
-
-void UVoiceInputComponent::SaveDebugWav(const TArray<int16>& Pcm, int32 SampleRate)
-{
-    if (Pcm.IsEmpty()) return;
-
-    const int32 DataSize = Pcm.Num() * sizeof(int16);
-
-    TArray<uint8> Wav;
-    Wav.Reserve(44 + DataSize);
-
-    auto W4 = [&](const char* S) { Wav.Append(reinterpret_cast<const uint8*>(S), 4); };
-    auto WU32 = [&](uint32 V)    { Wav.Append(reinterpret_cast<const uint8*>(&V), 4); };
-    auto WU16 = [&](uint16 V)    { Wav.Append(reinterpret_cast<const uint8*>(&V), 2); };
-
-    W4("RIFF");
-    WU32(36 + DataSize);         // ChunkSize
-    W4("WAVE");
-    W4("fmt ");
-    WU32(16);                    // Subchunk1Size (PCM)
-    WU16(1);                     // AudioFormat: PCM
-    WU16(1);                     // NumChannels: mono
-    WU32(static_cast<uint32>(SampleRate));
-    WU32(static_cast<uint32>(SampleRate) * 2); // ByteRate
-    WU16(2);                     // BlockAlign
-    WU16(16);                    // BitsPerSample
-    W4("data");
-    WU32(DataSize);
-    Wav.Append(reinterpret_cast<const uint8*>(Pcm.GetData()), DataSize);
-
-    const FString Path = FPaths::ProjectSavedDir() / TEXT("VoiceCapture.wav");
-    FFileHelper::SaveArrayToFile(Wav, *Path);
-    UE_LOG(LogTemp, Log, TEXT("[Voice] 디버그 WAV 저장: %s  (%d samples @ %dHz, %.1fs)"),
-        *Path, Pcm.Num(), SampleRate, static_cast<float>(Pcm.Num()) / SampleRate);
 }

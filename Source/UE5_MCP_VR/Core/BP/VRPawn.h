@@ -367,10 +367,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")
     TSubclassOf<AKineticProjectile> ProjectileClass;
 
-    /** 디버그 — 손 타격 구체·속도·명중을 화면/로그에 표시. 근접 안 먹을 때 단계 진단용. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    bool bDebugMelee = false;
-
     // 공격 명중 시 럼블 — VR 컨트롤러는 Haptic(B), 게임패드/데스크탑은 ForceFeedback(A). 둘 다 폴백으로 재생.
     // [B·권장] VR 모션 컨트롤러 정석 럼블. BP_VRPawn 에서 UHapticFeedbackEffect_Curve 에셋 할당.
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")

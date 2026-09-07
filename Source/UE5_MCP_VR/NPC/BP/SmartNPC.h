@@ -359,15 +359,4 @@ public:
     /** VR 플레이어 멜리 재타격 쿨다운용 — 마지막 피격 시각(World TimeSeconds). VRPawn 가 읽고 씀.
      *  소유자(NPC) 가 직접 보유 → NPC 소멸 시 함께 사라져 누적/만료정리 불필요. */
     float LastMeleeHitTime = -1000.f;
-
-    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
-    void Debug_PrintAffinity();
-
-    /** 더미 plan 주입 → 머리 위 plan HUD 동작 검증 (파이프라인 없이). */
-    UFUNCTION(CallInEditor, BlueprintCallable, Category = "MCP|Debug")
-    void Debug_TestPlanHUD();
-
-    /** 현재 호감도를 NPC 머리 위에 텍스트로 상시 표시할지 여부. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Debug")
-    bool bShowAffinityOnScreen = false;
 };

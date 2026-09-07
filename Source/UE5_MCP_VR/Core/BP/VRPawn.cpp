@@ -22,7 +22,6 @@
 #include "Engine/DamageEvents.h"
 #include "GameFramework/ForceFeedbackEffect.h"
 #include "Haptics/HapticFeedbackEffect_Base.h"
-#include "DrawDebugHelpers.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
 #include "NPC/BP/SmartNPC.h"
@@ -352,19 +351,6 @@ void AVRPawn::Tick(float DeltaTime)
             const FVector RawR = (VelR.Size() > 9000.f) ? FVector::ZeroVector : VelR;
             HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
             HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
-
-            // 디버그 — 손 위치 구체 + 실시간 속도. 근접 미작동 단계 진단(속도 0? 쿼리 미스?).
-            if (bDebugMelee)
-            {
-                DrawDebugSphere(GetWorld(), CurL, MeleeSphereRadius, 12, FColor::Cyan,   false, 0.f);
-                DrawDebugSphere(GetWorld(), CurR, MeleeSphereRadius, 12, FColor::Yellow, false, 0.f);
-                if (GEngine)
-                {
-                    GEngine->AddOnScreenDebugMessage(8801, 0.f, FColor::Yellow,
-                        FString::Printf(TEXT("[Melee] L=%.2f  R=%.2f m/s  (min=%.2f)"),
-                            HandVelLeft.Size() / 100.f, HandVelRight.Size() / 100.f, MinImpactSpeed));
-                }
-            }
 
             // 근접 타격 — 컨트롤러 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
             TryMeleeHits(CurR, HandVelRight, /*bRightHand=*/true);
@@ -1032,7 +1018,7 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
     const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
     const bool  bPush   = SpeedMs >= MinImpactSpeed;
     const bool  bStrike = SpeedMs >= MeleeStrikeSpeed;
-    if (!bPush && !bDebugMelee) return;
+    if (!bPush) return;
 
     // 손 위치에서 능동 스피어 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
     TArray<FOverlapResult> Overlaps;
@@ -1044,15 +1030,7 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
     const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, HandLoc, FQuat::Identity,
         ObjParams, FCollisionShape::MakeSphere(MeleeSphereRadius), Params);
 
-    if (bDebugMelee && GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(bRightHand ? 8811 : 8812, 0.f,
-            bAnyOverlap ? FColor::Green : FColor::Silver,
-            FString::Printf(TEXT("[Melee %s] overlaps=%d push=%d strike=%d"),
-                bRightHand ? TEXT("R") : TEXT("L"), Overlaps.Num(), bPush ? 1 : 0, bStrike ? 1 : 0));
-    }
-
-    if (!bAnyOverlap || !bPush) return;   // 최소 밀치기 임계 + overlap.
+    if (!bAnyOverlap) return;
 
     const float Now = GetWorld()->GetTimeSeconds();
 
@@ -1082,15 +1060,6 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
             const float PushSpeed = FMath::Min(SpeedMs * KnockbackScale, MaxKnockbackSpeed);
             const FVector PushVel = HandVel.GetSafeNormal() * PushSpeed;
             NPC->LaunchCharacter(PushVel, /*bXYOverride=*/true, /*bZOverride=*/false);
-        }
-
-        if (bDebugMelee && GEngine)
-        {
-            DrawDebugSphere(GetWorld(), HandLoc, MeleeSphereRadius, 12,
-                bStrike ? FColor::Red : FColor::Orange, false, 1.f);
-            GEngine->AddOnScreenDebugMessage(-1, 2.f, bStrike ? FColor::Red : FColor::Orange,
-                FString::Printf(TEXT("[Melee] %s %s  dmg=%.1f"),
-                    bStrike ? TEXT("STRIKE") : TEXT("PUSH"), *NPC->GetName(), bStrike ? Damage : 0.f));
         }
     }
 }
