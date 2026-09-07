@@ -102,6 +102,15 @@ void ADroppedItemBase::BeginPlay()
         if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
         {
             ItemManager->RegisterDroppedItem(ItemData.ItemInstanceID, ItemData.ItemActor, ItemData.ItemTemplateID);
+
+            // 질량을 마스터 테이블의 Weight(kg)로 확정한다. 지정하지 않으면 엔진이 충돌 형상의
+            // 부피에 기본 밀도를 곱해 추정하는데, 생성 메시는 부피가 제각각이라 돌멩이가 깃털처럼
+            // 뜨거나 반대가 된다. 투척 피해가 ½mv² 라 질량이 곧 타격감이기도 하다.
+            FItemData Row;
+            if (ItemMesh && ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Row) && Row.Weight > 0.f)
+            {
+                ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
+            }
         }
     }
 }
@@ -133,7 +142,12 @@ void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
     // 쥘 때 껐던 콜리전·물리를 되돌린다. 프로파일을 다시 지정하는 이유는 SetCollisionEnabled 만으로는
     // 쥐는 동안 바뀐 채널 응답이 복구되지 않기 때문.
     ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
-    ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+
+    // 던지는 동안에는 Pawn 을 막는다. OnComponentHit 은 블로킹 충돌에서만 오므로, 평상시처럼
+    // Overlap 으로 두면 던진 물건이 NPC 를 그냥 통과해 타격 콜백이 아예 발생하지 않는다.
+    // 창이 닫히면(EndThrowWindow) 다시 통과로 되돌려 바닥에 놓인 물건이 지나가는 폰에
+    // 밀려 도망다니지 않게 한다.
+    ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
     ItemMesh->SetSimulatePhysics(true);
     // 물리 바디의 Hit 이벤트는 기본으로 꺼져 있다 — 켜지 않으면 OnComponentHit 이 아예 안 온다.
     ItemMesh->SetNotifyRigidBodyCollision(true);
@@ -149,7 +163,14 @@ void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
 void ADroppedItemBase::EndThrowWindow()
 {
     ThrownBy = nullptr;
-    if (ItemMesh) ItemMesh->SetNotifyRigidBodyCollision(false);
+    if (ItemMesh)
+    {
+        ItemMesh->SetNotifyRigidBodyCollision(false);
+
+        // 던지기가 끝나면 다시 폰을 통과시킨다 — 바닥에 놓인 물건이 다가오는 캡슐에 밀려
+        // 계속 도망가는 것을 막으려고 평상시에는 Overlap 으로 둔다.
+        ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+    }
 }
 
 void ADroppedItemBase::OnMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
