@@ -339,16 +339,9 @@ void UInventoryComponent::SetSelectedSlot(int32 NewIndex)
 }
 
 // 슬롯 클릭 진입점 — 종류를 보고 사용/장착으로 넘긴다 (이미 장착 중인 장비는 해제)
+// 슬롯 클릭 진입점 — 종류를 보고 사용/꺼내기로 넘긴다
 bool UInventoryComponent::ActivateItem(const FString& ItemID, EEquipmentSlot HandSlot)
 {
-    // 이미 장착된 장비라면 즉시 해제(토글)
-    const EEquipmentSlot EquippedSlot = GetSlotOfEquippedItem(ItemID);
-    if (EquippedSlot != EEquipmentSlot::None)
-    {
-        UE_LOG(LogTemp, Log, TEXT("[Inventory] 이미 장착된 %s 해제 시도 (슬롯 %d)"), *ItemID, (int32)EquippedSlot);
-        return UnequipItem(EquippedSlot);
-    }
-
     const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
     if (SlotIndex == INDEX_NONE)
     {
@@ -356,43 +349,29 @@ bool UInventoryComponent::ActivateItem(const FString& ItemID, EEquipmentSlot Han
         return false;
     }
 
-    switch (InventorySlots[SlotIndex].ItemData.ItemType)
+    const EItemType ItemType = InventorySlots[SlotIndex].ItemData.ItemType;
+
+    if (ItemType == EItemType::Consumable)
     {
-    case EItemType::Consumable:
         return UseItem(ItemID);
+    }
 
-    // 누른 손에 장착한다 — 왼손 그립이면 OffHand, 오른손 그립이면 MainHand.
-    case EItemType::Equipment:
-        return EquipItem(ItemID, HandSlot);
-
-    // Quest 는 손에 꺼내면 던져서 버릴 수 있게 되므로 제외한다(DropItem 도 같은 이유로 막는다).
-    case EItemType::General:
+    // 퀘스트 아이템은 손에 꺼내면 던져서 버릴 수 있게 된다 — DropItem 이 막는 것과 같은 이유로 막는다.
+    if (ItemType == EItemType::Quest)
     {
-        AActor* OwnerActor = GetOwner();
-        if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerBase::StaticClass()))
-        {
-            // 인터페이스는 손을 못 받는다(계약 고정) — 오른손이 아니면 컴포넌트에서 직접 꺼낸다.
-            if (HandSlot == EEquipmentSlot::MainHand)
-            {
-                return IPlayerBase::Execute_TakeItemInHand(OwnerActor, ItemID);
-            }
-
-            const ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor);
-            const USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
-            const FTransform HandTransform = OwnerMesh
-                ? OwnerMesh->GetSocketTransform(GetSocketNameForSlot(HandSlot))
-                : OwnerActor->GetActorTransform();
-
-            return TakeItemToHand(ItemID, HandTransform, HandSlot);
-        }
-        UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s — 소유자가 손에 들 수 없음."), *ItemID);
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s 는 꺼낼 수 없습니다 (Quest)."), *ItemID);
         return false;
     }
 
-    default:
-        UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s has no action (Quest)."), *ItemID);
-        return false;
-    }
+    // 무기든 잡템이든 전부 손에 쥔 물리 액터로 통일한다. 장비만 따로 EquipmentSlots 로 보내면
+    // 손에 든 것이 액터냐 부착 메시냐로 갈려, 놓는 경로가 종류마다 달라진다.
+    const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    const USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
+    const FTransform HandTransform = OwnerMesh
+        ? OwnerMesh->GetSocketTransform(GetSocketNameForSlot(HandSlot))
+        : (OwnerCharacter ? OwnerCharacter->GetActorTransform() : FTransform::Identity);
+
+    return TakeItemToHand(ItemID, HandTransform, HandSlot);
 }
 
 // 월드 액터 스폰 공용 경로 — 드랍(발밑)·손에 꺼내기(손)가 같은 절차를 쓴다.
@@ -718,36 +697,6 @@ EEquipmentSlot UInventoryComponent::GetSlotOfEquippedItem(const FString& ItemID)
         }
     }
     return EEquipmentSlot::None;
-}
-
-ADroppedItemBase* UInventoryComponent::DropEquippedItem(EEquipmentSlot Slot, const FTransform& SpawnTransform)
-{
-    if (!EquipmentSlots.Contains(Slot)) return nullptr;
-
-    const FInventorySlot EquippedSlot = EquipmentSlots[Slot];
-    const FItemData ItemData = EquippedSlot.ItemData;
-    const FString ItemID = ItemData.ItemID;
-    const int32 Count = EquippedSlot.Count;
-
-    // 1. 월드 액터 스폰
-    ADroppedItemBase* Spawned = SpawnItemActor(ItemData, ItemID, SpawnTransform, Count);
-    if (!Spawned)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Inventory] DropEquippedItem 실패 — 스폰 불가: %s"), *ItemID);
-        return nullptr;
-    }
-
-    // 2. 장비 슬롯 제거 및 비주얼 메시 파괴
-    EquipmentSlots.Remove(Slot);
-    DetachEquipmentMesh(Slot);
-
-    // 3. 장비 착용 시 집계되었던 무게 차감
-    CurrentWeight = FMath::Max(0.0f, CurrentWeight - (ItemData.Weight * static_cast<float>(Count)));
-
-    UE_LOG(LogTemp, Log, TEXT("[Inventory] DropEquippedItem 성공: %s (슬롯 %d)"), *ItemID, (int32)Slot);
-    OnInventoryChanged.Broadcast();
-
-    return Spawned;
 }
 
 // --- Visual Implementation ---

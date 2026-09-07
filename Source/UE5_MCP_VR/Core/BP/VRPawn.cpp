@@ -1348,32 +1348,6 @@ void AVRPawn::HandleGrabStart(bool bLeft)
         return;
     }
 
-    // 2. 바닥에 주울 게 없고 인벤토리가 닫혀 있다면, 그 손에 장착된 것을 물리 쥐기로 전환한다.
-    //    장착품을 다시 빼내는 유일한 경로다 — 장착되면 인벤토리 슬롯 목록에서 사라져 고를 수 없다.
-    if (!bInventoryOpen && Inventory)
-    {
-        const FInventorySlot EquippedSlot = Inventory->GetEquippedItem(HandSlot);
-        if (EquippedSlot.ItemData.IsValidItem())
-        {
-            const FName HandSocket = Inventory->GetSocketNameForSlot(HandSlot);
-            const FTransform HandTransform = GetMesh()
-                ? GetMesh()->GetSocketTransform(HandSocket)
-                : HandController->GetComponentTransform();
-
-            ADroppedItemBase* Spawned = Inventory->DropEquippedItem(HandSlot, HandTransform);
-            if (Spawned)
-            {
-                Inventory->AttachItemToHand(Spawned, HandSlot);
-                UE_LOG(LogTemp, Log, TEXT("[VRPawn] 장착품(%s) 쥠 — 놓으면 던져집니다."), *EquippedSlot.ItemData.ItemID);
-                if (GEngine)
-                {
-                    GEngine->AddOnScreenDebugMessage(8814, 2.5f, FColor::Cyan,
-                        FString::Printf(TEXT("[장착품 잡음] %s (놓으면 던지기)"), *EquippedSlot.ItemData.DisplayName.ToString()));
-                }
-                return;
-            }
-        }
-    }
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
@@ -1516,45 +1490,10 @@ void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, f
     if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
 }
 
-bool AVRPawn::TakeItemInHand_Implementation(const FString& ItemID)
-{
-    if (!Inventory) return false;
-
-    // 손 본 위치에 바로 스폰한다 — 발밑에 떨궜다가 집어 올리면 한 프레임 바닥을 튄다.
-    const FTransform HandTransform = GetMesh()
-        ? GetMesh()->GetSocketTransform(TEXT("RightHand"))
-        : GetActorTransform();
-
-    return Inventory->TakeItemToHand(ItemID, HandTransform);
-}
-
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    if (!Inventory) return;
-
-    // 쥔 게 없는데 그 손에 장착품이 있으면, 장착품을 놓는 것으로 본다.
-    // 장착되는 순간 인벤토리 슬롯 목록에서 빠지므로 슬롯을 골라 해제할 방법이 없다 —
-    // 그립을 뗀 손이 곧 대상이라는 규칙이 유일한 회수 경로다.
-    if (!Inventory->GetHeldItem(HandSlot))
-    {
-        if (!Inventory->GetEquippedItem(HandSlot).ItemData.IsValidItem()) return;
-
-        if (bInventoryOpen)
-        {
-            Inventory->UnequipItem(HandSlot);
-            return;
-        }
-
-        // 인벤토리를 닫아 뒀으면 손에서 바닥으로 떨군다. 스폰된 액터가 물리를 켜고 나오므로
-        // 던지는 힘 없이 그 자리에서 떨어진다.
-        const FTransform HandTransform = GetMesh()
-            ? GetMesh()->GetSocketTransform(Inventory->GetSocketNameForSlot(HandSlot))
-            : GetActorTransform();
-
-        Inventory->DropEquippedItem(HandSlot, HandTransform);
-        return;
-    }
+    if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
     // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).

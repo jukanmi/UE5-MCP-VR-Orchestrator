@@ -489,8 +489,6 @@ public:
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
-    /** 인벤토리 슬롯의 아이템 1개를 손에 꺼낸다 — 스폰 성공 시에만 차감한다. */
-    virtual bool TakeItemInHand_Implementation(const FString& ItemID) override;
 
     virtual void ApplyResourceDelta_Implementation(float DeltaHealth, float DeltaMana, float DeltaStamina) override
     { CurrentStats.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }

@@ -180,9 +180,9 @@ public:
     bool DropItem(const FString& ItemID, int32 Amount = 1);
 
     /**
-     * 슬롯 클릭 한 번으로 아이템을 발동합니다. (인벤토리 UI 진입점)
-     * - Consumable 이면 UseItem, Equipment 면 EquipItem 으로 넘깁니다.
-     * - General/Quest 는 지금 할 수 있는 동작이 없어 실패(false).
+     * 고른 슬롯을 발동합니다. (인벤토리 UI 진입점)
+     * - Consumable 이면 UseItem, 그 외에는 무기든 잡템이든 HandSlot 손에 물리 액터로 쥡니다.
+     * - Quest 는 손에 꺼내면 던져서 버릴 수 있게 되므로 거부(false).
      * - UI 가 아이템 종류를 보고 분기하지 않게 하려는 것 — 분기 규칙이 늘어나도 C++ 한 곳만 고친다.
      */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
@@ -297,12 +297,6 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
     EEquipmentSlot GetSlotOfEquippedItem(const FString& ItemID) const;
 
-    /**
-     * 지정된 슬롯의 장비를 해제하고 월드 액터로 스폰합니다 (인벤토리에 넣지 않고 즉시 드랍).
-     * 손에서 무기를 던지거나 떨어뜨릴 때 사용합니다.
-     */
-    UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment")
-    class ADroppedItemBase* DropEquippedItem(EEquipmentSlot Slot, const FTransform& SpawnTransform);
 
     // 현재 무게 다시 계산 (디버그/검증용)
     UFUNCTION(BlueprintCallable, Category = "Inventory|Utils")
