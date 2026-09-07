@@ -993,21 +993,46 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
     const bool  bStrike = SpeedMs >= MeleeStrikeSpeed;
     if (!bPush) return;
 
-    // 손 위치에서 능동 스피어 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
+    // 무기를 쥐고 있으면 판정 형상을 그 무기로 바꾼다. 손 주변 구만 보면 검을 휘둘러도
+    // 칼날이 닿는 거리에서는 아무 일도 일어나지 않아 맨손과 사거리가 같아진다.
+    const EEquipmentSlot HandSlot = bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
+    const ADroppedItemBase* Held = Inventory ? Inventory->GetHeldItem(HandSlot) : nullptr;
+    const UStaticMeshComponent* HeldMesh = (Held && Held->ItemMesh) ? Held->ItemMesh : nullptr;
+
+    FVector QueryLoc = HandLoc;
+    FQuat QueryRot = FQuat::Identity;
+    FCollisionShape QueryShape = FCollisionShape::MakeSphere(MeleeSphereRadius);
+    float ImpactMass = WeaponMass;
+
+    if (HeldMesh && HeldMesh->GetStaticMesh())
+    {
+        // 회전은 컴포넌트에서 받고 크기는 로컬 바운즈에서 받는다. 월드 바운즈의 Extent 는
+        // 축 정렬이라 기울어진 검일수록 실제보다 큰 상자가 된다.
+        const FVector LocalExtent = HeldMesh->GetStaticMesh()->GetBounds().BoxExtent * HeldMesh->GetComponentScale();
+
+        QueryLoc = HeldMesh->GetComponentTransform().TransformPosition(HeldMesh->GetStaticMesh()->GetBounds().Origin);
+        QueryRot = HeldMesh->GetComponentQuat();
+        QueryShape = FCollisionShape::MakeBox(LocalExtent);
+
+        // 질량도 쥔 물건 것으로 — BeginPlay 에서 테이블 Weight 를 박아 뒀다.
+        ImpactMass = FMath::Max(HeldMesh->GetMass(), 0.01f);
+    }
+
+    // 능동 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
     TArray<FOverlapResult> Overlaps;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeHit), /*bTraceComplex=*/false, this);
     // Pawn(서 있는 NPC 캡슐) + PhysicsBody(넉다운 래그돌 메시) 둘 다 — 쓰러진 NPC 저글 타격 가능(의도된 동작).
     FCollisionObjectQueryParams ObjParams;
     ObjParams.AddObjectTypesToQuery(ECC_Pawn);
     ObjParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-    const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, HandLoc, FQuat::Identity,
-        ObjParams, FCollisionShape::MakeSphere(MeleeSphereRadius), Params);
+    const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, QueryLoc, QueryRot,
+        ObjParams, QueryShape, Params);
 
     if (!bAnyOverlap) return;
 
     const float Now = GetWorld()->GetTimeSeconds();
 
-    const float Damage = KineticDamage::Compute(WeaponMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
+    const float Damage = KineticDamage::Compute(ImpactMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
 
     for (const FOverlapResult& O : Overlaps)
     {
