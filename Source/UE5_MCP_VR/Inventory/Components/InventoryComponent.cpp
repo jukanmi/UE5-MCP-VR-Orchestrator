@@ -727,6 +727,17 @@ FName UInventoryComponent::GetSocketNameForSlot(EEquipmentSlot Slot) const
 
 // --- 손에 쥐기 ---
 
+void UInventoryComponent::ApplyHandOrientation(EEquipmentSlot HandSlot, FVector& Offset, FRotator& Rotation) const
+{
+    if (HandSlot != EEquipmentSlot::OffHand) return;
+
+    // X_Bot 실측: RightHand 는 Yaw +90, LeftHand 는 Yaw -90 이고 두 축계 모두 오른손 좌표계다.
+    // 거울상이 아니라 세로축 180도 회전 차이라서, 순수 회전 한 번으로 되돌릴 수 있다.
+    Offset = FVector(-Offset.X, -Offset.Y, Offset.Z);
+    Rotation.Yaw += 180.f;
+}
+
+
 ADroppedItemBase* UInventoryComponent::GetHeldItem(EEquipmentSlot HandSlot) const
 {
     const TObjectPtr<ADroppedItemBase>* Found = HeldItems.Find(HandSlot);
@@ -773,6 +784,8 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlo
         if (!Data.HoldOffset.IsNearlyZero())   Offset = Data.HoldOffset;
         if (!Data.HoldRotation.IsNearlyZero()) Rotation = Data.HoldRotation;
     }
+
+    ApplyHandOrientation(HandSlot, Offset, Rotation);
 
     Item->SetActorRelativeLocation(Offset);
     Item->SetActorRelativeRotation(Rotation);
@@ -918,8 +931,12 @@ void UInventoryComponent::AttachEquipmentMesh(EEquipmentSlot Slot, const FItemDa
 
     // 손안 자세는 손으로 쥘 때와 같은 값을 쓴다 — 장착과 쥐기가 다른 각도로 붙으면
     // 인벤토리에서 꺼내 든 검과 장착한 검이 다른 물건처럼 보인다.
-    AttachedMesh->SetRelativeLocation(Data.HoldOffset);
-    AttachedMesh->SetRelativeRotation(Data.HoldRotation);
+    FVector EquipOffset = Data.HoldOffset;
+    FRotator EquipRotation = Data.HoldRotation;
+    ApplyHandOrientation(Slot, EquipOffset, EquipRotation);
+
+    AttachedMesh->SetRelativeLocation(EquipOffset);
+    AttachedMesh->SetRelativeRotation(EquipRotation);
 
     AttachedMeshes.Add(Slot, AttachedMesh);
 }

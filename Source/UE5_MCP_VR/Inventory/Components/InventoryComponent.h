@@ -113,6 +113,11 @@ public:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|State")
     TMap<EEquipmentSlot, TObjectPtr<ADroppedItemBase>> HeldItems;
 
+    /** 손안 자세를 그 손에 맞게 보정한다. 왼손 본이 오른손 본을 세로축으로 180도 돌린
+     *  방향이라, 같은 값을 그대로 쓰면 왼손에서만 앞뒤가 뒤집힌다. 아이템 데이터는 오른손
+     *  기준 한 벌만 두고 여기서 되돌린다. */
+    void ApplyHandOrientation(EEquipmentSlot HandSlot, FVector& Offset, FRotator& Rotation) const;
+
     /** 슬롯 → 손 소켓 이름. MainHand/OffHand 외 부위는 방어구 미도입이라 NAME_None. */
     UFUNCTION(BlueprintPure, Category = "Inventory|Hand")
     FName GetSocketNameForSlot(EEquipmentSlot Slot) const;
