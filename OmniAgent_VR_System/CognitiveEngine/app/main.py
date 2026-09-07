@@ -162,7 +162,7 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
 
 
 async def _prewarm_core_llm() -> None:
-    """Stage2 12B 를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
+    """Stage2 플래너를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
     throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
     global _last_core_prewarm
     import time as _t
@@ -181,9 +181,9 @@ async def _prewarm_core_llm() -> None:
             f"{ollama_base}/api/generate",
             json={"model": model_id, "keep_alive": "30s"},
         )
-        logger.info("[Prewarm] 12B core 로드콜 완료")
+        logger.info("[Prewarm] Stage2 플래너 로드콜 완료")
     except Exception as exc:
-        logger.warning(f"[Prewarm] 12B 웜업 실패(무해 폴백): {exc}")
+        logger.warning(f"[Prewarm] Stage2 웜업 실패(무해 폴백): {exc}")
 
 
 @app.get("/")
@@ -410,7 +410,7 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         # 방금 올린 Combat 을 되돌린다 — UE5 쪽에도 빈 배치 Mode 스킵 가드가 있지만,
         # 애초에 행동 없는 응답이 모드를 바꾸려 들면 안 된다.
         #
-        # 전투 진입 확정 — 다음 replan 이 12B 를 필요로 하기 전에 선제 웜업.
+        # 전투 진입 확정 — 다음 replan 이 플래너를 필요로 하기 전에 선제 웜업.
         # replan 훅보다 리드타임이 길어 11s 로드가 완전히 숨을 가능성이 있는 유일 지점.
         spawn_background(_prewarm_core_llm(), label="core-prewarm")
 
@@ -503,7 +503,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         logger.info("[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)")
         requires_replan = True
 
-    # replan 확정 직후 12B 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
+    # replan 확정 직후 플래너 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
     # 실패해도 기존 콜드 경로 폴백이므로 오류 전파 없음.
     if requires_replan:
         spawn_background(_prewarm_core_llm(), label="core-prewarm")

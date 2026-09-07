@@ -101,7 +101,9 @@ MODELS = {
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
 # Stage2 플래너·get_llm() 폴백 — 여기 한 줄만 바꾸면 Stage2+get_llm 전체 반영.
-STAGE2_MODEL = "gemma4"
+# 2026-09-07 12B(7.4GB) → 8B(5.2GB). 플래너는 replan 때만 도는데 12B 는 로드가 느리고
+# VRAM 을 크게 물어 SDXL·PIE 와 부딪혔다. 되돌리려면 "gemma4" 로.
+STAGE2_MODEL = "mid"
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
 
@@ -141,10 +143,10 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
-        # keep_alive: 12B core(gemma4)는 replan 때만 쓰는 8GB 모델 → idle squat 방지로 30s 단축
+        # keep_alive: 플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s 단축
         # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).
         # e4b 등 hot-loop 경량 모델은 5m 유지(매 턴 사용, 콜드 재로드 회피).
-        keep_alive = "30s" if model_name == "gemma4" else "5m"
+        keep_alive = "30s" if model_name == STAGE2_MODEL else "5m"
         return ChatOllama(
             model=model_id,
             temperature=temperature,
@@ -199,8 +201,8 @@ async def ollama_structured(
         "stream": False,
         "format": schema_override if schema_override is not None else schema_model.model_json_schema(),
         "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
-        # 12B core 는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
-        "keep_alive": "30s" if model_name == "gemma4" else "5m",
+        # 플래너(Stage2)는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
+        "keep_alive": "30s" if model_name == STAGE2_MODEL else "5m",
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
 
