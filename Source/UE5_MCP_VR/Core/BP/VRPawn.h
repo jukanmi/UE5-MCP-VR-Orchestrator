@@ -245,6 +245,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_Grab;
 
+    /** 왼손 그립 — 오른손과 같은 동작을 왼손(OffHand)에 대해 수행한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_GrabLeft;
+
     // ============================================================================
     // 이동 설정
     // ============================================================================
@@ -665,7 +669,11 @@ private:
     float HandOverRange = 120.f;
 
     /** 그립 누름 — 인벤토리가 열려 있으면 고른 슬롯을 꺼내고, 아니면 손 근처 아이템을 쥔다. */
-    void OnGrabStart(const FInputActionValue& Value);
+    void OnGrabStartRight(const FInputActionValue& Value);
+    void OnGrabStartLeft(const FInputActionValue& Value);
+
+    /** 그립 누름 본체. 왼손이면 OffHand, 오른손이면 MainHand 슬롯을 대상으로 같은 일을 한다. */
+    void HandleGrabStart(bool bLeft);
 
     /** 인벤토리 열림 중 오른손 스틱 = 슬롯 이동. 한 번 기울일 때 한 칸만 가고,
      *  중립으로 돌아와야 다시 먹는다(계속 기울이면 목록이 순식간에 흘러가 버린다). */
@@ -683,10 +691,14 @@ private:
     bool bDebugInventorySelection = true;
 
     /** 그립 뗌 — 인벤토리가 열려 있으면 회수, 닫혀 있으면 거래 접시·NPC 를 차례로 보고 던진다. */
-    void OnGrabRelease(const FInputActionValue& Value);
+    void OnGrabReleaseRight(const FInputActionValue& Value);
+    void OnGrabReleaseLeft(const FInputActionValue& Value);
+
+    /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
+    void HandleGrabRelease(bool bLeft);
 
     /** 오른손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
-    ADroppedItemBase* FindNearestItemNearHand(float Radius) const;
+    ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;
 
     /** 매 Tick — 손 근처 아이템 이름표를 띄우고 카메라를 향하게 돌린다. */
     void UpdateItemTooltip();

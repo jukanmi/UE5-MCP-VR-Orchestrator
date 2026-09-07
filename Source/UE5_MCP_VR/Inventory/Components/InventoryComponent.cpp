@@ -339,7 +339,7 @@ void UInventoryComponent::SetSelectedSlot(int32 NewIndex)
 }
 
 // 슬롯 클릭 진입점 — 종류를 보고 사용/장착으로 넘긴다 (이미 장착 중인 장비는 해제)
-bool UInventoryComponent::ActivateItem(const FString& ItemID)
+bool UInventoryComponent::ActivateItem(const FString& ItemID, EEquipmentSlot HandSlot)
 {
     // 이미 장착된 장비라면 즉시 해제(토글)
     const EEquipmentSlot EquippedSlot = GetSlotOfEquippedItem(ItemID);
@@ -361,9 +361,9 @@ bool UInventoryComponent::ActivateItem(const FString& ItemID)
     case EItemType::Consumable:
         return UseItem(ItemID);
 
-    // 슬롯 미지정 — EquipItem 이 아이템 데이터의 EquipSlot 을 본다.
+    // 누른 손에 장착한다 — 왼손 그립이면 OffHand, 오른손 그립이면 MainHand.
     case EItemType::Equipment:
-        return EquipItem(ItemID);
+        return EquipItem(ItemID, HandSlot);
 
     // Quest 는 손에 꺼내면 던져서 버릴 수 있게 되므로 제외한다(DropItem 도 같은 이유로 막는다).
     case EItemType::General:
@@ -371,7 +371,19 @@ bool UInventoryComponent::ActivateItem(const FString& ItemID)
         AActor* OwnerActor = GetOwner();
         if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerBase::StaticClass()))
         {
-            return IPlayerBase::Execute_TakeItemInHand(OwnerActor, ItemID);
+            // 인터페이스는 손을 못 받는다(계약 고정) — 오른손이 아니면 컴포넌트에서 직접 꺼낸다.
+            if (HandSlot == EEquipmentSlot::MainHand)
+            {
+                return IPlayerBase::Execute_TakeItemInHand(OwnerActor, ItemID);
+            }
+
+            const ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor);
+            const USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
+            const FTransform HandTransform = OwnerMesh
+                ? OwnerMesh->GetSocketTransform(GetSocketNameForSlot(HandSlot))
+                : OwnerActor->GetActorTransform();
+
+            return TakeItemToHand(ItemID, HandTransform, HandSlot);
         }
         UE_LOG(LogTemp, Log, TEXT("[Inventory] Activate: %s — 소유자가 손에 들 수 없음."), *ItemID);
         return false;
@@ -805,9 +817,19 @@ FName UInventoryComponent::GetSocketNameForSlot(EEquipmentSlot Slot) const
 
 // --- 손에 쥐기 ---
 
-void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item)
+ADroppedItemBase* UInventoryComponent::GetHeldItem(EEquipmentSlot HandSlot) const
+{
+    const TObjectPtr<ADroppedItemBase>* Found = HeldItems.Find(HandSlot);
+    return (Found && IsValid(*Found)) ? Found->Get() : nullptr;
+}
+
+void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlot HandSlot)
 {
     if (!IsValid(Item) || !Item->ItemMesh) return;
+
+    // 손이 아닌 슬롯(머리·몸통 등)에는 쥘 수 없다 — 소켓이 없어 부착 지점이 정해지지 않는다.
+    const FName SocketName = GetSocketNameForSlot(HandSlot);
+    if (SocketName.IsNone()) return;
 
     const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
@@ -819,7 +841,7 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item)
     Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     Item->AttachToComponent(OwnerMesh,
-        FAttachmentTransformRules::SnapToTargetNotIncludingScale, MainHandSocket);
+        FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 
     // 아이템이 자기 보정값을 갖고 있으면 그쪽이 이긴다 — 여기 값은 아무 값도 없는 아이템용 기본치.
     FVector Offset = DefaultHoldOffset;
@@ -837,25 +859,26 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item)
     Item->SetActorRelativeLocation(Offset);
     Item->SetActorRelativeRotation(Rotation);
 
-    HeldItem = Item;
+    HeldItems.Add(HandSlot, Item);
 }
 
-ADroppedItemBase* UInventoryComponent::ReleaseHeldItem()
+ADroppedItemBase* UInventoryComponent::ReleaseHeldItem(EEquipmentSlot HandSlot)
 {
-    ADroppedItemBase* Item = HeldItem;
-    HeldItem = nullptr;
+    ADroppedItemBase* Item = GetHeldItem(HandSlot);
+    HeldItems.Remove(HandSlot);
     if (!IsValid(Item)) return nullptr;
 
     Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
     return Item;
 }
 
-bool UInventoryComponent::TakeItemToHand(const FString& ItemID, const FTransform& HandTransform)
+bool UInventoryComponent::TakeItemToHand(const FString& ItemID, const FTransform& HandTransform,
+                                        EEquipmentSlot HandSlot)
 {
-    if (IsValid(HeldItem))
+    if (ADroppedItemBase* Already = GetHeldItem(HandSlot))
     {
-        UE_LOG(LogTemp, Log, TEXT("[Inventory] 꺼내기 실패 — 이미 %s 를 쥐고 있음"),
-            *HeldItem->ItemData.ItemTemplateID);
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] 꺼내기 실패 — 그 손에 이미 %s 를 쥐고 있음"),
+            *Already->ItemData.ItemTemplateID);
         return false;
     }
 
@@ -891,14 +914,14 @@ bool UInventoryComponent::TakeItemToHand(const FString& ItemID, const FTransform
         return false;
     }
 
-    AttachItemToHand(Spawned);
+    AttachItemToHand(Spawned, HandSlot);
     UE_LOG(LogTemp, Log, TEXT("[Inventory] 꺼냄: %s"), *ItemID);
     return true;
 }
 
-bool UInventoryComponent::StoreHeldItem()
+bool UInventoryComponent::StoreHeldItem(EEquipmentSlot HandSlot)
 {
-    ADroppedItemBase* Item = ReleaseHeldItem();
+    ADroppedItemBase* Item = ReleaseHeldItem(HandSlot);
     if (!Item) return false;
 
     // 어느 이유로 실패하든 손을 떠난 물건은 물리를 되살려 바닥에 남겨야 한다 — 안 그러면

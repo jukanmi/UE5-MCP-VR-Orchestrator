@@ -107,10 +107,19 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|State")
     float CurrentWeight = 0.0f;
 
-    /** 지금 손에 쥐고 있는 월드 아이템. 장착 슬롯과 같은 계열의 보유 상태라 여기서 관리한다 —
-     *  폰이 들고 있으면 NPC·상자 등 다른 소유자는 같은 동작을 다시 구현해야 한다. */
+    /** 손별로 지금 쥐고 있는 월드 아이템. 키는 MainHand(오른손)/OffHand(왼손).
+     *  장착 슬롯과 같은 계열의 보유 상태라 여기서 관리한다 — 폰이 들고 있으면 NPC·상자 등
+     *  다른 소유자는 같은 동작을 다시 구현해야 한다. 부착 메시(AttachedMeshes)와 같은 키 방식. */
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|State")
-    TObjectPtr<ADroppedItemBase> HeldItem;
+    TMap<EEquipmentSlot, TObjectPtr<ADroppedItemBase>> HeldItems;
+
+    /** 슬롯 → 손 소켓 이름. MainHand/OffHand 외 부위는 방어구 미도입이라 NAME_None. */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Hand")
+    FName GetSocketNameForSlot(EEquipmentSlot Slot) const;
+
+    /** 해당 손에 쥔 아이템(없으면 nullptr). */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Hand")
+    ADroppedItemBase* GetHeldItem(EEquipmentSlot HandSlot) const;
 
     /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip/Repair 성공 시 브로드캐스트. */
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
@@ -177,7 +186,7 @@ public:
      * - UI 가 아이템 종류를 보고 분기하지 않게 하려는 것 — 분기 규칙이 늘어나도 C++ 한 곳만 고친다.
      */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
-    bool ActivateItem(const FString& ItemID);
+    bool ActivateItem(const FString& ItemID, EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
     /**
      * 아이템 1종을 월드 액터로 스폰한다(인벤토리는 건드리지 않는다).
@@ -189,25 +198,26 @@ public:
 
     // --- 손에 쥐기 (Hand) ---
 
-    /** 월드 아이템을 주 손 소켓에 쥔 상태로 만든다 — 물리·콜리전을 끄고 스냅 부착.
+    /** 월드 아이템을 해당 손 소켓에 쥔 상태로 만든다 — 물리·콜리전을 끄고 스냅 부착.
      *  주워서 쥘 때와 인벤토리에서 꺼내 쥘 때가 같은 상태로 수렴해야 놓기가 한 경로로 끝난다. */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
-    void AttachItemToHand(ADroppedItemBase* Item);
+    void AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
-    /** 쥔 것을 손에서 떼어 돌려준다(물리는 복구하지 않는다 — 던질지 넘길지는 호출측이 정한다).
+    /** 해당 손에 쥔 것을 떼어 돌려준다(물리는 복구하지 않는다 — 던질지 넘길지는 호출측이 정한다).
      *  쥔 게 없으면 nullptr. */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
-    ADroppedItemBase* ReleaseHeldItem();
+    ADroppedItemBase* ReleaseHeldItem(EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
-    /** 인벤토리 슬롯의 아이템 1개를 월드 액터로 꺼내 손에 쥔다. 스폰 성공 후에만 차감한다.
-     *  이미 쥐고 있거나 퀘스트 아이템이면 실패. */
+    /** 인벤토리 슬롯의 아이템 1개를 월드 액터로 꺼내 해당 손에 쥔다. 스폰 성공 후에만 차감한다.
+     *  그 손이 이미 차 있거나 퀘스트 아이템이면 실패. */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
-    bool TakeItemToHand(const FString& ItemID, const FTransform& HandTransform);
+    bool TakeItemToHand(const FString& ItemID, const FTransform& HandTransform,
+                        EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
-    /** 쥔 아이템을 인벤토리에 넣고 월드 액터를 파괴한다.
+    /** 해당 손에 쥔 아이템을 인벤토리에 넣고 월드 액터를 파괴한다.
      *  가득 찼거나 데이터가 없으면 물리를 되살려 그 자리에 떨군다(증발 방지). */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
-    bool StoreHeldItem();
+    bool StoreHeldItem(EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
     /**
      * 특정 아이템을 일정 수량 이상 가지고 있는지 확인합니다.
@@ -318,9 +328,6 @@ protected:
     // 해당 슬롯에 부착해 둔 메시 컴포넌트 파괴. 슬롯 교체는 EquipItem 이 먼저 부르는
     // UnequipItem 을 타고 여기로 오므로, 부착 경로에서 중복 파괴하지 말 것.
     void DetachEquipmentMesh(EEquipmentSlot Slot);
-
-    // 슬롯 → 소켓 이름. MainHand/OffHand 외 부위는 방어구 미도입이라 NAME_None.
-    FName GetSocketNameForSlot(EEquipmentSlot Slot) const;
 
     // 기존 인벤토리에 같은 아이템이 있다면 잔여 공간(MaxStack)만큼 채워넣어 슬롯 낭비를 방지합니다.
     int32 TryStackItemsExisting(const FItemData& TargetItem, int32 RemainingAmount);

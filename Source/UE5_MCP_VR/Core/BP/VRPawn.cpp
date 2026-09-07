@@ -581,11 +581,17 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
         {
-            EIC->BindAction(IA_Grab, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStart);
+            EIC->BindAction(IA_Grab, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartRight);
             // 그립을 뗀 순간이 곧 던지는 순간 — Completed 뿐 아니라 Canceled 도 받아야
             // 트래킹이 끊기며 취소된 경우에 아이템이 손에 영구히 붙어 남지 않는다.
-            EIC->BindAction(IA_Grab, ETriggerEvent::Completed, this, &AVRPawn::OnGrabRelease);
-            EIC->BindAction(IA_Grab, ETriggerEvent::Canceled,  this, &AVRPawn::OnGrabRelease);
+            EIC->BindAction(IA_Grab, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseRight);
+            EIC->BindAction(IA_Grab, ETriggerEvent::Canceled,  this, &AVRPawn::OnGrabReleaseRight);
+        }
+        if (IA_GrabLeft)
+        {
+            EIC->BindAction(IA_GrabLeft, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartLeft);
+            EIC->BindAction(IA_GrabLeft, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseLeft);
+            EIC->BindAction(IA_GrabLeft, ETriggerEvent::Canceled,  this, &AVRPawn::OnGrabReleaseLeft);
         }
     }
 }
@@ -1296,9 +1302,17 @@ void AVRPawn::StandUpFromFurniture()
 // 물리 손 쥐기 — 그립으로 월드 아이템을 직접 쥐고, 놓으면 던지거나 NPC 에게 건넨다.
 // ============================================================================
 
-void AVRPawn::OnGrabStart(const FInputActionValue& Value)
+void AVRPawn::OnGrabStartRight(const FInputActionValue& /*Value*/) { HandleGrabStart(/*bLeft=*/false); }
+void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)  { HandleGrabStart(/*bLeft=*/true); }
+void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { HandleGrabRelease(/*bLeft=*/false); }
+void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { HandleGrabRelease(/*bLeft=*/true); }
+
+void AVRPawn::HandleGrabStart(bool bLeft)
 {
-    if (!Inventory || IsValid(Inventory->HeldItem) || !MotionControllerRight) return;
+    const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+    UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
+
+    if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
     // 종류별 분기(소비=사용 / 장비=장착 / 일반=손에 쥐기)는 ActivateItem 이 들고 있어서 여기서 다시 보지 않는다.
@@ -1317,7 +1331,7 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
         }
 
         const FString ItemID = Slot.ItemData.ItemID;
-        const bool bActivated = Inventory->ActivateItem(ItemID);
+        const bool bActivated = Inventory->ActivateItem(ItemID, HandSlot);
         if (bDebugInventorySelection && GEngine)
         {
             GEngine->AddOnScreenDebugMessage(8812, 2.f, bActivated ? FColor::Green : FColor::Red,
@@ -1326,33 +1340,35 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
         return;
     }
 
-    ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius);
+    ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius, bLeft);
     if (Nearest)
     {
-        Inventory->AttachItemToHand(Nearest);
+        Inventory->AttachItemToHand(Nearest, HandSlot);
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
         return;
     }
 
-    // 2. 바닥 아이템이 없고 인벤토리가 닫힌 상태에서 오른손에 장착된 무기가 있다면 물리 손 쥐기(HeldItem)로 전환
+    // 2. 바닥에 주울 게 없고 인벤토리가 닫혀 있다면, 그 손에 장착된 것을 물리 쥐기로 전환한다.
+    //    장착품을 다시 빼내는 유일한 경로다 — 장착되면 인벤토리 슬롯 목록에서 사라져 고를 수 없다.
     if (!bInventoryOpen && Inventory)
     {
-        const FInventorySlot MainHandSlot = Inventory->GetEquippedItem(EEquipmentSlot::MainHand);
-        if (MainHandSlot.ItemData.IsValidItem())
+        const FInventorySlot EquippedSlot = Inventory->GetEquippedItem(HandSlot);
+        if (EquippedSlot.ItemData.IsValidItem())
         {
+            const FName HandSocket = Inventory->GetSocketNameForSlot(HandSlot);
             const FTransform HandTransform = GetMesh()
-                ? GetMesh()->GetSocketTransform(TEXT("RightHand"))
-                : MotionControllerRight->GetComponentTransform();
+                ? GetMesh()->GetSocketTransform(HandSocket)
+                : HandController->GetComponentTransform();
 
-            ADroppedItemBase* Spawned = Inventory->DropEquippedItem(EEquipmentSlot::MainHand, HandTransform);
+            ADroppedItemBase* Spawned = Inventory->DropEquippedItem(HandSlot, HandTransform);
             if (Spawned)
             {
-                Inventory->AttachItemToHand(Spawned);
-                UE_LOG(LogTemp, Log, TEXT("[VRPawn] 장착 무기(%s) 쥠 — 놓으면 던져집니다."), *MainHandSlot.ItemData.ItemID);
+                Inventory->AttachItemToHand(Spawned, HandSlot);
+                UE_LOG(LogTemp, Log, TEXT("[VRPawn] 장착품(%s) 쥠 — 놓으면 던져집니다."), *EquippedSlot.ItemData.ItemID);
                 if (GEngine)
                 {
                     GEngine->AddOnScreenDebugMessage(8814, 2.5f, FColor::Cyan,
-                        FString::Printf(TEXT("[무기 잡음] %s (놓으면 던지기)"), *MainHandSlot.ItemData.DisplayName.ToString()));
+                        FString::Printf(TEXT("[장착품 잡음] %s (놓으면 던지기)"), *EquippedSlot.ItemData.DisplayName.ToString()));
                 }
                 return;
             }
@@ -1360,16 +1376,17 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
     }
 }
 
-ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius) const
+ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
 {
-    if (!MotionControllerRight) return nullptr;
+    const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
+    if (!HandController) return nullptr;
 
     UGameInstance* GI = GetGameInstance();
     UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
     if (!ItemManager) return nullptr;
 
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    const FVector HandLoc = MotionControllerRight->GetComponentLocation();
+    const FVector HandLoc = HandController->GetComponentLocation();
 
     ADroppedItemBase* Nearest = nullptr;
     float NearestDistSq = TNumericLimits<float>::Max();
@@ -1398,8 +1415,9 @@ void AVRPawn::UpdateItemTooltip()
 
     // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
     // 손을 따라다니는 이름표는 시야만 가린다.
-    const bool bHolding = Inventory && IsValid(Inventory->HeldItem);
-    ADroppedItemBase* Target = bHolding ? nullptr : FindNearestItemNearHand(TooltipRange);
+    const bool bHolding = Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand)
+                                     || Inventory->GetHeldItem(EEquipmentSlot::OffHand));
+    ADroppedItemBase* Target = bHolding ? nullptr : FindNearestItemNearHand(TooltipRange, /*bLeft=*/false);
 
     if (!Target)
     {
@@ -1467,7 +1485,13 @@ void AVRPawn::UpdateVoiceIndicator()
 
 void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
 {
-    ADroppedItemBase* Held = Inventory ? Inventory->HeldItem.Get() : nullptr;
+    // 오른손을 먼저 본다. 오른손이 비어 있으면 왼손에 쥔 것을 튜닝 대상으로 삼는다.
+    ADroppedItemBase* Held = nullptr;
+    if (Inventory)
+    {
+        Held = Inventory->GetHeldItem(EEquipmentSlot::MainHand);
+        if (!Held) Held = Inventory->GetHeldItem(EEquipmentSlot::OffHand);
+    }
     if (!IsValid(Held))
     {
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] TuneGrab — 쥔 아이템이 없습니다."));
@@ -1504,19 +1528,20 @@ bool AVRPawn::TakeItemInHand_Implementation(const FString& ItemID)
     return Inventory->TakeItemToHand(ItemID, HandTransform);
 }
 
-void AVRPawn::OnGrabRelease(const FInputActionValue& Value)
+void AVRPawn::HandleGrabRelease(bool bLeft)
 {
-    if (!Inventory || !IsValid(Inventory->HeldItem)) return;
+    const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+    if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
     // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).
     if (bInventoryOpen)
     {
-        StoreHeldItemInInventory();
+        Inventory->StoreHeldItem(HandSlot);
         return;
     }
 
-    ADroppedItemBase* Item = Inventory->ReleaseHeldItem();
+    ADroppedItemBase* Item = Inventory->ReleaseHeldItem(HandSlot);
     if (!Item) return;
 
     // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
@@ -1555,13 +1580,15 @@ void AVRPawn::OnGrabRelease(const FInputActionValue& Value)
     }
 
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
-    Item->LaunchThrown(HandVelRight * ThrowVelocityScale, this,
+    Item->LaunchThrown((bLeft ? HandVelLeft : HandVelRight) * ThrowVelocityScale, this,
                        KineticDamageScale, MaxKineticDamage, MeleeStrikeSpeed);
 }
 
 bool AVRPawn::StoreHeldItemInInventory()
 {
-    return Inventory && Inventory->StoreHeldItem();
+    if (!Inventory) return false;
+    return Inventory->StoreHeldItem(EEquipmentSlot::MainHand)
+        || Inventory->StoreHeldItem(EEquipmentSlot::OffHand);
 }
 
 void AVRPawn::Cheat_Unequip(bool bOffHand)
