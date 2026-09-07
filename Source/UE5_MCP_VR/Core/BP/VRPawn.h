@@ -25,6 +25,7 @@ class UWidgetInteractionComponent;
 class UStaticMeshComponent;
 class ADroppedItemBase;
 class UMaterialInstanceDynamic;
+struct FItemData;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
 UENUM(BlueprintType)
@@ -367,19 +368,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")
     TSubclassOf<AKineticProjectile> ProjectileClass;
 
-    // 공격 명중 시 럼블 — VR 컨트롤러는 Haptic(B), 게임패드/데스크탑은 ForceFeedback(A). 둘 다 폴백으로 재생.
-    // [B·권장] VR 모션 컨트롤러 정석 럼블. BP_VRPawn 에서 UHapticFeedbackEffect_Curve 에셋 할당.
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
-    TObjectPtr<class UHapticFeedbackEffect_Base> HitHapticEffect;
-
-    // [B] 햅틱 강도 스케일(0~1).
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
-    float HitHapticScale = 1.0f;
-
-    // [A·폴백] 게임패드 진동 모터. VR 컨트롤러엔 보통 안 옴. BP_VRPawn 에서 UForceFeedbackEffect 에셋 할당.
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Haptics")
-    TObjectPtr<class UForceFeedbackEffect> HitForceFeedbackEffect;
-
     // ============================================================================
     // 자세 시스템 (HMD Z 높이 기반)
     // ============================================================================
@@ -524,9 +512,14 @@ public:
     /** 체크포인트 액터가 호출 — 현재 위치/HP를 저장 */
     void SaveCheckpoint(const FVector& Location, const FRotator& Rotation);
 
-    /** 피격 럼블 — NPC 공격에 맞았을 때 호출(SmartNPC::PerformAttackHit).
-     *  양손 컨트롤러 햅틱(B) + 게임패드 ForceFeedback(A) 폴백. 에셋 미할당 시 no-op. */
-    void PlayHitReceivedFeedback();
+    /** 손에 쥔 아이템을 인벤토리에 집어넣고 월드 액터를 파괴한다.
+     *  인벤토리가 가득 찼거나 데이터가 없으면 물리를 되살려 그 자리에 떨군다(증발 방지). */
+    UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
+    bool StoreHeldItemInInventory();
+
+    /** 치트/콘솔 명령: 손 장비 해제. 인자 0 = 오른손 무기, 1 = 왼손 방패. */
+    UFUNCTION(Exec)
+    void Cheat_Unequip(bool bOffHand);
 
 private:
     // --- 입력 핸들러 ---
@@ -655,21 +648,13 @@ private:
     bool TryPickupNearby();
 
     // --- 물리 손 쥐기 (Grip) ---
-    /** 지금 오른손에 쥐고 있는 월드 아이템. 그립을 놓는 순간 던지기·건네기로 빠져나간다. */
-    UPROPERTY(Transient)
-    TObjectPtr<ADroppedItemBase> HeldItem;
+    // 쥔 아이템 자체와 손안 자세 보정은 InventoryComponent 가 들고 있다 — 장착 슬롯과 같은
+    // 보유 상태라서, 폰에 두면 NPC·상자 등 다른 소유자가 같은 걸 다시 구현해야 한다.
+    // 폰에는 입력·손 속도·던지기처럼 VR 컨트롤러가 있어야만 되는 것만 남긴다.
 
     /** 그립 시 손 위치 기준 쥐기 반경(cm). 실제로 손을 뻗어야 잡히도록 짧게 둔다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "5.0", ClampMax = "100.0"))
     float GrabRadius = 40.f;
-
-    /** 쥔 아이템의 손 본 기준 위치 보정(cm). 메시 원점이 제각각이라 실기에서 맞춰야 한다. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
-    FVector GrabHoldOffset = FVector::ZeroVector;
-
-    /** 쥔 아이템의 손 본 기준 회전 보정. 칼자루가 손바닥을 향하게 맞추는 용도. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
-    FRotator GrabHoldRotation = FRotator::ZeroRotator;
 
     /** 던질 때 손 속도에 곱하는 배율. 1 = 실제 손 속도. VR 은 팔 스윙이 짧아 살짝 키우는 편이 자연스럽다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", ClampMax = "5.0"))
@@ -697,14 +682,8 @@ private:
     UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
     bool bDebugInventorySelection = true;
 
-    /** 그립 뗌 — NPC 가 가까우면 건네고, 아니면 손 속도로 던진다. */
+    /** 그립 뗌 — 인벤토리가 열려 있으면 회수, 닫혀 있으면 거래 접시·NPC 를 차례로 보고 던진다. */
     void OnGrabRelease(const FInputActionValue& Value);
-
-    /** 쥔 아이템을 근처 NPC 인벤토리로 넘긴다. 성공 시 월드 액터는 소비되고 true. */
-    bool TryHandOverToNPC(ADroppedItemBase* Item);
-
-    /** 거래 테이블 접시 위에서 놓았는지 — 올라갔으면 true(건네기·던지기로 넘어가지 않는다). */
-    bool TrySnapToTradePlate(ADroppedItemBase* Item);
 
     /** 오른손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
     ADroppedItemBase* FindNearestItemNearHand(float Radius) const;
@@ -742,10 +721,6 @@ private:
     /** 직전에 이름표를 그린 아이템 — 대상이 바뀔 때만 텍스트를 다시 만든다(매 틱 SetText 는 비싸다). */
     UPROPERTY(Transient)
     TObjectPtr<ADroppedItemBase> TooltipTarget;
-
-    /** 월드 아이템을 오른손에 쥔 상태로 만든다 — 물리·콜리전 끄고 손 본에 스냅 부착.
-     *  그립으로 집을 때와 인벤토리에서 꺼낼 때가 같은 상태로 수렴해야 놓기(던지기·건네기)가 한 경로로 끝난다. */
-    void AttachItemToHand(ADroppedItemBase* Item);
 
     // --- 인벤토리 HUD ---
     /** 인벤토리 패널 열림 상태 — HUD 위젯과 동기. */
@@ -807,14 +782,11 @@ private:
     UFUNCTION(Exec)
     void SendNPCDialogue(const FString& Text);
 
-    /** 쥔 아이템의 손안 자세를 델타로 밀어보고 절대값을 찍는다. 예: TuneGrab 0 0 1 0 15 0
+    /** 쥔 아이템의 손안 자세를 델타로 밀어보고 절대값을 CSV 표기로 찍는다. 예: TuneGrab 0 0 1 0 15 0
+     *  전부 0 을 넣으면 밀지 않고 현재 값만 출력한다.
      *  헤드셋을 쓴 채로는 수치를 읽을 수 없으므로, 찍힌 값을 DT_ItemRegistry 에 옮겨 확정한다. */
     UFUNCTION(Exec)
     void TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll);
-
-    /** 쥔 아이템의 현재 손안 자세를 CSV 표기로 출력. */
-    UFUNCTION(Exec)
-    void DumpGrab();
 
     /** 콘솔 진단 — 아바타 팔길이 vs 컨트롤러 도달거리 + 현재 스케일 로그/화면 출력.
      *  팔 뻗은 자세에서 호출해 비율 확인. Reach > ArmLen 이면 아바타 팔이 짧음. */
@@ -837,9 +809,6 @@ private:
     // 동역학 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
     // 본 소켓 패시브 overlap 은 애니 본에서 이벤트 누락이 잦아 능동 쿼리로 대체.
     void TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand);
-
-    /** 명중 손 컨트롤러 럼블 — B(Haptic)+A(ForceFeedback) 폴백. bRightHand=false 면 왼손. */
-    void PlayHitHaptic(bool bRightHand);
 
     // 손 속도 추적(Tick) — 컨트롤러 위치 델타/dt. cm/s. ½mv² 의 v 산출.
     FVector PrevHandLocLeft  = FVector::ZeroVector;

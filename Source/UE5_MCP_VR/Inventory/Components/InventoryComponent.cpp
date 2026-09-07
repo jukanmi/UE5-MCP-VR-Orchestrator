@@ -338,9 +338,17 @@ void UInventoryComponent::SetSelectedSlot(int32 NewIndex)
     OnInventoryChanged.Broadcast();
 }
 
-// 슬롯 클릭 진입점 — 종류를 보고 사용/장착으로 넘긴다
+// 슬롯 클릭 진입점 — 종류를 보고 사용/장착으로 넘긴다 (이미 장착 중인 장비는 해제)
 bool UInventoryComponent::ActivateItem(const FString& ItemID)
 {
+    // 이미 장착된 장비라면 즉시 해제(토글)
+    const EEquipmentSlot EquippedSlot = GetSlotOfEquippedItem(ItemID);
+    if (EquippedSlot != EEquipmentSlot::None)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] 이미 장착된 %s 해제 시도 (슬롯 %d)"), *ItemID, (int32)EquippedSlot);
+        return UnequipItem(EquippedSlot);
+    }
+
     const int32 SlotIndex = GetSlotIndexByItemID(ItemID);
     if (SlotIndex == INDEX_NONE)
     {
@@ -723,6 +731,53 @@ FInventorySlot UInventoryComponent::GetEquippedItem(EEquipmentSlot TargetSlot) c
     return FoundSlot ? *FoundSlot : FInventorySlot();
 }
 
+bool UInventoryComponent::IsItemEquipped(const FString& ItemID) const
+{
+    return GetSlotOfEquippedItem(ItemID) != EEquipmentSlot::None;
+}
+
+EEquipmentSlot UInventoryComponent::GetSlotOfEquippedItem(const FString& ItemID) const
+{
+    for (const auto& Pair : EquipmentSlots)
+    {
+        if (Pair.Value.ItemData.IsValidItem() && Pair.Value.ItemData.ItemID == ItemID)
+        {
+            return Pair.Key;
+        }
+    }
+    return EEquipmentSlot::None;
+}
+
+ADroppedItemBase* UInventoryComponent::DropEquippedItem(EEquipmentSlot Slot, const FTransform& SpawnTransform)
+{
+    if (!EquipmentSlots.Contains(Slot)) return nullptr;
+
+    const FInventorySlot EquippedSlot = EquipmentSlots[Slot];
+    const FItemData ItemData = EquippedSlot.ItemData;
+    const FString ItemID = ItemData.ItemID;
+    const int32 Count = EquippedSlot.Count;
+
+    // 1. 월드 액터 스폰
+    ADroppedItemBase* Spawned = SpawnItemActor(ItemData, ItemID, SpawnTransform, Count);
+    if (!Spawned)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] DropEquippedItem 실패 — 스폰 불가: %s"), *ItemID);
+        return nullptr;
+    }
+
+    // 2. 장비 슬롯 제거 및 비주얼 메시 파괴
+    EquipmentSlots.Remove(Slot);
+    DetachEquipmentMesh(Slot);
+
+    // 3. 장비 착용 시 집계되었던 무게 차감
+    CurrentWeight = FMath::Max(0.0f, CurrentWeight - (ItemData.Weight * static_cast<float>(Count)));
+
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] DropEquippedItem 성공: %s (슬롯 %d)"), *ItemID, (int32)Slot);
+    OnInventoryChanged.Broadcast();
+
+    return Spawned;
+}
+
 // --- Visual Implementation ---
 
 UStaticMesh* UInventoryComponent::ResolveItemMesh(const FItemData& Data) const
@@ -746,6 +801,137 @@ FName UInventoryComponent::GetSocketNameForSlot(EEquipmentSlot Slot) const
     case EEquipmentSlot::OffHand:  return OffHandSocket;
     default:                       return NAME_None;   // 방어구 부위는 부착 대상 없음
     }
+}
+
+// --- 손에 쥐기 ---
+
+void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item)
+{
+    if (!IsValid(Item) || !Item->ItemMesh) return;
+
+    const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
+    if (!OwnerMesh) return;
+
+    // 물리를 끄고 손 본에 그대로 붙인다. 쥔 동안 콜리전까지 끄는 이유는 물리 바디가 남아 있으면
+    // 자기 캡슐·바닥을 밀어 손이 튀거나 소유자가 밀려나기 때문.
+    Item->ItemMesh->SetSimulatePhysics(false);
+    Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    Item->AttachToComponent(OwnerMesh,
+        FAttachmentTransformRules::SnapToTargetNotIncludingScale, MainHandSocket);
+
+    // 아이템이 자기 보정값을 갖고 있으면 그쪽이 이긴다 — 여기 값은 아무 값도 없는 아이템용 기본치.
+    FVector Offset = DefaultHoldOffset;
+    FRotator Rotation = DefaultHoldRotation;
+
+    UItemManager* ItemManager = UItemManager::Get(this);
+
+    FItemData Data;
+    if (ItemManager && ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, Data))
+    {
+        if (!Data.HoldOffset.IsNearlyZero())   Offset = Data.HoldOffset;
+        if (!Data.HoldRotation.IsNearlyZero()) Rotation = Data.HoldRotation;
+    }
+
+    Item->SetActorRelativeLocation(Offset);
+    Item->SetActorRelativeRotation(Rotation);
+
+    HeldItem = Item;
+}
+
+ADroppedItemBase* UInventoryComponent::ReleaseHeldItem()
+{
+    ADroppedItemBase* Item = HeldItem;
+    HeldItem = nullptr;
+    if (!IsValid(Item)) return nullptr;
+
+    Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+    return Item;
+}
+
+bool UInventoryComponent::TakeItemToHand(const FString& ItemID, const FTransform& HandTransform)
+{
+    if (IsValid(HeldItem))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Inventory] 꺼내기 실패 — 이미 %s 를 쥐고 있음"),
+            *HeldItem->ItemData.ItemTemplateID);
+        return false;
+    }
+
+    UItemManager* ItemManager = UItemManager::Get(this);
+
+    FItemData Data;
+    if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 꺼내기 실패 — 아이템 데이터 없음: %s"), *ItemID);
+        return false;
+    }
+
+    if (GetItemCountInSlots(ItemID) < 1) return false;
+
+    // Quest 는 손에 꺼내는 순간 던져서 버릴 수 있게 된다 — DropItem 이 막는 것과 같은 이유로 막는다.
+    if (Data.ItemType == EItemType::Quest)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 꺼내기 거부 — 퀘스트 아이템: %s"), *ItemID);
+        return false;
+    }
+
+    ADroppedItemBase* Spawned = SpawnItemActor(Data, ItemID, HandTransform, 1);
+    if (!Spawned)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 꺼내기 실패 — 스폰 실패: %s"), *ItemID);
+        return false;
+    }
+
+    // 스폰이 끝난 뒤에만 차감한다. 차감 실패 시 스폰분을 되돌려야 복제가 안 생긴다.
+    if (!RemoveItem(ItemID, 1))
+    {
+        Spawned->Destroy();
+        return false;
+    }
+
+    AttachItemToHand(Spawned);
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] 꺼냄: %s"), *ItemID);
+    return true;
+}
+
+bool UInventoryComponent::StoreHeldItem()
+{
+    ADroppedItemBase* Item = ReleaseHeldItem();
+    if (!Item) return false;
+
+    // 어느 이유로 실패하든 손을 떠난 물건은 물리를 되살려 바닥에 남겨야 한다 — 안 그러면
+    // 부착도 물리도 없는 채로 공중에 박제된다.
+    auto DropWhereItIs = [Item]()
+    {
+        if (Item->ItemMesh)
+        {
+            Item->ItemMesh->SetSimulatePhysics(true);
+            Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        }
+        return false;
+    };
+
+    UItemManager* ItemManager = UItemManager::Get(this);
+
+    FItemData Data;
+    if (!ItemManager || !ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, Data))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 수납 실패 — 아이템 데이터 없음: %s"), *Item->ItemData.ItemTemplateID);
+        return DropWhereItIs();
+    }
+
+    const int32 Amount = FMath::Max(1, Item->Amount);
+    if (!AddItem(Data, Amount))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 가득 참 — %s 수납 불가, 그 자리에 드랍"), *Data.ItemID);
+        return DropWhereItIs();
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Inventory] 손에 쥔 아이템 수납 완료: %s (수량 %d)"), *Data.ItemID, Amount);
+    Item->Destroy();
+    return true;
 }
 
 void UInventoryComponent::AttachEquipmentMesh(EEquipmentSlot Slot, const FItemData& Data)

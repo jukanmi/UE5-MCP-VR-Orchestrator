@@ -85,6 +85,14 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
     FName OffHandSocket = TEXT("LeftHand");
 
+    // 손에 쥔 아이템의 손 본 기준 위치·회전 보정. 아이템 데이터에 값이 있으면 그쪽이 이기고,
+    // 아무 값도 없는 아이템에만 적용되는 기본치다. 메시 원점이 제각각이라 실기에서 맞춰야 한다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    FVector DefaultHoldOffset = FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Config")
+    FRotator DefaultHoldRotation = FRotator::ZeroRotator;
+
     // --- Runtime Data (Play 중 변화) ---
 
     // 실제 인벤토리 슬롯 배열 (Blueprint에서 조회 가능)
@@ -98,6 +106,11 @@ public:
     // 현재 총 무게 (kg)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|State")
     float CurrentWeight = 0.0f;
+
+    /** 지금 손에 쥐고 있는 월드 아이템. 장착 슬롯과 같은 계열의 보유 상태라 여기서 관리한다 —
+     *  폰이 들고 있으면 NPC·상자 등 다른 소유자는 같은 동작을 다시 구현해야 한다. */
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|State")
+    TObjectPtr<ADroppedItemBase> HeldItem;
 
     /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip/Repair 성공 시 브로드캐스트. */
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
@@ -174,6 +187,28 @@ public:
     ADroppedItemBase* SpawnItemActor(const FItemData& Data, const FString& ItemID,
                                      const FTransform& SpawnTransform, int32 Amount);
 
+    // --- 손에 쥐기 (Hand) ---
+
+    /** 월드 아이템을 주 손 소켓에 쥔 상태로 만든다 — 물리·콜리전을 끄고 스냅 부착.
+     *  주워서 쥘 때와 인벤토리에서 꺼내 쥘 때가 같은 상태로 수렴해야 놓기가 한 경로로 끝난다. */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
+    void AttachItemToHand(ADroppedItemBase* Item);
+
+    /** 쥔 것을 손에서 떼어 돌려준다(물리는 복구하지 않는다 — 던질지 넘길지는 호출측이 정한다).
+     *  쥔 게 없으면 nullptr. */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
+    ADroppedItemBase* ReleaseHeldItem();
+
+    /** 인벤토리 슬롯의 아이템 1개를 월드 액터로 꺼내 손에 쥔다. 스폰 성공 후에만 차감한다.
+     *  이미 쥐고 있거나 퀘스트 아이템이면 실패. */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
+    bool TakeItemToHand(const FString& ItemID, const FTransform& HandTransform);
+
+    /** 쥔 아이템을 인벤토리에 넣고 월드 액터를 파괴한다.
+     *  가득 찼거나 데이터가 없으면 물리를 되살려 그 자리에 떨군다(증발 방지). */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
+    bool StoreHeldItem();
+
     /**
      * 특정 아이템을 일정 수량 이상 가지고 있는지 확인합니다.
      */
@@ -248,6 +283,21 @@ public:
      */
     UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
     FInventorySlot GetEquippedItem(EEquipmentSlot Slot) const;
+
+    /** 특정 아이템이 현재 장비 슬롯에 장착되어 있는지 여부. */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+    bool IsItemEquipped(const FString& ItemID) const;
+
+    /** 특정 아이템이 장착된 슬롯 반환 (미장착 시 EEquipmentSlot::None). */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+    EEquipmentSlot GetSlotOfEquippedItem(const FString& ItemID) const;
+
+    /**
+     * 지정된 슬롯의 장비를 해제하고 월드 액터로 스폰합니다 (인벤토리에 넣지 않고 즉시 드랍).
+     * 손에서 무기를 던지거나 떨어뜨릴 때 사용합니다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment")
+    class ADroppedItemBase* DropEquippedItem(EEquipmentSlot Slot, const FTransform& SpawnTransform);
 
     // 현재 무게 다시 계산 (디버그/검증용)
     UFUNCTION(BlueprintCallable, Category = "Inventory|Utils")

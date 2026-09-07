@@ -7,6 +7,14 @@
 #include "Inventory/BP/ItemDataAsset.h"
 #include "Inventory/Types/ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
 
+UItemManager* UItemManager::Get(const UObject* WorldContext)
+{
+    if (!WorldContext) return nullptr;
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
+    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+    return GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+}
+
 void UItemManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);

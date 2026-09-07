@@ -29,7 +29,6 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
 #include "Core/Physics/KineticDamage.h"   // 공격 판정 — NPC 타겟 데미지 일괄(ApplyToNPC)
-#include "Core/BP/VRPawn.h"          // 플레이어 피격 햅틱(PlayHitReceivedFeedback)
 
 // 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
 // Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.
@@ -313,14 +312,12 @@ void ASmartNPC::PerformAttackHit()
         Ev.HitInfo.Location    = Impact;
         Target->TakeDamage(Damage, Ev, GetController(), this);
 
-        // 넉백 + 햅틱(피격 효과). 햅틱은 AVRPawn 캐스트 성공 시에만 — 그 외 폰은 넉백만.
+        // 넉백.
         if (ACharacter* TargetChar = Cast<ACharacter>(Target))
         {
             if (NPCKnockbackSpeed > 0.f)
                 TargetChar->LaunchCharacter(Dir * NPCKnockbackSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
         }
-        if (AVRPawn* VRP = Cast<AVRPawn>(Target))
-            VRP->PlayHitReceivedFeedback();
     }
 
     bAttackHitConsumed = true;

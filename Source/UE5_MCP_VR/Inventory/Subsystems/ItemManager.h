@@ -43,6 +43,9 @@ class UE5_MCP_VR_API UItemManager : public UGameInstanceSubsystem
     GENERATED_BODY()
 
 public:
+    // 서브시스템 획득 단축 — GameInstance 를 거쳐 꺼내는 3줄을 호출처마다 반복하지 않는다(NPCManager 와 같은 방식).
+    static UItemManager* Get(const UObject* WorldContext);
+
     // Lifecycle
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;

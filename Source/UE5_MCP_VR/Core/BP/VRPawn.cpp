@@ -20,8 +20,6 @@
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
-#include "GameFramework/ForceFeedbackEffect.h"
-#include "Haptics/HapticFeedbackEffect_Base.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
 #include "NPC/BP/SmartNPC.h"
@@ -949,9 +947,6 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
             // 근접과 동일한 J→HP 환산·상한 주입 — 전투 일관성.
             Proj->InitProjectile(this, KineticDamageScale, MaxKineticDamage);
         }
-
-        // 던진 손(오른손) 럼블.
-        PlayHitHaptic(/*bRightHand=*/true);
     }
 
     // 던지는 모션.
@@ -981,34 +976,6 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 {
     RemoveStateTag(TAG_State_Action_Combat_Attack);
     AddStateTag(TAG_State_Idle);
-}
-
-void AVRPawn::PlayHitHaptic(bool bRightHand)
-{
-    APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) return;
-
-    // [B] VR 모션 컨트롤러 햅틱 — 명중 손. 에셋 미할당 시 no-op.
-    if (HitHapticEffect)
-    {
-        PC->PlayHapticEffect(HitHapticEffect, bRightHand ? EControllerHand::Right : EControllerHand::Left,
-            HitHapticScale, /*bLoop=*/false);
-    }
-    // [A] 게임패드 진동 모터 폴백.
-    if (HitForceFeedbackEffect)
-    {
-        FForceFeedbackParameters FFParams;
-        FFParams.bLooping = false;
-        PC->ClientPlayForceFeedback(HitForceFeedbackEffect, FFParams);
-    }
-}
-
-void AVRPawn::PlayHitReceivedFeedback()
-{
-    // 피격은 특정 손이 아니므로 양손 럼블. ForceFeedback 은 PlayHitHaptic 내부에서 중복 재생되나
-    // bLooping=false 라 무해(짧은 펄스). 자기공격 럼블(PlayHitHaptic)과 동일 에셋 재사용.
-    PlayHitHaptic(/*bRightHand=*/false);
-    PlayHitHaptic(/*bRightHand=*/true);
 }
 
 void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
@@ -1051,7 +1018,6 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
         {
             // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
             KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
-            PlayHitHaptic(bRightHand);
         }
 
         // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
@@ -1332,7 +1298,7 @@ void AVRPawn::StandUpFromFurniture()
 
 void AVRPawn::OnGrabStart(const FInputActionValue& Value)
 {
-    if (IsValid(HeldItem) || !MotionControllerRight) return;
+    if (!Inventory || IsValid(Inventory->HeldItem) || !MotionControllerRight) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
     // 종류별 분기(소비=사용 / 장비=장착 / 일반=손에 쥐기)는 ActivateItem 이 들고 있어서 여기서 다시 보지 않는다.
@@ -1361,16 +1327,37 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
     }
 
     ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius);
-    if (!Nearest)
+    if (Nearest)
     {
-        // 입력이 왔다는 사실 자체를 남긴다 — 이 로그가 없으면 그립 매핑 문제, 있는데 못 잡으면 거리 문제.
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 그립 — 반경 %.0fcm 내 아이템 없음 (손 %s)"),
-            GrabRadius, *MotionControllerRight->GetComponentLocation().ToCompactString());
+        Inventory->AttachItemToHand(Nearest);
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
         return;
     }
 
-    AttachItemToHand(Nearest);
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
+    // 2. 바닥 아이템이 없고 인벤토리가 닫힌 상태에서 오른손에 장착된 무기가 있다면 물리 손 쥐기(HeldItem)로 전환
+    if (!bInventoryOpen && Inventory)
+    {
+        const FInventorySlot MainHandSlot = Inventory->GetEquippedItem(EEquipmentSlot::MainHand);
+        if (MainHandSlot.ItemData.IsValidItem())
+        {
+            const FTransform HandTransform = GetMesh()
+                ? GetMesh()->GetSocketTransform(TEXT("RightHand"))
+                : MotionControllerRight->GetComponentTransform();
+
+            ADroppedItemBase* Spawned = Inventory->DropEquippedItem(EEquipmentSlot::MainHand, HandTransform);
+            if (Spawned)
+            {
+                Inventory->AttachItemToHand(Spawned);
+                UE_LOG(LogTemp, Log, TEXT("[VRPawn] 장착 무기(%s) 쥠 — 놓으면 던져집니다."), *MainHandSlot.ItemData.ItemID);
+                if (GEngine)
+                {
+                    GEngine->AddOnScreenDebugMessage(8814, 2.5f, FColor::Cyan,
+                        FString::Printf(TEXT("[무기 잡음] %s (놓으면 던지기)"), *MainHandSlot.ItemData.DisplayName.ToString()));
+                }
+                return;
+            }
+        }
+    }
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius) const
@@ -1411,7 +1398,8 @@ void AVRPawn::UpdateItemTooltip()
 
     // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
     // 손을 따라다니는 이름표는 시야만 가린다.
-    ADroppedItemBase* Target = IsValid(HeldItem) ? nullptr : FindNearestItemNearHand(TooltipRange);
+    const bool bHolding = Inventory && IsValid(Inventory->HeldItem);
+    ADroppedItemBase* Target = bHolding ? nullptr : FindNearestItemNearHand(TooltipRange);
 
     if (!Target)
     {
@@ -1426,8 +1414,7 @@ void AVRPawn::UpdateItemTooltip()
     {
         TooltipTarget = Target;
 
-        UGameInstance* GI = GetGameInstance();
-        UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+        UItemManager* ItemManager = UItemManager::Get(this);
 
         FItemData Data;
         if (ItemManager && ItemManager->GetItemDataByID(Target->ItemData.ItemTemplateID, Data))
@@ -1478,42 +1465,10 @@ void AVRPawn::UpdateVoiceIndicator()
     if (!VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(true);
 }
 
-void AVRPawn::AttachItemToHand(ADroppedItemBase* Item)
-{
-    if (!IsValid(Item) || !Item->ItemMesh) return;
-
-    // 물리를 끄고 손 본에 그대로 붙인다. 쥔 동안 콜리전까지 끄는 이유는 물리 바디가 남아 있으면
-    // 자기 캡슐·바닥을 밀어 손이 튀거나 폰이 밀려나기 때문.
-    Item->ItemMesh->SetSimulatePhysics(false);
-    Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-    Item->AttachToComponent(GetMesh(),
-        FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("RightHand"));
-
-    // 아이템이 자기 보정값을 갖고 있으면 그쪽이 이긴다 — 폰의 값은 아무 값도 없는 아이템용 기본치.
-    FVector Offset = GrabHoldOffset;
-    FRotator Rotation = GrabHoldRotation;
-
-    UGameInstance* GI = GetGameInstance();
-    if (UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr)
-    {
-        FItemData Data;
-        if (ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, Data))
-        {
-            if (!Data.HoldOffset.IsNearlyZero())   Offset = Data.HoldOffset;
-            if (!Data.HoldRotation.IsNearlyZero()) Rotation = Data.HoldRotation;
-        }
-    }
-
-    Item->SetActorRelativeLocation(Offset);
-    Item->SetActorRelativeRotation(Rotation);
-
-    HeldItem = Item;
-}
-
 void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
 {
-    if (!IsValid(HeldItem))
+    ADroppedItemBase* Held = Inventory ? Inventory->HeldItem.Get() : nullptr;
+    if (!IsValid(Held))
     {
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] TuneGrab — 쥔 아이템이 없습니다."));
         return;
@@ -1521,26 +1476,17 @@ void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, f
 
     // 델타로 밀고 절대값을 찍는다. VR 을 쓴 채로는 수치를 못 읽으니, 찍힌 값을 그대로
     // DT_ItemRegistry 의 HoldOffset/HoldRotation 에 붙여넣어 확정하는 흐름.
-    HeldItem->AddActorLocalOffset(FVector(DX, DY, DZ));
-    HeldItem->AddActorLocalRotation(FRotator(DPitch, DYaw, DRoll));
-    DumpGrab();
-}
+    // 델타가 전부 0 이면 밀지 않고 현재 값만 나오므로 그게 곧 조회 명령이 된다.
+    Held->AddActorLocalOffset(FVector(DX, DY, DZ));
+    Held->AddActorLocalRotation(FRotator(DPitch, DYaw, DRoll));
 
-void AVRPawn::DumpGrab()
-{
-    if (!IsValid(HeldItem))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] DumpGrab — 쥔 아이템이 없습니다."));
-        return;
-    }
-
-    const FVector Loc = HeldItem->GetRootComponent()->GetRelativeLocation();
-    const FRotator Rot = HeldItem->GetRootComponent()->GetRelativeRotation();
+    const FVector Loc = Held->GetRootComponent()->GetRelativeLocation();
+    const FRotator Rot = Held->GetRootComponent()->GetRelativeRotation();
 
     // CSV 에 그대로 붙일 수 있는 표기로 찍는다.
     const FString Line = FString::Printf(
         TEXT("[VRPawn] %s HoldOffset=\"(X=%.2f,Y=%.2f,Z=%.2f)\" HoldRotation=\"(Pitch=%.2f,Yaw=%.2f,Roll=%.2f)\""),
-        *HeldItem->ItemData.ItemTemplateID, Loc.X, Loc.Y, Loc.Z, Rot.Pitch, Rot.Yaw, Rot.Roll);
+        *Held->ItemData.ItemTemplateID, Loc.X, Loc.Y, Loc.Z, Rot.Pitch, Rot.Yaw, Rot.Roll);
 
     UE_LOG(LogTemp, Log, TEXT("%s"), *Line);
     if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
@@ -1550,130 +1496,80 @@ bool AVRPawn::TakeItemInHand_Implementation(const FString& ItemID)
 {
     if (!Inventory) return false;
 
-    if (IsValid(HeldItem))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 꺼내기 실패 — 이미 %s 를 쥐고 있음"),
-            *HeldItem->ItemData.ItemTemplateID);
-        return false;
-    }
-
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-
-    FItemData Data;
-    if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 꺼내기 실패 — 아이템 데이터 없음: %s"), *ItemID);
-        return false;
-    }
-
-    if (Inventory->GetItemCountInSlots(ItemID) < 1) return false;
-
-    // Quest 는 손에 꺼내는 순간 던져서 버릴 수 있게 된다 — DropItem 이 막는 것과 같은 이유로 막는다.
-    if (Data.ItemType == EItemType::Quest)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 꺼내기 거부 — 퀘스트 아이템: %s"), *ItemID);
-        return false;
-    }
-
     // 손 본 위치에 바로 스폰한다 — 발밑에 떨궜다가 집어 올리면 한 프레임 바닥을 튄다.
     const FTransform HandTransform = GetMesh()
         ? GetMesh()->GetSocketTransform(TEXT("RightHand"))
         : GetActorTransform();
 
-    ADroppedItemBase* Spawned = Inventory->SpawnItemActor(Data, ItemID, HandTransform, 1);
-    if (!Spawned)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 꺼내기 실패 — 스폰 실패: %s"), *ItemID);
-        return false;
-    }
-
-    // 스폰이 끝난 뒤에만 차감한다. 차감 실패 시 스폰분을 되돌려야 복제가 안 생긴다.
-    if (!Inventory->RemoveItem(ItemID, 1))
-    {
-        Spawned->Destroy();
-        return false;
-    }
-
-    AttachItemToHand(Spawned);
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 꺼냄: %s"), *ItemID);
-    return true;
+    return Inventory->TakeItemToHand(ItemID, HandTransform);
 }
 
 void AVRPawn::OnGrabRelease(const FInputActionValue& Value)
 {
-    ADroppedItemBase* Item = HeldItem;
-    HeldItem = nullptr;
-    if (!IsValid(Item)) return;
+    if (!Inventory || !IsValid(Inventory->HeldItem)) return;
 
-    Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+    // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
+    // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).
+    if (bInventoryOpen)
+    {
+        StoreHeldItemInInventory();
+        return;
+    }
+
+    ADroppedItemBase* Item = Inventory->ReleaseHeldItem();
+    if (!Item) return;
 
     // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
     // 빨려 들어가면 수락/취소를 누를 대상이 사라진다.
-    if (TrySnapToTradePlate(Item)) return;
+    // 세션은 거래 중에만, 그것도 보통 하나만 존재한다. 상시 추적 대신 놓는 순간에만 훑는다.
+    TArray<AActor*> Sessions;
+    UGameplayStatics::GetAllActorsOfClass(this, ATradeSessionActor::StaticClass(), Sessions);
+    for (AActor* Actor : Sessions)
+    {
+        if (ATradeSessionActor* Session = Cast<ATradeSessionActor>(Actor))
+        {
+            if (Session->TrySnapItem(Item)) return;
+        }
+    }
 
     // 그다음이 건네기 — NPC 앞에서 놓았는데 아이템이 얼굴로 날아가면 곤란하다.
-    if (TryHandOverToNPC(Item)) return;
+    const FString NpcId = PlayerInteractionUtils::FindNearestNPCId(this, HandOverRange);
+    UNPCManager* Manager = NpcId.IsEmpty() ? nullptr : UNPCManager::Get(this);
+    ASmartNPC* NPC = Manager ? Manager->GetNPCById(NpcId) : nullptr;
+    UInventoryComponent* NpcInv = NPC ? NPC->FindComponentByClass<UInventoryComponent>() : nullptr;
+
+    UItemManager* ItemManager = UItemManager::Get(this);
+
+    FItemData HandOverData;
+    if (NpcInv && ItemManager && ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, HandOverData))
+    {
+        // 무게·슬롯이 모자라면 건네지 않고 던지기로 흘려보낸다 — 여기서 액터를 없애면
+        // 아이템이 아무 데도 들어가지 않고 증발한다.
+        if (NpcInv->AddItem(HandOverData, Item->Amount))
+        {
+            UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건넴: %s x%d → %s"), *HandOverData.ItemID, Item->Amount, *NpcId);
+            Item->ConsumeItem();
+            return;
+        }
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건네기 실패(NPC 공간·무게 부족): %s"), *HandOverData.ItemID);
+    }
 
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
     Item->LaunchThrown(HandVelRight * ThrowVelocityScale, this,
                        KineticDamageScale, MaxKineticDamage, MeleeStrikeSpeed);
 }
 
-bool AVRPawn::TrySnapToTradePlate(ADroppedItemBase* Item)
+bool AVRPawn::StoreHeldItemInInventory()
 {
-    if (!IsValid(Item)) return false;
-
-    // 세션은 거래 중에만, 그것도 보통 하나만 존재한다. 상시 추적 대신 놓는 순간에만 훑는다.
-    TArray<AActor*> Sessions;
-    UGameplayStatics::GetAllActorsOfClass(this, ATradeSessionActor::StaticClass(), Sessions);
-
-    for (AActor* Actor : Sessions)
-    {
-        if (ATradeSessionActor* Session = Cast<ATradeSessionActor>(Actor))
-        {
-            if (Session->TrySnapItem(Item)) return true;
-        }
-    }
-    return false;
+    return Inventory && Inventory->StoreHeldItem();
 }
 
-bool AVRPawn::TryHandOverToNPC(ADroppedItemBase* Item)
+void AVRPawn::Cheat_Unequip(bool bOffHand)
 {
-    if (!IsValid(Item)) return false;
-
-    const FString NpcId = PlayerInteractionUtils::FindNearestNPCId(this, HandOverRange);
-    if (NpcId.IsEmpty()) return false;
-
-    UNPCManager* Manager = UNPCManager::Get(this);
-    ASmartNPC* NPC = Manager ? Manager->GetNPCById(NpcId) : nullptr;
-    if (!NPC) return false;
-
-    UInventoryComponent* NpcInv = NPC->FindComponentByClass<UInventoryComponent>();
-    if (!NpcInv) return false;
-
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-
-    FItemData Data;
-    if (!ItemManager || !ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, Data))
+    if (Inventory)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 건네기 실패 — 아이템 데이터 없음: %s"),
-            *Item->ItemData.ItemTemplateID);
-        return false;
+        Inventory->UnequipItem(bOffHand ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
     }
-
-    // 무게·슬롯이 모자라면 건네지 않고 던지기 경로로 흘려보낸다 — 여기서 액터를 없애면
-    // 아이템이 아무 데도 들어가지 않고 증발한다.
-    if (!NpcInv->AddItem(Data, Item->Amount))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건네기 실패(NPC 공간·무게 부족): %s"), *Data.ItemID);
-        return false;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건넴: %s x%d → %s"), *Data.ItemID, Item->Amount, *NpcId);
-    Item->ConsumeItem();
-    return true;
 }
 
 void AVRPawn::DetectNearbyNPC()
