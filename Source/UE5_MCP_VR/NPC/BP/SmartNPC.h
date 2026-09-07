@@ -318,6 +318,11 @@ private:
     float GetUpBlendWeight = 0.f;           // 기상 전신 블렌드 추적
     FName OriginalMeshProfile;              // BeginPlay 캡처 — 기상 후 메시 콜리전 프로파일 복원용
     ECollisionEnabled::Type OriginalMeshCollision = ECollisionEnabled::QueryOnly;  // BeginPlay 캡처 — 활성화 상태 복원용
+
+    // BeginPlay 캡처 — 기상 후 메시를 캡슐 기준 제자리로 되돌리는 데 쓴다.
+    // 래그돌 동안 메시 트랜스폼은 물리 바디가 덮어쓰므로, 시뮬을 끄면 누운 자세가 컴포넌트에
+    // 그대로 남는다. 캡슐만 세워도 메시가 누워 있어 "누운 채로 일어나는" 그림이 된다.
+    FTransform DefaultMeshRelativeTransform;
     FTimerHandle GetUpMontageTimer;
 
     /** 동시 넉다운 게이트 카운터 소유자(UNPCManager, GameInstanceSubsystem). 없으면 nullptr. */

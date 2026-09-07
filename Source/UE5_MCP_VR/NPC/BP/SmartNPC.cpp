@@ -79,11 +79,14 @@ static FPhysicalAnimationData MakeOrientationPD(float OrientationStrength, float
     return Data;
 }
 
-// 전신 물리 시뮬 정지 — 본별·컴포넌트 양쪽 끄기(기상 블렌드 완료·기상 마무리 공용).
-static void StopBodySimulation(USkeletalMeshComponent* Mesh)
+// 전신 물리 시뮬 정지 — 본별·컴포넌트 양쪽 끄기 + 메시를 캡슐 기준 제자리로 복귀
+// (기상 블렌드 완료·기상 마무리 공용). 시뮬 중에는 물리 바디가 메시 트랜스폼을 덮어쓰므로,
+// 끄기만 하고 두면 누운 자세가 컴포넌트에 남아 캡슐만 서고 몸은 누운 그림이 된다.
+static void StopBodySimulation(USkeletalMeshComponent* Mesh, const FTransform& DefaultRelative)
 {
     Mesh->SetAllBodiesSimulatePhysics(false);
     Mesh->SetSimulatePhysics(false);
+    Mesh->SetRelativeTransform(DefaultRelative);
 }
 
 ASmartNPC::ASmartNPC()
@@ -144,6 +147,9 @@ void ASmartNPC::BeginPlay()
     {
         OriginalMeshProfile = GetMesh()->GetCollisionProfileName();
         OriginalMeshCollision = GetMesh()->GetCollisionEnabled();
+
+        // 래그돌 전 자세 — 물리가 덮어쓰기 전에 잡아 둬야 기상 때 되돌릴 기준이 생긴다.
+        DefaultMeshRelativeTransform = GetMesh()->GetRelativeTransform();
     }
 
     if (UNPCManager* Manager = UNPCManager::Get(this))
@@ -783,7 +789,7 @@ void ASmartNPC::TickGetUpBlend(float DeltaSeconds)
         if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
         {
             GetUpBlendWeight = 0.f;
-            StopBodySimulation(MeshComp);
+            StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
         }
     }
 }
@@ -807,7 +813,7 @@ void ASmartNPC::FinishGetUp()
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
         MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
-        StopBodySimulation(MeshComp);
+        StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
         // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
         MeshComp->SetCollisionProfileName(OriginalMeshProfile);
         MeshComp->SetCollisionEnabled(OriginalMeshCollision);
