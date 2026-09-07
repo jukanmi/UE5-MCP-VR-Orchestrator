@@ -1334,7 +1334,8 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
 {
     if (IsValid(HeldItem) || !MotionControllerRight) return;
 
-    // 인벤토리를 연 상태의 그립은 "고른 슬롯을 꺼낸다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
+    // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
+    // 종류별 분기(소비=사용 / 장비=장착 / 일반=손에 쥐기)는 ActivateItem 이 들고 있어서 여기서 다시 보지 않는다.
     if (bInventoryOpen && Inventory)
     {
         if (!Inventory->InventorySlots.IsValidIndex(Inventory->SelectedSlotIndex)) return;
@@ -1350,11 +1351,11 @@ void AVRPawn::OnGrabStart(const FInputActionValue& Value)
         }
 
         const FString ItemID = Slot.ItemData.ItemID;
-        const bool bTaken = TakeItemInHand_Implementation(ItemID);
+        const bool bActivated = Inventory->ActivateItem(ItemID);
         if (bDebugInventorySelection && GEngine)
         {
-            GEngine->AddOnScreenDebugMessage(8812, 2.f, bTaken ? FColor::Green : FColor::Red,
-                FString::Printf(TEXT("[인벤] %s %s"), *ItemID, bTaken ? TEXT("꺼냄") : TEXT("꺼내기 실패")));
+            GEngine->AddOnScreenDebugMessage(8812, 2.f, bActivated ? FColor::Green : FColor::Red,
+                FString::Printf(TEXT("[인벤] %s %s"), *ItemID, bActivated ? TEXT("발동") : TEXT("발동 실패")));
         }
         return;
     }
