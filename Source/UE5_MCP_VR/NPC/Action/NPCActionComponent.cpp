@@ -1,4 +1,4 @@
-#include "NPC/Action/NPCActionComponent.h"
+﻿#include "NPC/Action/NPCActionComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Components/NPCStateComponent.h"
@@ -36,124 +36,12 @@
 
 namespace
 {
-    FName GetGameplayTagForAction(EAction ActionType)
-    {
-        switch(ActionType)
-        {
-            // Common
-            case EAction::Move:
-            case EAction::Follow:
-                return FName("State.Action.Common.Move");
-            case EAction::TurnTo:
-                return FName("State.Action.Common.TurnTo");
-            case EAction::Scan:
-                return FName("State.Action.Common.Scan");
-            case EAction::UseItem:
-                return FName("State.Action.Common.UseItem");
-            case EAction::Equip:
-                return FName("State.Action.Common.Equip");
-            case EAction::Unequip:
-                return FName("State.Action.Common.Unequip");
-            case EAction::Dialogue:
-                return FName("State.Action.Common.Dialogue");
-            case EAction::Wait:
-                return FName("State.Action.Common.Wait");
-            case EAction::Idle:
-                return FName("State.Idle");
-
-            // Combat
-            case EAction::Attack:
-                return FName("State.Action.Combat.Attack");
-            case EAction::Block:
-                return FName("State.Action.Combat.Block");
-            case EAction::Dodge:
-                return FName("State.Action.Combat.Dodge");
-            case EAction::Flee:
-                return FName("State.Action.Combat.Flee");
-            case EAction::SignalAllies:
-                return FName("State.Action.Combat.SignalAllies");
-
-            // Social
-            case EAction::Emote:
-                return FName("State.Action.Social.Emote");
-            case EAction::Trade:
-                return FName("State.Action.Social.Trade");
-            case EAction::GiveItem:
-                return FName("State.Action.Social.GiveItem");
-            case EAction::Comfort:
-                return FName("State.Action.Social.Comfort");
-            case EAction::HandObject:
-                return FName("State.Action.Social.HandObject");
-            case EAction::Dance:
-                return FName("State.Action.Social.Dance");
-            case EAction::Sing:
-                return FName("State.Action.Social.Sing");
-
-            // Task
-            case EAction::PickUp:
-                return FName("State.Action.Task.PickUp");
-            case EAction::Drop:
-                return FName("State.Action.Task.Drop");
-            case EAction::Craft:
-                return FName("State.Action.Task.Craft");
-
-            // Investigation
-            case EAction::Investigate:
-                return FName("State.Action.Investigation.Investigate");
-            case EAction::Track:
-                return FName("State.Action.Investigation.Track");
-            case EAction::Scout:
-                return FName("State.Action.Investigation.Scout");
-
-            // Lifestyle
-            case EAction::StandUp:
-                return FName("State.Action.Lifestyle.StandUp");
-            case EAction::Sit:
-                return FName("State.Action.Lifestyle.Sit");
-            case EAction::Sleep:
-                return FName("State.Action.Lifestyle.Sleep");
-            case EAction::Read:
-                return FName("State.Action.Lifestyle.Read");
-            case EAction::Pray:
-                return FName("State.Action.Lifestyle.Pray");
-
-            default:
-                return NAME_None;
-        }
-    }
-
     void ResetAllStateTagsToIdle(AActor* Target)
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
         {
             // 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
             GameplayTagUtils::ResetAllStates(NPC->GameplayTags);
-            NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-        }
-    }
-
-    void TransitionStateTag(AActor* Target, EAction ActionType)
-    {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
-        {
-            NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-            FName ActionTagName = GetGameplayTagForAction(ActionType);
-            if (!ActionTagName.IsNone())
-            {
-                NPC->AddStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
-            }
-        }
-    }
-
-    void RevertStateTagToIdle(AActor* Target, EAction ActionType)
-    {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
-        {
-            FName ActionTagName = GetGameplayTagForAction(ActionType);
-            if (!ActionTagName.IsNone())
-            {
-                NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
-            }
             NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
         }
     }
@@ -620,9 +508,6 @@ bool UNPCActionComponent::ProcessNextAction()
             TrackedTarget.Reset();
         }
 
-        // 현재 액션 단일 소스 = CurrentAction. GameplayTags(State.Action.*)는 파생 미러.
-        TransitionStateTag(GetOwner(), CurrentAction.ActionType);
-
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
@@ -641,13 +526,10 @@ void UNPCActionComponent::OnActionCompleted()
 
     ClearActiveActionState();
 
-    // 완료된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
     const EAction CompletedAction = CurrentAction.ActionType;
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
-
-    RevertStateTagToIdle(GetOwner(), CompletedAction);
 }
 
 void UNPCActionComponent::AbortCurrentAction()
@@ -660,9 +542,6 @@ void UNPCActionComponent::AbortCurrentAction()
 
     // 아래 StopAnimMontage 가 앉/눕 포즈를 떨구므로 자세 플래그도 함께 해제.
     ResetPostureFlags();
-
-    // 중단된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
-    RevertStateTagToIdle(GetOwner(), CurrentAction.ActionType);
 
     // Track 타이머 해제
     if (UWorld* World = GetWorld())
