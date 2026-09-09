@@ -534,7 +534,7 @@ public:
 
     /** 셀렉터 최소 발동 간격(초) — 연속 주입 사이 숨고르기(연속 공격 상한과 별개 페이싱). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "10.0"))
-    float CombatActionInterval = 0.6f;
+    float CombatActionInterval = 1.6f;
 
     /** 연속 동일 행동 1회당 가중치 배율(횟수만큼 거듭제곱 누적). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
