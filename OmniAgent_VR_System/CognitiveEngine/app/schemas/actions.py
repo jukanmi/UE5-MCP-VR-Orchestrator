@@ -47,7 +47,6 @@ EAction = Literal[
     "PickUp",
     "Drop",
     "Craft",
-    "Repair",
     "Investigate",
     "Track",
     "Scout",
@@ -225,7 +224,8 @@ CATEGORY_ACTION_MAP = {
     },
     "Combat": {"Attack", "Block", "Dodge", "Flee", "SignalAllies"},
     "Social": {"Trade", "Emote", "GiveItem", "Comfort", "HandObject"},
-    "Task": {"PickUp", "Drop", "Craft", "Repair"},
+    # "Repair" 제거됨 — 모루 같은 설비 없이 몽타주만 재생하던 구현이라 C++ EAction 에서 빠짐
+    "Task": {"PickUp", "Drop", "Craft"},
     "Investigation": {"Investigate", "Track", "Scout"},
     # "Clean" 제거됨 — EAction Literal/C++ enum 에 없는 죽은 항목이었음
     "Lifestyle": {"Sit", "Sleep", "StandUp", "Read", "Pray", "Dance", "Sing"},
@@ -257,7 +257,6 @@ ACTION_REQUIRED_PARAMS: Dict[str, list] = {
     "PickUp": [("target_loc",)],
     "Drop": [("item", "target_id")],
     "Craft": [("item_ids", "item", "target_id")],
-    "Repair": [("item", "target_id")],
     "Investigate": [("target_loc",)],
     "Track": [("target_id",)],
     # target_loc 있으면 두 그룹 모두 충족, 없으면 start+end 둘 다 필요

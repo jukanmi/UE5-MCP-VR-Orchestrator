@@ -36,7 +36,7 @@ Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions, 
 
 Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
  Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
- PickUp Drop Craft Repair Investigate Track Scout Sit Sleep StandUp Read Pray Dance Sing.
+ PickUp Drop Craft Investigate Track Scout Sit Sleep StandUp Read Pray Dance Sing.
 Use ONLY a type from this list. target MUST be one of: {valid_targets}. Never invent other target names.
 
 YOUR inventory (items you currently hold): {inventory}
