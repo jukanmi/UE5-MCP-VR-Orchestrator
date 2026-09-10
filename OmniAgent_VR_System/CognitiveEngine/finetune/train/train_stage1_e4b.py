@@ -1,4 +1,4 @@
-r"""Stage1 e4b QLoRA 학습 (SPEC_finetune §3.2) — unsloth.
+r"""Stage1 e4b QLoRA 학습 — unsloth.
 
 ⚠️ Blackwell(RTX 5070 Ti SM120) 안정화는 C:\github\chatbot\train.py 실전 검증본에서 이식.
    해당 패치 없이는 step 4~5 에서 "CUDA driver error: device not ready" 크래시.
@@ -69,7 +69,7 @@ OUT = args.output if os.path.isabs(args.output) else os.path.join(HERE, args.out
 
 # Blackwell+WSL2 에서 seq>1024 는 Triton "device not ready" 크래시 — 1024 만 완주 확인(chatbot).
 MAX_SEQ_LENGTH = 1024
-LORA_R = 32  # SPEC §3.2 (chatbot 은 16, gemma e4b 4bit 여유 있어 32 채택)
+LORA_R = 32  # (chatbot 은 16, gemma e4b 4bit 여유 있어 32 채택)
 LORA_ALPHA = 32
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 LEARNING_RATE = 2.0e-4

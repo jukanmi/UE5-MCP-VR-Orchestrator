@@ -36,10 +36,12 @@ Respond ONLY as a JSON object with fields: mode, facial, speech, tone, actions, 
 
 Available action types: Move Follow TurnTo Wait Stop Scan Idle UseItem Equip Unequip
  Attack Block Dodge Flee SignalAllies Trade GiveItem HandObject Comfort Emote
- PickUp Drop Craft Repair Investigate Track Scout Sit Sleep StandUp Read Pray Dance Sing.
+ PickUp Drop Craft Investigate Track Scout Sit Sleep StandUp Read Pray Dance Sing.
 Use ONLY a type from this list. target MUST be one of: {valid_targets}. Never invent other target names.
 
 YOUR inventory (items you currently hold): {inventory}
+ - Format is DisplayName(ItemID)×count. Speak the DisplayName, but ALWAYS put the ItemID
+   (the value in parentheses) into item/give_item_id/get_item_id fields — never the DisplayName.
  - Only GiveItem/HandObject/UseItem/Equip an item that is in YOUR inventory above.
  - If asked for an item you do NOT have, say so — do NOT emit a give/use action for it.
 
@@ -64,6 +66,10 @@ For EACH === NPC: <id> === section in the input, produce one plan entry.
   번호 접두사 없이. 좋은 예: ["동쪽 다리로 이동", "아군에게 신호", "교전 개시"]
 
 Base the plan ONLY on facts already present in each NPC's section — do NOT invent new lore.
+
+Output format example (structure only — never copy these values):
+{"npcs":[{"npc_id":"Elara","goal":"플레이어에게 약초 값을 받아내기","steps":["약초 가격 제시","플레이어 반응 확인","흥정 마무리"]}]}
+The npc_id belongs ONLY in npc_id. goal and steps must never contain the npc_id.
 
 Input format:
 === NPC: <id> ===

@@ -2,9 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
-#include "../Struct/NPCActionTypes.h" // Enums
-#include "../NPCActionDataAsset.h"
+#include "Network/MCPJsonUtils.h" // FGameAction, FActionBatch
+#include "NPC/Struct/NPCActionTypes.h" // Enums
+#include "NPC/BP/NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "EnvironmentQuery/EnvQueryTypes.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -41,6 +41,7 @@ class AFurnitureActor;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
+class UInventoryComponent;
 class UAnimMontage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
@@ -305,7 +306,7 @@ private:
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
 
-    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지 §6) ---
+    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지) ---
     /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
     EAction LastCombatChoice = EAction::Idle;
 
@@ -429,8 +430,16 @@ public:
      *  이동 중단 시 ClearActiveActionState 가 리셋(점유 전이므로 Release 불필요). */
     TWeakObjectPtr<AFurnitureActor> PendingFurnitureTarget;
 
-    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(§6, bIsSit/bIsLie 와 동일 라이프사이클). */
+    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(bIsSit/bIsLie 와 동일 라이프사이클). */
     TWeakObjectPtr<AFurnitureActor> OccupiedFurniture;
+
+    /** ExecutePickUp 이 걸어서 도착한 뒤에만 탐색하도록 하는 플래그. BaseMove 직후 곧장
+     *  검사하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다. */
+    bool bPendingPickup = false;
+
+    /** OnMoveActionCompleted 도착 처리에서 실제 탐색·습득을 수행한다(bPendingPickup 소비).
+     *  범위 내 여러 개가 있어도 액션 1회당 1개 묶음만 줍는다. */
+    void PerformPickupAtDestination();
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
@@ -450,7 +459,7 @@ public:
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
 
     /** Dodge 등속 이동 — 몽타주 재생 성공 시 마찰·제동 0 후 RunSpeed×배율로 Launch(고정 방향 감쇠 없이 유지).
-     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로(§6) — 정상 종료·중단·워치독 전부 커버. */
+     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로 — 정상 종료·중단·워치독 전부 커버. */
     void StartDodgeMove(const FVector& Direction);
     void StopDodgeMove();
     bool bDodgeMoveActive = false;
@@ -513,7 +522,7 @@ public:
     // 큐가 빈 Combat 상태에서 STTask_PrepareNextAction 이 호출하는 C++ 척수 반사층.
     // LLM 재상담 없음 — 가중치 확률 + DiceSystem 주사위로 다음 전투 행동을 주입한다.
     // 성격 차별화는 스탯 파생(Strength→공격, Agility→회피/기동, Fear·Bravery→도주)
-    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음(§9).
+    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음.
     // ============================================================================
 
     /** Combat 중 다음 행동을 선택해 ActionQueue 에 주입. 페이싱 간격 미충족·후보 전멸 시 false.
@@ -525,7 +534,7 @@ public:
 
     /** 셀렉터 최소 발동 간격(초) — 연속 주입 사이 숨고르기(연속 공격 상한과 별개 페이싱). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "10.0"))
-    float CombatActionInterval = 0.6f;
+    float CombatActionInterval = 1.6f;
 
     /** 연속 동일 행동 1회당 가중치 배율(횟수만큼 거듭제곱 누적). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -627,7 +636,7 @@ public:
     bool TryReflexReact(ESenseType Sense, const FString& EventType, const FString& SourceID,
                         float BaseDanger, float Distance, const FVector& StimulusLoc);
 
-    /** 반사 룰 테이블. 기본값은 생성자에서 확정(CLAUDE.md §9 — 바이너리에만 두지 말 것).
+    /** 반사 룰 테이블. 기본값은 생성자에서 확정(바이너리에만 두지 말 것).
      *  위에서부터 검사해 **처음 맞는 룰 하나만** 발동하므로, 좁은 조건을 위에 둘 것. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
     TArray<FReflexRule> ReflexRules;
@@ -657,10 +666,19 @@ public:
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount);
+
+    /** 거래 테이블이 뜨는 높이(cm, 바닥 기준). 손이 닿아야 하므로 허리~가슴 사이. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Trade")
+    float TradeTableHeight = 90.f;
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount);
-    
+
+    /** GiveItem 수령처 해석 — TargetActor 의 UInventoryComponent 우선, 없으면 플레이어 폰 폴백.
+     *  NPC↔NPC 전달도 같은 경로를 탄다. */
+    UInventoryComponent* ResolveReceiverInventory(AActor* TargetActor) const;
+
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteComfort(AActor* TargetActor);
     
@@ -674,13 +692,10 @@ public:
     void ExecutePickUp(FVector Location);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteDrop(const FString& ItemID);
+    void ExecuteDrop(const FString& ItemID, int32 Amount);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteCraft(const TArray<FString>& ItemIDs);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteRepair(const FString& ItemID);
 
     // ----------------------------------------------------------------------------
     // [5] Investigation Behaviors

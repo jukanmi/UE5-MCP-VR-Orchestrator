@@ -1,11 +1,11 @@
-#include "SmartNPCAIController.h"
-#include "NPCActionComponent.h"
-#include "../NPCStateComponent.h"
-#include "../SmartNPC.h"
-#include "../../Core/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/BP/SmartNPC.h"
+#include "Core/Types/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
-#include "MCPStateTreeAIComponent.h"
+#include "NPC/Action/MCPStateTreeAIComponent.h"
 #include "StateTree.h"
 #include "GameplayTagAssetInterface.h"
 #include "Perception/AISense_Sight.h"
@@ -145,6 +145,19 @@ void ASmartNPCAIController::OnUnPossess()
     Super::OnUnPossess();
 }
 
+void ASmartNPCAIController::UpdateEQSBlackboardParams(float SearchRadius, float CoverWeight,
+    float DistanceWeight, float AggressionWeight, float SafeDistance)
+{
+    UBlackboardComponent* BB = GetBlackboardComponent();
+    if (!BB) return;
+
+    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     SearchRadius);
+    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      CoverWeight);
+    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   DistanceWeight);
+    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), AggressionWeight);
+    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     SafeDistance);
+}
+
 void ASmartNPCAIController::PauseAI()
 {
     // StateTree 정지 — 진행 task 의 ExitState 호출. 넉다운 동안 새 액션 주입 차단.
@@ -175,7 +188,7 @@ bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
         return TargetNPC->bIsDead;
     }
 
-    // 플레이어(VRPawn/VRPlayerCharacter) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
+    // 플레이어(VRPawn) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
     if (const IGameplayTagAssetInterface* TagOwner = Cast<IGameplayTagAssetInterface>(Target))
     {
         return TagOwner->HasMatchingGameplayTag(TAG_State_Condition_Dead);
@@ -211,7 +224,7 @@ void ASmartNPCAIController::HandleCombatTargetDead(AActor* DeadTarget)
         StateComp->ReportCombatVictory(DeadTarget ? DeadTarget->GetName() : TEXT("Unknown"));
     }
 
-    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유 §2).
+    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유).
     if (UBlackboardComponent* BB = GetBlackboardComponent())
     {
         BB->ClearValue(Key_TargetActor);
@@ -450,7 +463,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
 
-            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지, SPEC §8).
+            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지).
             if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
             {
                 if (NPC->StateComponent && NPC->StateComponent->GetBehaviorMode() == ENPCBehaviorMode::Combat)

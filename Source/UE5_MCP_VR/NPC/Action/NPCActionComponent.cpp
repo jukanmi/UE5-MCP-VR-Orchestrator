@@ -1,10 +1,11 @@
-#include "NPCActionComponent.h"
-#include "../../Core/GameplayTagUtils.h"
-#include "../NPCStateComponent.h"
-#include "../NPCInventoryComponent.h"
-#include "SmartNPCAIController.h"
-#include "../Struct/NPCActionKeys.h"
-#include "../NPCActionDataAsset.h"
+﻿#include "NPC/Action/NPCActionComponent.h"
+#include "UI/Trade/TradeSessionActor.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Components/NPCInventoryComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "NPC/BP/NPCActionDataAsset.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -15,129 +16,32 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/GameInstance.h"
-#include "../../Inventory/ItemManager.h"
+#include "GameFramework/PlayerController.h"
+#include "Inventory/Components/InventoryComponent.h"
+#include "Inventory/Subsystems/ItemManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 #include "Perception/AISense_Hearing.h"
 #include "EnvironmentQuery/EnvQueryManager.h"
 #include "EnvironmentQuery/EnvQuery.h"
 #include "EnvironmentQuery/Items/EnvQueryItemType_Point.h"
-#include "../SmartNPC.h"
-#include "../../Network/EnvelopeBuilder.h"
-#include "../NPCManager.h"
-#include "../../Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
+#include "NPC/BP/SmartNPC.h"
+#include "Network/EnvelopeBuilder.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
-#include "../../Furniture/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
+#include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
 
 namespace
 {
-    FName GetGameplayTagForAction(EAction ActionType)
-    {
-        switch(ActionType)
-        {
-            // Common
-            case EAction::Move:
-            case EAction::Follow:
-                return FName("State.Action.Common.Move");
-            case EAction::TurnTo:
-                return FName("State.Action.Common.TurnTo");
-            case EAction::Scan:
-                return FName("State.Action.Common.Scan");
-            case EAction::UseItem:
-                return FName("State.Action.Common.UseItem");
-            case EAction::Equip:
-                return FName("State.Action.Common.Equip");
-            case EAction::Unequip:
-                return FName("State.Action.Common.Unequip");
-            case EAction::Dialogue:
-                return FName("State.Action.Common.Dialogue");
-
-            // Combat
-            case EAction::Attack:
-                return FName("State.Action.Combat.Attack");
-            case EAction::Block:
-                return FName("State.Action.Combat.Block");
-            case EAction::Dodge:
-                return FName("State.Action.Combat.Dodge");
-            case EAction::Flee:
-                return FName("State.Action.Combat.Flee");
-            case EAction::SignalAllies:
-                return FName("State.Action.Combat.SignalAllies");
-
-            // Social
-            case EAction::Emote:
-                return FName("State.Action.Social.Emote");
-            case EAction::Trade:
-                return FName("State.Action.Social.Trade");
-            case EAction::GiveItem:
-                return FName("State.Action.Social.GiveItem");
-            case EAction::Comfort:
-                return FName("State.Action.Social.Comfort");
-            case EAction::HandObject:
-                return FName("State.Action.Social.HandObject");
-            case EAction::Dance:
-                return FName("State.Action.Social.Dance");
-            case EAction::Sing:
-                return FName("State.Action.Social.Sing");
-
-            // Task
-            case EAction::PickUp:
-                return FName("State.Action.Task.PickUp");
-            case EAction::Drop:
-                return FName("State.Action.Task.Drop");
-            case EAction::Repair:
-                return FName("State.Action.Task.Repair");
-
-            // Investigation
-            case EAction::Investigate:
-                return FName("State.Action.Investigation.Investigate");
-            case EAction::Track:
-                return FName("State.Action.Investigation.Track");
-
-            // Lifestyle
-            // 주의: Sit/Sleep/Read/Pray 는 .ini 에 태그가 등록돼 있는데도 여기 매핑이 없어
-            // 런타임에 태그를 못 받는다(기존 갭, 2026-08-02 발견 — 별건으로 정리 필요).
-            case EAction::StandUp:
-                return FName("State.Action.Lifestyle.StandUp");
-
-            default:
-                return NAME_None;
-        }
-    }
-
     void ResetAllStateTagsToIdle(AActor* Target)
     {
         if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
         {
-            // §6: 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
+            // 컨테이너 직접 조작 금지 — 일괄 리셋도 공유 헬퍼 경유
             GameplayTagUtils::ResetAllStates(NPC->GameplayTags);
-            NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-        }
-    }
-
-    void TransitionStateTag(AActor* Target, EAction ActionType)
-    {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
-        {
-            NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
-            FName ActionTagName = GetGameplayTagForAction(ActionType);
-            if (!ActionTagName.IsNone())
-            {
-                NPC->AddStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
-            }
-        }
-    }
-
-    void RevertStateTagToIdle(AActor* Target, EAction ActionType)
-    {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(Target))
-        {
-            FName ActionTagName = GetGameplayTagForAction(ActionType);
-            if (!ActionTagName.IsNone())
-            {
-                NPC->RemoveStateTag(FGameplayTag::RequestGameplayTag(ActionTagName));
-            }
             NPC->AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
         }
     }
@@ -148,7 +52,7 @@ UNPCActionComponent::UNPCActionComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
 
-    // === 척수반사 기본 룰 (SPEC_reflex_table §3.2) ===
+    // === 척수반사 기본 룰 ===
     // 위에서부터 처음 맞는 하나만 발동한다 — 좁은 조건이 먼저.
     // 거리 상한은 감지 반경(SightRadius 3000 / HearingRange 3000) 안에서만 의미가 있다.
     {
@@ -531,6 +435,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bIsBusy = false;
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
+    bPendingPickup = false; // 이동 중단 시 스테일 플래그가 다음 액션에서 잘못 발동하는 것 방지
     PendingFurnitureTarget.Reset(); // 이동 중단 시 스테일 가구 목적지 방지 — 점유 전이라 Release 불필요
     StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
@@ -552,7 +457,7 @@ void UNPCActionComponent::ReleaseOccupiedFurniture()
 
 void UNPCActionComponent::ResetPostureFlags()
 {
-    // Sit/Sleep 점유 해제 — 자세와 동일 라이프사이클(지속 상태, §6).
+    // Sit/Sleep 점유 해제 — 자세와 동일 라이프사이클(지속 상태).
     ReleaseOccupiedFurniture();
 
     if (!StateComponent) return;
@@ -603,9 +508,6 @@ bool UNPCActionComponent::ProcessNextAction()
             TrackedTarget.Reset();
         }
 
-        // 현재 액션 단일 소스 = CurrentAction. GameplayTags(State.Action.*)는 파생 미러.
-        TransitionStateTag(GetOwner(), CurrentAction.ActionType);
-
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
@@ -624,13 +526,10 @@ void UNPCActionComponent::OnActionCompleted()
 
     ClearActiveActionState();
 
-    // 완료된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
     const EAction CompletedAction = CurrentAction.ActionType;
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
-
-    RevertStateTagToIdle(GetOwner(), CompletedAction);
 }
 
 void UNPCActionComponent::AbortCurrentAction()
@@ -643,9 +542,6 @@ void UNPCActionComponent::AbortCurrentAction()
 
     // 아래 StopAnimMontage 가 앉/눕 포즈를 떨구므로 자세 플래그도 함께 해제.
     ResetPostureFlags();
-
-    // 중단된 액션 = CurrentAction (단일 소스). 태그 revert에 사용.
-    RevertStateTagToIdle(GetOwner(), CurrentAction.ActionType);
 
     // Track 타이머 해제
     if (UWorld* World = GetWorld())
@@ -1077,15 +973,19 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
 
     // Social
     case EAction::Trade:        ExecuteTrade(TargetActor, GiveItemID.IsEmpty() ? ItemID : GiveItemID, GiveAmount, GetItemID, GetAmount); break;
-    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, ItemID, Amount); break;
+    // give_item_id 가 있으면 그걸 우선한다 — interface_output 이 GiveItem/Trade 에서
+    // item 키를 지우므로(배타성 처리), ItemID 만 보면 986행 TargetID 폴백에 걸려
+    // "Player" 를 아이템으로 오인한다. 수량도 명시된 give_amount 를 우선한다 —
+    // 둘 다 미기재 시 Max(1,·) 라 부재를 값으로 구분할 수 없어 원본 문자열로 판정한다.
+    case EAction::GiveItem:     ExecuteGiveItem(TargetActor, GiveItemID.IsEmpty() ? ItemID : GiveItemID,
+                                     !Params.FindRef(NPCActionKeys::Key_GiveAmount).IsEmpty() ? GiveAmount : Amount); break;
     case EAction::Comfort:      ExecuteComfort(TargetActor); break;
     case EAction::HandObject:   ExecuteHandObject(ItemID); break;
 
     // Task
     case EAction::PickUp:       ExecutePickUp(Location); break;
-    case EAction::Drop:         ExecuteDrop(ItemID); break;
+    case EAction::Drop:         ExecuteDrop(ItemID, Amount); break;
     case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
-    case EAction::Repair:       ExecuteRepair(ItemID); break;
     
     // Investigate
     case EAction::Investigate:  ExecuteInvestigate(Location); break;
@@ -1207,15 +1107,11 @@ void UNPCActionComponent::UpdateEQSParams()
 {
     ASmartNPCAIController* AICtrl = GetOwnerAIController();
     if (!AICtrl || !StateComponent) return;
-    UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
-    if (!BB) return;
 
+    // Blackboard 쓰기는 컨트롤러 소관이라 값만 넘긴다.
     const FEQSWeights W = ComputeEQSWeights();
-    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     W.SearchRadius);
-    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      W.CoverWeight);
-    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   W.DistanceWeight);
-    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), W.AggressionWeight);
-    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     W.SafeDistance);
+    AICtrl->UpdateEQSBlackboardParams(W.SearchRadius, W.CoverWeight, W.DistanceWeight,
+        W.AggressionWeight, W.SafeDistance);
 
     UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] EQS Params 갱신 - Radius:%.0f, Cover:%.2f, DistWt:%.2f, AggWt:%.2f"),
         W.SearchRadius, W.CoverWeight, W.DistanceWeight, W.AggressionWeight);
@@ -1569,11 +1465,11 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     // Python 은 이 값을 그대로 응답에 echo. UE5 는 응답 처리 시 현재 generation 과 비교해 stale 차단.
     Payload->SetNumberField(TEXT("request_gen"),     static_cast<double>(TacticalQueryGeneration));
 
-    FString PayloadStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
-    FJsonSerializer::Serialize(Payload.ToSharedRef(), Writer);
+    FString PayloadJson;
+    const TSharedRef<TJsonWriter<>> PayloadWriter = TJsonWriterFactory<>::Create(&PayloadJson);
+    FJsonSerializer::Serialize(Payload.ToSharedRef(), PayloadWriter);
 
-    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadStr);
+    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadJson);
 
     // 후보 시각화 — Manager/서버 연결 여부와 무관하게 항상 실행
     DrawEQSCandidates(Pruned, EQSDebugDuration);
@@ -1716,7 +1612,8 @@ void UNPCActionComponent::ExecuteScan(FVector TargetLocation, AActor* TargetActo
 
 void UNPCActionComponent::ExecuteUseItem(const FString& ItemID)
 {
-    if (InventoryComponent && InventoryComponent->RemoveItem(ItemID, 1))
+    // UseItem 이 회복 효과 적용까지 담당 — 실패(미보유·비소비템)면 몽타주도 재생하지 않는다.
+    if (InventoryComponent && InventoryComponent->UseItem(ItemID))
     {
         BasePlayActionMedia(TEXT("Eat"));
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] 아이템 사용: %s"), *ItemID);
@@ -1767,6 +1664,24 @@ void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FP
         if (AAIController* AIC = Cast<AAIController>(OwnerCharacter->GetController()))
             if (UPathFollowingComponent* PFC = AIC->GetPathFollowingComponent())
                 PFC->OnRequestFinished.RemoveAll(this);
+
+    if (bPendingPickup)
+    {
+        bPendingPickup = false;
+
+        // 도착에 성공했을 때만 탐색한다 — 실패·중단 시 엉뚱한 위치에서 줍지 않는다.
+        if (Result.IsSuccess())
+        {
+            PerformPickupAtDestination();
+        }
+
+        // 성공 시 종료 콜백이 OnActionCompleted 호출, 미등록이면 여기서 즉시 완료.
+        if (!PlayActionMediaWithPosture(TEXT("PickUp")))
+        {
+            OnActionCompleted();
+        }
+        return;
+    }
 
     if (Result.IsSuccess() && !PendingMoveMediaKey.IsEmpty())
     {
@@ -2056,7 +1971,7 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
     case EAction::Move:
     {
-        // 계산 목적지로 BaseMove 직접(EQS 미사용 §4) — 타겟 기준 자기쪽 Ideal 링 위 지점.
+        // 계산 목적지로 BaseMove 직접(EQS 미사용) — 타겟 기준 자기쪽 Ideal 링 위 지점.
         FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
         if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
         const FVector Dest = TargetActor->GetActorLocation() + AwayDir * SpacingIdealRange;
@@ -2113,24 +2028,121 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
 void UNPCActionComponent::ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount)
 {
-    // TODO: 레시피 검증 후 GiveItem 실행
-    ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+    // 요구 품목이 없으면 거래가 아니라 그냥 주는 것 — 테이블을 띄울 이유가 없다.
+    APawn* TargetPawn = Cast<APawn>(TargetActor);
+    ASmartNPC* OwnerNpc = Cast<ASmartNPC>(GetOwner());
+    UWorld* World = GetWorld();
+
+    if (GetItemID.IsEmpty() || !TargetPawn || !TargetPawn->IsPlayerControlled() || !OwnerNpc || !World)
+    {
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+        return;
+    }
+
+    // 두 사람 사이 중간, 플레이어 허리 높이에 테이블을 놓는다.
+    const FVector NpcLoc = OwnerNpc->GetActorLocation();
+    const FVector PlayerLoc = TargetPawn->GetActorLocation();
+    const FVector Mid = (NpcLoc + PlayerLoc) * 0.5f;
+    const FRotator FacePlayer = (PlayerLoc - NpcLoc).Rotation();
+    const FTransform SpawnTM(FRotator(0.f, FacePlayer.Yaw, 0.f), Mid + FVector(0.f, 0.f, TradeTableHeight));
+
+    ATradeSessionActor* Session = World->SpawnActorDeferred<ATradeSessionActor>(
+        ATradeSessionActor::StaticClass(), SpawnTM, OwnerNpc, nullptr,
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+    if (!Session)
+    {
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+        return;
+    }
+    Session->FinishSpawning(SpawnTM);
+
+    // 개시 실패(보유분 부족 등)면 테이블만 남기지 않고 지운 뒤 기존 전달 경로로 되돌린다.
+    if (!Session->InitSession(OwnerNpc, TargetPawn, GiveItemID, GiveAmount, GetItemID, GetAmount))
+    {
+        Session->Destroy();
+        ExecuteGiveItem(TargetActor, GiveItemID, GiveAmount);
+    }
 }
 
 void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount)
 {
-    if (InventoryComponent && InventoryComponent->HasItem(ItemID, Amount))
+    // 슬롯 보유분만 본다 — 장착 중인 물건은 차감 경로가 닿지 않아 여기서 걸러야 한다.
+    if (!InventoryComponent || InventoryComponent->GetItemCountInSlots(ItemID) < Amount)
     {
-        InventoryComponent->RemoveItem(ItemID, Amount);
-        ExecuteTurnTo(FVector::ZeroVector, TargetActor);
-        BasePlayActionMedia(TEXT("Give"));
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달: %s"), *ItemID);
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음(슬롯 기준): %s"), *ItemID);
+        return;
     }
-    else { UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 없음: %s"), *ItemID); }
+
+    // 차감 전에 원본 데이터·수령처를 모두 확보 — 하나라도 없으면 건드리지 않는다(증발 방지).
+    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+
+    FItemData Data;
+    if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCAction] 전달 중단 — 아이템 데이터 없음: %s"), *ItemID);
+        return;
+    }
+
+    UInventoryComponent* ReceiverInv = ResolveReceiverInventory(TargetActor);
+    if (!ReceiverInv)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전달 중단 — 수령 대상 인벤토리 없음: %s"), *ItemID);
+        return;
+    }
+
+    // 수령 실패(무게·슬롯 초과)면 NPC 보유분을 그대로 두고 종료.
+    if (!ReceiverInv->AddItem(Data, Amount))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달 실패(수령 인벤 공간·무게 부족): %s"), *ItemID);
+        return;
+    }
+
+    // 차감 실패를 무시하면 아이템이 복제된다 — 보유 판정(HasItem)은 장착분까지 세는데
+    // 차감은 인벤토리 슬롯만 뒤지므로, 들고 있는 물건을 주라고 하면 준 쪽이 그대로 쥔 채
+    // 받는 쪽에도 새로 생긴다. 되돌려서 원상복구한다.
+    if (!InventoryComponent->RemoveItem(ItemID, Amount))
+    {
+        ReceiverInv->RemoveItem(ItemID, Amount);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 전달 취소 — 슬롯에서 차감 실패(장착 중 추정): %s"), *ItemID);
+        return;
+    }
+
+    ExecuteTurnTo(FVector::ZeroVector, TargetActor);
+    BasePlayActionMedia(TEXT("Give"));
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 전달: %s x%d"), *ItemID, Amount);
+}
+
+UInventoryComponent* UNPCActionComponent::ResolveReceiverInventory(AActor* TargetActor) const
+{
+    // 1순위 — LLM 이 지정한 대상 액터(NPC↔NPC 전달도 그대로 동작).
+    if (IsValid(TargetActor))
+    {
+        if (UInventoryComponent* Inv = TargetActor->FindComponentByClass<UInventoryComponent>())
+        {
+            return Inv;
+        }
+    }
+
+    // 2순위 — 대상 미지정/인벤 없음이면 플레이어 폰 폴백(GiveItem 은 대부분 플레이어 대상).
+    if (UWorld* World = GetWorld())
+    {
+        if (APlayerController* PC = World->GetFirstPlayerController())
+        {
+            if (APawn* PlayerPawn = PC->GetPawn())
+            {
+                return PlayerPawn->FindComponentByClass<UInventoryComponent>();
+            }
+        }
+    }
+    return nullptr;
 }
 
 void UNPCActionComponent::ExecuteComfort(AActor* TargetActor) { BaseComfort(TargetActor); }
 
+// HandObject = "손에 들어 보여주기" 연출 전용 — 소유권은 이동하지 않는다.
+// 실제 아이템 이전은 GiveItem 이 담당(여기서 플레이어 인벤에 넣으면 아이템이 복제됨).
 void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 {
     if (InventoryComponent && InventoryComponent->HasItem(ItemID))
@@ -2147,70 +2159,66 @@ void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 
 void UNPCActionComponent::ExecutePickUp(FVector Location)
 {
+    // 탐색은 도착 후 OnMoveActionCompleted → PerformPickupAtDestination 이 수행한다.
+    // 여기서 즉시 하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다.
+    bPendingPickup = true;
     BaseMove(Location, EMoveType::Walk);
-    BasePlayActionMedia(TEXT("PickUp"));
+}
 
+void UNPCActionComponent::PerformPickupAtDestination()
+{
     UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
     UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
     if (!ItemManager || !InventoryComponent) return;
 
-    for (const auto& Pair : BaseDetectEntityInRange(100.f, EEntityType::Item))
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    if (!OwnerCharacter) return;
+
+    // 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
+    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {
+        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
+        if (!IsValid(Dropped)) continue;
+
         FItemData Data;
-        if (ItemManager->GetItemDataByID(Pair.Key, Data))
+        if (!ItemManager->GetItemDataByID(Dropped->ItemData.ItemTemplateID, Data))
         {
-            InventoryComponent->AddItem(Data, Pair.Value);
-            UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Pair.Key, Pair.Value);
+            UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Dropped->ItemData.ItemTemplateID);
+            continue;
         }
-        else { UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Pair.Key); }
+
+        // 실패 시 액터를 남겨 다시 시도할 수 있게 한다.
+        if (!InventoryComponent->AddItem(Data, Dropped->Amount)) continue;
+
+        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Data.ItemID, Dropped->Amount);
+        // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
+        Dropped->ConsumeItem();
+        break; // 액션 1회당 1개 묶음만 줍는다 — 범위 내 전부 쓸어 담지 않는다.
     }
 }
 
-void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID)
+void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID, int32 Amount)
 {
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter || !InventoryComponent) return;
 
-    if (!InventoryComponent->RemoveItem(TargetTemplateID, 1))
+    // 월드 스폰·ItemManager 등록·차감은 DropItem 이 일괄 처리한다.
+    // 스폰이 실패하면 인벤토리를 건드리지 않으므로 여기서 되돌릴 것이 없다.
+    if (!InventoryComponent->DropItem(TargetTemplateID, Amount))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 실패 (인벤토리 없음): %s"), *TargetTemplateID);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 실패: %s"), *TargetTemplateID);
         return;
     }
 
     BasePlayActionMedia(TEXT("Drop"));
     UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f);
-
-    UGameInstance* GI = OwnerCharacter->GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-    if (!IsValid(ItemManager)) return;
-
-    // TODO: TargetTemplateID → BP 클래스 매핑 후 SpawnActor 구현
-    AActor* SpawnedItem = nullptr;
-    if (IsValid(SpawnedItem))
-    {
-        const FString UUID = FGuid::NewGuid().ToString();
-        ItemManager->RegisterDroppedItem(UUID, SpawnedItem, TargetTemplateID);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍 등록: %s / %s"), *TargetTemplateID, *UUID);
-    }
-    else { UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 드랍 스폰 미구현(TODO): %s"), *TargetTemplateID); }
+    UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍: %s"), *TargetTemplateID);
 }
 
 void UNPCActionComponent::ExecuteCraft(const TArray<FString>& ItemIDs)
 {
     // TODO: 레시피 검증 및 소모/생성 연동
     BasePlayActionMedia(TEXT("Craft"));
-}
-
-void UNPCActionComponent::ExecuteRepair(const FString& ItemID)
-{
-    BasePlayActionMedia(TEXT("Repair"));
-    if (InventoryComponent && InventoryComponent->HasItem(ItemID))
-    {
-        float Amount = StateComponent ? StateComponent->GetAttributes().BaseStats.Perception : 10.f;
-        InventoryComponent->RepairItem(ItemID, Amount);
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 수리: %s"), *ItemID);
-    }
-    else { UE_LOG(LogTemp, Warning, TEXT("[NPCAction] 수리 실패 (미보유): %s"), *ItemID); }
 }
 
 // ==========================================
@@ -2316,12 +2324,12 @@ void UNPCActionComponent::ExecuteStandUp()
         return;
     }
 
-    // 점유 가구 반납 — 자세와 동일 라이프사이클(§6). BaseLieUp/BaseSitUp 은 플래그만 내리므로
+    // 점유 가구 반납 — 자세와 동일 라이프사이클. BaseLieUp/BaseSitUp 은 플래그만 내리므로
     // 여기서 반납하지 않으면 가구가 영구 점유로 남아 다른 NPC 가 못 쓴다.
     ReleaseOccupiedFurniture();
 
     // 눕기가 앉기보다 우선 — 둘 다 서 있을 수 없는 조합이나 플래그가 어긋난 경우의 방어.
-    // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인(§3).
+    // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인.
     if (bLie) BaseLieUp();
     else      BaseSitUp();
 }

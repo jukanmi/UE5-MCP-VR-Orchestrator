@@ -1,6 +1,6 @@
 """
 File: schemas/npc_audio.py
-Role: Python → UE5 방향의 NpcAudioResponse 스키마 (TTS 통합 계획서 §9 결정).
+Role: Python → UE5 방향의 NpcAudioResponse 스키마.
 
 WHY:
   - 기존 ActionBatch/ModeActionRequest 와 생명주기를 분리하기 위해 별도 타입.

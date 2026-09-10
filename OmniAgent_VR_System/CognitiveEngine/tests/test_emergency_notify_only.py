@@ -1,6 +1,6 @@
 """
 File: test_emergency_notify_only.py
-Purpose: emergency_report 통보 전용화 회귀 테스트 (SPEC_reflex_table §3.5).
+Purpose: emergency_report 통보 전용화 회귀 테스트.
 
 배경: 반사 판단은 C++ 척수반사 테이블이 0ms 로 끝낸다. 파이썬은 인지·호감도만 갱신하고
 행동은 만들지 않는다. 여기서 행동이 실린 배치가 나가면 UE5 쪽에서 두 가지가 깨진다.

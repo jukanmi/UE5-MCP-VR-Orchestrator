@@ -159,3 +159,22 @@ OmniAgent_VR_System/CognitiveEngine/finetune/train/outputs/
 *.gguf
 *.parquet
 *.tar.gz
+
+# ComfyUI MCP 생성물 — 재생성 가능한 산출물이라 추적하지 않는다
+tools/comfyui_mcp/outputs/
+
+# ==============================================================================
+# VISUAL STUDIO (기존 .vs/·*.sln 항목에 없던 것만)
+# ==============================================================================
+# VS2022 로컬 히스토리·Edit and Continue 임시 폴더 — 프로젝트 루트에 생김
+.vshistory/
+enc_temp_folder/
+# 프로젝트 파일은 UE 가 Intermediate/ProjectFiles 에 재생성 — 루트로 새어나온 경우 대비
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.user
+
+# VS 확장이 머신마다 자동 설치하는 로컬 도구 플러그인 — 리포로 공유하지 않는다.
+# (.uproject 에는 Enabled 로 남으므로, VS 확장 없는 머신은 로딩 시 비활성화 안내가 뜬다)
+Plugins/VisualStudioTools/

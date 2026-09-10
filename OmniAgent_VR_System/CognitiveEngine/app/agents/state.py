@@ -72,7 +72,7 @@ class AgentState(TypedDict):
     natural_context: Optional[str]
 
     # [멀티 NPC] Dialogue Stage1 출력 텍스트 직렬화: npc_id → 태그 텍스트.
-    # 유일 소비처 = Stage2 12B plan 입력 — replan 턴에만 채워짐(경량 루프는 빈 dict).
+    # 유일 소비처 = Stage2 plan 입력 — replan 턴에만 채워짐(경량 루프는 빈 dict).
     # 구 raw_response(단수)는 소비처 소멸로 삭제됨 (2026-07-09).
     raw_responses: Optional[Dict[str, str]]
 

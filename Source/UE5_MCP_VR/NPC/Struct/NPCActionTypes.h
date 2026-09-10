@@ -120,7 +120,6 @@ enum class EAction : uint8
 	PickUp       UMETA(DisplayName = "PickUp"),
 	Drop         UMETA(DisplayName = "Drop"),
 	Craft        UMETA(DisplayName = "Craft"),
-	Repair       UMETA(DisplayName = "Repair"),
 
     //Investigation
 	Investigate   UMETA(DisplayName = "Investigate"),
@@ -177,7 +176,7 @@ struct FActionBatch
 	TArray<FGameAction> Actions;
 };
 
-/** FReflexRule: 척수반사 테이블 한 줄 (SPEC_reflex_table §3.2).
+/** FReflexRule: 척수반사 테이블 한 줄.
  *
  *  자극(감각·소음종류·관계·거리·위험도)이 전부 맞으면 가중 분포로 액션 하나를 뽑아
  *  ActionQueue 에 직접 주입한다. Python 왕복이 없으므로 서버가 죽어 있어도 동작한다.

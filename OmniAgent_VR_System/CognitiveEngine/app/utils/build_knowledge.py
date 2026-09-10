@@ -7,7 +7,7 @@ Role: NPC RAG 지식 벡터스토어 (재)빌드 CLI.
 편집 직후 즉시 반영하거나 일괄 재빌드할 때 사용한다.
 
 지식 구조:
-    app/agents/knowledge/<npc>/{lore,persona,history}/*.md   (PDF 설계서 §5)
+    app/agents/knowledge/<npc>/{lore,persona,history}/*.md
 
 사용 (CognitiveEngine 디렉터리에서):
     python -m app.utils.build_knowledge --all

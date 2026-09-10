@@ -20,7 +20,7 @@
 ║                                                                              ║
 ║ [C++ 연동 핵심]                                                               ║
 ║   - ActionType 은 C++ Enum(EAction) 과 1:1 대응 (Stage1 Literal 로 보장)     ║
-║   - Parameters 키(target_id/target_loc/item/style)는 snake_case (§1 규칙)    ║
+║   - Parameters 키(target_id/target_loc/item/style)는 snake_case              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -32,6 +32,7 @@ from ..schemas.actions import (
     GameAction,
     DialogueResponse,
     DIALOGUE_ACTION_FIELD_MAP,
+    ITEM_FIELD_EXCLUSIVE_ACTIONS,
 )
 
 
@@ -147,7 +148,7 @@ def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits
         )
     ]
 
-    # 필드→Parameters 키 매핑은 DIALOGUE_ACTION_FIELD_MAP 단일 소스 (§1 snake_case).
+    # 필드→Parameters 키 매핑은 DIALOGUE_ACTION_FIELD_MAP 단일 소스 (snake_case).
     # 빈 값은 생략 — C++ ExecuteInteraction 이 필수 파라미터 누락 시 견고 폴백 or Rules 제거.
     for act in resp.actions:
         params: Dict[str, str] = {}
@@ -155,6 +156,12 @@ def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits
             v = (getattr(act, field_name) or "").strip()
             if v:
                 params[param_key] = v
+
+        # 거래 계열은 give/get 만 쓴다. item 까지 실려 오면 C++ 이 양쪽을 다 읽어
+        # 의도하지 않은 아이템이 섞이므로 여기서 떨군다.
+        if act.type in ITEM_FIELD_EXCLUSIVE_ACTIONS and any(k in params for k in ("give_item_id", "get_item_id")):
+            params.pop("item", None)
+
         actions.append(GameAction(ActionType=act.type, FacialState=facial, Parameters=params))
 
     batch = ActionBatch(AgentID=npc_id, Mode=resp.mode, Actions=actions)

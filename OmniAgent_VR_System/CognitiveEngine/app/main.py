@@ -162,7 +162,7 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
 
 
 async def _prewarm_core_llm() -> None:
-    """Stage2 12B 를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
+    """Stage2 플래너를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
     throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
     global _last_core_prewarm
     import time as _t
@@ -181,9 +181,9 @@ async def _prewarm_core_llm() -> None:
             f"{ollama_base}/api/generate",
             json={"model": model_id, "keep_alive": "30s"},
         )
-        logger.info("[Prewarm] 12B core 로드콜 완료")
+        logger.info("[Prewarm] Stage2 플래너 로드콜 완료")
     except Exception as exc:
-        logger.warning(f"[Prewarm] 12B 웜업 실패(무해 폴백): {exc}")
+        logger.warning(f"[Prewarm] Stage2 웜업 실패(무해 폴백): {exc}")
 
 
 @app.get("/")
@@ -328,7 +328,7 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
 
 
 def _record_reflex_memory(agent_id: str, reflex_action: str) -> None:
-    """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다 (SPEC_reflex_table §3.4).
+    """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다.
 
     LLM 은 반사가 일어난 걸 모른다. 기록해두지 않으면 다음 replan 이 '이제 공격을 시작하라'
     같은 한 박자 늦은 지시를 만든다. 기억에 남겨두면 plan 이 '전투 돌입'이 아니라
@@ -410,7 +410,7 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         # 방금 올린 Combat 을 되돌린다 — UE5 쪽에도 빈 배치 Mode 스킵 가드가 있지만,
         # 애초에 행동 없는 응답이 모드를 바꾸려 들면 안 된다.
         #
-        # 전투 진입 확정 — 다음 replan 이 12B 를 필요로 하기 전에 선제 웜업.
+        # 전투 진입 확정 — 다음 replan 이 플래너를 필요로 하기 전에 선제 웜업.
         # replan 훅보다 리드타임이 길어 11s 로드가 완전히 숨을 가능성이 있는 유일 지점.
         spawn_background(_prewarm_core_llm(), label="core-prewarm")
 
@@ -503,7 +503,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         logger.info("[Main] replan=False 이나 대상 NPC plan 없음/미상 → 강제 재계획 폴백(replan=True)")
         requires_replan = True
 
-    # replan 확정 직후 12B 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
+    # replan 확정 직후 플래너 선제 웜업 — Stage1(3s) 실행 창과 병렬화해 콜드 재로드 부분 완화.
     # 실패해도 기존 콜드 경로 폴백이므로 오류 전파 없음.
     if requires_replan:
         spawn_background(_prewarm_core_llm(), label="core-prewarm")
@@ -856,11 +856,17 @@ def _list_personas() -> list[dict]:
     return results
 
 
+# 디버그 페이지는 개발 중 자주 바뀌는데 브라우저가 캐시하면 구 JS 가 남아 없어진
+# 엔드포인트로 계속 쏜다(2026-09-05 실측: 캐시된 페이지가 구 /api/debug/prompt 를 호출해
+# 인벤토리 없는 프롬프트가 나감). 캐시를 원천 차단한다.
+_NO_STORE = {"Cache-Control": "no-store, max-age=0"}
+
+
 @app.get("/debug", response_class=HTMLResponse)
 async def debug_dashboard():
     if os.path.exists(_DEBUG_HTML_PATH):
         with open(_DEBUG_HTML_PATH, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(content=f.read(), headers=_NO_STORE)
     return HTMLResponse(content="<h1>debug.html not found</h1>", status_code=404)
 
 
@@ -869,7 +875,7 @@ async def test_chat_page():
     """UE5 없이 NPC 대화 파이프라인 테스트 — 브라우저 채팅 UI."""
     if os.path.exists(_TEST_CHAT_HTML_PATH):
         with open(_TEST_CHAT_HTML_PATH, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(content=f.read(), headers=_NO_STORE)
     return HTMLResponse(content="<h1>test_chat.html not found</h1>", status_code=404)
 
 
@@ -998,6 +1004,44 @@ class DebugPromptRequest(BaseModel):
 # plan 보유 시 requires_replan=False + current_plan 동봉(e4b 경량 루프), 응답 NpcPlans 로
 # 갱신, PlanAchieved=True 면 삭제 → 다음 턴 재계획. combat 최초 전환 트리거는 미시뮬(단순화).
 _debug_plan_cache: dict = {}
+
+
+@app.post("/api/debug/say")
+async def api_debug_say(req: DebugPromptRequest):
+    """디버그: 브라우저에서 친 말을 UE5 로 넘겨 마이크와 동일한 경로로 처리시킨다.
+
+    서버가 직접 그래프를 돌리지 않는 이유 — NPC 인벤토리·valid_targets·주변 가구·plan
+    캐시는 전부 UE5 가 prompt 마다 조립해 보내는 값이다. 서버가 이를 흉내내면 실제
+    게임과 다른 입력으로 검증하게 되고, 특히 인벤토리가 비어 "그거 없다"만 나온다.
+    전사 텍스트만 넘기면 UE5 가 SendPlayerDialogue 로 평소 prompt 를 쏘므로 그 뒤는
+    마이크 경로와 완전히 같다 — 응답 ActionBatch 도 정상 WS 경로로 돌아가 게임에서 실행된다.
+
+    그래서 결과는 이 응답에 담기지 않는다. 게임 화면·UE5 로그에서 확인할 것.
+    """
+    if _active_llm_ws is None:
+        raise HTTPException(
+            status_code=409,
+            detail="UE5 미연결 — PIE 를 켜고 다시 시도하세요. UE5 없이 파이프라인만 볼 거라면 /test_chat 을 쓰세요.",
+        )
+
+    msg = json.dumps(
+        {
+            "type": "debug_prompt",
+            "npc_id": req.npc_id,
+            "player_id": req.player_id,
+            "text": req.text,
+        },
+        ensure_ascii=False,
+    )
+    try:
+        async with _ws_send_lock:
+            await _active_llm_ws.send_text(msg)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[Debug] UE5 전송 실패: {e}")
+        raise HTTPException(status_code=502, detail=f"UE5 전송 실패: {e}")
+
+    logger.info(f"[Debug] UE5 로 전달 — {req.player_id} → {req.npc_id}: \"{req.text}\"")
+    return {"status": "dispatched", "npc_id": req.npc_id, "text": req.text}
 
 
 @app.post("/api/debug/prompt")

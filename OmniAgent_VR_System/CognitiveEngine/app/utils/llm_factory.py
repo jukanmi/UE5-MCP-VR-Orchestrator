@@ -69,8 +69,17 @@ MODELS = {
     "mid": "qwen3:8b",  # 중간 품질 (high NPC용 — e4b보다 낫고 core 12B보다 빠름)
     # 경량 구조화 모델 (JSON 추출 등) — LoRA 파인튜닝판(SPEC_finetune M2, 2026-07-21).
     # v3: 3806행 재학습(v2 대비 5배 데이터), gold 재현 6/8→8/8, held-out 0/6→2/6.
-    # 롤백: "gemma4-e4b-dialogue-v2" 로 원복.
-    "gemma4_slm": "gemma4-e4b-dialogue-v3",
+    #
+    # 2026-09-05 v1 으로 되돌림 — 아이템 전달 회귀 때문.
+    # 동일 조건(Moca, 인벤 7종, 대화기록 비움, 질문 3종×2회) 실측:
+    #   v1  "돌 좀 줘"/"붕대 건네줘" → GiveItem  (플레이어 인벤토리에 실제 추가)
+    #   v2  동일 질문             → HandObject (NPC 가 들고만 있음, 인벤 무변화)
+    #   v3  동일 질문             → HandObject (v2 와 동일)
+    # v2 에서 생긴 회귀이며 프롬프트가 아니라 학습 데이터에서 갈린다. HandObject 는
+    # EquipItem 만 하므로 "줘" 요청이 게임상 아무 효과 없이 끝난다.
+    # ItemID 정확도는 세 버전 모두 4/4 로 동일. 대가: v1 은 대사가 다소 장황하다.
+    # 롤백: "gemma4-e4b-dialogue-v3" 로 원복(대사 품질 우선 시).
+    "gemma4_slm": "gemma4-e4b-dialogue-v1",
     "gemma4_31b": "gemma4:31b",  # 최고 품질 (고부하 작업 시)
     "gemma4_e2b": "gemma4:e2b",  # 초경량 (지연 민감 구간)
     # 폴백 후보 (경량, 로컬 pull 됨)
@@ -92,7 +101,9 @@ MODELS = {
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
 # Stage2 플래너·get_llm() 폴백 — 여기 한 줄만 바꾸면 Stage2+get_llm 전체 반영.
-STAGE2_MODEL = "gemma4"
+# 2026-09-07 12B(7.4GB) → 8B(5.2GB). 플래너는 replan 때만 도는데 12B 는 로드가 느리고
+# VRAM 을 크게 물어 SDXL·PIE 와 부딪혔다. 되돌리려면 "gemma4" 로.
+STAGE2_MODEL = "mid"
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
 
@@ -132,10 +143,10 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
     if model_name in OLLAMA_MODELS:
         model_id = MODELS.get(model_name, MODELS["gemma4"])
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
-        # keep_alive: 12B core(gemma4)는 replan 때만 쓰는 8GB 모델 → idle squat 방지로 30s 단축
+        # keep_alive: 플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s 단축
         # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).
         # e4b 등 hot-loop 경량 모델은 5m 유지(매 턴 사용, 콜드 재로드 회피).
-        keep_alive = "30s" if model_name == "gemma4" else "5m"
+        keep_alive = "30s" if model_name == STAGE2_MODEL else "5m"
         return ChatOllama(
             model=model_id,
             temperature=temperature,
@@ -190,8 +201,8 @@ async def ollama_structured(
         "stream": False,
         "format": schema_override if schema_override is not None else schema_model.model_json_schema(),
         "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
-        # 12B core 는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
-        "keep_alive": "30s" if model_name == "gemma4" else "5m",
+        # 플래너(Stage2)는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
+        "keep_alive": "30s" if model_name == STAGE2_MODEL else "5m",
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
 

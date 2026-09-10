@@ -11,7 +11,7 @@
 ║                                                                              ║
 ║ PIPELINE (3-Stage):                                                          ║
 ║   Stage 1: e4b × N 병렬 — NPC별 독립 호출 (지식 오염 없음, 대사 최종본)   ║
-║   Stage 2: 12B × 1 plan 산출 — 재계획 시만, 대사 무변경 (구조화 JSON)     ║
+║   Stage 2: 플래너 × 1 plan 산출 — 재계획 시만, 대사 무변경 (구조화 JSON)  ║
 ║   Stage 3: interface_output.py 에서 structured_responses→ActionBatch 변환   ║
 ║                                                                              ║
 ║ INPUT:  target_npcs (List[str]), natural_context (str)                      ║
@@ -149,7 +149,7 @@ def _decode_byte_tokens(text: str) -> str:
 
 def _serialize_dialogue(obj: DialogueResponse) -> str:
     """구조화 DialogueResponse → 자유텍스트 포맷 직렬화.
-    Stage2 12B plan 입력 섹션 + 단일 NPC 호환용 텍스트를 [Mode:][Facial:]
+    Stage2 plan 입력 섹션 + 단일 NPC 호환용 텍스트를 [Mode:][Facial:]
     "speech"[Action:] 형태로 재생 (Stage3 는 structured_responses 를 직접 소비).
     speech/tone 은 _run_stage1_llm 이 이미 _decode_byte_tokens 처리 — 재디코드 안 함."""
     lines = [f"[Mode: {obj.mode}] [Facial: {obj.facial}]"]
@@ -237,7 +237,12 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     inv_map = _vr_get(vr_context, "npc_inventory", None) or {}
     inv_items = inv_map.get(npc_id, []) or []
     if inv_items:
-        inventory_str = ", ".join(f"{it.get('name', it.get('id', '?'))}×{it.get('count', 1)}" for it in inv_items)
+        # 표시명과 함께 id 를 괄호로 노출한다. GiveItem/UseItem 은 UE5 에서 ItemID 로 조회되는데,
+        # 표시명만 주면(예: "돌멩이") LLM 이 그걸 그대로 give_item_id 에 넣어 조회가 0 건이 되고
+        # "아이템 없음" 으로 죽는다 — 표시명↔id 매핑 근거가 프롬프트에 있어야 한다.
+        inventory_str = ", ".join(
+            f"{it.get('name', '?')}({it.get('id', '?')})×{it.get('count', 1)}" for it in inv_items
+        )
     else:
         inventory_str = "None (empty-handed)"
 
@@ -352,14 +357,14 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
 
 async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id: str = "") -> Dict[str, dict]:
     """
-    Stage 2: 12B plan 전용 산출. 재계획(requires_replan=True) 경로에서만 호출.
+    Stage 2: plan 전용 산출. 재계획(requires_replan=True) 경로에서만 호출.
     대사는 건드리지 않음 — Stage1 출력이 그대로 최종 (정제는 Stage1 프롬프트가 담당).
     grammar 강제(PlanBatchResponse)로 goal/steps 형식 보장 — 텍스트 [Plan:] 파싱 제거.
     반환: npc_plans npc_id→{goal, steps, relation_snapshot}. 실패 시 {} (plan 생략).
     """
     sections = "\n\n".join(f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items())
 
-    print(f"[Dialogue] Stage2 12B plan 산출 시작 ({len(raw_responses)}개 NPC)")
+    print(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
     try:
         result = await ollama_structured(
             PLAN_SYSTEM_PROMPT,
@@ -372,7 +377,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
             log_extra={"stage": "stage2", "msg_id": msg_id, "npc_ids": list(raw_responses)},
         )
     except Exception as e:
-        print(f"[Dialogue] Stage2 12B 오류, plan 생략: {e}")
+        print(f"[Dialogue] Stage2 오류, plan 생략: {e}")
         return {}
 
     # npc_id 매칭: 12B 가 헤더를 그대로 복사하지만 대소문자 흔들림 대비 lower 매핑.
@@ -385,7 +390,25 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
             continue
         # 12B 가 간혹 "1. " 번호 접두사를 붙임 — 제거 (실측).
         steps = [re.sub(r"^\s*\d+[.)]\s*", "", s).strip() for s in item.steps if s.strip()]
-        plan = {"goal": item.goal.strip(), "steps": steps}
+
+        # 12B 가 goal 자리에 npc_id 를 그대로 넣는 일이 잦다(2026-09-05 실측: 9/9).
+        # 프롬프트 지시 강화·필드 설명 보강·필드명 변경 셋 다 효과 없었다. 그대로 두면
+        # Stage1 컨텍스트에 "Current goal: Moca" 가 실려 다음 턴 대사를 망친다.
+        # steps 는 대체로 쓸 만하므로 첫 step 으로 대체하고, 그마저 오염이면 plan 을 버린다.
+        goal = item.goal.strip()
+        if goal.casefold() == item.npc_id.strip().casefold():
+            goal = steps[0] if steps else ""
+            print(f"[Dialogue] Stage2 goal 이 npc_id 와 동일 — 첫 step 으로 대체 ({npc_id}): '{goal}'")
+
+        # steps 가 스키마 필드명을 그대로 뱉은 경우(실측: ["Moca","goal","steps"])도 버린다.
+        FIELD_ECHO = {"goal", "steps", "npc_id", item.npc_id.strip().casefold()}
+        steps = [st for st in steps if st.casefold() not in FIELD_ECHO]
+
+        if not goal or not steps:
+            print(f"[Dialogue] Stage2 plan 오염으로 폐기 ({npc_id})")
+            continue
+
+        plan = {"goal": goal, "steps": steps}
         # relation_snapshot: affinity score만 (확정 결정). 조회 실패 시 0.
         try:
             relation = await db_manager.get_affinity(npc_id, player_id)
@@ -407,7 +430,7 @@ async def dialogue_node(state: AgentState):
     Dialogue Agent (3-Stage Multi-NPC).
 
     Stage 1: e4b × N 병렬 (지식 격리, 각 NPC 독립 호출) — 대사 최종본
-    Stage 2: 12B × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
+    Stage 2: 플래너 × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
     Output:  structured_responses Dict[npc_id, DialogueResponse]
     """
     npcs = state.get("target_npcs") or []
@@ -415,7 +438,7 @@ async def dialogue_node(state: AgentState):
         single = state.get("target_npc", "Elara")
         npcs = [single] if single else ["Elara"]
 
-    # 재계획 분기: False=e4b 단독 경량 루프(12B 스킵), True=풀 파이프라인+plan 산출.
+    # 재계획 분기: False=e4b 단독 경량 루프(플래너 스킵), True=풀 파이프라인+plan 산출.
     requires_replan = state.get("requires_replan", True)
     print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
@@ -425,8 +448,8 @@ async def dialogue_node(state: AgentState):
     plan_achieved_map: Dict[str, bool] = {r[0]: r[2] for r in results}
     single_npc = npcs[0]
 
-    # Stage 2: 12B plan 산출 — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
-    # 대사는 Stage1 출력 그대로 (12B 정제 제거 — PLAN_SYSTEM_PROMPT 상단 주석 참조).
+    # Stage 2: plan 산출 — 재계획 시에만. 경량 루프는 e4b 단독으로 종료.
+    # 대사는 Stage1 출력 그대로 (플래너 정제 제거 — PLAN_SYSTEM_PROMPT 상단 주석 참조).
     # raw_responses(텍스트) 직렬화는 유일 소비처인 Stage2 plan 입력용 — replan 턴에만.
     # 경량 루프는 소비처 없음(Stage3 는 structured, 메모리는 resp.speech 직접) → 빈 dict.
     npc_plans: Dict[str, dict] = {}
@@ -437,7 +460,7 @@ async def dialogue_node(state: AgentState):
         player_id = _vr_player_id(vr_context)
         npc_plans = await _generate_plans(raw_responses, player_id, state.get("msg_id", ""))
     else:
-        print("[Dialogue] 경량 루프: Stage2 12B 스킵 (e4b 단독)")
+        print("[Dialogue] 경량 루프: Stage2 스킵 (e4b 단독)")
 
     return {
         "structured_responses": structured_responses,
