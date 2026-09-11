@@ -2,10 +2,15 @@
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/EditableTextBox.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/ScrollBox.h"
+#include "NPC/Subsystems/NPCManager.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
 #include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
 #include "Inventory/Components/InventoryComponent.h"
+#include "Core/Utils/PlayerInteractionUtils.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
@@ -25,6 +30,94 @@ void UPlayerHUDWidget::NativeConstruct()
 
     // 인벤토리 패널은 닫힌 상태로 시작 — WBP 에서 Hidden 지정을 깜빡해도 코드가 확정.
     SetInventoryPanelVisible(false);
+
+    // 채팅 입력 — WBP 에 ChatInput 이 있을 때만. 위젯 재구성 시 중복 바인딩 방지로 Unique.
+    if (ChatInput)
+    {
+        ChatInput->OnTextCommitted.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleChatCommitted);
+    }
+    // NPC 응답 → 채팅 기록. GameInstance 서브시스템이라 위젯보다 오래 살므로 Destruct 에서 해제.
+    if (ChatLog)
+    {
+        if (UNPCManager* Manager = UNPCManager::Get(this))
+        {
+            Manager->OnNPCResponseReceived.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
+        }
+    }
+}
+
+void UPlayerHUDWidget::NativeDestruct()
+{
+    if (UNPCManager* Manager = UNPCManager::Get(this))
+    {
+        Manager->OnNPCResponseReceived.RemoveDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
+    }
+    Super::NativeDestruct();
+}
+
+void UPlayerHUDWidget::AppendChatLine(const FString& Speaker, const FString& Text)
+{
+    if (!ChatLog || !WidgetTree) return;
+
+    UTextBlock* Line = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    Line->SetText(FText::FromString(FString::Printf(TEXT("%s: %s"), *Speaker, *Text)));
+    Line->SetAutoWrapText(true);
+    FSlateFontInfo Font = Line->GetFont();
+    Font.Size = ChatLogFontSize;
+    Line->SetFont(Font);
+    ChatLog->AddChild(Line);
+
+    while (ChatLog->GetChildrenCount() > ChatLogMaxLines)
+    {
+        ChatLog->RemoveChildAt(0);
+    }
+    ChatLog->ScrollToEnd();
+}
+
+void UPlayerHUDWidget::HandleNPCResponse(const FString& NPCName, const FString& Message)
+{
+    AppendChatLine(NPCName, Message);
+}
+
+bool UPlayerHUDWidget::FocusChatInput()
+{
+    if (!ChatInput) return false;
+    ChatInput->SetKeyboardFocus();
+    return true;
+}
+
+bool UPlayerHUDWidget::IsChatFocused() const
+{
+    return ChatInput && ChatInput->HasKeyboardFocus();
+}
+
+void UPlayerHUDWidget::HandleChatCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+    if (CommitMethod != ETextCommit::OnEnter) return;
+
+    const FString Msg = Text.ToString().TrimStartAndEnd();
+    if (!Msg.IsEmpty() && OwnerPawn)
+    {
+        const FString Target = PlayerInteractionUtils::FindNearestNPCId(OwnerPawn, ChatTargetRadius);
+        if (Target.IsEmpty())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[HUD] 채팅 폐기 — 반경 %.0fcm 내 NPC 없음"), ChatTargetRadius);
+        }
+        else
+        {
+            PlayerInteractionUtils::SendDialogueToNpc(this, OwnerPawn->GetName(), Target, Msg);
+            AppendChatLine(TEXT("나"), Msg);
+        }
+    }
+
+    // 빈 Enter 는 닫기, 전송 후에도 닫기 — 포커스가 남아 있으면 WASD 가 글자로 들어간다.
+    // SetFocusToGameViewport 는 Slate 포커스만 옮기고 뷰포트 입력 캡처를 안 돌려줘 이동이 죽는다 —
+    // 입력 모드 GameOnly 가 포커스·캡처를 함께 복구한다.
+    ChatInput->SetText(FText::GetEmpty());
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        PC->SetInputMode(FInputModeGameOnly());
+    }
 }
 
 void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)

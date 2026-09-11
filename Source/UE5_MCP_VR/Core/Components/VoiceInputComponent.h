@@ -43,6 +43,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "ASR")
     float GetInputLevel() const { return bTalking ? InputLevel.load() : 0.f; }
 
+    /** 음성 입력 활성 여부. 기본 false — 대화는 HUD 채팅/Exec 텍스트 경로가 담당하고,
+     *  ASR 서버(whisper large-v3, VRAM ~3GB)는 띄우지 않는다. 켜려면 BP_VRPawn 에서 true. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ASR")
+    bool bEnabled = false;
+
     /** ASR 스트리밍 WS 엔드포인트. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ASR")
     FString AsrServerURL = TEXT("ws://127.0.0.1:8002/ws/asr/stream");

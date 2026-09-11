@@ -54,6 +54,10 @@ logger.setLevel(logging.INFO)
 # 리네임하지 말 것: env var 키로도 읽히므로 이름을 바꾸면 기존 배포·실행 스크립트의
 # 오버라이드가 **조용히** 무시된다(에러 없이 기본값 0.5 로 돌아감).
 SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
+# TTS 합성 토글 — 기본 OFF(자막만 즉시 전송). "1" 이면 TTSService 로 합성 요청.
+# OFF 를 기본으로 둔 이유: TTS 서버 미기동 상태에서 재시도+타임아웃(3s×2)이 자막까지 지연시키고,
+# whisper/OpenVoice GPU 상주분(~4GB)을 LLM 에 돌려주기 위함.
+TTS_ENABLED = os.environ.get("TTS_ENABLED", "0") == "1"
 
 
 async def _check_ollama_model() -> None:
@@ -453,7 +457,7 @@ def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: O
         logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
         return
 
-    # 글자 없는 대사("...")는 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
+    # 글자 없는 대사("...")나 TTS_ENABLED=0 이면 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
     has_speech = any(c.isalnum() for c in dialogue_text)
     spawn_background(
         _dispatch_npc_audio(
@@ -461,7 +465,7 @@ def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: O
             dialogue_text=dialogue_text,
             emotion=dialogue_emotion,
             trace_id=trace_id,
-            bypass_tts=not has_speech,
+            bypass_tts=not has_speech or not TTS_ENABLED,
         ),
         label="npc-audio",
     )
@@ -611,13 +615,13 @@ async def _dispatch_npc_audio(
     """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
 
     trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
-    bypass_tts: 글자 없는 대사("...") — TTS 합성 생략, 자막만 전송(빈 url).
+    bypass_tts: 글자 없는 대사("...") 또는 TTS_ENABLED=0 — TTS 합성 생략, 자막만 전송(빈 url).
     실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
     """
     # M2: voice_id 자리에 npc_id 를 그대로 전달.
     # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
     if bypass_tts:
-        logger.info(f"[Main][TTS][trace={trace_id}] 글자 없는 대사 → TTS 생략, 자막만 전송. npc={npc_id}")
+        logger.info(f"[Main][TTS][trace={trace_id}] TTS 생략(비활성 또는 글자 없는 대사) → 자막만 전송. npc={npc_id}")
         info = _empty_audio_info()
     else:
         try:

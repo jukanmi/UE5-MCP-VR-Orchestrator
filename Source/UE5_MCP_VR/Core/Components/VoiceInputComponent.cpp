@@ -14,6 +14,12 @@ UVoiceInputComponent::UVoiceInputComponent()
 
 void UVoiceInputComponent::StartTalking()
 {
+    if (!bEnabled)
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[Voice] bEnabled=false — 음성 입력 무시(채팅 경로 사용)"));
+        return;
+    }
+
     if (bTalking) return;
 
     // 빠른 재누름 가드 — 이전 소켓이 final 대기로 남아있을 수 있어 명시 정리(고스트 연결/누수 방지).

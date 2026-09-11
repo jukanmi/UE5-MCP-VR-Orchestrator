@@ -169,12 +169,12 @@ public:
     FRotator HUDPanelRotation = FRotator::ZeroRotator;
 
     /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
-     *  세로는 인벤토리 패널(350px)과 상태 게이지(112px)가 함께 들어갈 만큼 필요하다 —
-     *  모자라면 인벤토리를 연 순간 아래쪽 게이지가 캔버스 밖으로 잘려 나간다. */
+     *  세로는 인벤토리 패널(350px)과 상태 패널(게이지+채팅 로그+입력창, 292px)이 함께 들어갈
+     *  만큼 필요하다 — 모자라면 인벤토리를 연 순간 아래쪽이 캔버스 밖으로 잘려 나간다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector2D HUDPanelDrawSize = FVector2D(600.f, 500.f);
+    FVector2D HUDPanelDrawSize = FVector2D(600.f, 660.f);
 
-    /** 패널 월드 스케일. 기본값은 600x500px → 약 24x20cm (손에 들린 태블릿 크기). */
+    /** 패널 월드 스케일. 기본값은 600x660px → 약 24x26cm (손에 들린 태블릿 크기). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float HUDPanelScale = 0.04f;
 
@@ -523,6 +523,11 @@ public:
     UFUNCTION(Exec)
     void Cheat_Unequip(bool bOffHand);
 
+    /** 콘솔 채팅: 현재 타겟 NPC(없으면 근접 탐지)에게 텍스트 발화. 띄어쓰기 포함 시 따옴표 —
+     *  `SayToNpc "안녕 뭐해"`. 음성(ASR) 대신 쓰는 PIE 텍스트 입력 경로. */
+    UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
+    void SayToNpc(const FString& Text);
+
 private:
     // --- 입력 핸들러 ---
     void OnMove(const FInputActionValue& Value);
@@ -543,6 +548,8 @@ private:
     void OnInteract(const FInputActionValue& Value);
     void OnVoiceStart(const FInputActionValue& Value);
     void OnVoiceStop(const FInputActionValue& Value);
+    /** Enter 키 — HUD 채팅 칸에 포커스. 입력 중 Enter 는 텍스트박스가 먼저 먹으므로 여기 안 온다. */
+    void OnChatKey();
     void OnInventoryToggle(const FInputActionValue& Value);
 
     /** ASR transcript 확정 → NPCManager::SendPlayerDialogue 로 전달. */

@@ -546,6 +546,9 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+    // 채팅 열기 — 키보드 전용이라 IA 에셋 없이 레거시 키 바인딩. Enhanced 와 병행 동작한다.
+    PlayerInputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AVRPawn::OnChatKey);
+
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
         if (IA_Move)
@@ -1014,8 +1017,13 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
         QueryRot = HeldMesh->GetComponentQuat();
         QueryShape = FCollisionShape::MakeBox(LocalExtent);
 
-        // 질량도 쥔 물건 것으로 — BeginPlay 에서 테이블 Weight 를 박아 뒀다.
-        ImpactMass = FMath::Max(HeldMesh->GetMass(), 0.01f);
+        // 질량도 쥔 물건 것으로 — DroppedItemBase::BeginPlay 가 테이블 Weight 를 질량 오버라이드로 박아 뒀다.
+        // GetMass() 는 쓰면 안 된다: 쥔 동안 물리가 꺼져 있어 매 프레임 경고를 찍고 0 을 돌려주므로
+        // 근접 피해가 0.01kg 기준으로 뭉개진다. 오버라이드 없는 메시는 폰 기본 WeaponMass.
+        if (const FBodyInstance* Body = HeldMesh->GetBodyInstance(); Body && Body->bOverrideMass)
+        {
+            ImpactMass = FMath::Max(Body->GetMassOverride(), 0.01f);
+        }
     }
 
     // 능동 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
@@ -1194,8 +1202,9 @@ void AVRPawn::UpdateHUDPanelGaze(float DeltaTime)
 
     // 인벤토리를 연 동안에는 시선과 무관하게 완전 불투명. 슬롯을 조준하다 고개가 조금
     // 돌아갔다고 패널이 흐려지면 조작이 끊긴다.
+    // 채팅 입력 중에도 마찬가지 — 글자 치는 동안 패널이 흐려지면 뭘 쓰는지 안 보인다.
     float TargetOpacity = 1.f;
-    if (!bInventoryOpen)
+    if (!bInventoryOpen && !(HUDWidget && HUDWidget->IsChatFocused()))
     {
         const FVector ToPanel =
             (HUDWidgetComp->GetComponentLocation() - VRCamera->GetComponentLocation()).GetSafeNormal();
@@ -1631,6 +1640,18 @@ void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
 void AVRPawn::OnVoiceStop(const FInputActionValue& Value)
 {
     if (VoiceInput) VoiceInput->StopTalking();
+}
+
+void AVRPawn::OnChatKey()
+{
+    if (HUDWidget) HUDWidget->FocusChatInput();
+}
+
+void AVRPawn::SayToNpc(const FString& Text)
+{
+    // 타겟 미지정이면 근접 탐지 후 transcript 경로 재사용 — 음성/채팅이 같은 전송 함수를 탄다.
+    if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
+    HandleVoiceTranscript(GetName(), FString(), Text);
 }
 
 void AVRPawn::HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript)
