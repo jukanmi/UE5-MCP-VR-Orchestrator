@@ -60,10 +60,7 @@ namespace
             {
                 if (ParamPair.Value->Type == EJson::Object)
                 {
-                    FString NestedString;
-                    TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedString);
-                    FJsonSerializer::Serialize(ParamPair.Value->AsObject().ToSharedRef(), NestedWriter);
-                    OutParameters.Add(ParamPair.Key, NestedString);
+                    OutParameters.Add(ParamPair.Key, UMCPJsonUtils::ToString(ParamPair.Value->AsObject().ToSharedRef()));
                 }
                 else
                 {
@@ -168,11 +165,30 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
         Root->SetStringField(TEXT("reflex_action"), ReflexAction);
     }
 
-    FString Output;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
-    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+    return ToString(Root.ToSharedRef());
+}
 
-    return Output;
+TSharedPtr<FJsonObject> UMCPJsonUtils::ParseObject(const FString& Json)
+{
+    TSharedPtr<FJsonObject> Root;
+    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    return (FJsonSerializer::Deserialize(Reader, Root) && Root.IsValid()) ? Root : nullptr;
+}
+
+FString UMCPJsonUtils::ToString(const TSharedRef<FJsonObject>& Obj)
+{
+    FString Out;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Obj, Writer);
+    return Out;
+}
+
+FString UMCPJsonUtils::ToString(const TArray<TSharedPtr<FJsonValue>>& Arr)
+{
+    FString Out;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Arr, Writer);
+    return Out;
 }
 
 bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(

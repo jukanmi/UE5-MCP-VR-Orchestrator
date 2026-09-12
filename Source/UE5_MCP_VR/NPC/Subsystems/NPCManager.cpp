@@ -81,9 +81,8 @@ void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
     UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
 
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonMessage);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+    TSharedPtr<FJsonObject> Root = UMCPJsonUtils::ParseObject(JsonMessage);
+    if (!Root)
     {
         UE_LOG(LogTemp, Error,
             TEXT("[NPCMap] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
@@ -357,11 +356,7 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
 
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
-    FString PayloadStr;
-    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadStr);
-    FJsonSerializer::Serialize(Payload, Writer);
-
-    const FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadStr);
+    const FString Envelope = FEnvelopeBuilder::BuildPrompt(UMCPJsonUtils::ToString(Payload));
     SendEnvelopePromptToLLM(Envelope);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
@@ -384,9 +379,8 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     }
 
     // 한 번만 deserialize → 모든 핸들러가 같은 FJsonObject를 공유.
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonMessage);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+    TSharedPtr<FJsonObject> Root = UMCPJsonUtils::ParseObject(JsonMessage);
+    if (!Root)
     {
         UE_LOG(LogTemp, Error,
             TEXT("[NPCManager] Malformed LLM JSON. Raw (first 200): %.200s"), *JsonMessage);

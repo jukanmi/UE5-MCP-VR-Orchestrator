@@ -7,6 +7,7 @@
 #include "MCPJsonUtils.generated.h"
 
 class FJsonObject;
+class FJsonValue;
 
 /**
  * Utility class for parsing JSON from Cognitive Engine
@@ -17,6 +18,13 @@ class UE5_MCP_VR_API UMCPJsonUtils : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
+    /** 문자열 → FJsonObject. 비-JSON·비-오브젝트면 nullptr. 수신 메시지는 여기서 한 번만 파싱해 핸들러들이 공유한다. */
+    static TSharedPtr<FJsonObject> ParseObject(const FString& Json);
+
+    /** FJsonObject / 배열 → 문자열(pretty). 송신 payload 조립의 마지막 단계. */
+    static FString ToString(const TSharedRef<FJsonObject>& Obj);
+    static FString ToString(const TArray<TSharedPtr<FJsonValue>>& Arr);
+
     /** Python 백엔드로부터 수신된(이미 deserialize 된) ActionBatch JSON 오브젝트를 FModeActionRequest 로 역직렬화. */
     static bool ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest);
 

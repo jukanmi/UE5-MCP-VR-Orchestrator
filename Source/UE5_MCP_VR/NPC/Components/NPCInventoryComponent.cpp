@@ -1,5 +1,6 @@
 #include "NPC/Components/NPCInventoryComponent.h"
 #include "JsonObjectConverter.h"
+#include "Network/MCPJsonUtils.h"
 
 UNPCInventoryComponent::UNPCInventoryComponent()
 {
@@ -55,9 +56,5 @@ FString UNPCInventoryComponent::GetInventoryJson() const
         JsonArray.Add(MakeShareable(new FJsonValueObject(JsonObj)));
     }
 
-    FString OutputString;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-    FJsonSerializer::Serialize(JsonArray, Writer);
-
-    return OutputString;
+    return UMCPJsonUtils::ToString(JsonArray);
 }

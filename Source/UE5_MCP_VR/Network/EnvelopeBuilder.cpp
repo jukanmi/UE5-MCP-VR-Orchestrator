@@ -6,6 +6,7 @@
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
 #include "OmniAgentConfig.h"
+#include "MCPJsonUtils.h"
 
 
 FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
@@ -51,10 +52,7 @@ FString FEnvelopeBuilder::BuildEnvelope(EEnvelopeType Type, const FString& Paylo
     EnvelopeJson->SetStringField(TEXT("type"),       EnvelopeTypeToString(Type));
 
     // payload는 이미 직렬화된 JSON 문자열이므로, 역직렬화하여 중첩 삽입
-    TSharedPtr<FJsonObject> PayloadObject;
-    TSharedRef<TJsonReader<>> PayloadReader = TJsonReaderFactory<>::Create(PayloadJson);
-
-    if (FJsonSerializer::Deserialize(PayloadReader, PayloadObject) && PayloadObject.IsValid())
+    if (TSharedPtr<FJsonObject> PayloadObject = UMCPJsonUtils::ParseObject(PayloadJson))
     {
         EnvelopeJson->SetObjectField(TEXT("payload"), PayloadObject);
     }
@@ -67,12 +65,7 @@ FString FEnvelopeBuilder::BuildEnvelope(EEnvelopeType Type, const FString& Paylo
         EnvelopeJson->SetObjectField(TEXT("payload"), MakeShared<FJsonObject>());
     }
 
-    // ── 최종 직렬화 ────────────────────────────────────────────────────
-    FString OutputString;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-    FJsonSerializer::Serialize(EnvelopeJson, Writer);
-
-    return OutputString;
+    return UMCPJsonUtils::ToString(EnvelopeJson);
 }
 
 
