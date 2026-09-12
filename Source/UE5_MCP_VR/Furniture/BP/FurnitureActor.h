@@ -50,6 +50,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Furniture")
     bool TryOccupy(AActor* Occupant);
 
+    /** 점유 + SeatPoint 스냅(TeleportPhysics). 플레이어(VR 캡슐)는 bYawOnly — 피치·롤을 넣으면 캡슐이 기울어
+     *  멀미로 이어진다. NPC 는 전체 회전. 실패(타인 점유) 시 이동 없이 false. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Furniture")
+    bool TryOccupyAndSeat(AActor* Occupant, bool bYawOnly);
+
     /** 실제 점유자만 해제 가능 — 스테일 Release 가 타 점유자를 쫓아내는 것 방지. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Furniture")
     void Release(AActor* Occupant);

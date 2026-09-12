@@ -34,6 +34,16 @@ bool AFurnitureActor::TryOccupy(AActor* Occupant)
     return true;
 }
 
+bool AFurnitureActor::TryOccupyAndSeat(AActor* Occupant, bool bYawOnly)
+{
+    if (!TryOccupy(Occupant)) return false;
+
+    const FTransform SeatXf = GetSeatTransform();
+    const FRotator Rot = bYawOnly ? FRotator(0.f, SeatXf.Rotator().Yaw, 0.f) : SeatXf.Rotator();
+    Occupant->SetActorLocationAndRotation(SeatXf.GetLocation(), Rot, false, nullptr, ETeleportType::TeleportPhysics);
+    return true;
+}
+
 void AFurnitureActor::Release(AActor* Occupant)
 {
     // 실점유자만 해제 — 스테일 호출이 새 점유자를 쫓아내지 못하게 가드.

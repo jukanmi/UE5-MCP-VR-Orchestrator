@@ -1220,13 +1220,9 @@ bool AVRPawn::TrySitOnNearbyFurniture()
     if (!Mgr) return false;
 
     // 반경 내 최근접 빈 착석 가구(Seat/Bed) — 탐색은 매니저 공용 헬퍼.
+    // Yaw 만 — 카메라 높이는 불변(멀미 안전).
     AFurnitureActor* Nearest = Mgr->FindNearestVacantSitable(GetActorLocation(), FurnitureInteractRange);
-    if (!Nearest || !Nearest->TryOccupy(this)) return false;
-
-    // SeatPoint 스냅 — Yaw 만 적용(VR 캡슐 기울임 방지). 카메라 높이는 불변(멀미 안전).
-    const FTransform SeatXf = Nearest->GetSeatTransform();
-    SetActorLocationAndRotation(SeatXf.GetLocation(), FRotator(0.f, SeatXf.Rotator().Yaw, 0.f),
-        false, nullptr, ETeleportType::TeleportPhysics);
+    if (!Nearest || !Nearest->TryOccupyAndSeat(this, /*bYawOnly=*/true)) return false;
     SeatedFurniture = Nearest;
 
     UE_LOG(LogTemp, Log, TEXT("[VRPawn] 착석: %s"), *Nearest->FurnitureID);

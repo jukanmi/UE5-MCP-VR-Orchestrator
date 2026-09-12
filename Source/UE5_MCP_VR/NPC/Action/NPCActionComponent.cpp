@@ -622,15 +622,9 @@ bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
     if (PendingFurnitureTarget.IsValid())
     {
         AFurnitureActor* Furniture = PendingFurnitureTarget.Get();
-        if (AActor* Owner = GetOwner())
+        if (Furniture->TryOccupyAndSeat(GetOwner(), /*bYawOnly=*/false))
         {
-            if (Furniture->TryOccupy(Owner))
-            {
-                const FTransform SeatXf = Furniture->GetSeatTransform();
-                Owner->SetActorLocationAndRotation(SeatXf.GetLocation(), SeatXf.GetRotation(),
-                    false, nullptr, ETeleportType::TeleportPhysics);
-                OccupiedFurniture = Furniture;
-            }
+            OccupiedFurniture = Furniture;
         }
         PendingFurnitureTarget.Reset();
     }
