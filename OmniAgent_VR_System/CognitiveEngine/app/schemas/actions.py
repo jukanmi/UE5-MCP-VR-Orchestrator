@@ -170,11 +170,6 @@ class ModeActionRequest(BaseModel):
     PlanAchieved: Dict[str, bool] = Field(default_factory=dict)
 
 
-class RejectResult(BaseModel):
-    reason: str
-    rejected: bool = True
-
-
 WORLD_CONSTANTS = {
     # Self/Enemy 는 C++ ResolveActionTarget(STTask_ExecuteSmartAction.cpp)이 런타임
     # 해석하는 센티넬 키워드(Self→자신, Enemy→BB perception 타겟). 구체 NPC ID 와 함께

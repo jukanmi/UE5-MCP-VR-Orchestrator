@@ -450,7 +450,6 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         # 대상 NPC 자신의 최신 상태만 주입 — 없으면 None(프롬프트에서 "Unknown" 처리).
         world_snap = _cached_world_states.get(target_npc_from_payload.lower()) if target_npc_from_payload else None
     return AgentState(
-        messages=[],
         vr_context=ges_prompt,
         cached_world_state=world_snap,
         requires_replan=requires_replan,
@@ -462,8 +461,6 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         raw_responses=None,
         structured_responses=None,
         target_npc=target_npc_from_payload,
-        behavior_mode=None,
-        facial_state=None,
         action_batch=None,
         action_batches=None,
         target_npcs=[target_npc_from_payload] if target_npc_from_payload else [],

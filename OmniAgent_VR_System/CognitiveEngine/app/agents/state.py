@@ -30,7 +30,6 @@
 """
 
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
-from langgraph.graph.message import add_messages
 from ..schemas.vr_context import GesPrompt
 from ..schemas.actions import ActionBatch, DialogueResponse
 
@@ -76,10 +75,6 @@ class AgentState(TypedDict):
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
 
-    # Dialogue 에이전트가 결정하는 행동 모드 / 표정
-    behavior_mode: Optional[str]
-    facial_state: Optional[str]
-
     # ── 내부 라우팅 상태 ─────────────────────────────────────────────
     next: str
     current_speaker: str
@@ -90,9 +85,6 @@ class AgentState(TypedDict):
 
     # [멀티 NPC] Interface_Output Stage3 출력: npc_id → ActionBatch
     action_batches: Optional[Dict[str, ActionBatch]]
-
-    # ── LangGraph 메시지 히스토리 ────────────────────────────────────
-    messages: Annotated[List[Any], add_messages]
 
     # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
     # Rules 거부 시 Dialogue 재시도 횟수. 최대 1회 — 초과 시 폴백 배치로 종료(무한루프 차단).

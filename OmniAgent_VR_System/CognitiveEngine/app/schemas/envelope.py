@@ -45,19 +45,7 @@ class PerceptionData(BaseModel):
     sense_type: str  # "Sight", "Hearing", "Other"
     distance: float
     danger_score: float = 0.0  # C++ FPerceptionData.DangerScore 대응
-    in_line_of_sight: bool = False
     location: Dict[str, float]  # {"x", "y", "z"}
-    activity_context: str = "Idle"
-
-
-class EQSQueryResult(BaseModel):
-    """EQS 공간 쿼리의 최적 좌표 결과 (상위 1~3개만 전송)."""
-
-    label: str  # e.g. "best_cover", "best_attack_pos"
-    x: float
-    y: float
-    z: float
-    score: float = 0.0
 
 
 class StateUpdatePayload(BaseModel):

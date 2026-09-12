@@ -316,7 +316,7 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
     # lower→원본 ID 매핑 — C++ NPCMap 은 대소문자 구분, 원래 케이스 보존 필수.
     id_map = ci_id_map(valid_ids)
     known_npcs = (
-        [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "guard", "merchant", "blacksmith"]
+        [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "skadi", "moca", "guard"]
     )
     # Player 는 발화 주체이지 대상 NPC 아님 — 제외 (없으면 Player 페르소나가 응답 생성).
     known_npcs = [npc for npc in known_npcs if npc != "player"]

@@ -126,23 +126,8 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 
     model_name = model_name.lower()
 
-    OLLAMA_MODELS = {
-        "gemma4",
-        "mid",
-        "gemma4_slm",
-        "gemma4_31b",
-        "gemma4_e2b",
-        "qwen_slm",
-        # 클라우드 모델 — Ollama 앱 로그인으로 인증
-        "cloud_deepseek_flash",
-        "cloud_deepseek_pro",
-        "cloud_glm",
-        "cloud_kimi",
-        "cloud_gpt_large",
-        "cloud_gpt_small",
-    }
-    if model_name in OLLAMA_MODELS:
-        model_id = MODELS.get(model_name, MODELS["gemma4"])
+    if model_name in MODELS:
+        model_id = MODELS[model_name]
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
         # keep_alive: 플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s 단축
         # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).

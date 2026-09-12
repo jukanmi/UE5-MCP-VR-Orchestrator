@@ -21,9 +21,6 @@ import time
 import json
 import asyncio
 
-# 모듈 경로 추가
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 # 테스트용 WS_AUTH_TOKEN 환경변수 설정 (import 전에 반드시 먼저 설정)
 os.environ["WS_AUTH_TOKEN"] = "test-token-for-unit-test"
 

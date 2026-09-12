@@ -135,11 +135,10 @@ def _missing_required_group(action: "GameAction") -> str | None:
 
 
 # ActionType → (param_key, 상한 상수키, 상한 기본, 음수시 값, 음수 로그표기, 비유효시 값, 로그 라벨)
-# Attack.damage / Move.speed / Heal.amount 의 [0, 상한] 클램핑을 단일 테이블로 통합.
+# Attack.damage / Move.speed 의 [0, 상한] 클램핑을 단일 테이블로 통합.
 _NUMERIC_CLAMP_RULES: dict[str, tuple] = {
     "Attack": ("damage", "MAX_DAMAGE", 100, "0", "0", "10", "damage"),
     "Move": ("speed", "MAX_SPEED", 600, "300", "기본값 300", "300", "speed"),
-    "Heal": ("amount", "MAX_HEALTH", 100, "0", "0", "10", "heal amount"),
 }
 
 
@@ -362,9 +361,6 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
             if action.ActionType == "Attack":
                 score_delta -= 10
                 interaction_summary.append("Attacked player (-10)")
-            elif action.ActionType == "Heal":
-                score_delta += 5
-                interaction_summary.append("Healed player (+5)")
             elif action.ActionType == "Dialogue":
                 facial = action.FacialState
                 if facial == "Happy":
