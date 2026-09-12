@@ -19,87 +19,11 @@ UNPCManager* UNPCManager::Get(const UObject* WorldContext)
 }
 
 
-// --- UNPCMap ---
-
-
-void UNPCMap::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch)
-{
-    if (ASmartNPC* TargetNPC = GetValidNPC(TargetAgentID))
-    {
-        TargetNPC->ExecuteActionBatch(ActionBatch);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCMap] Skipping Dispatch! Target NPC '%s' is not valid."), *TargetAgentID);
-    }
-}
-
-
-void UNPCMap::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason, uint32 RequestGen)
-{
-    ASmartNPC* NPC = GetValidNPC(AgentID);
-    if (!NPC)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCMap] DeliverLocationDecision - NPC '%s' 없음"), *AgentID);
-        return;
-    }
-    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
-    {
-        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId, Reason, RequestGen);
-    }
-}
-
-void UNPCMap::DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root)
-{
-    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches")))
-    {
-        FString StatusValue;
-        if (Root.IsValid()) Root->TryGetStringField(TEXT("status"), StatusValue);
-        UE_LOG(LogTemp, Verbose,
-            TEXT("[NPCMap] Non-action response received (status='%s'). Skipping dispatch."),
-            *StatusValue);
-        return;
-    }
-
-    FModeActionRequest ParsedRequest;
-    if (!UMCPJsonUtils::ParseModeActionRequestFromObject(Root, ParsedRequest))
-    {
-        UE_LOG(LogTemp, Error, TEXT("[NPCMap] Failed to Parse ModeActionRequest from JSON object."));
-        return;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Request Validated! Master Mode: %d, BatchCount: %d"),
-        static_cast<int32>(ParsedRequest.Mode), ParsedRequest.ActionBatches.Num());
-
-    for (const auto& BatchPair : ParsedRequest.ActionBatches)
-    {
-        DeliverToNPC(BatchPair.Key, BatchPair.Value);
-    }
-}
-
-void UNPCMap::OnWebSocketMessageReceived(const FString& JsonMessage)
-{
-    UE_LOG(LogTemp, Log, TEXT("[NPCMap] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
-
-    TSharedPtr<FJsonObject> Root = UMCPJsonUtils::ParseObject(JsonMessage);
-    if (!Root)
-    {
-        UE_LOG(LogTemp, Error,
-            TEXT("[NPCMap] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
-            *JsonMessage);
-        return;
-    }
-
-    DeliverParsedActionBatches(Root);
-}
-
 // --- UNPCManager ---
 
 void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
-
-    NPCMap = NewObject<UNPCMap>(this);
 
     LLMClient = NewObject<ULLMNetworkClient>(this);
     if (LLMClient)
@@ -127,7 +51,7 @@ void UNPCManager::Deinitialize()
 
     if (LLMClient) LLMClient->Disconnect();
 
-    NPCMap = nullptr;
+    ActiveNPCs.Empty();
     LLMClient = nullptr;
 
     Super::Deinitialize();
@@ -135,10 +59,10 @@ void UNPCManager::Deinitialize()
 
 void UNPCManager::TickStateUpdate()
 {
-    if (!NPCMap || !LLMClient || !LLMClient->IsConnected()) return;
+    if (!LLMClient || !LLMClient->IsConnected()) return;
 
     // 이전 응답이 아직 안 온 NPC는 재전송 건너뜀 — 응답 적체로 인한 연속 갱신 방지
-    for (const TPair<FString, ASmartNPC*>& Pair : NPCMap->GetActiveNPCs())
+    for (const TPair<FString, ASmartNPC*>& Pair : ActiveNPCs)
     {
         ASmartNPC* NPC = Pair.Value;
         if (!IsValid(NPC)) continue;
@@ -165,44 +89,108 @@ void UNPCManager::TickStateUpdate()
 
 void UNPCManager::RegisterNPC(const FString& AgentID, ASmartNPC* NPC)
 {
-    if (NPCMap && NPC)
+    // nullptr/빈 ID 등록 차단 — 무효 엔트리는 FindRef 기반 조회 불변식을 깨뜨림
+    if (!NPC || AgentID.IsEmpty())
     {
-        NPCMap->RegisterNPC(AgentID, NPC);
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] RegisterNPC 무시 — null NPC 또는 빈 AgentID (%s)"), *AgentID);
+        return;
+    }
+    ActiveNPCs.Add(AgentID, NPC);
 
-        if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
-        {
-            ActionComp->OnNPCDialogue.AddDynamic(this, &UNPCManager::HandleNPCDialogue);
-        }
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->OnNPCDialogue.AddDynamic(this, &UNPCManager::HandleNPCDialogue);
     }
 }
 
 void UNPCManager::UnregisterNPC(const FString& AgentID)
 {
-    if (NPCMap)
+    if (ASmartNPC* NPC = GetNPCById(AgentID))
     {
-        if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
+        if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
         {
-            if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
-            {
-                ActionComp->OnNPCDialogue.RemoveDynamic(this, &UNPCManager::HandleNPCDialogue);
-            }
+            ActionComp->OnNPCDialogue.RemoveDynamic(this, &UNPCManager::HandleNPCDialogue);
         }
-        NPCMap->UnregisterNPC(AgentID);
     }
+    ActiveNPCs.Remove(AgentID);
 }
 
 ASmartNPC* UNPCManager::GetNPCById(const FString& AgentID) const
 {
-    return NPCMap ? NPCMap->GetValidNPC(AgentID) : nullptr;
+    return ActiveNPCs.FindRef(AgentID);
 }
 
 void UNPCManager::OnWebSocketMessageReceived(const FString& JsonMessage)
 {
-    if (NPCMap)
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Received WebSocket Payload (Size: %d bytes)"), JsonMessage.Len());
+
+    TSharedPtr<FJsonObject> Root = UMCPJsonUtils::ParseObject(JsonMessage);
+    if (!Root)
     {
-        NPCMap->OnWebSocketMessageReceived(JsonMessage);
+        UE_LOG(LogTemp, Error,
+            TEXT("[NPCManager] Received non-JSON or malformed message. Raw (first 200 chars): %.200s"),
+            *JsonMessage);
+        return;
+    }
+
+    DeliverParsedActionBatches(Root);
+}
+
+void UNPCManager::DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch)
+{
+    if (ASmartNPC* TargetNPC = GetNPCById(TargetAgentID))
+    {
+        TargetNPC->ExecuteActionBatch(ActionBatch);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Skipping Dispatch! Target NPC '%s' is not valid."), *TargetAgentID);
     }
 }
+
+
+void UNPCManager::DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason, uint32 RequestGen)
+{
+    ASmartNPC* NPC = GetNPCById(AgentID);
+    if (!NPC)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] DeliverLocationDecision - NPC '%s' 없음"), *AgentID);
+        return;
+    }
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->NotifyLocationDecisionReady(ChosenCandidateId, Reason, RequestGen);
+    }
+}
+
+void UNPCManager::DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root)
+{
+    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches")))
+    {
+        FString StatusValue;
+        if (Root.IsValid()) Root->TryGetStringField(TEXT("status"), StatusValue);
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[NPCManager] Non-action response received (status='%s'). Skipping dispatch."),
+            *StatusValue);
+        return;
+    }
+
+    FModeActionRequest ParsedRequest;
+    if (!UMCPJsonUtils::ParseModeActionRequestFromObject(Root, ParsedRequest))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NPCManager] Failed to Parse ModeActionRequest from JSON object."));
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] Request Validated! Master Mode: %d, BatchCount: %d"),
+        static_cast<int32>(ParsedRequest.Mode), ParsedRequest.ActionBatches.Num());
+
+    for (const auto& BatchPair : ParsedRequest.ActionBatches)
+    {
+        DeliverToNPC(BatchPair.Key, BatchPair.Value);
+    }
+}
+
 
 
 bool UNPCManager::IsServerConnected() const
@@ -291,13 +279,12 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     // Python 이 Stage1 구조화 스키마의 target enum 으로 강제 주입. ResolveActionTarget 이
     // 해석 가능한 키워드(Player/Self/Enemy/<AgentID>/<FurnitureID>)와 정확히 일치시켜, LLM 이
     // "Strategic Position" 류 해석 불가 자유문자열 target 을 내는 것을 원천 차단.
-    if (NPCMap)
     {
         TArray<TSharedPtr<FJsonValue>> TargetsArr;
         TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Player")));
         TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Self")));
         TargetsArr.Add(MakeShared<FJsonValueString>(TEXT("Enemy")));
-        for (const TPair<FString, ASmartNPC*>& Pair : NPCMap->GetActiveNPCs())
+        for (const TPair<FString, ASmartNPC*>& Pair : ActiveNPCs)
         {
             TargetsArr.Add(MakeShared<FJsonValueString>(Pair.Key));
         }
@@ -372,12 +359,6 @@ void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
 
 void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 {
-    if (!NPCMap)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Received LLM response but NPCMap is not initialized."));
-        return;
-    }
-
     // 한 번만 deserialize → 모든 핸들러가 같은 FJsonObject를 공유.
     TSharedPtr<FJsonObject> Root = UMCPJsonUtils::ParseObject(JsonMessage);
     if (!Root)
@@ -395,7 +376,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         {
             PendingStateUpdateAgents.Remove(AgentID);
 
-            if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
+            if (ASmartNPC* NPC = GetNPCById(AgentID))
             {
                 if (UNPCStateComponent* StateComp = NPC->GetStateComponent())
                 {
@@ -448,7 +429,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         int32 RequestGen = 0;
         if (UMCPJsonUtils::ParseLocationDecisionResultFromObject(Root, AgentID, ChosenCandidateId, Reason, RequestGen))
         {
-            NPCMap->DeliverLocationDecision(AgentID, ChosenCandidateId, Reason, static_cast<uint32>(RequestGen));
+            DeliverLocationDecision(AgentID, ChosenCandidateId, Reason, static_cast<uint32>(RequestGen));
             return;
         }
 
@@ -463,7 +444,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
 
             if (!AgentIDFallback.IsEmpty())
             {
-                if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentIDFallback))
+                if (ASmartNPC* NPC = GetNPCById(AgentIDFallback))
                     if (UNPCActionComponent* AC = NPC->GetActionComponent())
                         AC->AbortTacticalQuery();
             }
@@ -488,7 +469,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
             for (const auto& BatchPair : (*BatchesObj)->Values)
             {
                 const FString& AgentID = BatchPair.Key;
-                ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID);
+                ASmartNPC* NPC = GetNPCById(AgentID);
                 if (!NPC) { continue; }
                 UNPCStateComponent* StateComp = NPC->GetStateComponent();
                 if (!StateComp) { continue; }
@@ -530,7 +511,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
-    NPCMap->DeliverParsedActionBatches(Root);
+    DeliverParsedActionBatches(Root);
 }
 
 void UNPCManager::SendEventReport(const FString& AgentID, const FString& CombinedPayload)
@@ -551,12 +532,9 @@ void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& Dialo
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);
 
     // 머리 위 말풍선 — 즉시 표시 + 길이 비례 타이머 후 숨김.
-    if (NPCMap)
+    if (ASmartNPC* NPC = GetNPCById(AgentID))
     {
-        if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
-        {
-            NPC->ShowSubtitle(DialogueText);
-        }
+        NPC->ShowSubtitle(DialogueText);
     }
 
     // 응답 가시화 — 화면 자막(위젯과 병행, 검증/디버그용)
