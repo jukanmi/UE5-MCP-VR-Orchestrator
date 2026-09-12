@@ -1036,18 +1036,23 @@ bool AVRPawn::TryPickupNearby()
 {
     if (!Inventory) return false;
 
-    UItemManager* ItemManager = UItemManager::Get(this);
-    if (!ItemManager) return false;
+    // HUD 갱신은 Inventory->OnInventoryChanged → PlayerHUDWidget 델리게이트가 자동 처리.
+    ADroppedItemBase* Nearest = FindNearestItem(GetActorLocation(), PickupInteractRange);
+    return Nearest && Nearest->TryPickupInto(Inventory);
+}
 
-    // 등록된 월드 아이템 풀에서 반경 내 후보 조회 — NPC ExecutePickUp 과 동일 원천.
-    const FVector Origin = GetActorLocation();
+ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) const
+{
+    UItemManager* ItemManager = UItemManager::Get(this);
+    if (!ItemManager) return nullptr;
+
     ADroppedItemBase* Nearest = nullptr;
     float NearestDistSq = TNumericLimits<float>::Max();
-
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(Origin, PickupInteractRange))
+    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(Origin, Radius))
     {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped)) continue;
+        // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
+        // 손에 쥔 것이 겹쳐 복사가 된다.
+        if (Dropped->bTradeLocked) continue;
 
         const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
         if (DistSq < NearestDistSq)
@@ -1056,29 +1061,7 @@ bool AVRPawn::TryPickupNearby()
             Nearest = Dropped;
         }
     }
-    if (!Nearest) return false;
-
-    // TemplateID → 마스터 DataTable 원본 데이터. 미등록 ID 면 줍지 않고 남겨둔다.
-    FItemData Data;
-    if (!ItemManager->GetItemDataByID(Nearest->ItemData.ItemTemplateID, Data))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 픽업 실패 — 아이템 데이터 없음: %s"),
-            *Nearest->ItemData.ItemTemplateID);
-        return false;
-    }
-
-    // 무게/슬롯 초과 시 실패 — 월드 액터를 남겨 다시 시도할 수 있게 한다.
-    if (!Inventory->AddItem(Data, Nearest->Amount))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업 실패(공간·무게 부족): %s"), *Data.ItemID);
-        return false;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업: %s x%d"), *Data.ItemID, Nearest->Amount);
-    // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
-    Nearest->ConsumeItem();
-    // HUD 갱신은 Inventory->OnInventoryChanged → PlayerHUDWidget 델리게이트가 자동 처리.
-    return true;
+    return Nearest;
 }
 
 void AVRPawn::DumpInventoryHUD()
@@ -1323,31 +1306,8 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
     if (!HandController) return nullptr;
 
-    UItemManager* ItemManager = UItemManager::Get(this);
-    if (!ItemManager) return nullptr;
-
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    const FVector HandLoc = HandController->GetComponentLocation();
-
-    ADroppedItemBase* Nearest = nullptr;
-    float NearestDistSq = TNumericLimits<float>::Max();
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(HandLoc, Radius))
-    {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped) || !Dropped->ItemMesh) continue;
-
-        // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
-        // 손에 쥔 것이 겹쳐 복사가 된다.
-        if (Dropped->bTradeLocked) continue;
-
-        const float DistSq = FVector::DistSquared(HandLoc, Dropped->GetActorLocation());
-        if (DistSq < NearestDistSq)
-        {
-            NearestDistSq = DistSq;
-            Nearest = Dropped;
-        }
-    }
-    return Nearest;
+    return FindNearestItem(HandController->GetComponentLocation(), Radius);
 }
 
 void AVRPawn::UpdateItemTooltip()

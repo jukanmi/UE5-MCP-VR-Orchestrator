@@ -632,9 +632,11 @@ private:
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (ClampMin = "30.0", ClampMax = "300.0"))
     float PickupInteractRange = 150.f;
 
-    /** 반경 내 최근접 드랍 아이템을 인벤토리로 획득. 성공 시 true — OnInteract 가 착석·NPC 감지 생략.
-     *  탐색은 ItemManager::GetItemsInRange(등록된 월드 아이템 풀) — NPC 픽업과 동일 원천. */
+    /** 반경 내 최근접 드랍 아이템을 인벤토리로 획득. 성공 시 true — OnInteract 가 착석·NPC 감지 생략. */
     bool TryPickupNearby();
+
+    /** 원점 반경 내 최근접 드랍 아이템(거래 접시에 잠긴 것 제외). 픽업·손 쥐기·이름표가 같은 판정을 쓴다. */
+    ADroppedItemBase* FindNearestItem(const FVector& Origin, float Radius) const;
 
     // --- 물리 손 쥐기 (Grip) ---
     // 쥔 아이템 자체와 손안 자세 보정은 InventoryComponent 가 들고 있다 — 장착 슬롯과 같은

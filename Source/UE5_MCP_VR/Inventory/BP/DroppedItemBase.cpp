@@ -4,6 +4,7 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Inventory/Types/ItemRegistryOptions.h"
 #include "Inventory/BP/ItemDataAsset.h"   // FItemData — ItemManager.h 가 include 하지 않아 직접 건다
+#include "Inventory/Components/InventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
@@ -121,6 +122,30 @@ void ADroppedItemBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+bool ADroppedItemBase::TryPickupInto(UInventoryComponent* Inventory)
+{
+    UItemManager* ItemManager = UItemManager::Get(this);
+    if (!Inventory || !ItemManager) return false;
+
+    FItemData Data;
+    if (!ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Data))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[DroppedItem] 픽업 실패 — 아이템 데이터 없음: %s"), *ItemData.ItemTemplateID);
+        return false;
+    }
+
+    if (!Inventory->AddItem(Data, Amount))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[DroppedItem] 픽업 실패(공간·무게 부족): %s"), *Data.ItemID);
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[DroppedItem] 픽업: %s x%d → %s"), *Data.ItemID, Amount, *GetNameSafe(Inventory->GetOwner()));
+    // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
+    ConsumeItem();
+    return true;
 }
 
 void ADroppedItemBase::SetPhysicsFrozen(bool bFrozen)

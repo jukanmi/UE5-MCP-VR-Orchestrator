@@ -7,6 +7,8 @@
 #include "CollisionQueryParams.h"
 #include "Inventory/BP/ItemDataAsset.h"
 #include "Inventory/Types/ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
+#include "Inventory/BP/DroppedItemBase.h"
+#include "Engine/DataTable.h"
 
 UItemManager* UItemManager::Get(const UObject* WorldContext)
 {
@@ -17,6 +19,13 @@ void UItemManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
     ActiveDroppedItems.Empty();
+
+    ItemTable = Cast<UDataTable>(StaticLoadObject(UDataTable::StaticClass(), nullptr, ItemRegistryPaths::DefaultItemTable));
+    if (!ItemTable)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[ItemManager] 아이템 마스터 테이블(%s)을 찾을 수 없습니다 — 모든 GetItemDataByID 가 실패합니다."),
+            ItemRegistryPaths::DefaultItemTable);
+    }
     UE_LOG(LogTemp, Log, TEXT("[ItemManager] Subsystem Initialized. Ready to track world items."));
 }
 
@@ -60,9 +69,9 @@ void UItemManager::UnregisterDroppedItem(const FString& InInstanceID)
     UE_LOG(LogTemp, Log, TEXT("[ItemManager] Unregistered Item: %s"), *InInstanceID);
 }
 
-TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const
+TArray<ADroppedItemBase*> UItemManager::GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const
 {
-    TArray<FDroppedItemData> FoundItems;
+    TArray<ADroppedItemBase*> FoundItems;
     UGameInstance* GI = GetGameInstance();
     UWorld* World = GI ? GI->GetWorld() : nullptr;
     if (!World)
@@ -91,33 +100,13 @@ TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLoca
         return FoundItems;
     }
 
-    // 중복 처리를 방지하기 위해 TSet으로 한번 거르거나, 순회하며 매니저 소속인지 판별합니다.
-    TSet<AActor*> ProcessedActors;
-
+    // 한 액터가 컴포넌트마다 여러 번 잡히므로 중복 제거. 등록 여부는 액터가 든 InstanceID 로 O(1) 확인.
     for (const FOverlapResult& HitResult : OverlapResults)
     {
-        AActor* OverlappedActor = HitResult.GetActor();
-        
-        // 유효성 및 중복 검증
-        if (!IsValid(OverlappedActor) || ProcessedActors.Contains(OverlappedActor))
-        {
-            continue;
-        }
-
-        ProcessedActors.Add(OverlappedActor);
-
-        // O(N) 서치를 방지하기 위해 액터 자체 컴포넌트나 인터페이스 등에서 인스턴스 ID를 꺼내와서 Map에서 O(1)로 가져와야 이상적입니다.
-        // 현재는 역참조를 위해 (액터 포인터 일치 여부) 최소한의 O(K) 순회를 수행합니다. K는 오버랩된 액터 수.
-        // 추후 AInteractableItem 같은 베이스 클래스에 ID 멤버가 있다면 캐스트하여 키로 사용하면 훨씬 빠릅니다.
-        
-        for (const auto& Pair : ActiveDroppedItems)
-        {
-            if (Pair.Value.ItemActor == OverlappedActor)
-            {
-                FoundItems.Add(Pair.Value);
-                break; // 액터를 찾았으므로 다음 HitResult로 이동
-            }
-        }
+        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(HitResult.GetActor());
+        if (!IsValid(Dropped) || FoundItems.Contains(Dropped)) continue;
+        if (!ActiveDroppedItems.Contains(Dropped->ItemData.ItemInstanceID)) continue;
+        FoundItems.Add(Dropped);
     }
 
     return FoundItems;
@@ -125,31 +114,10 @@ TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLoca
 
 bool UItemManager::GetItemDataByID(const FString& InTemplateID, FItemData& OutItemData) const
 {
-    if (InTemplateID.IsEmpty()) return false;
-    
-    //  하나의 거대 데이터 테이블(DataTable)에서 RowName을 기반으로 아이템 정보를 빠르게 검색합니다.
-    // 수천 개의 에셋 파일을 만드는 대신 엑셀이나 CSV 하나로 기획 데이터를 일괄 관리할 수 있습니다.
-    if (!GlobalItemDataTable)
-    {
-        // 최후의 수단: 만약 블루프린트에서 세팅이 안되었다면, 기본 컨벤션 경로에서 동적으로 로드 시도
-        UDataTable* LoadedTable = Cast<UDataTable>(StaticLoadObject(UDataTable::StaticClass(), nullptr, ItemRegistryPaths::DefaultItemTable));
-        if (!LoadedTable)
-        {
-            UE_LOG(LogTemp, Error, TEXT("[ItemManager] GlobalItemDataTable이 설정되지 않았으며, 기본 경로(/Game/Data/Items/DT_ItemRegistry)에서도 테이블을 찾을 수 없습니다!"));
-            return false;
-        }
-        // const 제거 우회 대신 로컬 변수 사용(const 함수 내부이므로 멤버 변수 할당 불가하여 로컬 테이블로 참조)
-        FItemData* FoundRow = LoadedTable->FindRow<FItemData>(FName(*InTemplateID), TEXT("GetItemDataByID"));
-        if (FoundRow)
-        {
-            OutItemData = *FoundRow;
-            return true;
-        }
-        return false;
-    }
+    if (InTemplateID.IsEmpty() || !ItemTable) return false;
 
-    // 통상적인 로직: 세팅된 데이터 테이블에서 찾기
-    FItemData* FoundRow = GlobalItemDataTable->FindRow<FItemData>(FName(*InTemplateID), TEXT("GetItemDataByID"));
+    // 하나의 마스터 테이블(CSV 한 장)에서 RowName 으로 검색 — 수천 개 에셋 대신 기획 데이터 일괄 관리.
+    const FItemData* FoundRow = ItemTable->FindRow<FItemData>(FName(*InTemplateID), TEXT("GetItemDataByID"));
     if (FoundRow)
     {
         OutItemData = *FoundRow; // 원본 데이터를 복사해서 넘겨줍니다. (내구도 등 개별화를 위해 복사가 필수)

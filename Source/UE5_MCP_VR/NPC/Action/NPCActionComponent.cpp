@@ -2088,25 +2088,10 @@ void UNPCActionComponent::PerformPickupAtDestination()
     if (!OwnerCharacter) return;
 
     // 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
+    // 액션 1회당 1개 묶음만 — 범위 내 전부 쓸어 담지 않는다.
+    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped)) continue;
-
-        FItemData Data;
-        if (!ItemManager->GetItemDataByID(Dropped->ItemData.ItemTemplateID, Data))
-        {
-            UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Dropped->ItemData.ItemTemplateID);
-            continue;
-        }
-
-        // 실패 시 액터를 남겨 다시 시도할 수 있게 한다.
-        if (!InventoryComponent->AddItem(Data, Dropped->Amount)) continue;
-
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Data.ItemID, Dropped->Amount);
-        // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
-        Dropped->ConsumeItem();
-        break; // 액션 1회당 1개 묶음만 줍는다 — 범위 내 전부 쓸어 담지 않는다.
+        if (Dropped->TryPickupInto(InventoryComponent)) break;
     }
 }
 
