@@ -108,8 +108,7 @@ bool ATradeSessionActor::InitSession(ASmartNPC* InNpc, APawn* InPlayer,
     GetAmount = FMath::Max(InGetAmount, 0);
 
     UInventoryComponent* NpcInv = InNpc ? InNpc->FindComponentByClass<UInventoryComponent>() : nullptr;
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!NpcInv || !ItemManager) return false;
 
     // NPC 가 내놓을 물건을 지금 인벤토리에서 빼 실물로 만든다. 여기서 빼두지 않으면
@@ -224,8 +223,7 @@ bool ATradeSessionActor::Accept()
     UInventoryComponent* NpcInv = TargetNpc ? TargetNpc->FindComponentByClass<UInventoryComponent>() : nullptr;
     UInventoryComponent* PlayerInv = Player.IsValid() ? Player->FindComponentByClass<UInventoryComponent>() : nullptr;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!NpcInv || !PlayerInv || !ItemManager) return false;
 
     // 요구 수량 검사 — 모자라면 아무것도 옮기지 않고 세션을 유지한다(더 올릴 수 있게).

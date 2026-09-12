@@ -2023,8 +2023,7 @@ void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& It
     }
 
     // 차감 전에 원본 데이터·수령처를 모두 확보 — 하나라도 없으면 건드리지 않는다(증발 방지).
-    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
 
     FItemData Data;
     if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
@@ -2115,8 +2114,7 @@ void UNPCActionComponent::ExecutePickUp(FVector Location)
 
 void UNPCActionComponent::PerformPickupAtDestination()
 {
-    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager || !InventoryComponent) return;
 
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());

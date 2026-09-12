@@ -97,20 +97,17 @@ void ADroppedItemBase::BeginPlay()
     }
 
     // ItemManager 서브시스템 검출 및 안전한 초기 등록
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UItemManager* ItemManager = UItemManager::Get(this))
     {
-        if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
-        {
-            ItemManager->RegisterDroppedItem(ItemData.ItemInstanceID, ItemData.ItemActor, ItemData.ItemTemplateID);
+        ItemManager->RegisterDroppedItem(ItemData.ItemInstanceID, ItemData.ItemActor, ItemData.ItemTemplateID);
 
-            // 질량을 마스터 테이블의 Weight(kg)로 확정한다. 지정하지 않으면 엔진이 충돌 형상의
-            // 부피에 기본 밀도를 곱해 추정하는데, 생성 메시는 부피가 제각각이라 돌멩이가 깃털처럼
-            // 뜨거나 반대가 된다. 투척 피해가 ½mv² 라 질량이 곧 타격감이기도 하다.
-            FItemData Row;
-            if (ItemMesh && ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Row) && Row.Weight > 0.f)
-            {
-                ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
-            }
+        // 질량을 마스터 테이블의 Weight(kg)로 확정한다. 지정하지 않으면 엔진이 충돌 형상의
+        // 부피에 기본 밀도를 곱해 추정하는데, 생성 메시는 부피가 제각각이라 돌멩이가 깃털처럼
+        // 뜨거나 반대가 된다. 투척 피해가 ½mv² 라 질량이 곧 타격감이기도 하다.
+        FItemData Row;
+        if (ItemMesh && ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Row) && Row.Weight > 0.f)
+        {
+            ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
         }
     }
 }
@@ -118,12 +115,9 @@ void ADroppedItemBase::BeginPlay()
 void ADroppedItemBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     // 맵에서 사라지는 어떤 경우(파괴, 레벨 언로드 등)에도 댕글링 포인터를 유발하지 않고 매니저 캐시에서 삭제되게 합니다.
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UItemManager* ItemManager = UItemManager::Get(this))
     {
-        if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
-        {
-            ItemManager->UnregisterDroppedItem(ItemData.ItemInstanceID);
-        }
+        ItemManager->UnregisterDroppedItem(ItemData.ItemInstanceID);
     }
 
     Super::EndPlay(EndPlayReason);

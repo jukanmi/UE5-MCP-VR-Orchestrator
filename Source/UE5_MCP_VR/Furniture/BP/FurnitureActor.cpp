@@ -53,24 +53,18 @@ void AFurnitureActor::BeginPlay()
         FurnitureID = FString::Printf(TEXT("Furniture_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Short));
     }
 
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UFurnitureManager* Manager = UFurnitureManager::Get(this))
     {
-        if (UFurnitureManager* Manager = GameInstance->GetSubsystem<UFurnitureManager>())
-        {
-            Manager->RegisterFurniture(FurnitureID, this);
-        }
+        Manager->RegisterFurniture(FurnitureID, this);
     }
 }
 
 void AFurnitureActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     // 파괴·레벨 언로드 어느 경우에도 매니저 캐시에 댕글링 포인터를 남기지 않는다.
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UFurnitureManager* Manager = UFurnitureManager::Get(this))
     {
-        if (UFurnitureManager* Manager = GameInstance->GetSubsystem<UFurnitureManager>())
-        {
-            Manager->UnregisterFurniture(FurnitureID);
-        }
+        Manager->UnregisterFurniture(FurnitureID);
     }
 
     Super::EndPlay(EndPlayReason);

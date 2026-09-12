@@ -10,14 +10,12 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
+#include "Core/Utils/SubsystemUtils.h"
 
 
 UNPCManager* UNPCManager::Get(const UObject* WorldContext)
 {
-    if (!WorldContext) return nullptr;
-    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
-    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
-    return GI ? GI->GetSubsystem<UNPCManager>() : nullptr;
+    return SubsystemUtils::GetGameSubsystem<UNPCManager>(WorldContext);
 }
 
 
@@ -309,7 +307,7 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         //   valid_targets: 빈 가구만 합류 — 점유·원거리 가구 지정을 enum 차원에서 원천 차단.
         //   nearby_furniture: 점유 포함 전부 — "자리가 없네요" 류 대사 근거.
         // 무타겟 Sit/Sleep 은 C++(ExecuteLifestyleAction)가 무동작 방어 — 여기 노출이 유일한 착석 경로.
-        if (UFurnitureManager* FurnMgr = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFurnitureManager>() : nullptr)
+        if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(this))
         {
             if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
             {

@@ -1054,8 +1054,7 @@ bool AVRPawn::TryPickupNearby()
 {
     if (!Inventory) return false;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager) return false;
 
     // 등록된 월드 아이템 풀에서 반경 내 후보 조회 — NPC ExecutePickUp 과 동일 원천.
@@ -1342,8 +1341,7 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
     if (!HandController) return nullptr;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager) return nullptr;
 
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.

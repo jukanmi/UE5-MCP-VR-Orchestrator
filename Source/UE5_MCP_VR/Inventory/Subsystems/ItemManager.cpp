@@ -1,5 +1,6 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Engine/World.h"
+#include "Core/Utils/SubsystemUtils.h"
 #include "Engine/GameInstance.h"
 #include "JsonObjectConverter.h" // FJsonObjectConverter용
 #include "Engine/OverlapResult.h"
@@ -9,10 +10,7 @@
 
 UItemManager* UItemManager::Get(const UObject* WorldContext)
 {
-    if (!WorldContext) return nullptr;
-    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
-    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
-    return GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    return SubsystemUtils::GetGameSubsystem<UItemManager>(WorldContext);
 }
 
 void UItemManager::Initialize(FSubsystemCollectionBase& Collection)

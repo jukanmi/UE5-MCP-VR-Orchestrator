@@ -44,8 +44,7 @@ void UInventoryComponent::BeginPlay()
     InventorySlots.SetNum(MaxSlotCapacity);
 
     // Default Items 지급
-    UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-    UItemManager* ItemManager = GameInstance ? GameInstance->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
 
     if (ItemManager)
     {
