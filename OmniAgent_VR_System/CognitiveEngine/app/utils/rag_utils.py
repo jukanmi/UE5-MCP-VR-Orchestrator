@@ -4,6 +4,7 @@ Purpose: RAG (Retrieval-Augmented Generation) utilities for NPC knowledge bases.
 Each NPC has their own vector store for personalized context retrieval.
 """
 
+import logging
 import os
 from typing import Optional, List
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
@@ -15,6 +16,8 @@ try:
     from langchain_huggingface import HuggingFaceEmbeddings
 except ImportError:
     from langchain_community.embeddings import HuggingFaceEmbeddings
+
+logger = logging.getLogger(__name__)
 
 # Base paths
 KNOWLEDGE_BASE_PATH = "app/agents/knowledge"
@@ -61,14 +64,14 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
             embeddings = get_embeddings()
             vectorstore = FAISS.load_local(vectorstore_path, embeddings, allow_dangerous_deserialization=True)
             _vectorstore_cache[agent_lower] = vectorstore
-            print(f"[RAG] Loaded existing vectorstore for {agent_id}")
+            logger.info(f"[RAG] Loaded existing vectorstore for {agent_id}")
             return vectorstore
         except Exception as e:
-            print(f"[RAG] Failed to load vectorstore for {agent_id}: {e}")
+            logger.error(f"[RAG] Failed to load vectorstore for {agent_id}: {e}")
 
     # Build new vectorstore from documents
     if not os.path.exists(knowledge_path):
-        print(f"[RAG] No knowledge folder found for {agent_id} at {knowledge_path}")
+        logger.warning(f"[RAG] No knowledge folder found for {agent_id} at {knowledge_path}")
         return None
 
     try:
@@ -80,7 +83,7 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
         documents = loader.load()
 
         if not documents:
-            print(f"[RAG] No documents found for {agent_id}")
+            logger.warning(f"[RAG] No documents found for {agent_id}")
             return None
 
         # 즉시 상위 폴더명(lore/persona/history)을 chunk_category 메타데이터로 태깅.
@@ -108,11 +111,11 @@ def build_vectorstore(agent_id: str, force_rebuild: bool = False) -> Optional[FA
         # Cache it
         _vectorstore_cache[agent_lower] = vectorstore
 
-        print(f"[RAG] Built vectorstore for {agent_id} with {len(splits)} chunks")
+        logger.info(f"[RAG] Built vectorstore for {agent_id} with {len(splits)} chunks")
         return vectorstore
 
     except Exception as e:
-        print(f"[RAG] Error building vectorstore for {agent_id}: {e}")
+        logger.error(f"[RAG] Error building vectorstore for {agent_id}: {e}")
         return None
 
 
@@ -158,9 +161,9 @@ def retrieve_context(agent_id: str, query: str, k: int = 3) -> str:
             return ""
 
         context = "\n\n".join(context_parts)
-        print(f"[RAG] Retrieved {len(context_parts)} valid chunks for {agent_id}")
+        logger.info(f"[RAG] Retrieved {len(context_parts)} valid chunks for {agent_id}")
         return context
 
     except Exception as e:
-        print(f"[RAG] Error retrieving context for {agent_id}: {e}")
+        logger.error(f"[RAG] Error retrieving context for {agent_id}: {e}")
         return ""

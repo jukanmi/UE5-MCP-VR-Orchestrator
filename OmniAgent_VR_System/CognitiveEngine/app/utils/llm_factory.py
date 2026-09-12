@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import os
 import time
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 from .async_tasks import spawn_background
 from .train_logger import log_llm_call
 
+
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 # ollama_structured 반환 타입 제네릭 — 호출 측이 캐스팅·getattr 없이 필드 직접 접근.
@@ -144,7 +147,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
 
     if model_name in MODELS:
         model_id = MODELS[model_name]
-        print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
+        logger.info(f"[LLM Factory] Ollama 모델 사용: {model_id}")
         keep_alive = _keep_alive_for(model_name)
         return ChatOllama(
             model=model_id,

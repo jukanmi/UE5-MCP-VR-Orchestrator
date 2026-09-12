@@ -24,6 +24,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 from typing import Dict
 from .state import AgentState
 from .subgraphs.dialogue import load_persona
@@ -36,6 +37,8 @@ from ..schemas.actions import (
     DIALOGUE_ACTION_FIELD_MAP,
     ITEM_FIELD_EXCLUSIVE_ACTIONS,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # trait → 금지 FacialState 매핑
@@ -71,7 +74,7 @@ def _correct_facial_contamination(action: GameAction, persona_traits: list[str])
         forbidden = TRAIT_EMOTION_MAP.get(trait, set())
         if current in forbidden:
             replacement = TRAIT_DEFAULT_FACIAL.get(trait, "Neutral")
-            print(f"[Interface Output] 오염 보정: {current} → {replacement} (trait={trait})")
+            logger.warning(f"[Interface Output] 오염 보정: {current} → {replacement} (trait={trait})")
             action.FacialState = replacement
             break
     return action
@@ -174,7 +177,7 @@ async def interface_output_node(state: AgentState):
 
     # 방어 경로: 구조화 출력 없음 → empty batch (raw_response 재파싱 안 함).
     if not structured:
-        print("[Interface Output] WARNING: structured_responses 없음, empty batch")
+        logger.warning("[Interface Output] structured_responses 없음, empty batch")
         npc_id = state.get("target_npc") or DEFAULT_NPC
         single_batch = fallback_batch(npc_id)
         return {
@@ -190,7 +193,7 @@ async def interface_output_node(state: AgentState):
     for npc_id, resp in structured.items():
         persona = load_persona(npc_id) or {}
         action_batches[npc_id] = _structure_from_dialogue(npc_id, resp, persona.get("traits", []))
-    print(f"[Interface Output] 구조화 완료: {list(action_batches.keys())}")
+    logger.info(f"[Interface Output] 구조화 완료: {list(action_batches.keys())}")
 
     # 단일 NPC 호환: action_batch 도 채움
     first_batch = next(iter(action_batches.values()), None)

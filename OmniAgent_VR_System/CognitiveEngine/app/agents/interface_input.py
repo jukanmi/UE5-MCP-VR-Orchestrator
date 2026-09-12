@@ -21,12 +21,15 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import re
 import unicodedata
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 from ..utils.id_utils import ci_id_map, ci_get
 
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompt Injection / Jailbreak 탐지 패턴 목록
@@ -197,7 +200,7 @@ def _coerce_vr_context(vr_context):
     """vr_context 정규화 — (GesPrompt, None) 또는 (빈 GesPrompt, 폴백 응답 dict).
     누락/변환 실패 시에도 그래프가 끊기지 않게 Dialogue 로 넘기는 기존 동작 유지."""
     if not vr_context:
-        print("[Interface Input] ERROR: vr_context 없음")
+        logger.error("[Interface Input] vr_context 없음")
         return _empty_vr_context(), {
             "natural_context": "Player input is empty.",
             "current_speaker": "Interface_Input",
@@ -209,7 +212,7 @@ def _coerce_vr_context(vr_context):
         try:
             vr_context = GesPrompt(**vr_context)
         except Exception as e:
-            print(f"[Interface Input] GesPrompt 변환 실패: {e}")
+            logger.error(f"[Interface Input] GesPrompt 변환 실패: {e}")
             return _empty_vr_context(), {
                 "natural_context": "Player said something but context is unclear.",
                 "current_speaker": "Interface_Input",
@@ -225,7 +228,7 @@ def _guardrail_block(transcript: str):
     is_injected, matched_pattern = _check_prompt_injection(transcript)
     if not is_injected:
         return None
-    print(f"[Interface Input] WARN  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
+    logger.warning(f"[Interface Input] GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
     return {
         "has_error": True,
         "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",
@@ -238,7 +241,7 @@ def _emergency_interrupt(vr_context: GesPrompt, transcript: str):
     """[긴급 인터럽트] Hit/Ambush — LLM 추론 지연 없이 즉각 응전 컨텍스트. 해당 없으면 None."""
     if vr_context.last_event not in ["Hit", "Ambush"]:
         return None
-    print(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
+    logger.warning(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
     emergency_context = (
         f"EMERGENCY: Player is under attack ({vr_context.last_event})! "
         f'Player said: "{transcript}". '
@@ -275,7 +278,7 @@ def interface_input_node(state: AgentState) -> dict:
     if blocked is not None:
         return blocked
 
-    print(f"[Interface Input] Transcript: '{transcript}'")
+    logger.info(f"[Interface Input] Transcript: '{transcript}'")
 
     emergency = _emergency_interrupt(vr_context, transcript)
     if emergency is not None:
@@ -283,7 +286,7 @@ def interface_input_node(state: AgentState) -> dict:
 
     # ── 구조화 컨텍스트 조합 (위치/제스처/perceived/실패이력/plan) ──
     natural_context = _build_natural_context(vr_context, state, transcript)
-    print(f"[Interface Input] Natural context: {natural_context[:100]}...")
+    logger.info(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
     target_npcs = _extract_target_npcs(transcript, vr_context)

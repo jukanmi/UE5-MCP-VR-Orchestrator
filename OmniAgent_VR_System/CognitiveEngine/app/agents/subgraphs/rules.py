@@ -20,6 +20,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import ast
 import re
 from collections import Counter
@@ -35,6 +36,8 @@ from ...schemas.actions import (
 )
 from ...utils import db_manager
 
+
+logger = logging.getLogger(__name__)
 
 # world_constants.json에서 유효 ID 목록 및 월드 경계 로드
 VALID_NPC_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_npc_ids", []))
@@ -182,19 +185,19 @@ def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | 
     missing = _missing_required_group(action)
     if missing:
         reason = f"{action.ActionType} 필수 파라미터 누락 ({missing}) → 액션 제거"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
     if not _is_target_id_valid(target_id, runtime_targets):
         reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # ── [신규] 좌표 범위 검증 ───────────────────────────────────
     if not _is_target_loc_in_bounds(target_loc_str):
         reason = f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 (action: {action.ActionType})"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # Dialogue 액션은 수치 파라미터 없음 → 검증 불필요
@@ -235,16 +238,16 @@ def _validate_batch(
         all_corrections.extend(corrections)
 
     if not validated_actions:
-        print(f"[Rules] X {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
+        logger.error(f"[Rules] X {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
     else:
         batch.Actions = validated_actions
         _correct_mode_mismatch(batch)
         if all_corrections:
             summary = "; ".join(all_corrections)
-            print(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
+            logger.info(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
         else:
-            print(f"[Rules] OK {batch.AgentID} 검증 통과")
+            logger.info(f"[Rules] OK {batch.AgentID} 검증 통과")
 
     if log_ctx is not None:
         log_rules_result(
@@ -272,7 +275,7 @@ def _correct_mode_mismatch(batch: "ActionBatch") -> None:
         return
     majority, _count = Counter(non_common).most_common(1)[0]
     if batch.Mode != majority and batch.Mode not in non_common:
-        print(f"[Rules] FIX Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
+        logger.info(f"[Rules] FIX Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
         batch.Mode = majority
 
 
@@ -289,7 +292,7 @@ def rules_node(state: AgentState) -> dict:
     if not action_batches:
         batch = state.get("action_batch")
         if not batch:
-            print("[Rules] ActionBatch 없음, 조용히 종료")
+            logger.warning("[Rules] ActionBatch 없음, 조용히 종료")
             return {"next": "End", "current_speaker": "Rules"}
         action_batches = {batch.AgentID: batch}
 
@@ -359,7 +362,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
     if score_delta != 0:
         summary_str = ", ".join(interaction_summary)
-        print(f"[Rules] AFFINITY Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
+        logger.info(f"[Rules] AFFINITY Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
         # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
         db_manager.update_affinity_sync(
             source_id=npc_id,

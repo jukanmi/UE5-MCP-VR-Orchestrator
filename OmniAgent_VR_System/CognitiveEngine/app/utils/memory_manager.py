@@ -9,6 +9,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import os
 import json
 import threading
@@ -17,6 +18,8 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from .llm_factory import get_llm
 
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 토큰 / 메모리 예산 설정
@@ -91,12 +94,12 @@ class ConversationMemory:
                 with open(self.memory_file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.entries = [MemoryEntry.from_dict(e) for e in data.get("entries", [])]
-                print(f"[Memory] {self.agent_id}: {len(self.entries)}개 항목 로드")
+                logger.info(f"[Memory] {self.agent_id}: {len(self.entries)}개 항목 로드")
             except Exception as e:
-                print(f"[Memory] {self.agent_id} 로드 실패: {e}")
+                logger.error(f"[Memory] {self.agent_id} 로드 실패: {e}")
                 self.entries = []
         else:
-            print(f"[Memory] {self.agent_id}: 기존 메모리 없음")
+            logger.warning(f"[Memory] {self.agent_id}: 기존 메모리 없음")
 
     def _save_to_file(self):
         """현재 메모리를 JSON 파일에 저장한다."""
@@ -110,7 +113,7 @@ class ConversationMemory:
             with open(self.memory_file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[Memory] {self.agent_id} 저장 실패: {e}")
+            logger.error(f"[Memory] {self.agent_id} 저장 실패: {e}")
 
     def estimate_total_tokens(self) -> int:
         """전체 메모리 사용 토큰 추정값 반환."""
@@ -185,7 +188,7 @@ class ConversationMemory:
                 if non_summary_count < ENTRIES_TO_SUMMARIZE:
                     # 요약할 non-summary 항목이 부족하면 더 이상 진행 불가
                     break
-            print(f"[Memory] {self.agent_id} 토큰 임계치 도달 ({current_tokens}/{MAX_TOKENS_PER_NPC}), 요약 중...")
+            logger.info(f"[Memory] {self.agent_id} 토큰 임계치 도달 ({current_tokens}/{MAX_TOKENS_PER_NPC}), 요약 중...")
             if not self._summarize_oldest_entries():
                 # 요약 실패(LLM 에러 등) — 무한 루프 방지를 위해 중단
                 break
@@ -237,7 +240,7 @@ class ConversationMemory:
             response = llm.invoke(summary_prompt)
             summary_text = response.content if hasattr(response, "content") else str(response)
         except Exception as e:
-            print(f"[Memory] 요약 실패: {e}")
+            logger.error(f"[Memory] 요약 실패: {e}")
             return False
 
         # 3) 락 재획득 후 스플라이스 — LLM 대기 중 추가된 항목은 건드리지 않는다.
@@ -255,7 +258,7 @@ class ConversationMemory:
                     is_summary=True,
                 ),
             )
-        print(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
+        logger.info(f"[Memory] {len(existing_summaries)}개 기존 요약 + {len(to_compress)}개 항목 → 1개 요약 완료")
         return True
 
     def get_recent_entries(self, k: int = 5) -> List[MemoryEntry]:
