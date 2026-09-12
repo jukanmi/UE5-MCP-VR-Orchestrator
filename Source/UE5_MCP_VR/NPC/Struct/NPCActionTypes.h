@@ -69,6 +69,15 @@ enum class ESenseType : uint8
 	Other      UMETA(DisplayName = "Other")
 };
 
+/** EKnockdownPhase: 넉다운 진행 단계. None=평상, Ragdoll=쓰러져 안착 대기, GettingUp=기상 몽타주·블렌드 복귀 중. */
+UENUM(BlueprintType)
+enum class EKnockdownPhase : uint8
+{
+	None,
+	Ragdoll,
+	GettingUp
+};
+
 
 /**
  * ============================================================================
