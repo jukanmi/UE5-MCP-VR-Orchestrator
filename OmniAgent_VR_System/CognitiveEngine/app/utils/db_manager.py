@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "affinity.db")
 SYNC_INTERVAL_SECONDS = 5.0
 
+# 캐시·직접 설정 두 경로가 같은 UPSERT 를 쓴다.
+_UPSERT_RELATION_SQL = """
+    INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(source_id, target_id)
+    DO UPDATE SET
+        affinity_score=excluded.affinity_score,
+        reputation_tag=excluded.reputation_tag,
+        last_interaction=excluded.last_interaction,
+        updated_at=CURRENT_TIMESTAMP
+"""
+
+
+def reputation_tag_for(score: int) -> str:
+    """호감도 → 관계 태그. 임계 ±30 은 C++ NPCStateComponent::GetRelation 과 같은 값."""
+    if score <= -30:
+        return "Hostile"
+    if score >= 30:
+        return "Friendly"
+    return "Neutral"
+
+
 # --- State ---
 # Memory Cache: (source_id, target_id) -> NPCRelation
 _affinity_cache: Dict[Tuple[str, str], NPCRelation] = {}
@@ -132,14 +154,8 @@ def update_affinity_sync(source_id: str, target_id: str, score_delta: int, inter
         new_score = relation.affinity_score + score_delta
         relation.affinity_score = max(-100, min(100, new_score))
 
-        # pydantic v2 필드 validation은 할당시 자동 실행되지 않으므로 수동 변경이 필요하거나,
-        # setter로 동작하게 할 수 있음. 간단하게 수동 재계산:
-        if relation.affinity_score <= -30:
-            relation.reputation_tag = "Hostile"
-        elif relation.affinity_score >= 30:
-            relation.reputation_tag = "Friendly"
-        else:
-            relation.reputation_tag = "Neutral"
+        # pydantic v2 는 할당 시 validation 을 돌리지 않으므로 태그를 직접 재계산.
+        relation.reputation_tag = reputation_tag_for(relation.affinity_score)
 
         relation.last_interaction = interaction_summary
         relation.is_dirty = True
@@ -167,12 +183,7 @@ async def set_affinity_direct(
 ) -> NPCRelation:
     """호감도를 절대값으로 직접 설정 (디버그 대시보드용). 캐시와 DB 동시 갱신."""
     score = max(-100, min(100, score))
-    if score <= -30:
-        tag = "Hostile"
-    elif score >= 30:
-        tag = "Friendly"
-    else:
-        tag = "Neutral"
+    tag = reputation_tag_for(score)
 
     relation = NPCRelation(
         source_id=source_id,
@@ -187,19 +198,7 @@ async def set_affinity_direct(
 
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                """
-                INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(source_id, target_id)
-                DO UPDATE SET
-                    affinity_score=excluded.affinity_score,
-                    reputation_tag=excluded.reputation_tag,
-                    last_interaction=excluded.last_interaction,
-                    updated_at=CURRENT_TIMESTAMP
-            """,
-                (source_id, target_id, score, tag, interaction_summary),
-            )
+            await db.execute(_UPSERT_RELATION_SQL, (source_id, target_id, score, tag, interaction_summary))
             await db.commit()
     except Exception as e:
         logger.error(f"[DBManager] set_affinity_direct 실패: {e}")
@@ -252,18 +251,6 @@ async def _flush_dirty_cache():
     if not dirty_items:
         return
 
-    # 삽입 또는 업데이트 (UPSERT)
-    query = """
-        INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(source_id, target_id) 
-        DO UPDATE SET 
-            affinity_score=excluded.affinity_score,
-            reputation_tag=excluded.reputation_tag,
-            last_interaction=excluded.last_interaction,
-            updated_at=CURRENT_TIMESTAMP
-    """
-
     # 실행용 튜플 배열 만들기
     data_to_write = [
         (r.source_id, r.target_id, r.affinity_score, r.reputation_tag, r.last_interaction) for r in dirty_items
@@ -272,7 +259,7 @@ async def _flush_dirty_cache():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("BEGIN TRANSACTION")
-            await db.executemany(query, data_to_write)
+            await db.executemany(_UPSERT_RELATION_SQL, data_to_write)
             await db.commit()
 
             # DB 커밋 완전히 성공한 뒤에 메모리의 dirty 마크 제거 (원자성 확보)
