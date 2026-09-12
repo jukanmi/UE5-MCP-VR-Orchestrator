@@ -27,7 +27,7 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
 }
 
 
-FString FEnvelopeBuilder::BuildEnvelope(EEnvelopeType Type, const FString& PayloadJson)
+FString FEnvelopeBuilder::BuildEnvelope(EEnvelopeType Type, const TSharedRef<FJsonObject>& Payload)
 {
     // ── 공통 메타데이터 생성 ───────────────────────────────────────────
     // msg_id: 새 GUID 생성 (요청-응답 추적 및 중복 감지용)
@@ -51,42 +51,30 @@ FString FEnvelopeBuilder::BuildEnvelope(EEnvelopeType Type, const FString& Paylo
     EnvelopeJson->SetNumberField(TEXT("timestamp"),  UnixTimestamp);
     EnvelopeJson->SetStringField(TEXT("type"),       EnvelopeTypeToString(Type));
 
-    // payload는 이미 직렬화된 JSON 문자열이므로, 역직렬화하여 중첩 삽입
-    if (TSharedPtr<FJsonObject> PayloadObject = UMCPJsonUtils::ParseObject(PayloadJson))
-    {
-        EnvelopeJson->SetObjectField(TEXT("payload"), PayloadObject);
-    }
-    else
-    {
-        // payload 파싱 실패 시 빈 오브젝트로 안전 폴백
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnvelopeBuilder] payload JSON 파싱 실패. 빈 payload로 전송합니다. 원본: %s"),
-            *PayloadJson);
-        EnvelopeJson->SetObjectField(TEXT("payload"), MakeShared<FJsonObject>());
-    }
+    EnvelopeJson->SetObjectField(TEXT("payload"), Payload);
 
     return UMCPJsonUtils::ToString(EnvelopeJson);
 }
 
 
 
-FString FEnvelopeBuilder::BuildPrompt(const FString& PayloadJson)
+FString FEnvelopeBuilder::BuildPrompt(const TSharedRef<FJsonObject>& Payload)
 {
-    return BuildEnvelope(EEnvelopeType::Prompt, PayloadJson);
+    return BuildEnvelope(EEnvelopeType::Prompt, Payload);
 }
 
 
-FString FEnvelopeBuilder::BuildEmergencyReport(const FString& PayloadJson)
+FString FEnvelopeBuilder::BuildEmergencyReport(const TSharedRef<FJsonObject>& Payload)
 {
-    return BuildEnvelope(EEnvelopeType::EmergencyReport, PayloadJson);
+    return BuildEnvelope(EEnvelopeType::EmergencyReport, Payload);
 }
 
-FString FEnvelopeBuilder::BuildLocationDecisionRequest(const FString& PayloadJson)
+FString FEnvelopeBuilder::BuildLocationDecisionRequest(const TSharedRef<FJsonObject>& Payload)
 {
-    return BuildEnvelope(EEnvelopeType::LocationDecision, PayloadJson);
+    return BuildEnvelope(EEnvelopeType::LocationDecision, Payload);
 }
 
-FString FEnvelopeBuilder::BuildStateUpdate(const FString& PayloadJson)
+FString FEnvelopeBuilder::BuildStateUpdate(const TSharedRef<FJsonObject>& Payload)
 {
-    return BuildEnvelope(EEnvelopeType::StateUpdate, PayloadJson);
+    return BuildEnvelope(EEnvelopeType::StateUpdate, Payload);
 }

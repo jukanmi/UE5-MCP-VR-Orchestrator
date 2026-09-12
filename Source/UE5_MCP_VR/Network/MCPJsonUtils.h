@@ -28,12 +28,11 @@ public:
     /** Python 백엔드로부터 수신된(이미 deserialize 된) ActionBatch JSON 오브젝트를 FModeActionRequest 로 역직렬화. */
     static bool ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest);
 
-    // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
+    // [의도(Why)] 인지(Perception) 이벤트들을 배칭해 emergency_report payload 오브젝트로 조립합니다.
     // ReportType 이 비어있지 않으면 루트에 report_type 필드를 추가 — Python 이 보고 성격을 구분
     // (예: "combat_victory" 는 danger 게이트 우회). 비우면 기존 perception 보고와 동일(하위호환).
-    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
     /** @param ReflexAction 척수반사가 방금 실행한 EAction 이름. 비면 필드 생략(하위호환) — report_type 과 동일 패턴. */
-    static FString SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType = TEXT(""), const FString& ReflexAction = TEXT(""));
+    static TSharedRef<FJsonObject> BuildPerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType = TEXT(""), const FString& ReflexAction = TEXT(""));
 
     /** location_decision_result 메시지 파싱.
      *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "...", "request_gen": N } }

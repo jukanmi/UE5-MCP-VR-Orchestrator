@@ -6,7 +6,7 @@
 //   코드가 비대해진다. 빌더를 분리하면 Envelope 규격 변경 시 이 파일만 수정하면 된다.
 //
 // 사용법:
-//   FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadJson);
+//   FString Envelope = FEnvelopeBuilder::BuildPrompt(PayloadObj);   // TSharedRef<FJsonObject>
 //   WebSocketClient->SendData(Envelope);
 //
 // Config 설정 (Config/DefaultGame.ini):
@@ -17,6 +17,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Dom/JsonObject.h"
 
 // 메시지 타입 Enum (Python EEnvelopeType과 1:1 대응)
 enum class EEnvelopeType : uint8
@@ -37,33 +38,33 @@ public:
 
     /**
      * prompt Envelope 생성. 플레이어 음성/제스처 명령 전송 시 사용.
-     * @param PayloadJson - PromptPayload를 직렬화한 JSON 문자열
+     * @param Payload - PromptPayload FJsonObject
      * @return            - 완성된 Envelope JSON 문자열
      */
-    static FString BuildPrompt(const FString& PayloadJson);
+    static FString BuildPrompt(const TSharedRef<FJsonObject>& Payload);
 
     /**
      * emergency_report Envelope 생성. NPC의 긴급 이벤트를 묶어서 전송.
-     * @param PayloadJson - NPC의 이벤트를 담은 JSON 배열 문자열
+     * @param Payload - NPC 이벤트 배열을 담은 FJsonObject
      * @return            - 완성된 Envelope JSON 문자열
      */
-    static FString BuildEmergencyReport(const FString& PayloadJson);
+    static FString BuildEmergencyReport(const TSharedRef<FJsonObject>& Payload);
 
     /**
      * location_decision Envelope 생성.
      * EQS가 뽑은 후보 위치들을 LLM에 전달하여 최적 위치를 선택하게 한다.
      * WHY: 모든 이동 좌표를 LLM이 직접 생성하면 지연·비용이 크다.
      *      C++에서 EQS+스코어링으로 후보를 추려낸 뒤, 경량 판단만 LLM에 요청한다.
-     * @param PayloadJson - FLocationDecisionRequest를 직렬화한 JSON 문자열
+     * @param Payload - FLocationDecisionRequest FJsonObject
      * @return            - 완성된 Envelope JSON 문자열
      */
-    static FString BuildLocationDecisionRequest(const FString& PayloadJson);
+    static FString BuildLocationDecisionRequest(const TSharedRef<FJsonObject>& Payload);
 
     /**
      * state_update Envelope 생성. 주기적 NPC 상태 동기화 + Python의 cached relations 응답 트리거.
-     * @param PayloadJson - StateUpdatePayload를 직렬화한 JSON 문자열
+     * @param Payload - StateUpdatePayload FJsonObject
      */
-    static FString BuildStateUpdate(const FString& PayloadJson);
+    static FString BuildStateUpdate(const TSharedRef<FJsonObject>& Payload);
 
 private:
     // ─────────────────────────────────────────────────────────────────────
@@ -78,8 +79,8 @@ private:
      * WHY: 중복 로직 제거. 모든 BuildXxx 함수는 이 함수를 통해 일관성을 유지.
      *
      * @param Type        - 메시지 타입
-     * @param PayloadJson - 타입별 payload JSON 문자열
+     * @param Payload - 타입별 payload FJsonObject — 호출처가 만든 객체를 그대로 봉투에 넣는다(재파싱 없음)
      * @return            - 완성된 Envelope JSON 문자열
      */
-    static FString BuildEnvelope(EEnvelopeType Type, const FString& PayloadJson);
+    static FString BuildEnvelope(EEnvelopeType Type, const TSharedRef<FJsonObject>& Payload);
 };

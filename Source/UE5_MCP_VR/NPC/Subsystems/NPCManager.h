@@ -41,8 +41,7 @@ public:
     const TMap<FString, ASmartNPC*>& GetActiveNPCs() const { return ActiveNPCs; }
 
     // === 취합된 긴급 인지 이벤트 전송 (단일 LLM 채널, Python이 SLM/LLM 자동 라우팅) ===
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void SendEventReport(const FString& AgentID, const FString& CombinedPayload);
+    void SendEventReport(const FString& AgentID, const TSharedRef<FJsonObject>& Payload);
 
     // === 디버그: ActionBatch JSON 직접 주입(서버 없이 배치 분배 검증) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")

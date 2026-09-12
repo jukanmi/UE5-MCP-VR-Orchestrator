@@ -130,7 +130,7 @@ bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObjec
     return true;
 }
 
-FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType, const FString& ReflexAction)
+TSharedRef<FJsonObject> UMCPJsonUtils::BuildPerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType, const FString& ReflexAction)
 {
     TArray<TSharedPtr<FJsonValue>> EventValues;
     EventValues.Reserve(PerceptionEvents.Num());
@@ -149,7 +149,7 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
         EventValues.Add(MakeShared<FJsonValueObject>(EventObj));
     }
 
-    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("agent_id"), AgentID);
     Root->SetArrayField(TEXT("perceptions"), EventValues);
     Root->SetNumberField(TEXT("generated_at"),
@@ -165,7 +165,7 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
         Root->SetStringField(TEXT("reflex_action"), ReflexAction);
     }
 
-    return ToString(Root.ToSharedRef());
+    return Root;
 }
 
 TSharedPtr<FJsonObject> UMCPJsonUtils::ParseObject(const FString& Json)

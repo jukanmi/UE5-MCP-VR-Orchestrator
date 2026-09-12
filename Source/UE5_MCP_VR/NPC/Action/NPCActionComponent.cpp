@@ -1392,7 +1392,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     // Python 은 이 값을 그대로 응답에 echo. UE5 는 응답 처리 시 현재 generation 과 비교해 stale 차단.
     Payload->SetNumberField(TEXT("request_gen"),     static_cast<double>(TacticalQueryGeneration));
 
-    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(UMCPJsonUtils::ToString(Payload.ToSharedRef()));
+    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(Payload.ToSharedRef());
 
     // 후보 시각화 — Manager/서버 연결 여부와 무관하게 항상 실행
     DrawEQSCandidates(Pruned, EQSDebugDuration);

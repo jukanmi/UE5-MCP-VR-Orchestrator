@@ -161,14 +161,8 @@ void UNPCStateComponent::FlushEventReport()
     }
 
     // 반사 이력 동봉 — 통보와 같은 배로 보내야 다음 replan 이 "이미 반응함"에서 출발한다.
-    FString Payload = UMCPJsonUtils::SerializePerceptionReport(
+    const TSharedRef<FJsonObject> Payload = UMCPJsonUtils::BuildPerceptionReport(
         OwnerNPC->AgentID, RefinedEvents, TEXT(""), PendingReflexAction);
-    if (Payload.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: Perception 직렬화 실패 — flush 건너뜀"), *OwnerNPC->AgentID);
-        LocalEventQueue.Empty();
-        return;
-    }
     // location_decision 응답 대기 중에는 Event Report 전송 금지.
     // 같은 LLM WebSocket으로 두 요청이 겹치면 location_decision_result가 타임아웃으로 유실됨.
     if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
@@ -205,15 +199,8 @@ void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
     const FPerceptionData Victory(DefeatedTargetID, ESenseType::Other, OwnerNPC->GetActorLocation(),
                                   OwnerNPC->GetActorLocation(), 0.f);
 
-    const FString Payload = UMCPJsonUtils::SerializePerceptionReport(
-        OwnerNPC->AgentID, { Victory }, TEXT("combat_victory"));
-    if (Payload.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: 승리 보고 직렬화 실패 — 전송 생략"), *OwnerNPC->AgentID);
-        return;
-    }
-
-    Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+    Manager->SendEventReport(OwnerNPC->AgentID,
+        UMCPJsonUtils::BuildPerceptionReport(OwnerNPC->AgentID, { Victory }, TEXT("combat_victory")));
     UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: 전투 승리 보고 전송 (defeated=%s)"),
         *OwnerNPC->AgentID, *DefeatedTargetID);
 }

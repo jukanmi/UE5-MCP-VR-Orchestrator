@@ -343,7 +343,7 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
 
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
-    const FString Envelope = FEnvelopeBuilder::BuildPrompt(UMCPJsonUtils::ToString(Payload));
+    const FString Envelope = FEnvelopeBuilder::BuildPrompt(Payload);
     SendEnvelopePromptToLLM(Envelope);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
@@ -514,11 +514,10 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
     DeliverParsedActionBatches(Root);
 }
 
-void UNPCManager::SendEventReport(const FString& AgentID, const FString& CombinedPayload)
+void UNPCManager::SendEventReport(const FString& AgentID, const TSharedRef<FJsonObject>& Payload)
 {
-    // 이미 NPCStateComponent에서 취합/배치/JSON화가 끝난 데이터를 받음
-    // 여기서는 Envelope 래핑만 해서 즉시 발송
-    FString Envelope = FEnvelopeBuilder::BuildEmergencyReport(CombinedPayload);
+    // 이미 NPCStateComponent에서 취합/배치가 끝난 payload — 여기서는 Envelope 래핑만 해서 즉시 발송
+    const FString Envelope = FEnvelopeBuilder::BuildEmergencyReport(Payload);
     
     if (LLMClient && LLMClient->IsConnected())
     {

@@ -110,7 +110,7 @@ void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
     // perceived_targets는 비어있어도 OK (기본값 빈 배열)
     Payload->SetArrayField(TEXT("perceived_targets"), TArray<TSharedPtr<FJsonValue>>{});
 
-    SendMessage(FEnvelopeBuilder::BuildStateUpdate(UMCPJsonUtils::ToString(Payload)));
+    SendMessage(FEnvelopeBuilder::BuildStateUpdate(Payload));
 }
 
 
