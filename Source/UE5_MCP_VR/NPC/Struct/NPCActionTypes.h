@@ -46,14 +46,6 @@ enum class EMoveType : uint8
 	Crouch
 };
 
-UENUM(BlueprintType)
-enum class EAttackType : uint8
-{
-	Melee,
-	Range,
-	Magic
-};
-
 /** ENPCRelation: 호감도 임계값으로 분류한 대상과의 관계.
  *  단일 소유는 NPCStateComponent::GetRelation — GetAffinityMultiplier 도 이 값을 배율로 변환할 뿐이다.
  *  Any 는 반사 룰 필터 전용 와일드카드로, GetRelation 이 반환하는 일은 없다. */

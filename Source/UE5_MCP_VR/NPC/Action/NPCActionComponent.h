@@ -44,7 +44,6 @@ class UNPCInventoryComponent;
 class UInventoryComponent;
 class UAnimMontage;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCDialogue, const FString&, AgentID, const FString&, DialogueText);
 
@@ -58,9 +57,6 @@ public:
 
     // --- Action Events ---
     // Blackboard 제어 결합도를 낮추기 위한 이벤트 (SmartNPCAIController 등이 바인딩하여 사용)
-    UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
-    FOnActionStateChanged OnActionStarted;
-
     UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
     FOnAllActionsStopped OnActionStoppedAll;
 
@@ -235,28 +231,10 @@ protected:
     void BaseLieUp();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSignalAllies(const FString& SignAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseComfort(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseEmote(const FString& EmoteAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseDance(const FString& DanceAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSing(const FString& SingAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseStopCurrentAction();
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    TMap<FString, int32> BaseDetectEntityInRange(float Range, EEntityType EntityType);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
 
     /** 몽타주를 재생했으면 true 반환(완료는 몽타주 종료 콜백이 처리). 재생할 몽타주가 없으면 false(즉시형). */
@@ -503,7 +481,7 @@ public:
     // [2] Combat Behaviors
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType);
+    void ExecuteAttackAction(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteBlock(AActor* TargetActor);

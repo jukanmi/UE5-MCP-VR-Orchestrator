@@ -1,9 +1,7 @@
 #include "NPC/Components/NPCStateComponent.h"
-#include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Action/NPCActionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
-#include "Utils/DiceSystem.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
 #include "Engine/GameInstance.h"
@@ -78,20 +76,18 @@ void UNPCStateComponent::ApplyMovementSpeed()
     CMC->MaxWalkSpeed = GetAttributes().Movement.WalkSpeed;
 }
 
-// --- Reflex ---
+// --- Plan ---
 
-bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
+void UNPCStateComponent::SetCurrentPlan(const FNPCPlan& NewPlan)
 {
-    int32 PerceptionBonus = FMath::Clamp(GetAttributes().BaseStats.Perception, 0, 100);
-    int32 Roll = UDiceSystem::RollD100();
-    int32 Total = Roll + PerceptionBonus;
-
-    bool bSuccess = Total >= Difficulty;
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCState] Reflex Check: Roll(%d) + Perception(%d) = %d vs DC(%d) → %s"),
-        Roll, PerceptionBonus, Total, Difficulty, bSuccess ? TEXT("SUCCESS") : TEXT("FAIL"));
-
-    return bSuccess;
+    CurrentPlan = NewPlan;
+    CurrentPlan.bIsValid = true;
+    bDangerReplanPending = false;
+    bPlanAchievedPending = false;
+    TurnsOnCurrentPlan = 0;
+    UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: plan 갱신 goal=\"%s\" steps=%d"),
+        *GetOwner()->GetName(), *CurrentPlan.Goal, CurrentPlan.Steps.Num());
+    OnPlanUpdated.Broadcast(CurrentPlan);
 }
 
 // --- Damage ---
@@ -224,16 +220,6 @@ void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
     Manager->SendEventReport(OwnerNPC->AgentID, Payload);
     UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: 전투 승리 보고 전송 (defeated=%s)"),
         *OwnerNPC->AgentID, *DefeatedTargetID);
-}
-
-// --- Internal Helper ---
-
-ASmartNPCAIController* UNPCStateComponent::GetOwnerAIController() const
-{
-    APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    if (!OwnerPawn) return nullptr;
-    
-    return Cast<ASmartNPCAIController>(OwnerPawn->GetController());
 }
 
 // --- Affinity ---

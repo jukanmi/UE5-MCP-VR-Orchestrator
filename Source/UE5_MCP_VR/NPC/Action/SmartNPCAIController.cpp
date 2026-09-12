@@ -129,7 +129,6 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
         // --- Bind ActionComponent Delegates ---
         if (UNPCActionComponent* ActionComp = NPC->ActionComponent)
         {
-            ActionComp->OnActionStarted.AddDynamic(this, &ASmartNPCAIController::HandleActionStarted);
             ActionComp->OnActionStoppedAll.AddDynamic(this, &ASmartNPCAIController::HandleAllActionsStopped);
         }
 	}
@@ -274,10 +273,6 @@ void ASmartNPCAIController::HandleCombatTargetLostTimeout()
 
     StateComp->SetBehaviorMode(ENPCBehaviorMode::Common);
     StateComp->FlagDangerReplan(); // 재조우 시 'Combat 첫 진입' replan 경로 복원
-}
-
-void ASmartNPCAIController::HandleActionStarted(const FGameAction& /*Action*/)
-{
 }
 
 void ASmartNPCAIController::HandleAllActionsStopped()

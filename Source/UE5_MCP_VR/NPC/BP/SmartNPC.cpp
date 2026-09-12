@@ -13,7 +13,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "BehaviorTree/BlackboardComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionComponent.h"
@@ -159,13 +158,6 @@ void ASmartNPC::BeginPlay()
 
     AddStateTag(FGameplayTag::RequestGameplayTag(FName("State.Idle")));
 
-    // 계획 갱신 구독 — plan 산출 시 로그 알림. 1회 바인딩.
-    if (StateComponent && !bPlanUpdatedBound)
-    {
-        StateComponent->OnPlanUpdated.AddDynamic(this, &ASmartNPC::HandlePlanUpdated);
-        bPlanUpdatedBound = true;
-    }
-
     // 디버그 표시 활성화된 NPC만 Tick 켜기 (대부분 NPC는 Tick 비용 0)
     // 자막·flinch·넉다운 등 다른 소비자는 RefreshTickEnabled 가 OR 로 함께 관리.
     RefreshTickEnabled();
@@ -176,7 +168,7 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
     // 넉다운 도중 파괴/종료 시 동시 카운트 누수 방지(UNPCManager 소유 카운터 감소).
     if (KnockdownPhase != EKnockdownPhase::None)
     {
-        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+        if (UNPCManager* Mgr = UNPCManager::Get(this)) { Mgr->ExitKnockdown(); }
         KnockdownPhase = EKnockdownPhase::None;
     }
 
@@ -198,24 +190,6 @@ void ASmartNPC::ExecuteActionBatch(const FActionBatch& Batch)
         ActionComponent->ExecuteActionBatch(Batch);
     }
 }
-
-
-
-void ASmartNPC::SetBlackboardBool(const FString& KeyName, bool bValue)
-{
-    ASmartNPCAIController* AICtrl = Cast<ASmartNPCAIController>(GetController());
-    if (!AICtrl) return;
-
-    UBlackboardComponent* BlackboardComp = AICtrl->GetBlackboardComponent();
-    if (!BlackboardComp) return;
-
-    BlackboardComp->SetValueAsBool(FName(*KeyName), bValue);
-    UE_LOG(LogTemp, Log, TEXT("[SmartNPC] Blackboard key '%s' set to %s on NPC '%s'"),
-        *KeyName,
-        bValue ? TEXT("true") : TEXT("false"),
-        *AgentID);
-}
-
 
 void ASmartNPC::OnActionCompleted()
 {
@@ -370,7 +344,7 @@ void ASmartNPC::HandleDeath()
     if (KnockdownPhase != EKnockdownPhase::None)
     {
         GetWorldTimerManager().ClearTimer(GetUpMontageTimer);
-        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+        if (UNPCManager* Mgr = UNPCManager::Get(this)) { Mgr->ExitKnockdown(); }
         KnockdownPhase = EKnockdownPhase::None;
     }
     bFlinching = false;
@@ -453,22 +427,9 @@ void ASmartNPC::HideSubtitle()
     if (DialogueWidgetComp) DialogueWidgetComp->HideSubtitle();
 }
 
-// === Plan 갱신 로그 알림 ===
-
-void ASmartNPC::HandlePlanUpdated(const FNPCPlan& NewPlan)
-{
-    UE_LOG(LogTemp, Warning, TEXT("[PlanHUD] %s: plan 갱신 goal=\"%s\" steps=%d"),
-        *AgentID, *NewPlan.Goal, NewPlan.Steps.Num());
-}
-
 // ====================================================================
 // 액티브 래그돌 — 트리거형 hit-react. 약타=Flinch(상체 PD 복귀), 강타=Knockdown(전신 래그돌→기상).
 // ====================================================================
-
-UNPCManager* ASmartNPC::GetNPCManager() const
-{
-    return UNPCManager::Get(this);
-}
 
 void ASmartNPC::RefreshTickEnabled()
 {
@@ -617,7 +578,7 @@ void ASmartNPC::Knockdown()
     {
         // 동시 넉다운 상한 초과 → Flinch 폴백(전신 래그돌은 비용·시야 혼잡).
         // 카운터는 UNPCManager 소유(PIE 세션별 리셋). 매니저 없으면 게이트 없이 진행.
-        if (UNPCManager* Mgr = GetNPCManager())
+        if (UNPCManager* Mgr = UNPCManager::Get(this))
         {
             if (!Mgr->TryEnterKnockdown(MaxConcurrentKnockdown))
             {
@@ -822,7 +783,7 @@ void ASmartNPC::FinishGetUp()
     if (KnockdownPhase != EKnockdownPhase::None)
     {
         KnockdownPhase = EKnockdownPhase::None;
-        if (UNPCManager* Mgr = GetNPCManager()) { Mgr->ExitKnockdown(); }
+        if (UNPCManager* Mgr = UNPCManager::Get(this)) { Mgr->ExitKnockdown(); }
     }
     SettleTimer = 0.f;
     GetUpBlendWeight = 0.f;

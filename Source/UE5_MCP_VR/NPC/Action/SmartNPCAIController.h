@@ -47,9 +47,6 @@ protected:
 
     /** Callback events for NPCActionComponent */
     UFUNCTION()
-    void HandleActionStarted(const FGameAction& Action);
-
-    UFUNCTION()
     void HandleAllActionsStopped();
 
     /** 시야 유지 중 주기적 Cognition 재보고 */

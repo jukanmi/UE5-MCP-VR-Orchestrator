@@ -511,8 +511,6 @@ bool UNPCActionComponent::ProcessNextAction()
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
 
-        OnActionStarted.Broadcast(CurrentAction);
-
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
         return true;
     }
@@ -725,61 +723,11 @@ void UNPCActionComponent::BaseLieUp()
 
 void UNPCActionComponent::BaseStopCurrentAction() { AbortCurrentAction(); }
 
-void UNPCActionComponent::BaseSignalAllies(const FString& SignAssetID) { BasePlayActionMedia(SignAssetID); }
-
 void UNPCActionComponent::BaseComfort(AActor* TargetActor)
 {
     if (TargetActor) ExecuteTurnTo(FVector::ZeroVector, TargetActor);
     BasePlayActionMedia(TEXT("Comfort"));
 }
-
-void UNPCActionComponent::BaseEmote(const FString& EmoteAssetID) { BasePlayActionMedia(EmoteAssetID); }
-void UNPCActionComponent::BaseDance(const FString& DanceAssetID) { BasePlayActionMedia(DanceAssetID); }
-void UNPCActionComponent::BaseSing(const FString& SingAssetID)   { BasePlayActionMedia(SingAssetID); }
-
-TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float SearchRadius, EEntityType TargetEntityType)
-{
-    // 특정 반경 내에 존재하는 타겟 타입(예: 아이템, 에너미)의 엔티티들을 최적화된 방식(Subsystem 활용 등)으로 탐지하고, 그 결과를 <종류, 수량> 형태로 반환하여 후속 상호작용을 준비합니다.
-    TMap<FString, int32> DetectedEntities;
-
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) 
-    {
-        return DetectedEntities;
-    }
-
-    if (TargetEntityType == EEntityType::Item)
-    {
-        // ItemManager 등록부 기반 조회 — 충돌 채널(ECC_PhysicsBody) 가정 없이 등록된 아이템만 정확히 탐지
-        UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-        if (UItemManager* ItemMgr = GI ? GI->GetSubsystem<UItemManager>() : nullptr)
-        {
-            for (const FDroppedItemData& Item : ItemMgr->GetItemsInRange(OwnerCharacter->GetActorLocation(), SearchRadius))
-            {
-                DetectedEntities.FindOrAdd(Item.ItemTemplateID, 0)++;
-            }
-        }
-    }
-    else
-    {
-        // TODO: 다른 EntityType (Enemy, NPC 등)에 대한 탐지 지원(필요한 경우 추가)
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: 반경 %.1f 내의 엔티티(타입 %d) 탐색 완료. 종류 수: %d"), 
-        *GetOwnerAgentID(), SearchRadius, (int32)TargetEntityType, DetectedEntities.Num());
-
-    return DetectedEntities;
-}
-
-void UNPCActionComponent::BaseSendEventToActor(AActor* TargetActor, const FString& EventName)
-{
-    // 플레이어나 타 액터에게 특정 메시지를 던져, 협동이나 대립 같은 복합적인 에코시스템을 유기적으로 연동시키기 위함입니다.
-    if (!TargetActor) return;
-
-    // TODO: 인터페이스 통신이나 이벤트 브로드캐스트 구현
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s가 %s에게 이벤트 '%s' 전달"), *GetOwnerAgentID(), *TargetActor->GetName(), *EventName);
-}
-
 
 bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 {
@@ -905,7 +853,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Unequip:      ExecuteUnequipAction(ItemID); break;
     
     // Combat
-    case EAction::Attack:       ExecuteAttackAction(TargetActor, EAttackType::Melee); break;
+    case EAction::Attack:       ExecuteAttackAction(TargetActor); break;
     case EAction::Block:        ExecuteBlock(TargetActor); break;
     case EAction::Dodge:        ExecuteDodgeAction(Direction.IsNearlyZero() ? FVector(100, 100, 0) : Direction); break;
     case EAction::Flee:
@@ -1636,7 +1584,7 @@ void UNPCActionComponent::ExecuteUnequipAction(const FString& ItemID)
 // [2] Combat Behaviors
 // ==========================================
 
-void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType)
+void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor)
 {
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
@@ -1789,7 +1737,7 @@ void UNPCActionComponent::StopDodgeMove()
 }
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }
-void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BaseSignalAllies(HandSign); }
+void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BasePlayActionMedia(HandSign); }
 
 // ==========================================
 // [전투 행동 셀렉터] — SPEC_combat_selector Phase 1
@@ -2388,9 +2336,9 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
         // Sit/Sleep 은 위에서 가구 타겟 필수 처리(무가구 = 무동작) — 여기 도달 불가.
         case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
-        case EAction::Dance: BaseDance(StringParam); break;
-        case EAction::Sing:  BaseSing(StringParam); break;
-        case EAction::Emote: BaseEmote(StringParam); break;
+        case EAction::Dance:
+        case EAction::Sing:
+        case EAction::Emote: BasePlayActionMedia(StringParam); break;
         // 추가 Lifestyle 타입 확장이 필요하다면 여기에 분기를 추가합니다.
         default: break;
     }

@@ -4,7 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Engine/TimerHandle.h"
 #include "Core/Interfaces/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
-#include "NPC/Components/NPCStateComponent.h"  // FNPCPlan (OnPlanUpdated 핸들러 시그니처용)
+#include "NPC/Components/NPCStateComponent.h"
 
 #include "SmartNPC.generated.h"
 
@@ -136,13 +136,6 @@ public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaSeconds) override;
-
-    /**
-     * [Offline Fallback] NPCManager가 WebSocket 연결 상태 변화 시 호출합니다.
-     * BT의 Selector가 IsConnected 키를 감지해 Local Fallback 서브트리로 자동 분기합니다.
-     */
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void SetBlackboardBool(const FString& KeyName, bool bValue);
 
     // === Death ===
 
@@ -325,9 +318,6 @@ private:
     FTransform DefaultMeshRelativeTransform;
     FTimerHandle GetUpMontageTimer;
 
-    /** 동시 넉다운 게이트 카운터 소유자(UNPCManager, GameInstanceSubsystem). 없으면 nullptr. */
-    class UNPCManager* GetNPCManager() const;
-
     // --- Tick 헬퍼 ---
     void TickFlinchRamp(float DeltaSeconds);
     void TickSettleDetection(float DeltaSeconds);
@@ -340,14 +330,6 @@ private:
 
     /** 모든 Tick 소비자(affinity·자막·flinch·넉다운)를 OR 해 Tick 켜기/끄기 일원화. */
     void RefreshTickEnabled();
-
-    // --- Plan 갱신 로그 ---
-    /** NPCStateComponent::OnPlanUpdated 구독 핸들러 — plan 갱신 로그 출력. */
-    UFUNCTION()
-    void HandlePlanUpdated(const FNPCPlan& NewPlan);
-
-    /** OnPlanUpdated 1회 바인딩(재바인딩 누수 방지). */
-    bool bPlanUpdatedBound = false;
 
     // --- 사망 임펄스용 마지막 치명타 정보 (TakeDamage 가 채움, HandleDeath 가 소비) ---
     FName LastHitBone = NAME_None;
