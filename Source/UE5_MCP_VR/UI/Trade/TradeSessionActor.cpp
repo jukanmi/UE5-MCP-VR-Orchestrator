@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Core/BP/VRPawn.h"
+#include "Core/Utils/EngineShapes.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -15,20 +16,12 @@
 
 namespace
 {
-    UStaticMesh* LoadCube()
-    {
-        return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-    }
-
     // 색이 곧 라벨이다 — 글자를 넣으려면 위젯이 넷 더 필요한데, 초록/빨강이면 설명이 필요 없다.
     void TintMesh(UStaticMeshComponent* Mesh, UObject* Outer, const FLinearColor& Color)
     {
         if (!Mesh) return;
-        if (UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
-                nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial")))
+        if (UMaterialInstanceDynamic* MID = EngineShapes::MakeEmissiveMID(Outer, Color))
         {
-            UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, Outer);
-            MID->SetVectorParameterValue(TEXT("Color"), Color);
             Mesh->SetMaterial(0, MID);
         }
     }
@@ -83,7 +76,7 @@ void ATradeSessionActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    UStaticMesh* Cube = LoadCube();
+    UStaticMesh* Cube = EngineShapes::LoadCube();
     UStaticMeshComponent* Meshes[] = { PlayerPlate, NpcPlate, AcceptButton, CancelButton };
     for (UStaticMeshComponent* Mesh : Meshes)
     {

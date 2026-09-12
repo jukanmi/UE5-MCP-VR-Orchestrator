@@ -10,6 +10,7 @@
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
+#include "Core/Utils/EngineShapes.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -191,20 +192,15 @@ void AVRPawn::BeginPlay()
     // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
     if (PointerBeam && PointerDot)
     {
-        UStaticMesh* Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-        UStaticMesh* Sphere   = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-        UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
+        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
 
-        if (Cylinder) PointerBeam->SetStaticMesh(Cylinder);
-        if (Sphere)   PointerDot->SetStaticMesh(Sphere);
-
-        if (Emissive)
+        // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
+        PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
+        if (PointerMID)
         {
-            PointerMID = UMaterialInstanceDynamic::Create(Emissive, this);
             PointerBeam->SetMaterial(0, PointerMID);
             PointerDot->SetMaterial(0, PointerMID);
-            // EmissiveMeshMaterial 의 벡터 파라미터는 "Color" 하나뿐(2026-09-05 에디터 실측).
-            PointerMID->SetVectorParameterValue(TEXT("Color"), PointerColor);
         }
 
         // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
