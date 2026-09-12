@@ -272,7 +272,6 @@ def test_combat_victory_routed_no_action():
     SLM/DB 는 건드리지 않는다.
     """
     from app import main as main_module
-    from app.utils import memory_manager
 
     recorded = []
 
@@ -280,9 +279,9 @@ def test_combat_victory_routed_no_action():
         def add_entry(self, speaker, content):
             recorded.append((speaker, content))
 
-    # 실 메모리 파일 쓰기 방지 — 핸들러의 함수내 import 는 호출 시점 모듈 속성을 읽으므로 패치 유효.
-    original_get_memory = memory_manager.get_memory
-    memory_manager.get_memory = lambda agent_id: _FakeMemory()
+    # 실 메모리 파일 쓰기 방지 — main 이 get_memory 를 모듈 상단에서 바인딩하므로 main 쪽 이름을 패치.
+    original_get_memory = main_module.get_memory
+    main_module.get_memory = lambda agent_id: _FakeMemory()
     try:
         envelope = make_emergency_envelope(
             {
@@ -304,7 +303,7 @@ def test_combat_victory_routed_no_action():
 
         response = json.loads(asyncio.run(_run()))
     finally:
-        memory_manager.get_memory = original_get_memory
+        main_module.get_memory = original_get_memory
 
     assert response.get("Mode") == "Common", f"예상: Common, 실제: {response}"
     assert response.get("ActionBatches") == {}, f"무행동 기대, 실제: {response}"

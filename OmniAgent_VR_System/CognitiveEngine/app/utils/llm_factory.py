@@ -108,7 +108,23 @@ STAGE2_MODEL = "mid"
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
+# 페르소나 importance → MODELS 키. 디버그 대시보드 배지·API 응답이 여기서 읽는다 — 모델을 바꿀 때
+# main.py·debug.html 을 따로 고치지 않게 하려고 한 곳에 둔다.
+IMPORTANCE_MODELS = {"core": "gemma4", "high": "mid", "normal": STAGE1_MODEL}
+
+
+def _keep_alive_for(model_name: str) -> str:
+    """플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s (replan 버스트의 Stage2+supervisor
+    연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드). hot-loop 경량 모델은 5m(매 턴 사용, 콜드 재로드 회피).
+    main.py 의 prewarm keep_alive 도 이 값과 맞춰야 squat 정책이 덮어써지지 않는다."""
+    return "30s" if model_name == STAGE2_MODEL else "5m"
+
+
+def model_for_importance(importance: str) -> str:
+    """importance("normal"|"high"|"core") → 실제 Ollama 모델 ID. 모르는 값은 normal 취급."""
+    return MODELS[IMPORTANCE_MODELS.get(importance, IMPORTANCE_MODELS["normal"])]
 
 
 # ==============================================================================
@@ -129,10 +145,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
     if model_name in MODELS:
         model_id = MODELS[model_name]
         print(f"[LLM Factory] Ollama 모델 사용: {model_id}")
-        # keep_alive: 플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s 단축
-        # (replan 버스트 Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드).
-        # e4b 등 hot-loop 경량 모델은 5m 유지(매 턴 사용, 콜드 재로드 회피).
-        keep_alive = "30s" if model_name == STAGE2_MODEL else "5m"
+        keep_alive = _keep_alive_for(model_name)
         return ChatOllama(
             model=model_id,
             temperature=temperature,
@@ -188,7 +201,7 @@ async def ollama_structured(
         "format": schema_override if schema_override is not None else schema_model.model_json_schema(),
         "think": False,  # reasoning 토큰이 num_predict 잠식 방지 (get_llm reasoning=False 와 정합)
         # 플래너(Stage2)는 idle squat 방지 30s, 경량 hot 모델은 5m (get_llm 과 정합).
-        "keep_alive": "30s" if model_name == STAGE2_MODEL else "5m",
+        "keep_alive": _keep_alive_for(model_name),
         "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
     }
 

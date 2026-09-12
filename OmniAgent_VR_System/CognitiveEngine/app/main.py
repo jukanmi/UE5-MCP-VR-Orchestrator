@@ -6,6 +6,9 @@ import json
 import logging
 import traceback
 import asyncio
+import random
+import time
+import uuid
 import yaml
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -32,6 +35,7 @@ from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
 from .utils import llm_factory
+from .utils.memory_manager import get_memory
 from .utils.async_tasks import spawn_background
 from .middleware import validate_auth_token, is_stale_packet
 
@@ -57,11 +61,10 @@ SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD"
 async def _check_ollama_model() -> None:
     try:
         import httpx
-        import time as _t
 
         # 끝 슬래시 방어 — 환경변수 OLLAMA_BASE_URL 이 "http://.../" 로 끝나면
         # `{base}/api/tags` 가 `//api/tags` 가 되어 Ollama 가 307 redirect 반환.
-        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        ollama_base = llm_factory.OLLAMA_BASE_URL
         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             r = await client.get(f"{ollama_base}/api/tags", timeout=5.0)
             if r.status_code != 200 or not r.text.strip():
@@ -77,7 +80,7 @@ async def _check_ollama_model() -> None:
             # Pre-warm — 첫 location_decision 호출이 cold-start 4~6초 걸려 매번
             # stale 처리되는 문제 해소. dummy raw 호출로 모델을 메모리에 로드.
             slm_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
-            _t0 = _t.perf_counter()
+            _t0 = time.perf_counter()
             warm = await client.post(
                 f"{ollama_base}/api/generate",
                 json={
@@ -89,7 +92,7 @@ async def _check_ollama_model() -> None:
                     "options": {"num_predict": 1},
                 },
             )
-            _dt = (_t.perf_counter() - _t0) * 1000.0
+            _dt = (time.perf_counter() - _t0) * 1000.0
             logger.info(f"[Startup] SLM pre-warm ({slm_id}) {_dt:.0f}ms status={warm.status_code}")
     except Exception as e:
         logger.warning(f"[Startup] Ollama 모델 상태 확인 실패 (서버 미실행 가능): {e}")
@@ -125,9 +128,8 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
     """gemma e4b raw=true 단발 생성 — chat template(thinking) 우회. (raw_text, elapsed_ms) 반환.
     SLM Reflex·location_decision 공용. 커넥션 풀 재사용 + stop=["\n"] 안전 마진.
     raise_for_status 로 4xx/5xx 는 예외 → 호출부 except 가 안전 폴백 처리."""
-    import time as _t
 
-    ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+    ollama_base = llm_factory.OLLAMA_BASE_URL
     model_id = llm_factory.MODELS.get("gemma4_slm", "gemma4:e4b")
     body = {
         "model": model_id,
@@ -137,10 +139,10 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
         "keep_alive": "5m",
         "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
     }
-    _llm_start = _t.perf_counter()
+    _llm_start = time.perf_counter()
     resp = await llm_factory.get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
     resp.raise_for_status()
-    elapsed_ms = (_t.perf_counter() - _llm_start) * 1000.0
+    elapsed_ms = (time.perf_counter() - _llm_start) * 1000.0
     raw_text = (resp.json().get("response") or "").strip()
     return raw_text, elapsed_ms
 
@@ -149,14 +151,13 @@ async def _prewarm_core_llm() -> None:
     """Stage2 플래너를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
     throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
     global _last_core_prewarm
-    import time as _t
 
-    now = _t.monotonic()
+    now = time.monotonic()
     if now - _last_core_prewarm < _CORE_PREWARM_THROTTLE_S:
         return
     _last_core_prewarm = now
     try:
-        ollama_base = llm_factory.OLLAMA_BASE_URL.rstrip("/")
+        ollama_base = llm_factory.OLLAMA_BASE_URL
         model_id = llm_factory.MODELS[llm_factory.STAGE2_MODEL]
         # prompt 키 없음 = Ollama 로드콜 전용 (342ms) — num_predict=1 생성(3.7s) 아님.
         # keep_alive 는 llm_factory core 분기 값과 반드시 일치시킬 것 — 다르면 squat 정책 오버라이드.
@@ -303,6 +304,20 @@ async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
             logger.info(f"[Affinity] {agent_id} → {p.target_id}: -5 (적대 perception)")
 
 
+def _record_event_memory_bg(agent_id: str, text: str, label: str) -> None:
+    """NPC 장기 기억에 Event 한 줄을 백그라운드 스레드로 남긴다.
+    add_entry 는 파일 I/O + 토큰 예산 초과 시 요약까지 수행할 수 있어 루프에서 직접 부르지 않는다.
+    to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다."""
+
+    def _write() -> None:
+        try:
+            get_memory(agent_id).add_entry("Event", text)
+        except Exception as e:
+            logger.error(f"[Main] {label} 메모리 기록 실패: {e}")
+
+    spawn_background(asyncio.to_thread(_write), label=label)
+
+
 def _record_reflex_memory(agent_id: str, reflex_action: str) -> None:
     """C++ 척수반사가 실행한 액션을 NPC 기억에 Event 로 남긴다.
 
@@ -310,16 +325,7 @@ def _record_reflex_memory(agent_id: str, reflex_action: str) -> None:
     같은 한 박자 늦은 지시를 만든다. 기억에 남겨두면 plan 이 '전투 돌입'이 아니라
     '전투 지속·전술' 수준에서 시작한다. 전투 승리 보고와 같은 패턴.
     """
-    from .utils.memory_manager import get_memory
-
-    def _write() -> None:
-        try:
-            get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 반사적으로 {reflex_action}을(를) 실행했다.")
-        except Exception as e:
-            # to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다.
-            logger.error(f"[Main] 반사 이력 메모리 기록 실패: {e}")
-
-    spawn_background(asyncio.to_thread(_write), label="reflex-memory")
+    _record_event_memory_bg(agent_id, f"{agent_id}이(가) 반사적으로 {reflex_action}을(를) 실행했다.", "reflex-memory")
     logger.info(f"[Main] 반사 이력 기록: npc={agent_id}, action={reflex_action}")
 
 
@@ -330,22 +336,11 @@ async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
     다음 prompt 의 LLM 몫. 여기서는 승리 사실을 NPC 장기 기억에 남겨
     다음 대화에서 '내가 그놈을 처치했다'를 인지하게만 한다.
     """
-    from .utils.memory_manager import get_memory
 
     agent_id = payload.agent_id
     defeated = payload.perceptions[0].target_id if payload.perceptions else "Unknown"
     logger.info(f"[Main] 전투 승리 보고: npc={agent_id}, defeated={defeated} — 메모리 기록, 무행동")
-
-    # add_entry 는 파일 I/O + 토큰 예산 초과 시 요약까지 수행 가능 — 루프 블로킹 방지 오프로드.
-    def _write_victory_memory() -> None:
-        try:
-            get_memory(agent_id).add_entry("Event", f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).")
-        except Exception as e:
-            # to_thread 태스크 내부 예외는 어디서도 await 안 하면 무음 소실 — 로그로 드러낸다.
-            logger.error(f"[Main] 전투 승리 메모리 기록 실패: {e}")
-
-    spawn_background(asyncio.to_thread(_write_victory_memory), label="victory-memory")
-
+    _record_event_memory_bg(agent_id, f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).", "victory-memory")
     return _empty_batch_json()
 
 
@@ -399,8 +394,6 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
 
     except Exception as e:
         logger.error(f"[Main] _handle_emergency_report 실행 중 치명적 오류: {e}")
-        import traceback
-
         traceback.print_exc()
         return _empty_batch_json()
 
@@ -600,8 +593,6 @@ def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str
         fallback_id = "OPTIMAL"
         reason_str = "no_candidates"
     else:
-        import random
-
         sorted_candidates = sorted(candidates_raw, key=lambda c: c.get("score", 0), reverse=True)
         top_n = sorted_candidates[:3]
         roll = random.randint(1, 100)
@@ -705,6 +696,7 @@ def _list_personas() -> list[dict]:
                         "folder": subdir,
                         "role": data.get("role", ""),
                         "importance": data.get("importance", "normal"),
+                        "llm_model": llm_factory.model_for_importance(data.get("importance", "normal")),
                         "traits": data.get("traits", []),
                     }
                 )
@@ -798,17 +790,11 @@ async def api_set_importance(npc_id: str, req: ImportanceUpdateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    if req.importance == "core":
-        llm_model = "gemma4-12b"
-    elif req.importance == "high":
-        llm_model = "qwen3:8b"
-    else:
-        llm_model = "gemma4:e4b"
     return {
         "status": "ok",
         "npc_id": npc_id,
         "importance": req.importance,
-        "llm_model": llm_model,
+        "llm_model": llm_factory.model_for_importance(req.importance),
     }
 
 
@@ -907,8 +893,6 @@ async def api_debug_say(req: DebugPromptRequest):
 async def api_debug_prompt(req: DebugPromptRequest):
     """디버그: UE 없이 콘솔/웹에서 NPC 에게 직접 말 걸기.
     PROMPT envelope 를 만들어 그래프 실행 → ActionBatch(JSON) 반환."""
-    import uuid
-    import time as _t
 
     cached_plan = _debug_plan_cache.get(req.npc_id)
     env = MessageEnvelope(
@@ -916,7 +900,7 @@ async def api_debug_prompt(req: DebugPromptRequest):
         # auth_token 은 WS 수신 루프에서만 검증됨. 디버그는 _handle_prompt 직접 호출이라
         # 검증을 거치지 않지만 pydantic 필수 필드라 env 값(없으면 더미)으로 채운다.
         auth_token=os.environ.get("WS_AUTH_TOKEN", "debug"),
-        timestamp=_t.time(),
+        timestamp=time.time(),
         type=EEnvelopeType.PROMPT,
         payload={
             "player_id": req.player_id,

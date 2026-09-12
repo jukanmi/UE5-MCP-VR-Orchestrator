@@ -15,9 +15,11 @@ WHY (설계 의도):
 
 """
 
+import hmac
+import logging
 import os
 import time
-import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from .schemas.envelope import MessageEnvelope
@@ -59,8 +61,6 @@ def validate_auth_token(token: str) -> bool:
         logger.error("[Auth] WS_AUTH_TOKEN 미설정으로 인해 모든 요청이 거부됩니다.")
         return False
 
-    import hmac
-
     is_valid = hmac.compare_digest(token, _EXPECTED_AUTH_TOKEN)
     if not is_valid:
         logger.warning(f"[Auth] 잘못된 auth_token: '{token[:8]}...' (8자리 이후 생략)")
@@ -84,8 +84,6 @@ def is_stale_packet(packet_timestamp: float, threshold_seconds: float = 2.0) -> 
         True  = 오래된 패킷 (드랍 대상)
         False = 유효한 패킷 (처리 가능)
     """
-    from datetime import datetime, timezone
-
     server_now = datetime.now(timezone.utc).timestamp()
     age_seconds = server_now - packet_timestamp
 
