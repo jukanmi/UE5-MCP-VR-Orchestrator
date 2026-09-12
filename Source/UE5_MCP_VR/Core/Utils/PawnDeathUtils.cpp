@@ -9,19 +9,16 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 
-void PawnDeathUtils::SaveCheckpoint(const FPlayerAttributes& Stats,
-                                    const FVector& Location, const FRotator& Rotation,
-                                    bool& bHasCheckpoint, FVector& OutLocation,
-                                    FRotator& OutRotation, float& OutHP,
-                                    const TCHAR* LogContext)
+void PawnDeathUtils::SaveCheckpoint(const FPlayerAttributes& Stats, const FVector& Location, const FRotator& Rotation,
+                                    FCheckpoint& OutCheckpoint, const TCHAR* LogContext)
 {
-    bHasCheckpoint = true;
-    OutLocation    = Location;
-    OutRotation    = Rotation;
-    OutHP          = Stats.Resources.Health;
+    OutCheckpoint.bValid   = true;
+    OutCheckpoint.Location = Location;
+    OutCheckpoint.Rotation = Rotation;
+    OutCheckpoint.HP       = Stats.Resources.Health;
 
     UE_LOG(LogTemp, Log, TEXT("[%s] 체크포인트 저장 — 위치: %s, HP: %.1f"),
-           LogContext, *Location.ToString(), OutHP);
+           LogContext, *Location.ToString(), OutCheckpoint.HP);
 }
 
 void PawnDeathUtils::HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
@@ -52,18 +49,16 @@ void PawnDeathUtils::HandleDeath(ACharacter* Pawn, FGameplayTagContainer& Tags,
     Pawn->GetWorldTimerManager().SetTimer(RespawnTimer, RespawnDelegate, RespawnDelay, false);
 }
 
-void PawnDeathUtils::Respawn(ACharacter* Pawn, FPlayerAttributes& Stats,
-                             bool bHasCheckpoint, const FVector& CheckpointLocation,
-                             const FRotator& CheckpointRotation, float CheckpointHP,
+void PawnDeathUtils::Respawn(ACharacter* Pawn, FPlayerAttributes& Stats, const FCheckpoint& Checkpoint,
                              FGameplayTagContainer& Tags, const TCHAR* LogContext)
 {
     // GetWorld() null 방어 — 유효하지 않은 월드 컨텍스트로 GetActorOfClass 호출 크래시 방지.
     if (!Pawn || !Pawn->GetWorld()) return;
 
-    if (bHasCheckpoint)
+    if (Checkpoint.bValid)
     {
-        Pawn->SetActorLocationAndRotation(CheckpointLocation, CheckpointRotation);
-        Stats.Resources.Health = CheckpointHP;
+        Pawn->SetActorLocationAndRotation(Checkpoint.Location, Checkpoint.Rotation);
+        Stats.Resources.Health = Checkpoint.HP;
     }
     else
     {

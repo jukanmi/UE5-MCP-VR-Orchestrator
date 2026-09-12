@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Core/Utils/MovementUtils.h"   // FSavedFriction
+#include "Core/Utils/PawnDeathUtils.h"  // FCheckpoint
 #include "GameFramework/Character.h"
 #include "Core/Interfaces/Entity.h"
 #include "InputActionValue.h"
@@ -800,10 +801,7 @@ private:
     void HandleDeath();
     void Respawn();
 
-    bool bHasCheckpoint = false;
-    FVector CheckpointLocation;
-    FRotator CheckpointRotation;
-    float CheckpointHP = 0.f;
+    FCheckpoint Checkpoint;
     FTimerHandle RespawnTimerHandle;
 
     // --- 게임플레이 태그 ---

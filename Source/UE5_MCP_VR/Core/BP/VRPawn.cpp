@@ -1601,9 +1601,7 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
 void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    PawnDeathUtils::SaveCheckpoint(CurrentStats,
-        Location, Rotation, bHasCheckpoint, CheckpointLocation,
-        CheckpointRotation, CheckpointHP, TEXT("VRPawn"));
+    PawnDeathUtils::SaveCheckpoint(CurrentStats, Location, Rotation, Checkpoint, TEXT("VRPawn"));
 }
 
 // ============================================================================
@@ -1630,8 +1628,7 @@ void AVRPawn::HandleDeath()
 
 void AVRPawn::Respawn()
 {
-    PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
-        CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPawn"));
+    PawnDeathUtils::Respawn(this, CurrentStats, Checkpoint, GameplayTags, TEXT("VRPawn"));
 
     // 텔레포트 전 손 위치가 남아 있으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다.
     // 근거리 리스폰은 9000cm/s 글리치 가드에도 걸리지 않아 허위 타격이 나간다.
