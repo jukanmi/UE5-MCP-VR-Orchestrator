@@ -17,13 +17,8 @@ class UE5_MCP_VR_API UMCPJsonUtils : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
-    // Python 백엔드로부터 수신된 ActionBatch JSON을 FModeActionRequest 구조체로 역직렬화합니다.
-    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static bool ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest);
-
-    /** 이미 deserialize된 JSON 오브젝트로부터 ModeActionRequest 추출 (재파싱 방지) */
+    /** Python 백엔드로부터 수신된(이미 deserialize 된) ActionBatch JSON 오브젝트를 FModeActionRequest 로 역직렬화. */
     static bool ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest);
-
 
     // [의도(Why)] 인지(Perception) 이벤트들을 배칭하여 JSON 문자열로 변환합니다.
     // ReportType 이 비어있지 않으면 루트에 report_type 필드를 추가 — Python 이 보고 성격을 구분
@@ -36,19 +31,12 @@ public:
      *  { "type": "location_decision_result", "payload": { "agent_id": "...", "chosen_id": "...", "request_gen": N } }
      *  request_gen 미포함 시 OutRequestGen=0 — stale 검사를 건너뜀(레거시 호환).
      *  @return true이면 OutAgentId / OutChosenId에 값이 채워짐 */
-    UFUNCTION(BlueprintCallable, Category = "MCP|Utils")
-    static bool ParseLocationDecisionResult(
-        const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen);
-
     static bool ParseLocationDecisionResultFromObject(
         const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen);
 
     /** state_update 응답에서 relations 파싱.
      *  { "status": "cached", "agent_id": "...", "relations": [{"target_id":"...", "affinity_score":N, ...}] }
      *  @return true이면 OutAgentId와 OutRelations(TargetID→Score)에 값이 채워짐 */
-    static bool ParseAffinityUpdate(
-        const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations);
-
     static bool ParseAffinityUpdateFromObject(
         const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations);
 

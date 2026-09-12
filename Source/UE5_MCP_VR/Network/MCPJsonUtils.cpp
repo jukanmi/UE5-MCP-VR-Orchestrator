@@ -51,11 +51,6 @@ namespace
         return false;
     }
 
-    bool TryParseBehaviorMode(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, ENPCBehaviorMode& OutMode)
-    {
-        return TryParseEnumFromJson(JsonObj, FieldName, OutMode);
-    }
-
     void ExtractActionParameters(TSharedPtr<FJsonObject> ActionObj, TMap<FString, FString>& OutParameters)
     {
         const TSharedPtr<FJsonObject>* ParamsObj;
@@ -98,7 +93,7 @@ namespace
 
         OutBatch.AgentID = AgentID;
         
-        TryParseBehaviorMode(BatchObj, NPCActionKeys::Proto_Mode, OutBatch.Mode);
+        TryParseEnumFromJson(BatchObj, NPCActionKeys::Proto_Mode, OutBatch.Mode);
 
         const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
         if (BatchObj->TryGetArrayField(NPCActionKeys::Proto_Actions, ActionsArray))
@@ -120,7 +115,7 @@ bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObjec
 {
     if (!Root.IsValid() || !Root->HasField(NPCActionKeys::Proto_ActionBatches)) return false;
 
-    TryParseBehaviorMode(Root, NPCActionKeys::Proto_Mode, OutRequest.Mode);
+    TryParseEnumFromJson(Root, NPCActionKeys::Proto_Mode, OutRequest.Mode);
 
     // TryGet 패턴 — ActionBatches 가 object 가 아닌 비정상 페이로드에서도 무음 통과(에러 로그 노이즈 방지)
     const TSharedPtr<FJsonObject>* BatchesObjPtr = nullptr;
@@ -136,18 +131,6 @@ bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObjec
         }
     }
     return true;
-}
-
-bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
-{
-    TSharedPtr<FJsonObject> RootObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-
-    if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
-    {
-        return false;
-    }
-    return ParseModeActionRequestFromObject(RootObject, OutRequest);
 }
 
 FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType, const FString& ReflexAction)
@@ -211,15 +194,6 @@ bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
         && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
 }
 
-bool UMCPJsonUtils::ParseLocationDecisionResult(
-    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen)
-{
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
-    return ParseLocationDecisionResultFromObject(Root, OutAgentId, OutChosenId, OutReason, OutRequestGen);
-}
-
 bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
     const TSharedPtr<FJsonObject>& Root, FString& OutAgentId, TMap<FString, int32>& OutRelations)
 {
@@ -246,14 +220,6 @@ bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
     }
 
     return true;
-}
-
-bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations)
-{
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
-    return ParseAffinityUpdateFromObject(Root, OutAgentId, OutRelations);
 }
 
 bool UMCPJsonUtils::ParseNpcAudioResponseFromObject(
