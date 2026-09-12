@@ -23,7 +23,6 @@ enum class EEnvelopeType : uint8
 {
     StateUpdate,    // "state_update" - 주기적 월드 상태 동기화
     Prompt,         // "prompt"       - 플레이어 명령/대화
-    ActionFailed,   // "action_failed"- UE5에서 명령 실행 실패 통보
     EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
     LocationDecision,// "location_decision" - EQS 후보 → LLM 전술 위치 결정 요청
 };
@@ -42,14 +41,6 @@ public:
      * @return            - 완성된 Envelope JSON 문자열
      */
     static FString BuildPrompt(const FString& PayloadJson);
-
-    /**
-     * action_failed Envelope 생성. UE5에서 명령 실행이 실패했을 때 호출.
-     * @param RefMsgId    - 실패한 명령의 원본 msg_id (Python이 추적에 사용)
-     * @param PayloadJson - ActionFailedPayload를 직렬화한 JSON 문자열
-     * @return            - 완성된 Envelope JSON 문자열
-     */
-    static FString BuildActionFailed(const FString& RefMsgId, const FString& PayloadJson);
 
     /**
      * emergency_report Envelope 생성. NPC의 긴급 이벤트를 묶어서 전송.
@@ -88,12 +79,7 @@ private:
      *
      * @param Type        - 메시지 타입
      * @param PayloadJson - 타입별 payload JSON 문자열
-     * @param RefMsgId    - 참조 msg_id (action_failed 전용, 나머지는 빈 문자열)
      * @return            - 완성된 Envelope JSON 문자열
      */
-    static FString BuildEnvelope(
-        EEnvelopeType   Type,
-        const FString&  PayloadJson,
-        const FString&  RefMsgId = TEXT("")
-    );
+    static FString BuildEnvelope(EEnvelopeType Type, const FString& PayloadJson);
 };

@@ -18,7 +18,6 @@
 ║ FIELD CATEGORIES:                                                            ║
 ║   • Input:     vr_context (UE5에서 수신)                                   ║
 ║   • Cache:     cached_world_state (state_update 수신 시만 갱신, LLM 미호출) ║
-║   • History:   failed_action_history (action_failed 이력 누적)              ║
 ║   • Pipeline:  natural_context, structured_responses, target_npc            ║
 ║   • Routing:   next, current_speaker                                        ║
 ║   • Output:    action_batch (UE5로 전송)                                   ║
@@ -60,12 +59,6 @@ class AgentState(TypedDict):
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시
     #      "현재 환경 컨텍스트"로 활용한다. 매 요청마다 덮어씌운다.
     cached_world_state: Optional[Dict[str, Any]]
-
-    # [신규] action_failed 실패 이력 누적 목록
-    # WHY: Python이 내린 명령이 UE5에서 실패할 경우, 그 이유를
-    #      다음 추론 컨텍스트에 포함시켜 동일 실수를 반복하지 않게 한다.
-    #      리스트에 append하는 방식으로 누적. 최대 N개 유지는 Interface Input 에이전트가 담당.
-    failed_action_history: List[Dict[str, Any]]
 
     # ── 파이프라인 중간 상태 ─────────────────────────────────────────
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트

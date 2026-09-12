@@ -119,24 +119,6 @@ def _format_perceived_targets(state: AgentState) -> str:
     return ", ".join(pts)
 
 
-def _format_failed_history(state: AgentState) -> str:
-    """실패 이력 컨텍스트 조각(". Recently FAILED ...") — 이력 없으면 "".
-    WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
-    반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
-    최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행)."""
-    failed_history = state.get("failed_action_history") or []
-    if not failed_history:
-        return ""
-    recent = failed_history[-3:]
-    fails = "; ".join(
-        f"{f.get('failed_action_type', 'Unknown')}"
-        f" by {f.get('executor_npc_id', 'unknown')}"
-        f" (reason: {f.get('reason', 'unknown')})"
-        for f in recent
-    )
-    return f". Recently FAILED actions (do NOT retry the same way): {fails}"
-
-
 def _format_plan_context(state: AgentState) -> str:
     """계획 컨텍스트 조각(". Current goal ...") — 해당 plan 없으면 "".
     WHY: replan=False 경량 루프에서 저장된 plan(goal/steps)을 주입해 e4b 캐릭터 드리프트 차단.
@@ -199,7 +181,6 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     if perceived_str not in ("Unknown", "None visible/audible"):
         natural_context += f", nearby: {perceived_str}"
 
-    natural_context += _format_failed_history(state)
     natural_context += _format_plan_context(state)
     natural_context += _format_nearby_furniture(vr_context)
 

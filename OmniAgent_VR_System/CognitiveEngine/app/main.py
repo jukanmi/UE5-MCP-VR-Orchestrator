@@ -35,7 +35,7 @@ from .graph import app_graph
 from .utils import db_manager
 from .utils import llm_factory
 from .utils.async_tasks import spawn_background
-from .middleware import validate_auth_token, is_stale_packet, build_failed_event
+from .middleware import validate_auth_token, is_stale_packet
 
 # 핸들러 없는 logger 는 INFO 레벨 메시지가 콘솔에 출력되지 않는다 (Python 기본 lastResort
 # 핸들러는 WARNING 이상만 처리). uvicorn 도 자기 logger 만 설정하므로 명시적으로 잡아준다.
@@ -119,9 +119,7 @@ app = FastAPI(lifespan=lifespan)
 # 마지막에 보고한 NPC 의 perception 이 다른 NPC 의 프롬프트에 주입돼 지식 격리가 깨진다.
 # owner_agent_id(소문자) → payload 로 분리 보관하고, 프롬프트 조립 시 대상 NPC 것만 꺼낸다.
 _cached_world_states: Dict[str, dict] = {}
-_failed_action_history: list = []
 _world_state_lock = asyncio.Lock()
-_action_history_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
 # WS 송신 직렬화 — 메시지별 동시 처리 + TTS 푸시가 같은 소켓에 겹쳐 쓰는 것 방지.
 _ws_send_lock = asyncio.Lock()
@@ -277,9 +275,6 @@ async def _process_llm_message(raw_data: str) -> str:
 
         elif envelope.type == EEnvelopeType.STATE_UPDATE:
             return await _handle_state_update(envelope)
-
-        elif envelope.type == EEnvelopeType.ACTION_FAILED:
-            return await _handle_action_failed(envelope)
 
         elif envelope.type == EEnvelopeType.EMERGENCY_REPORT:
             return await _handle_emergency_report(envelope)
@@ -515,15 +510,10 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     async with _world_state_lock:
         # 대상 NPC 자신의 최신 상태만 주입 — 없으면 None(프롬프트에서 "Unknown" 처리).
         world_snap = _cached_world_states.get(target_npc_from_payload.lower()) if target_npc_from_payload else None
-    async with _action_history_lock:
-        history_snap = list(_failed_action_history)
-        _failed_action_history.clear()
-
     return AgentState(
         messages=[],
         vr_context=ges_prompt,
         cached_world_state=world_snap,
-        failed_action_history=history_snap,
         requires_replan=requires_replan,
         current_plan=current_plan,
         npc_plans=None,
@@ -1091,17 +1081,3 @@ async def api_debug_prompt(req: DebugPromptRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _handle_action_failed(envelope: MessageEnvelope) -> str:
-    global _failed_action_history
-
-    failed_event = build_failed_event(envelope)
-    async with _action_history_lock:
-        _failed_action_history.append(failed_event)
-
-    logger.warning(
-        f"[Main] 명령 실패 이력 기록. ref_msg_id={envelope.ref_msg_id}, "
-        f"action={failed_event.get('failed_action_type')}, "
-        f"reason={failed_event.get('reason')}"
-    )
-
-    return json.dumps({"status": "logged", "msg_id": envelope.msg_id})

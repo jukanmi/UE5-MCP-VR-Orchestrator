@@ -10,7 +10,6 @@ WHY: main.py 리팩토링으로 미들웨어가 분리되었으므로,
   [2] 잘못된 auth_token → 인증 거부
   [3] 2.5초 오래된 timestamp → Stale 패킷 감지
   [4] 현재 timestamp → 유효 패킷 통과
-  [5] action_failed → failed_action_history 항목 생성 확인
   [6] state_update Envelope 파싱 확인
   [7] prompt Envelope 파싱 확인
   [8] _process_message state_update → "cached" 응답 확인 (통합)
@@ -33,9 +32,8 @@ from app.schemas.envelope import (
     EEnvelopeType,
     StateUpdatePayload,
     PromptPayload,
-    ActionFailedPayload,
 )
-from app.middleware import validate_auth_token, is_stale_packet, build_failed_event
+from app.middleware import validate_auth_token, is_stale_packet
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,22 +84,6 @@ def make_state_update_envelope(
     )
 
 
-def make_action_failed_envelope(ref_msg_id: str = "req-1233") -> MessageEnvelope:
-    """action_failed 타입 테스트용 Envelope 생성."""
-    return MessageEnvelope(
-        msg_id="test-msg-003",
-        ref_msg_id=ref_msg_id,
-        auth_token="test-token-for-unit-test",
-        timestamp=time.time(),
-        type=EEnvelopeType.ACTION_FAILED,
-        payload={
-            "failed_action_type": "Move",
-            "reason": "PathNotFound",
-            "executor_npc_id": "Elara",
-        },
-    )
-
-
 # ═════════════════════════════════════════════════════════════════════════════
 # [1] 인증 토큰 검증 테스트
 # ═════════════════════════════════════════════════════════════════════════════
@@ -137,33 +119,6 @@ def test_fresh_packet_passes():
     fresh_timestamp = time.time() - 0.5
     assert is_stale_packet(fresh_timestamp, threshold_seconds=2.0) is False
     print("[PASS] test_fresh_packet_passes")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# [3] action_failed 이력 변환 테스트
-# ═════════════════════════════════════════════════════════════════════════════
-
-
-def test_build_failed_event_structure():
-    """
-    action_failed Envelope가 올바른 이력 딕셔너리로 변환되어야 한다.
-    WHY: 이 딕셔너리가 AgentState.failed_action_history에 저장되므로
-         모든 키가 올바르게 존재해야 한다.
-    """
-    envelope = make_action_failed_envelope(ref_msg_id="req-1233")
-    event = build_failed_event(envelope)
-
-    assert event["ref_msg_id"] == "req-1233"
-    assert event["failed_action_type"] == "Move"
-    assert event["reason"] == "PathNotFound"
-    assert event["executor_npc_id"] == "Elara"
-    assert "recorded_at" in event
-    # recorded_at 은 UTC ISO8601 문자열 (datetime.now(timezone.utc).isoformat()).
-    assert isinstance(event["recorded_at"], str)
-    from datetime import datetime
-
-    datetime.fromisoformat(event["recorded_at"])  # 파싱 가능해야 함
-    print("[PASS] test_build_failed_event_structure")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -396,7 +351,6 @@ if __name__ == "__main__":
     test_invalid_auth_token_rejected()
     test_stale_packet_detected()
     test_fresh_packet_passes()
-    test_build_failed_event_structure()
     test_state_update_payload_parsing()
     test_prompt_payload_parsing()
     test_process_state_update_returns_cached()
