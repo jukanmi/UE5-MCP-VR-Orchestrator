@@ -43,18 +43,6 @@ public:
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* HealthText;
 
-    // --- HP ---
-
-    /** 현재 HP 비율 0~1 (MaxHealth 0 이면 0). */
-    UFUNCTION(BlueprintPure, Category = "HUD|Health")
-    float GetHealthPercent() const;
-
-    UFUNCTION(BlueprintPure, Category = "HUD|Health")
-    float GetCurrentHealth() const;
-
-    UFUNCTION(BlueprintPure, Category = "HUD|Health")
-    float GetMaxHealth() const;
-
     // --- Stamina ---
 
     /** 스태미나 진행 바 — WBP 에 같은 이름 UProgressBar 배치 시 자동 바인딩(선택). */
@@ -64,16 +52,6 @@ public:
     /** 스태미나 수치 텍스트 — WBP 에 같은 이름 UTextBlock 배치 시 자동 바인딩(선택). */
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* StaminaText;
-
-    /** 현재 스태미나 비율 0~1 (MaxStamina 0 이면 0). */
-    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
-    float GetStaminaPercent() const;
-
-    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
-    float GetCurrentStamina() const;
-
-    UFUNCTION(BlueprintPure, Category = "HUD|Stamina")
-    float GetMaxStamina() const;
 
     // --- Inventory ---
 

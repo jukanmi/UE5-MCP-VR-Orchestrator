@@ -198,66 +198,6 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 }
 
 // ============================================================================
-// HP — IPlayerBase 경유 (구체 클래스 비의존)
-// ============================================================================
-
-float UPlayerHUDWidget::GetCurrentHealth() const
-{
-    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
-    {
-        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
-        return Attr.Resources.Health;
-    }
-    return 0.f;
-}
-
-float UPlayerHUDWidget::GetMaxHealth() const
-{
-    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
-    {
-        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
-        return Attr.Resources.MaxHealth;
-    }
-    return 0.f;
-}
-
-float UPlayerHUDWidget::GetHealthPercent() const
-{
-    const float Max = GetMaxHealth();
-    return Max > KINDA_SMALL_NUMBER ? FMath::Clamp(GetCurrentHealth() / Max, 0.f, 1.f) : 0.f;
-}
-
-// ============================================================================
-// 스태미나 — HP 와 동일하게 IPlayerBase 경유
-// ============================================================================
-
-float UPlayerHUDWidget::GetCurrentStamina() const
-{
-    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
-    {
-        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
-        return Attr.Resources.Stamina;
-    }
-    return 0.f;
-}
-
-float UPlayerHUDWidget::GetMaxStamina() const
-{
-    if (OwnerPawn && OwnerPawn->Implements<UPlayerBase>())
-    {
-        const FPlayerAttributes Attr = IPlayerBase::Execute_GetPlayerAttributes(OwnerPawn);
-        return Attr.Resources.MaxStamina;
-    }
-    return 0.f;
-}
-
-float UPlayerHUDWidget::GetStaminaPercent() const
-{
-    const float Max = GetMaxStamina();
-    return Max > KINDA_SMALL_NUMBER ? FMath::Clamp(GetCurrentStamina() / Max, 0.f, 1.f) : 0.f;
-}
-
-// ============================================================================
 // Inventory — 소유 폰의 컴포넌트 직접 조회 (타입 비의존)
 // ============================================================================
 
