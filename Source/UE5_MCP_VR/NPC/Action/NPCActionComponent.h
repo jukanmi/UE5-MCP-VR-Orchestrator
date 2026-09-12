@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Utils/MovementUtils.h"   // FSavedFriction
 #include "Components/ActorComponent.h"
 #include "Network/MCPJsonUtils.h" // FGameAction, FActionBatch
 #include "NPC/Struct/NPCActionTypes.h" // Enums
@@ -441,9 +442,7 @@ public:
     void StartDodgeMove(const FVector& Direction);
     void StopDodgeMove();
     bool bDodgeMoveActive = false;
-    float SavedGroundFriction = 8.f;
-    float SavedBrakingDecelWalking = 2048.f;
-    float SavedBrakingFrictionFactor = 2.f;
+    FSavedFriction SavedDodgeFriction;
 
     /** MaxActionDuration 초과 시 강제 완료(워치독). */
     void HandleActionWatchdog();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Utils/MovementUtils.h"   // FSavedFriction
 #include "GameFramework/Character.h"
 #include "Core/Interfaces/Entity.h"
 #include "InputActionValue.h"
@@ -571,9 +572,7 @@ private:
     float LastDashTime = -1000.f;
 
     /** 대쉬 중 0 으로 덮어쓰는 이동 파라미터 원본 — StopDash 가 되돌린다. */
-    float SavedGroundFriction = 0.f;
-    float SavedBrakingDecelWalking = 0.f;
-    float SavedBrakingFrictionFactor = 0.f;
+    FSavedFriction SavedDashFriction;
 
     /** 직전 왼손 스틱 입력. 대쉬 방향 산출용 — 입력 핸들러가 갱신한다. */
     FVector2D LastMoveInput = FVector2D::ZeroVector;

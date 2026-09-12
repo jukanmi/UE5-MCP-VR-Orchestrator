@@ -1687,8 +1687,7 @@ void UNPCActionComponent::ExecuteDodgeAction(FVector Direction)
 void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
 {
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
-    if (!MovementComp) return;
+    if (!OwnerCharacter || !OwnerCharacter->GetCharacterMovement()) return;
 
     // 진행 중 MoveTo 잔재가 회피 방향과 경합하지 않게 정지
     if (ASmartNPCAIController* AI = GetOwnerAIController())
@@ -1696,14 +1695,6 @@ void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
         AI->StopMovement();
     }
 
-    // 마찰·제동 0 → Launch 속도가 몽타주 동안 감쇠 없이 유지(등속). MaxWalkSpeed 는 입력 가속에만
-    // 적용되므로 건드릴 필요 없음. 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
-    SavedGroundFriction        = MovementComp->GroundFriction;
-    SavedBrakingDecelWalking   = MovementComp->BrakingDecelerationWalking;
-    SavedBrakingFrictionFactor = MovementComp->BrakingFrictionFactor;
-    MovementComp->GroundFriction             = 0.f;
-    MovementComp->BrakingDecelerationWalking = 0.f;
-    MovementComp->BrakingFrictionFactor      = 0.f;
     bDodgeMoveActive = true;
 
     // 모션-이동 일치: 구르기 몽타주는 전방 기준인데 Launch 는 입력 가속이 없어
@@ -1711,8 +1702,9 @@ void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
     // → 액터 회전을 회피 방향으로 즉시 스냅.
     OwnerCharacter->SetActorRotation(Direction.Rotation());
 
+    // 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
     const float DodgeSpeed = ParseMoveSpeed(EMoveType::Run) * DodgeSpeedMultiplier;
-    OwnerCharacter->LaunchCharacter(Direction * DodgeSpeed, true, false); // Z 미오버라이드 — 중력 유지
+    MovementUtils::BeginFrictionlessLaunch(*OwnerCharacter, Direction * DodgeSpeed, SavedDodgeFriction);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Dodge 이동 시작 — 방향 %s, 속도 %.0f"),
         *GetOwnerAgentID(), *Direction.ToCompactString(), DodgeSpeed);
@@ -1724,16 +1716,10 @@ void UNPCActionComponent::StopDodgeMove()
     bDodgeMoveActive = false;
 
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
-    if (!MovementComp) return;
-
-    MovementComp->GroundFriction             = SavedGroundFriction;
-    MovementComp->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-    MovementComp->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
-
-    // 마찰 원복만으론 몇 프레임 더 미끄러짐 — 수평 잔류 속도 즉시 제거(낙하 Z 는 유지)
-    MovementComp->Velocity.X = 0.f;
-    MovementComp->Velocity.Y = 0.f;
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr)
+    {
+        MovementUtils::EndFrictionlessLaunch(*MovementComp, SavedDodgeFriction);
+    }
 }
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }

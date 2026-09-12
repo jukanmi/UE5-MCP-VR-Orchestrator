@@ -691,21 +691,13 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     }
     TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 
-    // 마찰·제동을 0 으로 두면 Launch 속도가 감쇠 없이 유지돼 등속 이동이 된다.
-    // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
-    SavedGroundFriction        = MC->GroundFriction;
-    SavedBrakingDecelWalking   = MC->BrakingDecelerationWalking;
-    SavedBrakingFrictionFactor = MC->BrakingFrictionFactor;
-    MC->GroundFriction             = 0.f;
-    MC->BrakingDecelerationWalking = 0.f;
-    MC->BrakingFrictionFactor      = 0.f;
-
     bDashActive = true;
     DashTimeRemaining = DashDuration;
     LastDashTime = Now;
 
+    // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
     const float DashSpeed = DashDistance / FMath::Max(KINDA_SMALL_NUMBER, DashDuration);
-    LaunchCharacter(Dir * DashSpeed, true, false);   // Z 미오버라이드 — 중력 유지
+    MovementUtils::BeginFrictionlessLaunch(*this, Dir * DashSpeed, SavedDashFriction);
 }
 
 void AVRPawn::UpdateDash(float DeltaTime)
@@ -725,16 +717,10 @@ void AVRPawn::StopDash()
     bDashActive = false;
     DashTimeRemaining = 0.f;
 
-    UCharacterMovementComponent* MC = GetCharacterMovement();
-    if (!MC) return;
-
-    MC->GroundFriction             = SavedGroundFriction;
-    MC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-    MC->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
-
-    // 마찰 원복만으론 몇 프레임 더 미끄러진다 — 수평 잔류 속도를 즉시 제거(낙하 Z 는 유지).
-    MC->Velocity.X = 0.f;
-    MC->Velocity.Y = 0.f;
+    if (UCharacterMovementComponent* MC = GetCharacterMovement())
+    {
+        MovementUtils::EndFrictionlessLaunch(*MC, SavedDashFriction);
+    }
 }
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
