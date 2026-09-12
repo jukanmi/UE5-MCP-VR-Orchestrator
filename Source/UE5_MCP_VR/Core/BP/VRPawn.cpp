@@ -26,7 +26,6 @@
 #include "NPC/Subsystems/NPCManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
-#include "Core/Components/VoiceInputComponent.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
@@ -100,9 +99,6 @@ AVRPawn::AVRPawn()
     StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
     StimuliSource->RegisterWithPerceptionSystem();
 
-    // 음성 입력 컴포넌트
-    VoiceInput = CreateDefaultSubobject<UVoiceInputComponent>(TEXT("VoiceInput"));
-
     // 인벤토리 컴포넌트
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
@@ -169,14 +165,6 @@ AVRPawn::AVRPawn()
     ItemTooltipComp->SetVisibility(false);
     ItemTooltipComp->SetWidgetClass(UItemTooltipWidget::StaticClass());
 
-    // 마이크 입력 표시 구 — 왼손(음성 입력이 왼손 X버튼)에 붙인다.
-    VoiceLevelOrb = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VoiceLevelOrb"));
-    VoiceLevelOrb->SetupAttachment(MotionControllerLeft);
-    VoiceLevelOrb->SetRelativeLocation(VoiceOrbLocation);
-    VoiceLevelOrb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    VoiceLevelOrb->SetCastShadow(false);
-    VoiceLevelOrb->SetVisibility(false);
-
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
     bUseControllerRotationPitch = false;
@@ -198,18 +186,6 @@ AVRPawn::AVRPawn()
 void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
-
-    // 음성 입력 — 대상/플레이어 공급자 + transcript 콜백 바인딩
-    if (VoiceInput)
-    {
-        VoiceInput->ResolveTargetNpc = [this]()
-        {
-            if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
-            return CurrentTargetNPCID;
-        };
-        VoiceInput->ResolvePlayerId = [this]() { return GetName(); };
-        VoiceInput->OnTranscriptReady.BindUObject(this, &AVRPawn::HandleVoiceTranscript);
-    }
 
     // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
     // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
@@ -233,21 +209,6 @@ void AVRPawn::BeginPlay()
 
         // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
         PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
-    }
-
-    // 마이크 표시 구 — 포인터와 같은 엔진 에셋을 쓰되 색은 따로 간다(포인터 색이 같이 바뀌면 안 된다).
-    if (VoiceLevelOrb)
-    {
-        if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
-        {
-            VoiceLevelOrb->SetStaticMesh(Sphere);
-        }
-        if (UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial")))
-        {
-            VoiceOrbMID = UMaterialInstanceDynamic::Create(Emissive, this);
-            VoiceOrbMID->SetVectorParameterValue(TEXT("Color"), VoiceOrbColor);
-            VoiceLevelOrb->SetMaterial(0, VoiceOrbMID);
-        }
     }
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
@@ -329,7 +290,6 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateHUDPanelGaze(DeltaTime);
     UpdatePointerVisual();
     UpdateItemTooltip();
-    UpdateVoiceIndicator();
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
 
@@ -573,13 +533,6 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
             EIC->BindAction(IA_Attack, ETriggerEvent::Canceled,  this, &AVRPawn::OnAttackReleased);
         }
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
-        if (IA_VoiceInput)
-        {
-            // Push-to-talk: 누름 시작 → 녹음, 뗌 → 종료
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Started,   this, &AVRPawn::OnVoiceStart);
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Completed, this, &AVRPawn::OnVoiceStop);
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Canceled,  this, &AVRPawn::OnVoiceStop);
-        }
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
@@ -1471,26 +1424,6 @@ void AVRPawn::UpdateItemTooltip()
     if (!ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(true);
 }
 
-void AVRPawn::UpdateVoiceIndicator()
-{
-    if (!VoiceLevelOrb) return;
-
-    const bool bTalking = VoiceInput && VoiceInput->IsTalking();
-    if (!bTalking)
-    {
-        if (VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(false);
-        return;
-    }
-
-    // 무음이어도 구는 보여야 한다 — "녹음 중"이라는 사실 자체가 표시다.
-    // 엔진 기본 구는 지름 100cm 라 실치수/100 이 스케일.
-    const float Level = VoiceInput->GetInputLevel();
-    const float Diameter = VoiceOrbBaseSize * (1.f + 2.f * Level);
-    VoiceLevelOrb->SetRelativeScale3D(FVector(Diameter / 100.f));
-
-    if (!VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(true);
-}
-
 void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
 {
     // 오른손을 먼저 본다. 오른손이 비어 있으면 왼손에 쥔 것을 튜닝 대상으로 삼는다.
@@ -1617,16 +1550,6 @@ FVector AVRPawn::GetHandLocation(bool bRightHand) const
     return HandController ? HandController->GetComponentLocation() : GetActorLocation();
 }
 
-void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
-{
-    if (VoiceInput) VoiceInput->StartTalking();
-}
-
-void AVRPawn::OnVoiceStop(const FInputActionValue& Value)
-{
-    if (VoiceInput) VoiceInput->StopTalking();
-}
-
 void AVRPawn::OnChatKey()
 {
     if (HUDWidget) HUDWidget->FocusChatInput();
@@ -1634,22 +1557,14 @@ void AVRPawn::OnChatKey()
 
 void AVRPawn::SayToNpc(const FString& Text)
 {
-    // 타겟 미지정이면 근접 탐지 후 transcript 경로 재사용 — 음성/채팅이 같은 전송 함수를 탄다.
+    // 타겟 미지정이면 근접 탐지. player_id = actor 이름 — affinity DB 키와 일치.
     if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
-    HandleVoiceTranscript(GetName(), FString(), Text);
-}
-
-void AVRPawn::HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript)
-{
-    // ASR transcript → 기존 단순 대화 경로 재사용. 대상은 ASR 가 echo 한 값 우선,
-    // 없으면 현재 타겟. 스텁 transcript("[ASR stub] …")도 그대로 흘려보내 end-to-end 검증.
-    const FString Target = TargetNpc.IsEmpty() ? CurrentTargetNPCID : TargetNpc;
-    if (Target.IsEmpty() || Transcript.IsEmpty())
+    if (CurrentTargetNPCID.IsEmpty() || Text.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Voice transcript 폐기 — target/transcript 비어있음"));
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SayToNpc 폐기 — target/text 비어있음"));
         return;
     }
-    PlayerInteractionUtils::SendDialogueToNpc(this, PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
+    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
 }
 
 void AVRPawn::LogIKMetrics()

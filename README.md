@@ -32,8 +32,6 @@ graph TD
         SC[NPCStateComponent]
         AC[NPCActionComponent]
         NM[NPCManager]
-        VI[VoiceInputComponent]
-        AU[NPCAudioStreamComponent]
     end
     subgraph PY [Python 백엔드 - Brain]
         CE[CognitiveEngine :8000]

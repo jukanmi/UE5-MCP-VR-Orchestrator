@@ -16,7 +16,6 @@ class UAIPerceptionStimuliSourceComponent;
 class UStateTree;
 class UBlackboardData;
 class UWidgetComponent;
-class UNPCAudioStreamComponent;
 class UNPCDialogueUIComponent;
 class UPhysicalAnimationComponent;  // 액티브 래그돌 Flinch 상체 PD
 class UAnimMontage;
@@ -127,7 +126,7 @@ public:
     /** 머리 위 말풍선에 대사 표시 — 말풍선 컴포넌트로 넘긴다.
      *  래퍼를 남긴 이유: 호출부(NPCManager·BP)가 NPC 를 통해 말을 거는 형태를 유지하기 위함. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
-    void ShowSubtitle(const FString& Text, bool bWaitForAudio);
+    void ShowSubtitle(const FString& Text);
 
     /** 말풍선 숨김 + 텍스트 클리어. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")

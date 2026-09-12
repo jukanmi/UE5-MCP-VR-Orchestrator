@@ -15,7 +15,6 @@ class UCameraComponent;
 class UMotionControllerComponent;
 class UAnimMontage;
 class USkeletalMeshComponent;
-class UVoiceInputComponent;
 class UInventoryComponent;
 class UPlayerHUDWidget;
 class USphereComponent;
@@ -108,10 +107,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereRight;
 
-    /** 음성 입력 — push-to-talk 마이크 캡처 → ASR → transcript → 대화. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
-    UVoiceInputComponent* VoiceInput;
-
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     UInventoryComponent* Inventory;
@@ -146,11 +141,6 @@ public:
      *  광선 끝이 허공이면 "지금 아무것도 안 겨눴다"가 그 자체로 표시된다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     UStaticMeshComponent* PointerDot;
-
-    /** 마이크 입력 표시 — 왼손 옆에 뜨는 작은 구. 말하는 동안만 보이고 입력 세기로 커진다.
-     *  파형 위젯 대신 구 하나인 이유: "들어가고 있다"만 알면 되는데 위젯은 에셋과 틱을 늘린다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ASR")
-    UStaticMeshComponent* VoiceLevelOrb;
 
     /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
      *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
@@ -228,10 +218,6 @@ public:
     /** A버튼 → NPC 상호작용 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_Interact;
-
-    /** Push-to-talk — 누름(Started) StartTalking, 뗌(Completed) StopTalking */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-    UInputAction* IA_VoiceInput;
 
     /** 왼손 Y버튼 → 인벤토리 HUD 열기/닫기 토글 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -524,7 +510,7 @@ public:
     void Cheat_Unequip(bool bOffHand);
 
     /** 콘솔 채팅: 현재 타겟 NPC(없으면 근접 탐지)에게 텍스트 발화. 띄어쓰기 포함 시 따옴표 —
-     *  `SayToNpc "안녕 뭐해"`. 음성(ASR) 대신 쓰는 PIE 텍스트 입력 경로. */
+     *  `SayToNpc "안녕 뭐해"`. HUD ChatInput 과 같은 전송 경로. */
     UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
     void SayToNpc(const FString& Text);
 
@@ -546,14 +532,9 @@ private:
     /** 트리거 뗌 — 인벤토리 열림 중 눌렀던 UI 포인터를 놓는다. 닫힘 상태에선 no-op. */
     void OnAttackReleased(const FInputActionValue& Value);
     void OnInteract(const FInputActionValue& Value);
-    void OnVoiceStart(const FInputActionValue& Value);
-    void OnVoiceStop(const FInputActionValue& Value);
     /** Enter 키 — HUD 채팅 칸에 포커스. 입력 중 Enter 는 텍스트박스가 먼저 먹으므로 여기 안 온다. */
     void OnChatKey();
     void OnInventoryToggle(const FInputActionValue& Value);
-
-    /** ASR transcript 확정 → NPCManager::SendPlayerDialogue 로 전달. */
-    void HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript);
 
     // --- 로코모션 ---
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */
@@ -707,25 +688,6 @@ private:
 
     /** 매 Tick — 손 근처 아이템 이름표를 띄우고 카메라를 향하게 돌린다. */
     void UpdateItemTooltip();
-
-    /** 매 Tick — 마이크 입력 세기를 왼손 구 크기로 반영(말하는 중에만 표시). */
-    void UpdateVoiceIndicator();
-
-    /** 무음일 때 구 지름(cm). 입력이 커지면 이 값의 최대 3배까지 커진다. */
-    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true", ClampMin = "0.2", ClampMax = "10.0"))
-    float VoiceOrbBaseSize = 1.5f;
-
-    /** 구의 왼손 컨트롤러 기준 위치(cm) — 손등 안쪽, HUD 패널보다 아래. */
-    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true"))
-    FVector VoiceOrbLocation = FVector(2.f, 0.f, 3.f);
-
-    /** 구 색(말하는 중). */
-    UPROPERTY(EditAnywhere, Category = "ASR", meta = (AllowPrivateAccess = "true"))
-    FLinearColor VoiceOrbColor = FLinearColor(0.3f, 1.f, 0.4f, 1.f);
-
-    /** 구 전용 머티리얼 인스턴스 — 포인터와 색을 따로 쓰려면 인스턴스가 따로 필요하다. */
-    UPROPERTY(Transient)
-    UMaterialInstanceDynamic* VoiceOrbMID = nullptr;
 
     /** 이름표가 뜨는 손-아이템 거리(cm). 쥐기 반경보다 넓어야 "잡을 수 있다"를 미리 알려준다. */
     UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "10.0", ClampMax = "300.0"))

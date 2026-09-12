@@ -22,7 +22,6 @@
 #include "PhysicsEngine/PhysicalAnimationComponent.h"  // 액티브 래그돌 PD(Flinch)
 #include "Animation/AnimMontage.h"  // 기상 몽타주
 #include "Animation/AnimInstance.h"  // Montage_SetEndDelegate / FOnMontageEnded
-#include "NPC/Components/NPCAudioStreamComponent.h"
 #include "NPC/Components/NPCDialogueUIComponent.h"
 #include "UI/Widgets/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
@@ -417,9 +416,9 @@ void ASmartNPC::Tick(float DeltaSeconds)
 
 // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
-void ASmartNPC::ShowSubtitle(const FString& Text, bool bWaitForAudio)
+void ASmartNPC::ShowSubtitle(const FString& Text)
 {
-    if (DialogueWidgetComp) DialogueWidgetComp->ShowSubtitle(Text, bWaitForAudio);
+    if (DialogueWidgetComp) DialogueWidgetComp->ShowSubtitle(Text);
 }
 
 void ASmartNPC::HideSubtitle()

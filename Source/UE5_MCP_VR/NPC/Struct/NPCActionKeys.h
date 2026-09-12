@@ -41,21 +41,8 @@ namespace NPCActionKeys
     inline const FString Proto_Parameters    = TEXT("Parameters");
     inline const FString Proto_ActionBatches = TEXT("ActionBatches");
 
-    // --- NpcAudioResponse Keys (Python → UE5, TTS 오디오 전달) ---
-    inline const FString Audio_Type             = TEXT("type");
-    inline const FString Audio_TypeValue        = TEXT("npc_audio_response");
-    inline const FString Audio_RequestId        = TEXT("request_id");
-    inline const FString Audio_NpcId            = TEXT("npc_id");
-    inline const FString Audio_DialogueText     = TEXT("dialogue_text");
-    inline const FString Audio_Stream           = TEXT("audio_stream");
-    inline const FString Audio_StreamMode       = TEXT("mode");
-    inline const FString Audio_StreamUrl        = TEXT("url");
-    inline const FString Audio_SampleRate       = TEXT("sample_rate");
-    inline const FString Audio_Channels         = TEXT("channels");
-    inline const FString Audio_AnimMetadata     = TEXT("animation_metadata");
-    inline const FString Audio_Emotion          = TEXT("emotion");
-    inline const FString Audio_Gesture          = TEXT("gesture");
-    inline const FString Audio_LookAtPlayer     = TEXT("look_at_player");
+    // Python → UE5 비-Envelope 메시지의 타입 식별 키(최상위 "type").
+    inline const FString Msg_Type               = TEXT("type");
 
     // debug_prompt — 브라우저 디버그 대시보드가 친 말을 Python 이 UE5 로 넘길 때 쓰는 타입.
     // UE5 가 이걸 받아 SendPlayerDialogue 를 태우므로 그 뒤는 마이크 경로와 동일하다.

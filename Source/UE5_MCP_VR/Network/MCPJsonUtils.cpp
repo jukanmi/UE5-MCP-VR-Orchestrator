@@ -222,46 +222,6 @@ bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
     return true;
 }
 
-bool UMCPJsonUtils::ParseNpcAudioResponseFromObject(
-    const TSharedPtr<FJsonObject>& Root,
-    FString& OutNpcId,
-    FString& OutWsUrl,
-    int32& OutSampleRate,
-    int32& OutChannels,
-    FString& OutDialogueText,
-    FString& OutEmotion)
-{
-    if (!Root.IsValid()) return false;
-
-    FString TypeStr;
-    if (!Root->TryGetStringField(NPCActionKeys::Audio_Type, TypeStr)) return false;
-    if (TypeStr != NPCActionKeys::Audio_TypeValue) return false;
-
-    Root->TryGetStringField(NPCActionKeys::Audio_NpcId, OutNpcId);
-    Root->TryGetStringField(NPCActionKeys::Audio_DialogueText, OutDialogueText);
-
-    OutSampleRate = 16000;
-    OutChannels = 1;
-    OutEmotion = TEXT("neutral");
-    OutWsUrl.Reset();
-
-    const TSharedPtr<FJsonObject>* StreamObj = nullptr;
-    if (Root->TryGetObjectField(NPCActionKeys::Audio_Stream, StreamObj) && StreamObj && StreamObj->IsValid())
-    {
-        (*StreamObj)->TryGetStringField(NPCActionKeys::Audio_StreamUrl, OutWsUrl);
-        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_SampleRate, OutSampleRate);
-        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_Channels, OutChannels);
-    }
-
-    const TSharedPtr<FJsonObject>* AnimObj = nullptr;
-    if (Root->TryGetObjectField(NPCActionKeys::Audio_AnimMetadata, AnimObj) && AnimObj && AnimObj->IsValid())
-    {
-        (*AnimObj)->TryGetStringField(NPCActionKeys::Audio_Emotion, OutEmotion);
-    }
-
-    return !OutNpcId.IsEmpty();
-}
-
 bool UMCPJsonUtils::ParseDebugPromptFromObject(
     const TSharedPtr<FJsonObject>& Root,
     FString& OutNpcId,
@@ -271,7 +231,7 @@ bool UMCPJsonUtils::ParseDebugPromptFromObject(
     if (!Root.IsValid()) return false;
 
     FString TypeStr;
-    if (!Root->TryGetStringField(NPCActionKeys::Audio_Type, TypeStr)) return false;
+    if (!Root->TryGetStringField(NPCActionKeys::Msg_Type, TypeStr)) return false;
     if (TypeStr != NPCActionKeys::Debug_TypeValue) return false;
 
     Root->TryGetStringField(NPCActionKeys::Debug_NpcId, OutNpcId);

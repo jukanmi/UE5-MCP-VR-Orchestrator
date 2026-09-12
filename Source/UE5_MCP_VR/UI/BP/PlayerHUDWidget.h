@@ -105,7 +105,7 @@ public:
 
     // --- Chat ---
     /** NPC 채팅 입력 — WBP 에 "ChatInput" 이름 UEditableTextBox 배치 시 자동 바인딩(선택).
-     *  Enter 로 커밋하면 소유 폰 근처 최근접 NPC 에게 전송하고 칸을 비운다. 음성(ASR) 대체 경로. */
+     *  Enter 로 커밋하면 소유 폰 근처 최근접 NPC 에게 전송하고 칸을 비운다. */
     UPROPERTY(meta = (BindWidgetOptional))
     UEditableTextBox* ChatInput;
 

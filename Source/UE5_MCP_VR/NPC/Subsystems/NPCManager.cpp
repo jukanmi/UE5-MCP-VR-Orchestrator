@@ -2,7 +2,6 @@
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Components/NPCStateComponent.h"
 #include "NPC/Components/NPCInventoryComponent.h"
-#include "NPC/Components/NPCAudioStreamComponent.h"
 #include "Network/MCPJsonUtils.h"
 #include "Network/EnvelopeBuilder.h"
 #include "NPC/Action/NPCActionComponent.h"
@@ -423,7 +422,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
-    // debug_prompt — 브라우저 디버그 대시보드가 친 말. 마이크(ASR)와 완전히 같은 경로로
+    // debug_prompt — 브라우저 디버그 대시보드가 친 말. HUD 채팅과 완전히 같은 경로로
     // 태우기 위해 여기서 SendPlayerDialogue 를 호출한다. 서버가 대신 그래프를 돌리지 않는
     // 이유: NPC 인벤토리·valid_targets·주변 가구·plan 캐시는 전부 UE5 가 prompt 마다
     // 조립해 보내는 값이라, 서버가 흉내내면 실제와 다른 입력으로 검증하게 된다.
@@ -432,8 +431,7 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         if (UMCPJsonUtils::ParseDebugPromptFromObject(Root, DebugNpcId, DebugPlayerId, DebugText))
         {
             // 이 콜백은 WebSocket broadcast 루프 안이다. 여기서 곧바로 Send 하면 소켓
-            // 매니저의 리스너 배열을 순회 도중 건드리게 되므로 다음 틱으로 미룬다
-            // (npc_audio_response 의 PlayFromUrl 지연과 같은 이유).
+            // 매니저의 리스너 배열을 순회 도중 건드리게 되므로 다음 틱으로 미룬다.
             if (UWorld* World = GetWorld())
             {
                 TWeakObjectPtr<UNPCManager> WeakThis(this);
@@ -447,67 +445,6 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                                 DebugNpcId, DebugText);
                         }
                     });
-            }
-            return;
-        }
-    }
-
-    // npc_audio_response — TTS 오디오 전달. 액션 배치와 분리된 별도 메시지.
-    {
-        FString NpcId, WsUrl, DialogueText, Emotion;
-        int32 SampleRate = 16000;
-        int32 Channels = 1;
-        if (UMCPJsonUtils::ParseNpcAudioResponseFromObject(
-                Root, NpcId, WsUrl, SampleRate, Channels, DialogueText, Emotion))
-        {
-            if (ASmartNPC* NPC = NPCMap ? NPCMap->GetValidNPC(NpcId) : nullptr)
-            {
-                // 머리 위 자막 — ws_url 있으면 음성 싱크(Started→표시/Completed→숨김),
-                // 없으면(TTS 실패) 즉시 표시 + 타이머 폴백.
-                NPC->ShowSubtitle(DialogueText, /*bWaitForAudio=*/!WsUrl.IsEmpty());
-
-                if (UNPCAudioStreamComponent* AudioComp = NPC->FindComponentByClass<UNPCAudioStreamComponent>())
-                {
-                    if (!WsUrl.IsEmpty())
-                    {
-                        // PlayFromUrl 을 LLM WebSocket OnMessage 콜백 안에서 직접 호출하면,
-                        // 그 안의 새 TTS WebSocket Connect() 가 IWebSocketsManager 의 tick listener
-                        // array 를 broadcast 도중 mutate → ensure ("Array has changed during ranged-for")
-                        // 다음 게임 틱으로 지연해서 broadcast 루프가 안전하게 끝난 뒤 연결한다.
-                        if (UWorld* World = GetWorld())
-                        {
-                            TWeakObjectPtr<UNPCAudioStreamComponent> WeakAudio(AudioComp);
-                            FString LocalWsUrl = WsUrl;
-                            int32 LocalSampleRate = SampleRate;
-                            int32 LocalChannels = Channels;
-                            World->GetTimerManager().SetTimerForNextTick(
-                                [WeakAudio, LocalWsUrl, LocalSampleRate, LocalChannels]()
-                                {
-                                    if (UNPCAudioStreamComponent* Comp = WeakAudio.Get())
-                                    {
-                                        Comp->PlayFromUrl(LocalWsUrl, LocalSampleRate, LocalChannels);
-                                    }
-                                });
-                        }
-                    }
-                    else
-                    {
-                        UE_LOG(LogTemp, Warning,
-                            TEXT("[NPCManager] npc_audio_response 수신했으나 ws_url 비어 있음 (TTS 실패 fallback). npc=%s text=%.60s"),
-                            *NpcId, *DialogueText);
-                    }
-                }
-                else
-                {
-                    UE_LOG(LogTemp, Warning,
-                        TEXT("[NPCManager] npc_audio_response 수신했으나 NPC '%s' 에 UNPCAudioStreamComponent 가 첨부되어 있지 않음"),
-                        *NpcId);
-                }
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[NPCManager] npc_audio_response 의 NPC '%s' 를 NPCMap 에서 찾을 수 없음"), *NpcId);
             }
             return;
         }
@@ -621,13 +558,12 @@ void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& Dialo
 {
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);
 
-    // 머리 위 말풍선 — 액션 dialogue 경로(폴백: 즉시 표시 + 타이머).
-    // 같은 발화의 TTS(npc_audio_response)가 뒤따르면 ShowSubtitle 가 음성 싱크로 전환.
+    // 머리 위 말풍선 — 즉시 표시 + 길이 비례 타이머 후 숨김.
     if (NPCMap)
     {
         if (ASmartNPC* NPC = NPCMap->GetValidNPC(AgentID))
         {
-            NPC->ShowSubtitle(DialogueText, /*bWaitForAudio=*/false);
+            NPC->ShowSubtitle(DialogueText);
         }
     }
 
