@@ -285,6 +285,13 @@ private:
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
 
+    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸 공통 경로. */
+    void StopTracking();
+
+    /** 이동 공통 전처리 — MaxWalkSpeed 반영, PathFollowing 완료 콜백 바인딩, 비동기 대기 플래그.
+     *  반환된 컨트롤러로 MoveToLocation/MoveToActor 를 발행하고 HandleImmediateMoveResult 로 넘긴다. 컨트롤러 없으면 nullptr. */
+    class AAIController* PrepareMove(EMoveType SpeedType);
+
     // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지) ---
     /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
     EAction LastCombatChoice = EAction::Idle;

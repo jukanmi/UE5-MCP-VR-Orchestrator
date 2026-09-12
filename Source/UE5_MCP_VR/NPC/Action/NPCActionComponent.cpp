@@ -482,12 +482,7 @@ void UNPCActionComponent::StopAllActions()
         AI->StopMovement();
     }
 
-    // Track 타이머 해제 (워치독은 ClearActiveActionState가 처리)
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
-    TrackedTarget.Reset();
+    StopTracking(); // 워치독은 ClearActiveActionState가 처리
 
     OnActionStoppedAll.Broadcast();
 
@@ -505,9 +500,7 @@ bool UNPCActionComponent::ProcessNextAction()
         // Track 이외 명령이 오면 추적 즉시 해제 — 새 명령이 추적을 덮어쓰는 게 자연스러운 동작
         if (CurrentAction.ActionType != EAction::Track && TrackedTarget.IsValid())
         {
-            if (UWorld* World = GetWorld())
-                World->GetTimerManager().ClearTimer(TrackTimer);
-            TrackedTarget.Reset();
+            StopTracking();
         }
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
@@ -543,12 +536,7 @@ void UNPCActionComponent::AbortCurrentAction()
     // 아래 StopAnimMontage 가 앉/눕 포즈를 떨구므로 자세 플래그도 함께 해제.
     ResetPostureFlags();
 
-    // Track 타이머 해제
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
-    TrackedTarget.Reset();
+    StopTracking();
 
     // 물리 상태 초기화 (애니메이션 중지, 이동 중지)
     if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
@@ -565,27 +553,35 @@ void UNPCActionComponent::AbortCurrentAction()
 // [기본 함수 (Base Functions)] 래퍼함수 구현시 사용하는 유틸 함수
 // ============================================================================
 
-void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
+AAIController* UNPCActionComponent::PrepareMove(EMoveType SpeedType)
 {
-    // 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경시킨 후, 지정된 목적지로 AI 이동을 호출하여 자연스러운 이동을 유도합니다.
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
+    if (!OwnerCharacter) return nullptr;
 
+    // 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경.
     if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
     {
         MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
     }
 
-    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
+    AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController());
+    if (!AIController) return nullptr;
+
+    // 도착(또는 실패/취소) 시 OnMoveActionCompleted가 액션 완료를 처리하도록 바인딩.
+    // 이동 액션은 비동기 — bIsBusy를 도착까지 유지해 큐가 다음 액션으로 넘어가지 않게 한다.
+    if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
     {
-        // 도착(또는 실패/취소) 시 OnMoveActionCompleted가 액션 완료를 처리하도록 바인딩.
-        // 이동 액션은 비동기 — bIsBusy를 도착까지 유지해 큐가 다음 액션으로 넘어가지 않게 한다.
-        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
-        {
-            PFC->OnRequestFinished.RemoveAll(this);
-            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
-        }
-        bActionAwaitingAsync = true;
+        PFC->OnRequestFinished.RemoveAll(this);
+        PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
+    }
+    bActionAwaitingAsync = true;
+    return AIController;
+}
+
+void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
+{
+    if (AAIController* AIController = PrepareMove(SpeedType))
+    {
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
         HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
@@ -643,24 +639,11 @@ bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
 void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType, float AcceptanceRadius)
 {
     if (!TargetActor) return;
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
 
-    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
+    // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
+    if (AAIController* AIController = PrepareMove(SpeedType))
     {
-        MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
-    }
-
-    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
-    {
-        // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
-        // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
-        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
-        {
-            PFC->OnRequestFinished.RemoveAll(this);
-            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
-        }
-        bActionAwaitingAsync = true;
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToActor(TargetActor, AcceptanceRadius);
         HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
@@ -2127,20 +2110,12 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
 {
     if (!TargetActor) return;
 
-    // 기존 추적 타이머 초기화 후 새 대상 설정
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
+    // 기존 추적 해제 후 새 대상 설정, 즉시 첫 이동 명령
+    StopTracking();
     TrackedTarget = TargetActor;
-
-    // 즉시 첫 이동 명령
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    if (ASmartNPCAIController* AICon = GetOwnerAIController())
     {
-        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
-        {
-            AICon->MoveToActor(TargetActor, 150.f);
-        }
+        AICon->MoveToActor(TargetActor, 150.f);
     }
 
     // 0.5초 간격으로 MoveToActor 재발행 (대상이 이동하는 경우 추적 유지)
@@ -2161,19 +2136,24 @@ void UNPCActionComponent::UpdateTrackPosition()
     AActor* Target = TrackedTarget.Get();
     if (!IsValid(Target))
     {
-        if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(TrackTimer);
-        TrackedTarget.Reset();
+        StopTracking();
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 대상 소멸 — 추적 중단"), *GetOwnerAgentID());
         return;
     }
 
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    if (ASmartNPCAIController* AICon = GetOwnerAIController())
     {
-        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
-        {
-            AICon->MoveToActor(Target, 150.f);
-        }
+        AICon->MoveToActor(Target, 150.f);
     }
+}
+
+void UNPCActionComponent::StopTracking()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TrackTimer);
+    }
+    TrackedTarget.Reset();
 }
 
 void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocation)
