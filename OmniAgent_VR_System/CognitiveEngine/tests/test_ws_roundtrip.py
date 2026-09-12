@@ -119,7 +119,7 @@ async def run(transcript: str, requires_replan: bool) -> int:
         await ws.send(msg)
         print(f"[Smoke] prompt 전송 msg_id={msg_id}: {transcript!r}")
 
-        # ModeActionRequest 가 올 때까지 수신 — npc_audio_response 등 비동기 메시지는 스킵.
+        # ModeActionRequest 가 올 때까지 수신 — 다른 비동기 메시지는 스킵.
         deadline = t0 + RECEIVE_TIMEOUT_S
         while True:
             remaining = deadline - time.perf_counter()

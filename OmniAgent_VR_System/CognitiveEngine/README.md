@@ -1,6 +1,6 @@
 # OmniAgent Cognitive Engine
 
-UE5 VR 게임용 NPC 인지 서버. FastAPI + LangGraph 멀티 에이전트로 플레이어 입력을 처리하고, 전략 대화 생성·게임 규칙 검증·긴급 반사(SLM)·전술 위치 결정(EQS)·감정 TTS 트리거를 수행한다.
+UE5 VR 게임용 NPC 인지 서버. FastAPI + LangGraph 멀티 에이전트로 플레이어 입력을 처리하고, 전략 대화 생성·게임 규칙 검증·긴급 반사(SLM)·전술 위치 결정(EQS)을 수행한다.
 
 > 전체 시스템 개요는 [루트 README](../../README.md), 상세 아키텍처는 `docs/index.html` 참조.
 
@@ -30,20 +30,18 @@ prompt 수신
 
 - **SLM Reflex**: `emergency_report`(danger ≥ 0.5)는 LangGraph 우회, 단일 경량 SLM 호출로 0.5초 내 전투/회피 ActionBatch 생성 (`main.py::_handle_slm_reflex`).
 - **location_decision**: EQS 후보(SAFE/OPTIMAL/AGGRESSIVE) 중 택일을 few-shot raw 프롬프트로 빠르게 결정 (`main.py::_handle_location_decision`). LLM 실패·stale 패킷도 드랍하지 않고 `_location_decision_fast_path` 폴백 결과(`location_decision_result` + request_gen echo)를 반환 — generic drop 응답은 UE5 가 라우팅하지 못해 WaitingLLM 이 타임아웃까지 고착되기 때문.
-- **TTS 트리거**: Dialogue 액션의 `text` + `FacialState` → `_trigger_dialogue_audio` → TTSService 합성 요청, `NpcAudioResponse(ws_url)` 를 UE5 로 푸시.
 
 ## 핵심 모듈
 
 | 경로 | 역할 |
 | :--- | :--- |
-| `app/main.py` | WebSocket 진입점, 타입별 핸들러, SLM/location_decision, TTS dispatch |
+| `app/main.py` | WebSocket 진입점, 타입별 핸들러, SLM/location_decision |
 | `app/graph.py` | LangGraph 워크플로 정의 |
 | `app/agents/interface_input.py` · `interface_output.py` | UE5 ↔ 자연어 변환 |
 | `app/agents/supervisor.py` | 라우팅 |
 | `app/agents/subgraphs/dialogue.py` · `rules.py` | 대화 생성 / 규칙 검증 |
 | `app/schemas/envelope.py` | MessageEnvelope·payload (EEnvelopeType) |
 | `app/schemas/actions.py` | ActionBatch·GameAction·클램핑 |
-| `app/clients/tts_client.py` | TTSService 호출(재시도·trace·커넥션 풀) |
 | `app/utils/rag_utils.py` · `build_knowledge.py` | NPC별 FAISS RAG + 재빌드 CLI |
 | `app/utils/memory_manager.py` | NPC 대화 히스토리(JSON, 토큰예산 요약) |
 | `app/utils/db_manager.py` | affinity(호감도) DB |
@@ -65,5 +63,5 @@ gemma e/p 시리즈는 thinking 모델 — 단답이라도 `num_predict` 충분�
 ## 디버깅
 
 - `GET /` health, `GET /debug` 대시보드(NPC 말 걸기 → prompt→ActionBatch 확인).
-- `[trace=<msg_id>]` 로그가 prompt→TTS→UE 를 한 줄로 연결.
+- `[trace=<msg_id>]` 로그가 prompt→UE 를 한 줄로 연결.
 - RAG `No documents found` → `knowledge/<npc>/{lore,persona,history}/*.md` 작성 후 `python -m app.utils.build_knowledge --all`.

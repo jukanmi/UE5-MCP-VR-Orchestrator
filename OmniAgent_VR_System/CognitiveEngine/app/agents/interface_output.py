@@ -137,7 +137,7 @@ def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits
     # 텍스트 경로 parity: facial 우선, Neutral 이면 tone→emotion 정규화.
     emotion = facial if facial != "Neutral" else _normalize_emotion(resp.tone)
     # 절단 없음 — 구 경로도 따옴표 매치 대사는 전문 통과였음(절단은 따옴표 없는 폴백 한정).
-    # [:200] 은 200자 초과 한국어 대사를 자막·TTS 에서 문장 중간 자르는 회귀였다.
+    # [:200] 은 200자 초과 한국어 대사를 자막에서 문장 중간 자르는 회귀였다.
     speech = (resp.speech or "").strip() or "..."
 
     actions = [

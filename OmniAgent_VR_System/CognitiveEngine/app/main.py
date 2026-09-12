@@ -28,8 +28,6 @@ from .schemas.actions import (
     GameAction,
     NPCBehaviorMode,
 )
-from .schemas.npc_audio import NpcAudioResponse, AudioStreamInfo, AnimationMetadata
-from .clients import tts_client
 from .agents.state import AgentState
 from .graph import app_graph
 from .utils import db_manager
@@ -54,10 +52,6 @@ logger.setLevel(logging.INFO)
 # 리네임하지 말 것: env var 키로도 읽히므로 이름을 바꾸면 기존 배포·실행 스크립트의
 # 오버라이드가 **조용히** 무시된다(에러 없이 기본값 0.5 로 돌아감).
 SLM_REFLEX_DANGER_THRESHOLD = float(os.environ.get("SLM_REFLEX_DANGER_THRESHOLD", "0.5"))
-# TTS 합성 토글 — 기본 OFF(자막만 즉시 전송). "1" 이면 TTSService 로 합성 요청.
-# OFF 를 기본으로 둔 이유: TTS 서버 미기동 상태에서 재시도+타임아웃(3s×2)이 자막까지 지연시키고,
-# whisper/OpenVoice GPU 상주분(~4GB)을 LLM 에 돌려주기 위함.
-TTS_ENABLED = os.environ.get("TTS_ENABLED", "0") == "1"
 
 
 async def _check_ollama_model() -> None:
@@ -121,7 +115,7 @@ app = FastAPI(lifespan=lifespan)
 _cached_world_states: Dict[str, dict] = {}
 _world_state_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
-# WS 송신 직렬화 — 메시지별 동시 처리 + TTS 푸시가 같은 소켓에 겹쳐 쓰는 것 방지.
+# WS 송신 직렬화 — 메시지별 동시 처리가 같은 소켓에 겹쳐 쓰는 것 방지.
 _ws_send_lock = asyncio.Lock()
 # Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
 # TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
@@ -304,11 +298,6 @@ def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
     return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
 
 
-def _empty_audio_info() -> dict:
-    """TTS 생략/실패 시 자막만 전송하는 빈 audio info (url 빈 문자열) — UE5 측 fallback."""
-    return {"request_id": "", "ws_url": "", "sample_rate": 16000, "channels": 1}
-
-
 async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
     """적대 perception(danger>=0.5)을 일으킨 대상에게 호감도 -5 감점 (side-effect)."""
     for p in perceptions:
@@ -428,44 +417,6 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         return _empty_batch_json()
 
 
-def _trigger_dialogue_audio(final_action: Optional[ActionBatch], fallback_npc: Optional[str], trace_id: str) -> None:
-    """ActionBatch 의 Dialogue 액션을 찾아 TTS dispatch 백그라운드 태스크 생성.
-
-    Dialogue 없거나 대상 없으면 생략. 글자 없는 대사("...")는 bypass_tts(자막만 전송).
-    """
-    npc_id_for_audio = final_action.AgentID if final_action else fallback_npc
-    dialogue_text: Optional[str] = None
-    dialogue_emotion: str = "Neutral"  # M3: Dialogue FacialState → TTS emotion
-    if final_action and final_action.Actions:
-        for act in final_action.Actions:
-            if act.ActionType == "Dialogue":
-                # NPCActionKeys::Key_Text == "text"
-                dialogue_text = act.Parameters.get("text") or None
-                dialogue_emotion = act.FacialState or "Neutral"
-                if dialogue_text:
-                    break
-
-    if not npc_id_for_audio:
-        logger.info("[Main][TTS] target_npc 미지정 → 발화 대상 없음, dispatch 생략")
-        return
-    if not dialogue_text:
-        logger.info(f"[Main][TTS] {npc_id_for_audio} ActionBatch 에 Dialogue 없음 → dispatch 생략")
-        return
-
-    # 글자 없는 대사("...")나 TTS_ENABLED=0 이면 TTS 만 생략(bypass_tts)하되 자막은 전송(빈 url) — isalnum 은 한글 포함.
-    has_speech = any(c.isalnum() for c in dialogue_text)
-    spawn_background(
-        _dispatch_npc_audio(
-            npc_id=npc_id_for_audio,
-            dialogue_text=dialogue_text,
-            emotion=dialogue_emotion,
-            trace_id=trace_id,
-            bypass_tts=not has_speech or not TTS_ENABLED,
-        ),
-        label="npc-audio",
-    )
-
-
 async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     """prompt Envelope → 그래프 초기 AgentState. payload 파싱·GesPrompt 조립·계획
     캐싱 분기 폴백·world/history 스냅샷을 한데 모은다. (history 는 소비 후 clear)."""
@@ -537,8 +488,8 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
 
 
 def _finalize_prompt_response(result: dict, envelope: MessageEnvelope) -> str:
-    """그래프 결과 → ModeActionRequest JSON. ActionBatch 추출(멀티/단일 호환)·TTS
-    dispatch·plan 회신 조립. ActionBatch 없으면 빈 배치 JSON."""
+    """그래프 결과 → ModeActionRequest JSON. ActionBatch 추출(멀티/단일 호환)·plan
+    회신 조립. ActionBatch 없으면 빈 배치 JSON."""
     # 멀티 NPC: action_batches 우선, 없으면 단일 action_batch 호환
     action_batches: dict = result.get("action_batches") or {}
     if not action_batches:
@@ -549,13 +500,6 @@ def _finalize_prompt_response(result: dict, envelope: MessageEnvelope) -> str:
     if not action_batches:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
         return _empty_batch_json()
-
-    # ── TTS 트리거: 각 NPC Dialogue 액션을 순서대로 dispatch ─────────────
-    # NOTE: dispatch 호출은 순차이나 _trigger_dialogue_audio 가 create_task 로
-    #       백그라운드 태스크를 띄우므로 실제 오디오 재생은 NPC 간 동시(중첩) 가능.
-    #       순차 재생이 필요하면 큐잉 도입 필요(별도 설계 결정).
-    for npc_id, batch in action_batches.items():
-        _trigger_dialogue_audio(batch, npc_id, envelope.msg_id)
 
     logger.info(f"[Main] ActionBatch 생성 완료: {list(action_batches.keys())}")
     first_batch = next(iter(action_batches.values()))
@@ -593,59 +537,6 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         return _empty_batch_json()
 
     return _finalize_prompt_response(result, envelope)
-
-
-async def _dispatch_npc_audio(
-    npc_id: str,
-    dialogue_text: str,
-    emotion: str,
-    trace_id: str = "",
-    bypass_tts: bool = False,
-) -> None:
-    """TTS 합성 요청 후 활성 UE5 WS 로 NpcAudioResponse 푸시.
-
-    trace_id: 발원 envelope.msg_id — TTS request_id 로 상속되어 로그 체인 통일.
-    bypass_tts: 글자 없는 대사("...") 또는 TTS_ENABLED=0 — TTS 합성 생략, 자막만 전송(빈 url).
-    실패 시 자막만 담은 응답(audio_stream.url 빈 문자열) 전송 — UE5 측 fallback.
-    """
-    # M2: voice_id 자리에 npc_id 를 그대로 전달.
-    # TTSService 가 voice_map.yaml 을 참조해 실제 모델 voice 로 변환.
-    if bypass_tts:
-        logger.info(f"[Main][TTS][trace={trace_id}] TTS 생략(비활성 또는 글자 없는 대사) → 자막만 전송. npc={npc_id}")
-        info = _empty_audio_info()
-    else:
-        try:
-            info = await tts_client.synthesize(
-                text=dialogue_text,
-                voice_id=npc_id,
-                emotion=emotion,
-                trace_id=trace_id,
-            )
-        except tts_client.TTSError as e:
-            logger.warning(f"[Main][TTS][trace={trace_id}] 합성 실패 → 자막만 전송. npc={npc_id}, err={e}")
-            info = _empty_audio_info()
-
-    if _active_llm_ws is None:
-        logger.info("[Main][TTS] 활성 UE5 WS 없음 — NpcAudioResponse 송신 생략")
-        return
-
-    response = NpcAudioResponse(
-        request_id=info["request_id"],
-        npc_id=npc_id,
-        dialogue_text=dialogue_text,
-        audio_stream=AudioStreamInfo(
-            url=info["ws_url"],
-            sample_rate=info.get("sample_rate", 16000),
-            channels=info.get("channels", 1),
-        ),
-        animation_metadata=AnimationMetadata(emotion=emotion),
-    )
-    try:
-        async with _ws_send_lock:
-            await _active_llm_ws.send_text(response.model_dump_json())
-        logger.info(f"[Main][TTS][trace={trace_id}] NpcAudioResponse 전송. npc={npc_id}, req={info['request_id']}")
-    except Exception as e:
-        logger.warning(f"[Main][TTS] NpcAudioResponse 전송 실패: {e}")
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:
@@ -1041,8 +932,7 @@ async def api_debug_say(req: DebugPromptRequest):
 @app.post("/api/debug/prompt")
 async def api_debug_prompt(req: DebugPromptRequest):
     """디버그: UE 없이 콘솔/웹에서 NPC 에게 직접 말 걸기.
-    PROMPT envelope 를 만들어 그래프 실행 → ActionBatch(JSON) 반환.
-    TTS dispatch 도 _handle_prompt 내부에서 함께 동작(활성 UE WS 있으면 음성 푸시)."""
+    PROMPT envelope 를 만들어 그래프 실행 → ActionBatch(JSON) 반환."""
     import uuid
     import time as _t
 

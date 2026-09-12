@@ -287,7 +287,7 @@ def interface_input_node(state: AgentState) -> dict:
         "next": "Dialogue",
     }
     # 대상을 찾은 경우에만 state에 기록 → 없으면 기존 값(C++ AgentID 등) 보존.
-    # target_npc(단일)는 첫 매칭 — 단일 NPC 호환 경로/TTS 폴백용.
+    # target_npc(단일)는 첫 매칭 — 단일 NPC 호환 경로용.
     if target_npcs:
         result["target_npc"] = target_npcs[0]
         result["target_npcs"] = target_npcs
