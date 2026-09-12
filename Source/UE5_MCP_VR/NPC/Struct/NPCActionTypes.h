@@ -242,7 +242,7 @@ struct FLocationCandidate
 {
     GENERATED_BODY()
 
-    /** "SAFE_0", "OPTIMAL_1" 형태 - LLM 응답에서 식별자로 사용 */
+    /** "SAFE" / "OPTIMAL" / "AGGRESSIVE" — 카테고리명 그대로. LLM 응답의 chosen_id 가 이 값과 대조된다 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
     FString CandidateId;
 

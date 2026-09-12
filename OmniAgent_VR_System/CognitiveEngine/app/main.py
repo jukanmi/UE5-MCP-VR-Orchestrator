@@ -742,7 +742,7 @@ def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str
     request_gen = _parse_request_gen(payload_raw)
 
     if not candidates_raw:
-        fallback_id = "OPTIMAL_0"
+        fallback_id = "OPTIMAL"
         reason_str = "no_candidates"
     else:
         import random
@@ -752,10 +752,10 @@ def _location_decision_fast_path(payload_raw: dict, fallback_reason: str) -> str
         roll = random.randint(1, 100)
 
         if roll > 40:  # 60% chance to act rationally
-            fallback_id = top_n[0].get("id", "OPTIMAL_0")
+            fallback_id = top_n[0].get("id", "OPTIMAL")
             reason_str = f"Fast-Path (Roll: {roll}): Calmly chose optimal cover"
         else:  # 40% chance to panic
-            fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", "OPTIMAL_0")
+            fallback_id = random.choice(top_n[1:] if len(top_n) > 1 else top_n).get("id", "OPTIMAL")
             reason_str = f"Fast-Path (Roll: {roll}): Panicked! Chose suboptimal cover"
 
     logger.info(f"[LocationDecision] {reason_str}: {fallback_id} (fallback reason: {fallback_reason})")
