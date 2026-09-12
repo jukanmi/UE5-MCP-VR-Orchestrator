@@ -56,8 +56,8 @@ prompt 수신
 
 ## 모델 라우팅
 
-`importance` → 모델: `normal` gemma4:e4b / `high` qwen3:8b / `core` gemma4-12b (= hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 별칭, `ollama cp` 로 생성).
-변경 시 `dialogue.py`·`main.py`·`debug.html` 세 곳을 함께 맞출 것 (Memo Handoff).
+`importance` → 모델 매핑은 `llm_factory.IMPORTANCE_MODELS`(`model_for_importance`) 한 곳 — API 응답·디버그 배지가 이 값을 읽는다. 실제 추론은 `STAGE1_MODEL`(hot loop)·`STAGE2_MODEL`(플래너)이 결정하며 importance 는 표시용 메타.
+`gemma4-12b` 는 hf.co/mradermacher/Gemma-4-12B-OBLITERATED-GGUF:Q4_K_M 별칭(`ollama cp` 로 생성).
 gemma e/p 시리즈는 thinking 모델 — 단답이라도 `num_predict` 충분히 확보 또는 raw 모드 사용.
 
 ## 디버깅
