@@ -202,12 +202,8 @@ void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
     if (!Manager) return;
 
     // 단발 이벤트라 디바운스 큐 미경유. danger=0 — Python 게이트는 report_type 으로 식별.
-    FPerceptionData Victory;
-    Victory.TargetID = DefeatedTargetID;
-    Victory.SenseType = ESenseType::Other;
-    Victory.Location = OwnerNPC->GetActorLocation();
-    Victory.Distance = 0.f;
-    Victory.DangerScore = 0.f;
+    const FPerceptionData Victory(DefeatedTargetID, ESenseType::Other, OwnerNPC->GetActorLocation(),
+                                  OwnerNPC->GetActorLocation(), 0.f);
 
     const FString Payload = UMCPJsonUtils::SerializePerceptionReport(
         OwnerNPC->AgentID, { Victory }, TEXT("combat_victory"));

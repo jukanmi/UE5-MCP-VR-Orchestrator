@@ -473,7 +473,7 @@ void UNPCActionComponent::StopAllActions()
     ClearActiveActionState();
     ResetPostureFlags(); // 사망·넉다운·전투종료 등 전면 정지 — 앉/눕 자세도 해제(AnimBP 자세 고착 방지)
     LastQueuedActionType = EAction::Idle;
-    ResetCombatSelectorState(); // 전투 종료(HandleCombatTargetDead)·비상 정지 공통 — 셀렉터 연속성 초기화
+    ResetCombatSelectorState(); // 전투 종료(ExitCombat)·비상 정지 공통 — 셀렉터 연속성 초기화
 
     ResetAllStateTagsToIdle(GetOwner());
 

@@ -238,13 +238,10 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         ReactToHit(ActualDamage);
 
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
-        FPerceptionData DamageEventPerc;
-        DamageEventPerc.TargetID = DamageCauser ? DamageCauser->GetName() : TEXT("Unknown");
-        DamageEventPerc.SenseType = ESenseType::Hit;
-        DamageEventPerc.Location = DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation();
-        DamageEventPerc.Distance = DamageCauser ? FVector::Dist(GetActorLocation(), DamageEventPerc.Location) : 0.0f;
-        DamageEventPerc.DangerScore = 1.0f;
-
+        // 가해자 불명이면 자기 위치(거리 0).
+        const FPerceptionData DamageEventPerc(
+            DamageCauser ? DamageCauser->GetName() : TEXT("Unknown"), ESenseType::Hit,
+            DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation(), GetActorLocation(), 1.0f);
         StateComponent->RequestEventCognition(DamageEventPerc);
     }
 

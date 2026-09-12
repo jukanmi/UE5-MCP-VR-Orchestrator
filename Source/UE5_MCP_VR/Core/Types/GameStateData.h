@@ -52,6 +52,14 @@ struct FPerceptionData {
 
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Perception")
   float DangerScore = 0.f;
+
+  FPerceptionData() = default;
+
+  /** 관측자 위치를 받아 Distance 를 여기서 계산 — 시야·청각·틱·피격·승리 보고 다섯 곳이 같은 식을 손으로 적고 있었다. */
+  FPerceptionData(const FString& InTargetID, ESenseType InSense, const FVector& InLocation,
+                  const FVector& ObserverLocation, float InDanger)
+      : TargetID(InTargetID), SenseType(InSense), Location(InLocation),
+        Distance(FVector::Dist(ObserverLocation, InLocation)), DangerScore(InDanger) {}
 };
 
 /**

@@ -49,7 +49,7 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
         }
         if (CombatTarget && ASmartNPCAIController::IsTargetDead(CombatTarget))
         {
-            AICon.HandleCombatTargetDead(CombatTarget);
+            AICon.ExitCombat(CombatTarget);
             return EStateTreeRunStatus::Running;
         }
     }
