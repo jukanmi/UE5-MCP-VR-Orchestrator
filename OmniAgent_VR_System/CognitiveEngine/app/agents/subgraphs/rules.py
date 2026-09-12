@@ -26,7 +26,6 @@ from collections import Counter
 
 from ..state import AgentState
 from ...utils.train_logger import log_rules_result
-from .dialogue import _vr_get
 from ...schemas.actions import (
     ACTION_CATEGORY,
     ACTION_REQUIRED_PARAMS,
@@ -295,11 +294,9 @@ def rules_node(state: AgentState) -> dict:
         action_batches = {batch.AgentID: batch}
 
     # UE5 prompt 동봉 valid_targets(런타임 등록 NPC) — 타겟 검증의 우선 진실.
-    vr_context = state.get("vr_context")
-    runtime_list = _vr_get(vr_context, "valid_targets", None) if vr_context else None
-    # vr_context 가 검증 안 된 raw dict 로도 흘러듦(_vr_get 이중 대응) — UE5 가 배열 대신
-    # 문자열을 보내면 set("Elara") 가 문자 단위로 분해돼 유효 액션이 조용히 제거됨. 시퀀스만 변환.
-    runtime_targets: set[str] | None = set(runtime_list) if isinstance(runtime_list, (list, tuple, set)) else None
+    # GesPrompt 가 List[str] 로 검증하므로 문자열이 통째로 오는 경우는 여기 도달 전에 걸러진다.
+    runtime_list = state["vr_context"].valid_targets
+    runtime_targets: set[str] | None = set(runtime_list) if runtime_list else None
 
     # 파인튜닝 로그 조인 키 — Stage1 LLM 레코드와 msg_id+attempt 로 매칭 (train_logger)
     log_ctx = {"msg_id": state.get("msg_id", ""), "attempt": state.get("rules_retry_count", 0)}
@@ -327,18 +324,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     규칙(Rule) 기반으로 점수를 증감시킨 뒤 DB Manager 캐시에 즉시 반영.
     """
     # 1. Player ID와 Source(NPC) ID 확인
-    # vr_context가 엉망이거나 null이면 건너뜀 (MVP용 방어코드)
-    vr_context = state.get("vr_context")
-    if not vr_context:
-        return
-
-    player_id = (
-        vr_context.get("player_id", "Player")
-        if isinstance(vr_context, dict)
-        else getattr(vr_context, "player_id", "Player")
-        if vr_context
-        else "Player"
-    )
+    player_id = state["vr_context"].player_id or "Player"
     npc_id = batch.AgentID
 
     if not npc_id:

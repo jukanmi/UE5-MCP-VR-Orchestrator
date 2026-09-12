@@ -2,7 +2,7 @@
 
 WHY: C++ NPCMap 은 케이스 구분하나 LLM·디버그 입력은 케이스가 흔들림.
 "lower 로 찾고 원본 케이스 반환" 패턴이 dialogue/interface_input 여러 곳에
-중복 → 단일화. (P1 `_vr_get` 과 같은 성격의 공용 헬퍼)
+중복 → 단일화.
 """
 
 from typing import Iterable, Mapping, Optional, TypeVar

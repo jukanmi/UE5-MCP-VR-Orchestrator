@@ -39,6 +39,7 @@ from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
 from ..state import AgentState
+from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
 from ...utils.id_utils import ci_id_map
 from ...schemas.actions import DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
@@ -171,22 +172,6 @@ def _serialize_dialogue(obj: DialogueResponse) -> str:
     return "\n".join(lines)
 
 
-def _vr_get(vr_context, key: str, default=None):
-    """vr_context(dict 또는 GesPrompt 객체)에서 key 추출 — 없으면 default.
-    interface 경계에서 dict/pydantic 둘 다 흘러들어와 매 필드마다 반복되던
-    isinstance 분기를 단일화."""
-    if not vr_context:
-        return default
-    if isinstance(vr_context, dict):
-        return vr_context.get(key, default)
-    return getattr(vr_context, key, default)
-
-
-def _vr_player_id(vr_context) -> str:
-    """vr_context 에서 player_id 추출 — 없으면 "Player"."""
-    return _vr_get(vr_context, "player_id", "Player") or "Player"
-
-
 @dataclass
 class _Stage1Context:
     """_dialogue_single Stage1 입력 번들 — 컨텍스트 수집 단계와 LLM 호출 단계의 경계."""
@@ -214,8 +199,8 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     memory = persona.get("memory_summary", {})
     memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
-    vr_context = state.get("vr_context")
-    player_id = _vr_player_id(vr_context)
+    vr_context: GesPrompt = state["vr_context"]  # interface_input 이 항상 객체로 정규화
+    player_id = vr_context.player_id or "Player"
 
     try:
         relation = await db_manager.get_affinity(npc_id, player_id)
@@ -224,7 +209,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
         print(f"[Dialogue] Affinity 조회 실패 ({npc_id}): {e}")
         sentiment = memory.get("sentiment", "Neutral")
 
-    clean_query = _vr_get(vr_context, "voice_transcript", "") or ""
+    clean_query = vr_context.voice_transcript or ""
 
     rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
     # 캐시 미스 시 ConversationMemory._load_from_file 이 동기 JSON read 를 수행한다.
@@ -234,7 +219,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
 
     # NPC 인벤토리 — UE5 가 prompt 마다 동적 전송(npc_id → items). 없으면 "None".
     # 주입 목적: NPC 가 보유 아이템만 GiveItem/HandObject 하도록 근거 제공.
-    inv_map = _vr_get(vr_context, "npc_inventory", None) or {}
+    inv_map = vr_context.npc_inventory or {}
     inv_items = inv_map.get(npc_id, []) or []
     if inv_items:
         # 표시명과 함께 id 를 괄호로 노출한다. GiveItem/UseItem 은 UE5 에서 ItemID 로 조회되는데,
@@ -248,7 +233,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
 
     # 유효 타깃 vocabulary — UE5 ResolveActionTarget 해석 가능 키워드(valid_targets).
     # 있으면 프롬프트 명시 + 스키마 target enum 강제, 없으면 종전 자유문자열(하위호환).
-    valid_targets = _vr_get(vr_context, "valid_targets", None)
+    valid_targets = vr_context.valid_targets
     valid_targets_str = ", ".join(valid_targets) if valid_targets else "Player, Self, Enemy, or an NPC name"
 
     fmt_kwargs = dict(
@@ -456,8 +441,7 @@ async def dialogue_node(state: AgentState):
     raw_responses: Dict[str, str] = {}
     if requires_replan:
         raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
-        vr_context = state.get("vr_context")
-        player_id = _vr_player_id(vr_context)
+        player_id = state["vr_context"].player_id or "Player"
         npc_plans = await _generate_plans(raw_responses, player_id, state.get("msg_id", ""))
     else:
         print("[Dialogue] 경량 루프: Stage2 스킵 (e4b 단독)")

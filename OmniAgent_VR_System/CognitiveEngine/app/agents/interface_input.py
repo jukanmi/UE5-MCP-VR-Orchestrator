@@ -187,24 +187,30 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     return natural_context
 
 
+# 누락·변환 실패 시 뒤 노드에 넘겨줄 빈 컨텍스트 — 뒤 노드(dialogue·rules)는 vr_context 가 항상
+# GesPrompt 객체라고 가정하므로 None 을 흘려보내지 않는다.
+def _empty_vr_context() -> GesPrompt:
+    return GesPrompt(player_id="Player", voice_transcript="", timestamp=0.0)
+
+
 def _coerce_vr_context(vr_context):
-    """vr_context 정규화 — (GesPrompt, None) 또는 (None, 폴백 응답 dict).
+    """vr_context 정규화 — (GesPrompt, None) 또는 (빈 GesPrompt, 폴백 응답 dict).
     누락/변환 실패 시에도 그래프가 끊기지 않게 Dialogue 로 넘기는 기존 동작 유지."""
     if not vr_context:
         print("[Interface Input] ERROR: vr_context 없음")
-        return None, {
+        return _empty_vr_context(), {
             "natural_context": "Player input is empty.",
             "current_speaker": "Interface_Input",
             "next": "Dialogue",
         }
 
-    # dict → GesPrompt 변환 (WebSocket에서 raw dict로 올 수 있음)
+    # dict → GesPrompt 변환 (디버그 경로 등에서 raw dict 로 올 수 있음)
     if isinstance(vr_context, dict):
         try:
             vr_context = GesPrompt(**vr_context)
         except Exception as e:
             print(f"[Interface Input] GesPrompt 변환 실패: {e}")
-            return None, {
+            return _empty_vr_context(), {
                 "natural_context": "Player said something but context is unclear.",
                 "current_speaker": "Interface_Input",
                 "next": "Dialogue",
@@ -260,6 +266,7 @@ def interface_input_node(state: AgentState) -> dict:
     """
     vr_context, fallback = _coerce_vr_context(state.get("vr_context"))
     if fallback is not None:
+        fallback["vr_context"] = vr_context
         return fallback
 
     transcript = vr_context.voice_transcript or ""
@@ -282,6 +289,8 @@ def interface_input_node(state: AgentState) -> dict:
     target_npcs = _extract_target_npcs(transcript, vr_context)
 
     result = {
+        # 정규화된 객체를 state 로 돌려준다 — 뒤 노드가 dict/객체 이중 대응을 하지 않게.
+        "vr_context": vr_context,
         "natural_context": natural_context,
         "current_speaker": "Interface_Input",
         "next": "Dialogue",

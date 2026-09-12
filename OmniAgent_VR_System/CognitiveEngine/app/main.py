@@ -21,7 +21,7 @@ from .schemas.envelope import (
     LocationDecisionPayload,
     EmergencyReportPayload,
 )
-from .schemas.vr_context import GesPrompt, GestureData
+from .schemas.vr_context import GesPrompt
 from .schemas.actions import (
     ActionBatch,
     ModeActionRequest,
@@ -410,18 +410,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     캐싱 분기 폴백·world/history 스냅샷을 한데 모은다. (history 는 소비 후 clear)."""
     prompt_payload: PromptPayload = envelope.parse_prompt_payload()
 
-    ges_prompt = GesPrompt(
-        player_id=prompt_payload.player_id,
-        voice_transcript=prompt_payload.voice_transcript,
-        gestures=[GestureData(**g) for g in prompt_payload.gestures] if prompt_payload.gestures else [],
-        timestamp=envelope.timestamp,
-        last_event=prompt_payload.last_event,
-        stats=prompt_payload.stats,
-        player_location=prompt_payload.player_location,
-        npc_inventory=prompt_payload.npc_inventory,
-        valid_targets=prompt_payload.valid_targets,
-        nearby_furniture=prompt_payload.nearby_furniture,
-    )
+    ges_prompt = GesPrompt(**prompt_payload.model_dump(), timestamp=envelope.timestamp)
 
     target_npc_from_payload = prompt_payload.target_npc_id or None
 

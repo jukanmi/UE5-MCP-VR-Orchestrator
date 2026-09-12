@@ -5,7 +5,8 @@ Combines Voice Transcript with Gesture Data to enable deictic resolution (interp
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
+from .envelope import PromptPayload
 from .game_state import Vector3D
 
 
@@ -32,29 +33,13 @@ class NPCRelation(BaseModel):
     is_dirty: bool = False  # Used internally by DB Manager to track changes
 
 
-class GesPrompt(BaseModel):
+class GesPrompt(PromptPayload):
     """
-    Combined structure for Voice + Gesture context.
-    This is the primary input for the Interface (Mediator) Agent.
+    그래프 내부용 prompt 컨텍스트 — Envelope 의 PromptPayload 에 수신 시각을 더하고,
+    제스처·위치를 dict 가 아닌 타입 모델로 승격한 것. 필드를 따로 열거하지 않는 이유:
+    두 모델이 사실상 같은 필드 묶음이라 한쪽에 필드가 늘 때 다른 쪽을 빠뜨리는 사고를 막기 위함.
     """
 
-    player_id: str
-    voice_transcript: str
-    gestures: List[GestureData] = Field(default_factory=list)
     timestamp: float
-    last_event: Optional[str] = None  # e.g. "Hit", "Ambush"
-    stats: Optional[Dict[str, float]] = None  # e.g. {"hp": 80, "agility": 0.9}
-
-    player_location: Optional[Vector3D] = None  # Player's world location for "come here" commands
-
-    # 대화 대상 NPC 인벤토리 — npc_id → [{id,name,desc,count,...}]. Stage1 컨텍스트 주입용.
-    # 타입은 PromptPayload.npc_inventory 와 일치(일관성).
-    npc_inventory: Optional[Dict[str, List[Dict[str, Any]]]] = None
-
-    # 유효 액션 타깃 vocabulary — PromptPayload.valid_targets 와 일치(일관성).
-    # Stage1 구조화 스키마 target enum 강제 + 프롬프트 주입용.
-    valid_targets: Optional[List[str]] = None
-
-    # 반경 내 가구 인지 컨텍스트 — PromptPayload.nearby_furniture 와 일치(일관성).
-    # [{id,type,occupied,dist_m}] — natural_context "Nearby furniture:" 조각 소스.
-    nearby_furniture: Optional[List[Dict[str, Any]]] = None
+    gestures: List[GestureData] = Field(default_factory=list)
+    player_location: Optional[Vector3D] = None  # "이리 와" 류 명령의 기준 좌표
