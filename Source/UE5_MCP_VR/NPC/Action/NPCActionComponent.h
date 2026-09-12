@@ -633,8 +633,9 @@ private:
     bool DoesReflexRuleMatch(const FReflexRule& Rule, ESenseType Sense, const FString& EventType,
                              ENPCRelation Relation, float BaseDanger, float Distance) const;
 
-    /** 가중 분포 추첨. 후보가 없으면 EAction::Idle 반환. */
-    static EAction PickWeightedReflexAction(const TMap<EAction, float>& Weights);
+    /** 가중 분포 추첨 — 합 구하고 굴려 빼 나간다. 유효 가중치가 없으면 INDEX_NONE,
+     *  부동소수 잔여로 못 고르면 마지막 유효 후보. 반사 룰(TMap)과 전투 셀렉터(TArray)가 같이 쓴다. */
+    static int32 PickWeightedIndex(int32 Num, TFunctionRef<float(int32)> WeightAt);
 
 public:
 

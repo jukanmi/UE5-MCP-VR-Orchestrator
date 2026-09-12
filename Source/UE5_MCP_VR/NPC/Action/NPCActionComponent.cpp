@@ -133,20 +133,20 @@ bool UNPCActionComponent::DoesReflexRuleMatch(const FReflexRule& Rule, ESenseTyp
     return Rule.ActionWeights.Num() > 0;
 }
 
-EAction UNPCActionComponent::PickWeightedReflexAction(const TMap<EAction, float>& Weights)
+int32 UNPCActionComponent::PickWeightedIndex(int32 Num, TFunctionRef<float(int32)> WeightAt)
 {
     float TotalW = 0.f;
-    for (const TPair<EAction, float>& Pair : Weights) TotalW += FMath::Max(0.f, Pair.Value);
-    if (TotalW <= KINDA_SMALL_NUMBER) return EAction::Idle;
+    for (int32 i = 0; i < Num; ++i) TotalW += FMath::Max(0.f, WeightAt(i));
+    if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
 
     float Roll = FMath::FRandRange(0.f, TotalW);
-    EAction Last = EAction::Idle;
-    for (const TPair<EAction, float>& Pair : Weights)
+    int32 Last = INDEX_NONE;
+    for (int32 i = 0; i < Num; ++i)
     {
-        const float W = FMath::Max(0.f, Pair.Value);
+        const float W = FMath::Max(0.f, WeightAt(i));
         if (W <= 0.f) continue;
-        Last = Pair.Key;                 // 부동소수 잔여로 못 고를 때의 폴백
-        if (Roll < W) return Pair.Key;
+        Last = i;                        // 부동소수 잔여로 못 고를 때의 폴백
+        if (Roll < W) return i;
         Roll -= W;
     }
     return Last;
@@ -181,7 +181,9 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
         // (넘기면 더 약한 룰이 대신 튀어 같은 자극에 계속 반응하는 꼴이 된다)
         if (Now - ReflexRuleLastFireTime[i] < Rule.Cooldown) return false;
 
-        const EAction Chosen = PickWeightedReflexAction(Rule.ActionWeights);
+        const TArray<TPair<EAction, float>> WeightPairs = Rule.ActionWeights.Array();
+        const int32 Idx = PickWeightedIndex(WeightPairs.Num(), [&WeightPairs](int32 j) { return WeightPairs[j].Value; });
+        const EAction Chosen = Idx == INDEX_NONE ? EAction::Idle : WeightPairs[Idx].Key;
         if (Chosen == EAction::Idle) return false;
 
         FGameAction Action;
@@ -1834,26 +1836,9 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
         }
     }
 
-    // 가중치 확률 추첨. 부동소수 잔여로 못 고르면 마지막 유효 후보.
     auto PickWeighted = [&Candidates]() -> int32
     {
-        float TotalW = 0.f;
-        for (const FCombatCandidate& C : Candidates) TotalW += FMath::Max(0.f, C.Weight);
-        if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
-
-        float Roll = FMath::FRandRange(0.f, TotalW);
-        for (int32 i = 0; i < Candidates.Num(); ++i)
-        {
-            const float W = FMath::Max(0.f, Candidates[i].Weight);
-            if (W <= 0.f) continue;
-            if (Roll < W) return i;
-            Roll -= W;
-        }
-        for (int32 i = Candidates.Num() - 1; i >= 0; --i)
-        {
-            if (Candidates[i].Weight > 0.f) return i;
-        }
-        return INDEX_NONE;
+        return PickWeightedIndex(Candidates.Num(), [&Candidates](int32 i) { return Candidates[i].Weight; });
     };
 
     int32 ChosenIdx = PickWeighted();
