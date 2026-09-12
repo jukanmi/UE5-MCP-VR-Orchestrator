@@ -202,7 +202,7 @@ void UNPCManager::SendEnvelopePromptToLLM(const FString& JsonData)
 {
     if (LLMClient)
     {
-        LLMClient->SendPrompt(JsonData);
+        LLMClient->SendMessage(JsonData);
     }
 }
 
@@ -522,7 +522,7 @@ void UNPCManager::SendEventReport(const FString& AgentID, const FString& Combine
     
     if (LLMClient && LLMClient->IsConnected())
     {
-        LLMClient->SendPrompt(Envelope);
+        LLMClient->SendMessage(Envelope);
         UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Event Report Sent for Agent: %s"), *AgentID);
     }
 }
