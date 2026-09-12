@@ -24,7 +24,7 @@ def _make_main_module():
 
 
 def _reset_prewarm(mod):
-    mod._last_core_prewarm = 0.0
+    mod.STATE.last_core_prewarm = 0.0
 
 
 def test_prewarm_calls_http_once():

@@ -36,6 +36,8 @@ prompt 수신
 | 경로 | 역할 |
 | :--- | :--- |
 | `app/main.py` | WebSocket 진입점, 타입별 핸들러, SLM/location_decision |
+| `app/debug_routes.py` | `/debug`·`/test_chat` 대시보드 + `/api/*` 운영 REST(affinity·persona importance·NPC 명령·debug prompt) |
+| `app/server_state.py` | 프로세스 런타임 상태 `STATE`(월드 상태 캐시·활성 UE5 소켓·송신 락·웜업 시각) |
 | `app/graph.py` | LangGraph 워크플로 정의 |
 | `app/agents/interface_input.py` · `interface_output.py` | UE5 ↔ 자연어 변환 |
 | `app/agents/supervisor.py` | 라우팅 |
