@@ -62,16 +62,6 @@ void UItemManager::UnregisterDroppedItem(const FString& InInstanceID)
     UE_LOG(LogTemp, Log, TEXT("[ItemManager] Unregistered Item: %s"), *InInstanceID);
 }
 
-AActor* UItemManager::GetItemActorByID(const FString& InInstanceID) const
-{
-    const FDroppedItemData* FoundDataPtr = ActiveDroppedItems.Find(InInstanceID);
-    if (FoundDataPtr && IsValid(FoundDataPtr->ItemActor))
-    {
-        return FoundDataPtr->ItemActor;
-    }
-    return nullptr;
-}
-
 TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const
 {
     TArray<FDroppedItemData> FoundItems;
@@ -133,20 +123,6 @@ TArray<FDroppedItemData> UItemManager::GetItemsInRange(const FVector& SearchLoca
     }
 
     return FoundItems;
-}
-
-FString UItemManager::SerializeActiveItemsToJson() const
-{
-    // 현재 매니저가 캐싱 중인 데이터를 MCP 전송용 규격에 맞춰 직렬화합니다.
-    // TSharedPtr<FJsonObject> 등을 통해 {"type": "world_items_state", "data": [...]} 형태를 구성할 수 있습니다.
-    
-    // 단순 디버그용 덤프 예시입니다. (실 적용 시 JsonObject 생성 로직 구비)
-    int32 Count = ActiveDroppedItems.Num();
-    FString ResultStr = FString::Printf(TEXT("{\"type\": \"world_items_state\", \"count\": %d, \"data\": []}"), Count);
-    
-    // TODO: FJsonObjectConverter나 FJsonSerializer를 사용해 규격화된 Json String 반환 로직 구성.
-    
-    return ResultStr;
 }
 
 bool UItemManager::GetItemDataByID(const FString& InTemplateID, FItemData& OutItemData) const

@@ -58,17 +58,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     void UnregisterDroppedItem(const FString& InInstanceID);
 
-    // 인스턴스 ID를 통해 특정 아이템 액터를 O(1)로 빠르게 가져옵니다.
-    UFUNCTION(BlueprintCallable, Category = "MCP|Item")
-    AActor* GetItemActorByID(const FString& InInstanceID) const;
-
     // NPC 주변의 아이템을 찾을 때, 맵(TMap) 전체를 순회하지 않고 언리얼 물리 쿼리(OverlapMulti)를 수행하여 극한의 성능 최적화를 달성합니다.
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     TArray<FDroppedItemData> GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const;
-
-    // 네트워크 병목 예방을 위해 모든 상태를 매 프레임 동기화하는 대신, 필요 시점에 일괄 전송 가능한 포맷으로 조립합니다.
-    UFUNCTION(BlueprintCallable, Category = "MCP|Item")
-    FString SerializeActiveItemsToJson() const;
 
     // DataTable에서 ItemID(TemplateID)에 해당하는 아이템 원본 데이터를 가져옵니다. (레지스트리 및 하드코딩 에셋 로딩 방식 대체)
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
