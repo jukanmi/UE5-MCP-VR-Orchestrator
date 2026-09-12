@@ -795,10 +795,6 @@ public:
 
 private:
 
-    /** 콘솔에서 플레이어 발화를 최근접 NPC로 전송 (단순 대화). 예: SendNPCDialogue "안녕" */
-    UFUNCTION(Exec)
-    void SendNPCDialogue(const FString& Text);
-
     /** 쥔 아이템의 손안 자세를 델타로 밀어보고 절대값을 CSV 표기로 찍는다. 예: TuneGrab 0 0 1 0 15 0
      *  전부 0 을 넣으면 밀지 않고 현재 값만 출력한다.
      *  헤드셋을 쓴 채로는 수치를 읽을 수 없으므로, 찍힌 값을 DT_ItemRegistry 에 옮겨 확정한다. */

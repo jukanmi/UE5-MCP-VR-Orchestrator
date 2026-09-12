@@ -1617,21 +1617,6 @@ FVector AVRPawn::GetHandLocation(bool bRightHand) const
     return HandController ? HandController->GetComponentLocation() : GetActorLocation();
 }
 
-void AVRPawn::SendNPCDialogue(const FString& Text)
-{
-    if (CurrentTargetNPCID.IsEmpty())
-    {
-        DetectNearbyNPC();
-    }
-    if (CurrentTargetNPCID.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SendNPCDialogue 실패 — 대상 NPC 없음"));
-        return;
-    }
-    // player_id = actor 이름 — affinity DB 키와 일치
-    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
-}
-
 void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
 {
     if (VoiceInput) VoiceInput->StartTalking();
