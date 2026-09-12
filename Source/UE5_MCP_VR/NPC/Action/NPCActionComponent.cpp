@@ -2159,7 +2159,7 @@ void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID, int32 Amo
     }
 
     BasePlayActionMedia(TEXT("Drop"));
-    UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f);
+    UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Drop);
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍: %s"), *TargetTemplateID);
 }
 
