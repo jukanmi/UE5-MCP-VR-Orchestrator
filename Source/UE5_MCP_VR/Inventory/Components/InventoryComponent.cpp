@@ -755,18 +755,8 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlo
     USkeletalMeshComponent* OwnerMesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
     if (!OwnerMesh) return;
 
-    // 물리를 끄고 손 본에 그대로 붙인다. 쥔 동안 콜리전까지 끄는 이유는 물리 바디가 남아 있으면
-    // 자기 캡슐·바닥을 밀어 손이 튀거나 소유자가 밀려나기 때문.
-    Item->ItemMesh->SetSimulatePhysics(false);
-    Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-    // 상호작용 구체도 같이 끈다. 이걸 켠 채로 두면 손에 쥔 물건이 주변 아이템 검색
-    // (ItemManager::GetItemsInRange 의 WorldDynamic 오버랩)에 계속 걸려서, 반대 손으로 다시
-    // 집거나 남이 주워 가는 게 된다 — 쥔 물건은 바닥에 떨어진 물건과 같은 취급이면 안 된다.
-    if (Item->InteractionSphere)
-    {
-        Item->InteractionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
+    // 물리를 끄고 손 본에 그대로 붙인다(물리를 켠 채 부착하면 손이 튄다).
+    Item->SetPhysicsFrozen(true);
 
     Item->AttachToComponent(OwnerMesh,
         FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
@@ -800,11 +790,9 @@ ADroppedItemBase* UInventoryComponent::ReleaseHeldItem(EEquipmentSlot HandSlot)
 
     Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-    // 손을 떠나면 다시 찾을 수 있어야 한다(쥘 때 끈 상호작용 구체 복구).
-    if (Item->InteractionSphere)
-    {
-        Item->InteractionSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    }
+    // 손을 떠난 물건은 어디로 가든 일단 월드 물체다 — 물리를 되살려 두면 수납 실패·건네기 실패
+    // 어느 경로에서도 공중에 박제되지 않는다. 던지기·접시 잠금은 이 위에 자기 상태를 덮어쓴다.
+    Item->SetPhysicsFrozen(false);
 
     return Item;
 }
@@ -858,20 +846,9 @@ bool UInventoryComponent::TakeItemToHand(const FString& ItemID, const FTransform
 
 bool UInventoryComponent::StoreHeldItem(EEquipmentSlot HandSlot)
 {
+    // 실패 경로는 그냥 false — ReleaseHeldItem 이 이미 물리를 되살려 그 자리에 떨어져 있다.
     ADroppedItemBase* Item = ReleaseHeldItem(HandSlot);
     if (!Item) return false;
-
-    // 어느 이유로 실패하든 손을 떠난 물건은 물리를 되살려 바닥에 남겨야 한다 — 안 그러면
-    // 부착도 물리도 없는 채로 공중에 박제된다.
-    auto DropWhereItIs = [Item]()
-    {
-        if (Item->ItemMesh)
-        {
-            Item->ItemMesh->SetSimulatePhysics(true);
-            Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        }
-        return false;
-    };
 
     UItemManager* ItemManager = UItemManager::Get(this);
 
@@ -879,14 +856,14 @@ bool UInventoryComponent::StoreHeldItem(EEquipmentSlot HandSlot)
     if (!ItemManager || !ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, Data))
     {
         UE_LOG(LogTemp, Warning, TEXT("[Inventory] 수납 실패 — 아이템 데이터 없음: %s"), *Item->ItemData.ItemTemplateID);
-        return DropWhereItIs();
+        return false;
     }
 
     const int32 Amount = FMath::Max(1, Item->Amount);
     if (!AddItem(Data, Amount))
     {
         UE_LOG(LogTemp, Warning, TEXT("[Inventory] 가득 참 — %s 수납 불가, 그 자리에 드랍"), *Data.ItemID);
-        return DropWhereItIs();
+        return false;
     }
 
     UE_LOG(LogTemp, Log, TEXT("[Inventory] 손에 쥔 아이템 수납 완료: %s (수량 %d)"), *Data.ItemID, Amount);

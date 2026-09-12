@@ -301,20 +301,8 @@ void ATradeSessionActor::ReleaseAll()
 
 void ATradeSessionActor::SetItemLocked(ADroppedItemBase* Item, bool bLocked)
 {
-    if (!IsValid(Item) || !Item->ItemMesh) return;
+    if (!IsValid(Item)) return;
 
     Item->bTradeLocked = bLocked;
-
-    if (bLocked)
-    {
-        Item->ItemMesh->SetSimulatePhysics(false);
-        Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
-    else
-    {
-        // 쥐기 해제와 같은 복구 절차 — 프로파일을 다시 지정해야 채널 응답까지 돌아온다.
-        Item->ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
-        Item->ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-        Item->ItemMesh->SetSimulatePhysics(true);
-    }
+    Item->SetPhysicsFrozen(bLocked);
 }

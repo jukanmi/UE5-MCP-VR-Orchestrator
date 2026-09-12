@@ -123,6 +123,33 @@ void ADroppedItemBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
+void ADroppedItemBase::SetPhysicsFrozen(bool bFrozen)
+{
+    if (!ItemMesh) return;
+
+    if (bFrozen)
+    {
+        // 물리 바디가 남아 있으면 자기 캡슐·바닥을 밀어 손이 튀거나 소유자가 밀려난다.
+        ItemMesh->SetSimulatePhysics(false);
+        ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+    else
+    {
+        // SetCollisionEnabled 만으로는 잠근 동안 바뀐 채널 응답이 복구되지 않는다 — 프로파일 재지정.
+        // Pawn 은 평상시 Overlap: 바닥에 놓인 물건이 다가오는 캡슐에 밀려 도망다니지 않게.
+        ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+        ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+        ItemMesh->SetSimulatePhysics(true);
+    }
+
+    // 상호작용 구체 — 켠 채로 두면 쥔/잠긴 물건이 ItemManager::GetItemsInRange 오버랩에 계속 걸려
+    // 반대 손으로 다시 집거나 남이 주워 가게 된다.
+    if (InteractionSphere)
+    {
+        InteractionSphere->SetCollisionEnabled(bFrozen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+    }
+}
+
 void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
                                     float DamageScale, float MaxDamage, float MinSpeedMs)
 {
@@ -133,16 +160,13 @@ void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
     ThrowMinSpeedMs = MinSpeedMs;
     ThrownBy = Thrower;
 
-    // 쥘 때 껐던 콜리전·물리를 되돌린다. 프로파일을 다시 지정하는 이유는 SetCollisionEnabled 만으로는
-    // 쥐는 동안 바뀐 채널 응답이 복구되지 않기 때문.
-    ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+    SetPhysicsFrozen(false);
 
     // 던지는 동안에는 Pawn 을 막는다. OnComponentHit 은 블로킹 충돌에서만 오므로, 평상시처럼
     // Overlap 으로 두면 던진 물건이 NPC 를 그냥 통과해 타격 콜백이 아예 발생하지 않는다.
     // 창이 닫히면(EndThrowWindow) 다시 통과로 되돌려 바닥에 놓인 물건이 지나가는 폰에
     // 밀려 도망다니지 않게 한다.
     ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-    ItemMesh->SetSimulatePhysics(true);
     // 물리 바디의 Hit 이벤트는 기본으로 꺼져 있다 — 켜지 않으면 OnComponentHit 이 아예 안 온다.
     ItemMesh->SetNotifyRigidBodyCollision(true);
     ItemMesh->SetPhysicsLinearVelocity(Velocity);
