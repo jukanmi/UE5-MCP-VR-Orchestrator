@@ -419,7 +419,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     # 없으므로 강제로 풀 파이프라인(replan=True)으로 되돌려 plan 을 새로 생성한다.
     requires_replan = prompt_payload.requires_replan
     current_plan = prompt_payload.current_plan
-    # current_plan 전체가 없거나, 대상 NPC 미상(None→supervisor 가 "Elara" 기본 사용),
+    # current_plan 전체가 없거나, 대상 NPC 미상(None→supervisor 가 DEFAULT_NPC 사용),
     # 또는 대상 NPC plan 누락 시 강제 재계획 — 다른 NPC plan 오참조 방지.
     # 대소문자 무시 — interface_input 의 plan 주입 조회와 정합(elara vs Elara).
     if not requires_replan and (

@@ -78,6 +78,20 @@ class ActionBatch(BaseModel):
     Actions: List[GameAction]
 
 
+# 대상 NPC 를 알 수 없을 때(target_npc None) 그래프가 쓰는 기본 NPC. 페르소나 파일이 반드시 존재해야 한다.
+DEFAULT_NPC = "Elara"
+
+
+def fallback_batch(npc_id: str, facial: str = "Neutral", emotion: str = "Neutral") -> ActionBatch:
+    """LLM 이 배치를 못 만들었을 때의 최소 배치 — 어떤 상황에서도 NPC 가 반응하는 모습은 보여야 하므로
+    빈 배치 대신 말 없는 Dialogue("...") 하나. 에러 경로는 Surprised/Confused, 정상 빈 응답은 Neutral."""
+    return ActionBatch(
+        AgentID=npc_id,
+        Mode="Common",
+        Actions=[GameAction(ActionType="Dialogue", FacialState=facial, Parameters={"text": "...", "emotion": emotion})],
+    )
+
+
 class DialogueActionItem(BaseModel):
     """Stage1 구조화 출력용 액션 항목. type 이 EAction Literal 이라
     Ollama structured output 이 34개 유효 액션만 생성 — 잘못된 Type 원천 차단.

@@ -30,6 +30,8 @@ from .subgraphs.dialogue import load_persona
 from ..schemas.actions import (
     ActionBatch,
     GameAction,
+    DEFAULT_NPC,
+    fallback_batch,
     DialogueResponse,
     DIALOGUE_ACTION_FIELD_MAP,
     ITEM_FIELD_EXCLUSIVE_ACTIONS,
@@ -114,20 +116,6 @@ def _normalize_emotion(emotion_text: str) -> str:
     return "Neutral"
 
 
-def _create_empty_batch(npc_id: str) -> ActionBatch:
-    return ActionBatch(
-        AgentID=npc_id,
-        Mode="Common",
-        Actions=[
-            GameAction(
-                ActionType="Dialogue",
-                FacialState="Neutral",
-                Parameters={"text": "...", "emotion": "Neutral"},
-            )
-        ],
-    )
-
-
 def _structure_from_dialogue(npc_id: str, resp: DialogueResponse, persona_traits: list[str]) -> ActionBatch:
     """
     Stage 3: DialogueResponse → ActionBatch. 정규식 없음 — Stage1 Literal 검증 활용.
@@ -187,8 +175,8 @@ async def interface_output_node(state: AgentState):
     # 방어 경로: 구조화 출력 없음 → empty batch (raw_response 재파싱 안 함).
     if not structured:
         print("[Interface Output] WARNING: structured_responses 없음, empty batch")
-        npc_id = state.get("target_npc") or "Elara"  # target_npc 는 Optional — None 이면 Elara 폴백
-        single_batch = _create_empty_batch(npc_id)
+        npc_id = state.get("target_npc") or DEFAULT_NPC
+        single_batch = fallback_batch(npc_id)
         return {
             "action_batches": {npc_id: single_batch},
             "action_batch": single_batch,

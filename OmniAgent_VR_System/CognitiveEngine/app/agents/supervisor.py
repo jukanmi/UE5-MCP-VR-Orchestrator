@@ -22,7 +22,7 @@ Role: ORCHESTRATOR (파이프라인 오케스트레이터)
 
 from typing import Literal
 from .state import AgentState
-from ..schemas.actions import ActionBatch, GameAction
+from ..schemas.actions import ActionBatch, DEFAULT_NPC, fallback_batch
 
 
 def _route_after_input(state: AgentState) -> dict:
@@ -55,7 +55,7 @@ def _route_after_output(state: AgentState) -> dict:
     action_batch = state.get("action_batch")
     if not action_batch or not action_batch.Actions:
         print("[Supervisor] WARN  ActionBatch 비어있음, 폴백 배치 생성")
-        npc_id = state.get("target_npc") or "Elara"  # Optional — None 이면 Elara 폴백
+        npc_id = state.get("target_npc") or DEFAULT_NPC
         return {
             "action_batch": _create_fallback_batch(npc_id),
             "next": "Rules",
@@ -94,7 +94,7 @@ def _route_after_rules(state: AgentState) -> dict:
         retry_count = state.get("rules_retry_count", 0)
         if retry_count >= 1:
             # 재시도 소진 — 각 NPC에 폴백 배치 생성
-            npcs = state.get("target_npcs") or [state.get("target_npc") or "Elara"]
+            npcs = state.get("target_npcs") or [state.get("target_npc") or DEFAULT_NPC]
             print(f"[Supervisor] X Rules 거부 {retry_count + 1}회째 - 재시도 소진, 폴백 배치로 종료")
             fallback_batches = {npc: _create_fallback_batch(npc) for npc in npcs}
             return {
@@ -168,20 +168,4 @@ def should_continue(
 
 
 def _create_fallback_batch(npc_id: str) -> ActionBatch:
-    """
-    ActionBatch가 비어있을 때 사용하는 최소 폴백 배치 생성.
-
-    왜 Dialogue 액션인가: 어떤 상황에서도 NPC가 반응하는 모습을 보여야 함.
-    빈 배치보다 "혼란스러운 표정"이 UE5에서 더 자연스럽게 처리됨.
-    """
-    return ActionBatch(
-        AgentID=npc_id,
-        Mode="Common",
-        Actions=[
-            GameAction(
-                ActionType="Dialogue",
-                FacialState="Surprised",
-                Parameters={"text": "...", "emotion": "Confused"},
-            )
-        ],
-    )
+    return fallback_batch(npc_id, facial="Surprised", emotion="Confused")

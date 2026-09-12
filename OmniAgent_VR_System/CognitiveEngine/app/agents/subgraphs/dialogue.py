@@ -42,7 +42,7 @@ from ..state import AgentState
 from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
 from ...utils.id_utils import ci_id_map
-from ...schemas.actions import DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
+from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 from .prompts import DIALOGUE_STRUCTURED_PROMPT, PLAN_SYSTEM_PROMPT
 
 
@@ -418,10 +418,7 @@ async def dialogue_node(state: AgentState):
     Stage 2: 플래너 × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
     Output:  structured_responses Dict[npc_id, DialogueResponse]
     """
-    npcs = state.get("target_npcs") or []
-    if not npcs:
-        single = state.get("target_npc", "Elara")
-        npcs = [single] if single else ["Elara"]
+    npcs = state.get("target_npcs") or [state.get("target_npc") or DEFAULT_NPC]
 
     # 재계획 분기: False=e4b 단독 경량 루프(플래너 스킵), True=풀 파이프라인+plan 산출.
     requires_replan = state.get("requires_replan", True)
