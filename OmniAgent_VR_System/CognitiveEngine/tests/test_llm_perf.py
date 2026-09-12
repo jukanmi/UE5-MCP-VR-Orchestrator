@@ -37,7 +37,7 @@ def test_prewarm_calls_http_once():
     client_mock.post = post_mock
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
             await mod._prewarm_core_llm()  # 스로틀 — 무시
 
@@ -54,7 +54,7 @@ def test_prewarm_swallows_exception():
     client_mock.post = AsyncMock(side_effect=Exception("connection refused"))
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()  # should not raise
 
     asyncio.run(run())  # 예외 전파 없으면 통과
@@ -75,7 +75,7 @@ def test_prewarm_uses_stage2_model_not_default():
     client_mock.post = fake_post
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
 
     asyncio.run(run())
@@ -101,7 +101,7 @@ def test_prewarm_body_has_no_prompt_key():
     client_mock.post = fake_post
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
 
     asyncio.run(run())

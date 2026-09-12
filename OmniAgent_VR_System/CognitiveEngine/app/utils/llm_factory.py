@@ -15,16 +15,17 @@ load_dotenv()
 # ollama_structured 반환 타입 제네릭 — 호출 측이 캐스팅·getattr 없이 필드 직접 접근.
 T = TypeVar("T", bound=BaseModel)
 
-# ollama_structured 전용 전역 httpx 클라이언트 — 커넥션 풀 재사용(매 호출 TCP 핸드셰이크 회피).
+# Ollama 호출 공용 httpx 클라이언트 — 커넥션 풀 재사용(매 호출 TCP 핸드셰이크 회피).
 # lazy init: 첫 호출 이벤트루프에 바인딩(서버 단일 루프 가정). 프로세스 수명 = client 수명.
-_structured_client: Optional["httpx.AsyncClient"] = None
+# 구조화 호출·location_decision·prewarm 이 전부 이 하나를 쓴다. 기본 timeout 20s, 호출별 post 인자로 덮어쓴다.
+_ollama_client: Optional["httpx.AsyncClient"] = None
 
 
-def _get_structured_client() -> "httpx.AsyncClient":
-    global _structured_client
-    if _structured_client is None:
-        _structured_client = httpx.AsyncClient()
-    return _structured_client
+def get_ollama_client() -> "httpx.AsyncClient":
+    global _ollama_client
+    if _ollama_client is None or _ollama_client.is_closed:
+        _ollama_client = httpx.AsyncClient(timeout=20.0)
+    return _ollama_client
 
 
 def _extract_json_from_thinking(thinking: str) -> str:
@@ -228,7 +229,7 @@ async def ollama_structured(
 
     # 매 호출 새 AsyncClient 생성 = TCP 핸드셰이크 오버헤드(멀티 NPC 동시 시 가중).
     # 모듈 전역 client 재사용으로 커넥션 풀 유지. timeout 은 호출별 post 인자로 전달.
-    client = _get_structured_client()
+    client = get_ollama_client()
     started = time.perf_counter()
     content = ""
     try:

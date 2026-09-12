@@ -117,20 +117,8 @@ _world_state_lock = asyncio.Lock()
 _active_llm_ws: Optional[WebSocket] = None
 # WS 송신 직렬화 — 메시지별 동시 처리가 같은 소켓에 겹쳐 쓰는 것 방지.
 _ws_send_lock = asyncio.Lock()
-# Ollama 호출용 전역 httpx 클라이언트 — 매 location_decision 마다 새 AsyncClient 생성 시
-# TCP 핸드셰이크 오버헤드가 실시간 전술 결정 지연을 키우므로 커넥션 풀 재사용.
-_ollama_client = None
 _last_core_prewarm: float = 0.0
 _CORE_PREWARM_THROTTLE_S = 30.0  # keep_alive(30s) 와 동일 — 윈도 내 중복 웜업 무의미
-
-
-def _get_ollama_client():
-    global _ollama_client
-    import httpx
-
-    if _ollama_client is None or _ollama_client.is_closed:
-        _ollama_client = httpx.AsyncClient(timeout=20.0)
-    return _ollama_client
 
 
 async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
@@ -150,7 +138,7 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
         "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
     }
     _llm_start = _t.perf_counter()
-    resp = await _get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
+    resp = await llm_factory.get_ollama_client().post(f"{ollama_base}/api/generate", json=body)
     resp.raise_for_status()
     elapsed_ms = (_t.perf_counter() - _llm_start) * 1000.0
     raw_text = (resp.json().get("response") or "").strip()
@@ -173,7 +161,7 @@ async def _prewarm_core_llm() -> None:
         # prompt 키 없음 = Ollama 로드콜 전용 (342ms) — num_predict=1 생성(3.7s) 아님.
         # keep_alive 는 llm_factory core 분기 값과 반드시 일치시킬 것 — 다르면 squat 정책 오버라이드.
         # raise_for_status 하지 말 것 — 4xx/5xx 도 무해 폴백.
-        await _get_ollama_client().post(
+        await llm_factory.get_ollama_client().post(
             f"{ollama_base}/api/generate",
             json={"model": model_id, "keep_alive": "30s"},
         )
