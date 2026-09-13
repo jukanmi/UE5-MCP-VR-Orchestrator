@@ -86,7 +86,6 @@ UE5 ↔ Python 모든 메시지는 공통 래퍼로 포장된다.
 
 - **StateTree AI**: BehaviorTree에서 마이그레이션 완료. `SmartNPCAIController`(ST schema) → `STTask_PrepareNextAction`(큐 Dequeue) → `STTask_ExecuteSmartAction`(실행). 비동기 액션 완료(이동 도착/몽타주 종료 콜백).
 - **로컬 LLM/SLM**: Ollama 라우팅(normal `gemma4:e4b` / high `qwen3:8b` / core `gemma4-12b`). 클라우드 API 미사용.
-- **감정 TTS**: LLM `[Facial: Angry]` → emotion → OpenVoice ToneColorConverter zero-shot 음색. 0.2s 백오프 1회 재시도, 실패 시 자막 폴백, `[trace=msg_id]` 로그 체인.
 - **RAG 기억**: NPC별 FAISS 벡터스토어(로컬 `all-MiniLM-L6-v2`), `lore/persona/history` 카테고리. 지식 작성은 `knowledge_template/` 참조.
 - **엄격한 검증**: Pydantic V2로 LLM 출력 클램핑(데미지 등)·좌표 NaN 거부.
 
@@ -95,14 +94,12 @@ UE5 ↔ Python 모든 메시지는 공통 래퍼로 포장된다.
 ## 시작하기
 
 ### 사전 요구사항
-- Python 3.10+, Ollama(로컬 LLM), CUDA GPU(ASR/TTS large 모델), Unreal Engine 5.5+
+- Python 3.10+, Ollama(로컬 LLM, CUDA GPU 권장), Unreal Engine 5.5+
 - `pip install -r OmniAgent_VR_System/CognitiveEngine/requirements.txt`
 
-### 서버 실행 (프로젝트 루트에서, 각각 별도 프로세스)
+### 서버 실행 (프로젝트 루트에서, 또는 `Server.bat` / `Dev.bat`)
 ```powershell
 python -m uvicorn OmniAgent_VR_System.CognitiveEngine.app.main:app --port 8000
-python -m uvicorn OmniAgent_VR_System.TTSService.server:app --port 8001
-python -m uvicorn OmniAgent_VR_System.ASRService.server:app --port 8002
 ```
 
 ### UE5
@@ -117,7 +114,7 @@ python -m uvicorn OmniAgent_VR_System.ASRService.server:app --port 8002
 | 위치 | 내용 |
 | :--- | :--- |
 | `docs/index.html` | 통합 기술 문서(아키텍처·파이프라인·Envelope, Mermaid) — 브라우저로 열기 |
-| `docs/ROADMAP.md` | 통합 로드맵(TTS/ASR/RAG/VR/멀티플레이) |
+| `docs/ROADMAP.md` | 통합 로드맵(RAG/VR/멀티플레이) |
 | `docs/Memo.md` | 세션 간 인수인계 메모(Todo/Done/Handoff) |
 | `docs/주간기록/` | 주차별 개발 일지 |
 | `CLAUDE.md` | 개발 규칙·컨벤션 |

@@ -110,7 +110,7 @@ public:
 
     // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 
-    /** 말풍선 컴포넌트 — 자막 텍스트·표시 타이머·TTS 싱크까지 전부 이쪽 소유.
+    /** 말풍선 컴포넌트 — 자막 텍스트·표시 타이머 전부 이쪽 소유.
      *  액터는 "무엇을 말할지"만 넘기고 "언제까지 띄울지"는 관여하지 않는다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Dialogue")
     UNPCDialogueUIComponent* DialogueWidgetComp;

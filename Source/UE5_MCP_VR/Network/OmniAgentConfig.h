@@ -4,7 +4,7 @@
 // WHY:
 //   - 서버 주소를 소스코드에 하드코딩하지 않는다. Quest 스탠드얼론 빌드는
 //     PC 의 LAN IP 가 필요하므로 빌드별로 .ini 만 바꿔서 대응한다.
-//   - LLM/TTS/AuthToken 등 [OmniAgent] 키를 모두 한 곳에서 관리한다.
+//   - LLM/AuthToken 등 [OmniAgent] 키를 모두 한 곳에서 관리한다.
 //
 // DefaultGame.ini 예시:
 //   [OmniAgent]
