@@ -435,7 +435,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     )
 
 
-def _finalize_prompt_response(result: dict, envelope: MessageEnvelope) -> str:
+def _finalize_prompt_response(result: dict) -> str:
     """그래프 결과 → ModeActionRequest JSON. ActionBatch 추출(멀티/단일 호환)·plan
     회신 조립. ActionBatch 없으면 빈 배치 JSON."""
     # 멀티 NPC: action_batches 우선, 없으면 단일 action_batch 호환
@@ -484,7 +484,7 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         traceback.print_exc()
         return _empty_batch_json()
 
-    return _finalize_prompt_response(result, envelope)
+    return _finalize_prompt_response(result)
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:

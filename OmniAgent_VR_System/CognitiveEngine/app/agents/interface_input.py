@@ -289,7 +289,7 @@ def interface_input_node(state: AgentState) -> dict:
     logger.info(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
-    target_npcs = _extract_target_npcs(transcript, vr_context)
+    target_npcs = _extract_target_npcs(transcript)
 
     result = {
         # 정규화된 객체를 state 로 돌려준다 — 뒤 노드가 dict/객체 이중 대응을 하지 않게.
@@ -311,7 +311,7 @@ def interface_input_node(state: AgentState) -> dict:
 MAX_TARGET_NPCS = 3
 
 
-def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
+def _extract_target_npcs(transcript: str) -> list[str]:
     """
     대화 내용에서 대상 NPC들을 추출한다 (발화 등장 순서 보존, 중복 제거).
 
