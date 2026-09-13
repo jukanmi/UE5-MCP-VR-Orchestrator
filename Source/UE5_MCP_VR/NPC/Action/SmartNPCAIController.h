@@ -47,9 +47,6 @@ protected:
 
     /** Callback events for NPCActionComponent */
     UFUNCTION()
-    void HandleActionStarted(const FGameAction& Action);
-
-    UFUNCTION()
     void HandleAllActionsStopped();
 
     /** 시야 유지 중 주기적 Cognition 재보고 */
@@ -73,17 +70,20 @@ protected:
 
     FTimerHandle CombatTargetLostTimer;
 
-    /** 소실 타임아웃 만료 콜백 — 여전히 Combat + BB 타겟 null 이면 전투 해제.
-     *  HandleCombatTargetDead 와 동일 시퀀스에서 승리 보고만 제외. */
+    /** 소실 타임아웃 만료 콜백 — 여전히 Combat + BB 타겟 null 이면 ExitCombat(nullptr). */
     void HandleCombatTargetLostTimeout();
+
+    /** 주기 perception 재보고 중단 — 타이머 해제 + 시야 대상 리셋. 대상 소실·사망·틱 중 대상 무효 공통. */
+    void StopSightTracking();
 
 public:
 	/** 전투 타겟 사망 판정 — SmartNPC.bIsDead / State.Condition.Dead 태그(플레이어 계열). */
 	static bool IsTargetDead(const AActor* Target);
 
 	/** 전투 종료 시퀀스: 진행 액션 중단·잔여 큐 폐기 → BehaviorMode=Common → replan 플래그 → BB.TargetActor 클리어.
+	 *  DeadTarget 이 있으면(사망) 승리 보고 + 그 대상 시야 감시 해제, nullptr 이면(장기 소실) 보고만 생략.
 	 *  BB 쓰기 소유권에 따라 STTask 가 아닌 컨트롤러가 수행 — STTask_PrepareNextAction 종료 게이트가 호출. */
-	void HandleCombatTargetDead(AActor* DeadTarget);
+	void ExitCombat(AActor* DeadTarget);
 
 	/** 넉다운 중 AI 일시정지 — StateTree 정지 + 이동 중단. UnPossess 금지(재빙의·BB 손실 회피). */
 	void PauseAI();

@@ -133,20 +133,20 @@ bool UNPCActionComponent::DoesReflexRuleMatch(const FReflexRule& Rule, ESenseTyp
     return Rule.ActionWeights.Num() > 0;
 }
 
-EAction UNPCActionComponent::PickWeightedReflexAction(const TMap<EAction, float>& Weights)
+int32 UNPCActionComponent::PickWeightedIndex(int32 Num, TFunctionRef<float(int32)> WeightAt)
 {
     float TotalW = 0.f;
-    for (const TPair<EAction, float>& Pair : Weights) TotalW += FMath::Max(0.f, Pair.Value);
-    if (TotalW <= KINDA_SMALL_NUMBER) return EAction::Idle;
+    for (int32 i = 0; i < Num; ++i) TotalW += FMath::Max(0.f, WeightAt(i));
+    if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
 
     float Roll = FMath::FRandRange(0.f, TotalW);
-    EAction Last = EAction::Idle;
-    for (const TPair<EAction, float>& Pair : Weights)
+    int32 Last = INDEX_NONE;
+    for (int32 i = 0; i < Num; ++i)
     {
-        const float W = FMath::Max(0.f, Pair.Value);
+        const float W = FMath::Max(0.f, WeightAt(i));
         if (W <= 0.f) continue;
-        Last = Pair.Key;                 // 부동소수 잔여로 못 고를 때의 폴백
-        if (Roll < W) return Pair.Key;
+        Last = i;                        // 부동소수 잔여로 못 고를 때의 폴백
+        if (Roll < W) return i;
         Roll -= W;
     }
     return Last;
@@ -181,7 +181,9 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
         // (넘기면 더 약한 룰이 대신 튀어 같은 자극에 계속 반응하는 꼴이 된다)
         if (Now - ReflexRuleLastFireTime[i] < Rule.Cooldown) return false;
 
-        const EAction Chosen = PickWeightedReflexAction(Rule.ActionWeights);
+        const TArray<TPair<EAction, float>> WeightPairs = Rule.ActionWeights.Array();
+        const int32 Idx = PickWeightedIndex(WeightPairs.Num(), [&WeightPairs](int32 j) { return WeightPairs[j].Value; });
+        const EAction Chosen = Idx == INDEX_NONE ? EAction::Idle : WeightPairs[Idx].Key;
         if (Chosen == EAction::Idle) return false;
 
         FGameAction Action;
@@ -471,7 +473,7 @@ void UNPCActionComponent::StopAllActions()
     ClearActiveActionState();
     ResetPostureFlags(); // 사망·넉다운·전투종료 등 전면 정지 — 앉/눕 자세도 해제(AnimBP 자세 고착 방지)
     LastQueuedActionType = EAction::Idle;
-    ResetCombatSelectorState(); // 전투 종료(HandleCombatTargetDead)·비상 정지 공통 — 셀렉터 연속성 초기화
+    ResetCombatSelectorState(); // 전투 종료(ExitCombat)·비상 정지 공통 — 셀렉터 연속성 초기화
 
     ResetAllStateTagsToIdle(GetOwner());
 
@@ -480,12 +482,7 @@ void UNPCActionComponent::StopAllActions()
         AI->StopMovement();
     }
 
-    // Track 타이머 해제 (워치독은 ClearActiveActionState가 처리)
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
-    TrackedTarget.Reset();
+    StopTracking(); // 워치독은 ClearActiveActionState가 처리
 
     OnActionStoppedAll.Broadcast();
 
@@ -503,15 +500,11 @@ bool UNPCActionComponent::ProcessNextAction()
         // Track 이외 명령이 오면 추적 즉시 해제 — 새 명령이 추적을 덮어쓰는 게 자연스러운 동작
         if (CurrentAction.ActionType != EAction::Track && TrackedTarget.IsValid())
         {
-            if (UWorld* World = GetWorld())
-                World->GetTimerManager().ClearTimer(TrackTimer);
-            TrackedTarget.Reset();
+            StopTracking();
         }
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
         UpdateActionState(CurrentAction);
-
-        OnActionStarted.Broadcast(CurrentAction);
 
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Starting Action '%s'"), *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
         return true;
@@ -543,12 +536,7 @@ void UNPCActionComponent::AbortCurrentAction()
     // 아래 StopAnimMontage 가 앉/눕 포즈를 떨구므로 자세 플래그도 함께 해제.
     ResetPostureFlags();
 
-    // Track 타이머 해제
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
-    TrackedTarget.Reset();
+    StopTracking();
 
     // 물리 상태 초기화 (애니메이션 중지, 이동 중지)
     if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
@@ -565,27 +553,35 @@ void UNPCActionComponent::AbortCurrentAction()
 // [기본 함수 (Base Functions)] 래퍼함수 구현시 사용하는 유틸 함수
 // ============================================================================
 
-void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
+AAIController* UNPCActionComponent::PrepareMove(EMoveType SpeedType)
 {
-    // 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경시킨 후, 지정된 목적지로 AI 이동을 호출하여 자연스러운 이동을 유도합니다.
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
+    if (!OwnerCharacter) return nullptr;
 
+    // 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경.
     if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
     {
         MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
     }
 
-    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
+    AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController());
+    if (!AIController) return nullptr;
+
+    // 도착(또는 실패/취소) 시 OnMoveActionCompleted가 액션 완료를 처리하도록 바인딩.
+    // 이동 액션은 비동기 — bIsBusy를 도착까지 유지해 큐가 다음 액션으로 넘어가지 않게 한다.
+    if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
     {
-        // 도착(또는 실패/취소) 시 OnMoveActionCompleted가 액션 완료를 처리하도록 바인딩.
-        // 이동 액션은 비동기 — bIsBusy를 도착까지 유지해 큐가 다음 액션으로 넘어가지 않게 한다.
-        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
-        {
-            PFC->OnRequestFinished.RemoveAll(this);
-            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
-        }
-        bActionAwaitingAsync = true;
+        PFC->OnRequestFinished.RemoveAll(this);
+        PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
+    }
+    bActionAwaitingAsync = true;
+    return AIController;
+}
+
+void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, float AcceptanceRadius)
+{
+    if (AAIController* AIController = PrepareMove(SpeedType))
+    {
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
         HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
@@ -622,15 +618,9 @@ bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
     if (PendingFurnitureTarget.IsValid())
     {
         AFurnitureActor* Furniture = PendingFurnitureTarget.Get();
-        if (AActor* Owner = GetOwner())
+        if (Furniture->TryOccupyAndSeat(GetOwner(), /*bYawOnly=*/false))
         {
-            if (Furniture->TryOccupy(Owner))
-            {
-                const FTransform SeatXf = Furniture->GetSeatTransform();
-                Owner->SetActorLocationAndRotation(SeatXf.GetLocation(), SeatXf.GetRotation(),
-                    false, nullptr, ETeleportType::TeleportPhysics);
-                OccupiedFurniture = Furniture;
-            }
+            OccupiedFurniture = Furniture;
         }
         PendingFurnitureTarget.Reset();
     }
@@ -649,24 +639,11 @@ bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
 void UNPCActionComponent::BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType, float AcceptanceRadius)
 {
     if (!TargetActor) return;
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
 
-    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
+    // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
+    if (AAIController* AIController = PrepareMove(SpeedType))
     {
-        MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
-    }
-
-    if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
-    {
-        // 스냅샷 좌표 MoveToLocation 과 달리 MoveToActor 는 이동 중 타겟을 추적(자동 재경로).
-        // AcceptanceRadius 이내 도달 시 OnMoveActionCompleted — 완료·몽타주 체인은 BaseMove 동일.
-        if (UPathFollowingComponent* PFC = AIController->GetPathFollowingComponent())
-        {
-            PFC->OnRequestFinished.RemoveAll(this);
-            PFC->OnRequestFinished.AddUObject(this, &UNPCActionComponent::OnMoveActionCompleted);
-        }
-        bActionAwaitingAsync = true;
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToActor(TargetActor, AcceptanceRadius);
         HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
@@ -725,61 +702,11 @@ void UNPCActionComponent::BaseLieUp()
 
 void UNPCActionComponent::BaseStopCurrentAction() { AbortCurrentAction(); }
 
-void UNPCActionComponent::BaseSignalAllies(const FString& SignAssetID) { BasePlayActionMedia(SignAssetID); }
-
 void UNPCActionComponent::BaseComfort(AActor* TargetActor)
 {
     if (TargetActor) ExecuteTurnTo(FVector::ZeroVector, TargetActor);
     BasePlayActionMedia(TEXT("Comfort"));
 }
-
-void UNPCActionComponent::BaseEmote(const FString& EmoteAssetID) { BasePlayActionMedia(EmoteAssetID); }
-void UNPCActionComponent::BaseDance(const FString& DanceAssetID) { BasePlayActionMedia(DanceAssetID); }
-void UNPCActionComponent::BaseSing(const FString& SingAssetID)   { BasePlayActionMedia(SingAssetID); }
-
-TMap<FString, int32> UNPCActionComponent::BaseDetectEntityInRange(float SearchRadius, EEntityType TargetEntityType)
-{
-    // 특정 반경 내에 존재하는 타겟 타입(예: 아이템, 에너미)의 엔티티들을 최적화된 방식(Subsystem 활용 등)으로 탐지하고, 그 결과를 <종류, 수량> 형태로 반환하여 후속 상호작용을 준비합니다.
-    TMap<FString, int32> DetectedEntities;
-
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) 
-    {
-        return DetectedEntities;
-    }
-
-    if (TargetEntityType == EEntityType::Item)
-    {
-        // ItemManager 등록부 기반 조회 — 충돌 채널(ECC_PhysicsBody) 가정 없이 등록된 아이템만 정확히 탐지
-        UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-        if (UItemManager* ItemMgr = GI ? GI->GetSubsystem<UItemManager>() : nullptr)
-        {
-            for (const FDroppedItemData& Item : ItemMgr->GetItemsInRange(OwnerCharacter->GetActorLocation(), SearchRadius))
-            {
-                DetectedEntities.FindOrAdd(Item.ItemTemplateID, 0)++;
-            }
-        }
-    }
-    else
-    {
-        // TODO: 다른 EntityType (Enemy, NPC 등)에 대한 탐지 지원(필요한 경우 추가)
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: 반경 %.1f 내의 엔티티(타입 %d) 탐색 완료. 종류 수: %d"), 
-        *GetOwnerAgentID(), SearchRadius, (int32)TargetEntityType, DetectedEntities.Num());
-
-    return DetectedEntities;
-}
-
-void UNPCActionComponent::BaseSendEventToActor(AActor* TargetActor, const FString& EventName)
-{
-    // 플레이어나 타 액터에게 특정 메시지를 던져, 협동이나 대립 같은 복합적인 에코시스템을 유기적으로 연동시키기 위함입니다.
-    if (!TargetActor) return;
-
-    // TODO: 인터페이스 통신이나 이벤트 브로드캐스트 구현
-    UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s가 %s에게 이벤트 '%s' 전달"), *GetOwnerAgentID(), *TargetActor->GetName(), *EventName);
-}
-
 
 bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
 {
@@ -905,7 +832,7 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Unequip:      ExecuteUnequipAction(ItemID); break;
     
     // Combat
-    case EAction::Attack:       ExecuteAttackAction(TargetActor, EAttackType::Melee); break;
+    case EAction::Attack:       ExecuteAttackAction(TargetActor); break;
     case EAction::Block:        ExecuteBlock(TargetActor); break;
     case EAction::Dodge:        ExecuteDodgeAction(Direction.IsNearlyZero() ? FVector(100, 100, 0) : Direction); break;
     case EAction::Flee:
@@ -1465,11 +1392,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
     // Python 은 이 값을 그대로 응답에 echo. UE5 는 응답 처리 시 현재 generation 과 비교해 stale 차단.
     Payload->SetNumberField(TEXT("request_gen"),     static_cast<double>(TacticalQueryGeneration));
 
-    FString PayloadJson;
-    const TSharedRef<TJsonWriter<>> PayloadWriter = TJsonWriterFactory<>::Create(&PayloadJson);
-    FJsonSerializer::Serialize(Payload.ToSharedRef(), PayloadWriter);
-
-    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(PayloadJson);
+    const FString Envelope = FEnvelopeBuilder::BuildLocationDecisionRequest(Payload.ToSharedRef());
 
     // 후보 시각화 — Manager/서버 연결 여부와 무관하게 항상 실행
     DrawEQSCandidates(Pruned, EQSDebugDuration);
@@ -1636,7 +1559,7 @@ void UNPCActionComponent::ExecuteUnequipAction(const FString& ItemID)
 // [2] Combat Behaviors
 // ==========================================
 
-void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType)
+void UNPCActionComponent::ExecuteAttackAction(AActor* TargetActor)
 {
     if (!TargetActor) return;
     ExecuteTurnTo(FVector::ZeroVector, TargetActor);
@@ -1739,8 +1662,7 @@ void UNPCActionComponent::ExecuteDodgeAction(FVector Direction)
 void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
 {
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
-    if (!MovementComp) return;
+    if (!OwnerCharacter || !OwnerCharacter->GetCharacterMovement()) return;
 
     // 진행 중 MoveTo 잔재가 회피 방향과 경합하지 않게 정지
     if (ASmartNPCAIController* AI = GetOwnerAIController())
@@ -1748,14 +1670,6 @@ void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
         AI->StopMovement();
     }
 
-    // 마찰·제동 0 → Launch 속도가 몽타주 동안 감쇠 없이 유지(등속). MaxWalkSpeed 는 입력 가속에만
-    // 적용되므로 건드릴 필요 없음. 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
-    SavedGroundFriction        = MovementComp->GroundFriction;
-    SavedBrakingDecelWalking   = MovementComp->BrakingDecelerationWalking;
-    SavedBrakingFrictionFactor = MovementComp->BrakingFrictionFactor;
-    MovementComp->GroundFriction             = 0.f;
-    MovementComp->BrakingDecelerationWalking = 0.f;
-    MovementComp->BrakingFrictionFactor      = 0.f;
     bDodgeMoveActive = true;
 
     // 모션-이동 일치: 구르기 몽타주는 전방 기준인데 Launch 는 입력 가속이 없어
@@ -1763,8 +1677,9 @@ void UNPCActionComponent::StartDodgeMove(const FVector& Direction)
     // → 액터 회전을 회피 방향으로 즉시 스냅.
     OwnerCharacter->SetActorRotation(Direction.Rotation());
 
+    // 원복은 StopDodgeMove(ClearActiveActionState 경유) 단일 경로.
     const float DodgeSpeed = ParseMoveSpeed(EMoveType::Run) * DodgeSpeedMultiplier;
-    OwnerCharacter->LaunchCharacter(Direction * DodgeSpeed, true, false); // Z 미오버라이드 — 중력 유지
+    MovementUtils::BeginFrictionlessLaunch(*OwnerCharacter, Direction * DodgeSpeed, SavedDodgeFriction);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Dodge 이동 시작 — 방향 %s, 속도 %.0f"),
         *GetOwnerAgentID(), *Direction.ToCompactString(), DodgeSpeed);
@@ -1776,20 +1691,14 @@ void UNPCActionComponent::StopDodgeMove()
     bDodgeMoveActive = false;
 
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
-    if (!MovementComp) return;
-
-    MovementComp->GroundFriction             = SavedGroundFriction;
-    MovementComp->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-    MovementComp->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
-
-    // 마찰 원복만으론 몇 프레임 더 미끄러짐 — 수평 잔류 속도 즉시 제거(낙하 Z 는 유지)
-    MovementComp->Velocity.X = 0.f;
-    MovementComp->Velocity.Y = 0.f;
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr)
+    {
+        MovementUtils::EndFrictionlessLaunch(*MovementComp, SavedDodgeFriction);
+    }
 }
 
 void UNPCActionComponent::ExecuteFlee(FVector EscapeLocation)   { BaseMove(EscapeLocation, EMoveType::Run); }
-void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BaseSignalAllies(HandSign); }
+void UNPCActionComponent::ExecuteSignalAllies(const FString& HandSign) { BasePlayActionMedia(HandSign); }
 
 // ==========================================
 // [전투 행동 셀렉터] — SPEC_combat_selector Phase 1
@@ -1900,26 +1809,9 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
         }
     }
 
-    // 가중치 확률 추첨. 부동소수 잔여로 못 고르면 마지막 유효 후보.
     auto PickWeighted = [&Candidates]() -> int32
     {
-        float TotalW = 0.f;
-        for (const FCombatCandidate& C : Candidates) TotalW += FMath::Max(0.f, C.Weight);
-        if (TotalW <= KINDA_SMALL_NUMBER) return INDEX_NONE;
-
-        float Roll = FMath::FRandRange(0.f, TotalW);
-        for (int32 i = 0; i < Candidates.Num(); ++i)
-        {
-            const float W = FMath::Max(0.f, Candidates[i].Weight);
-            if (W <= 0.f) continue;
-            if (Roll < W) return i;
-            Roll -= W;
-        }
-        for (int32 i = Candidates.Num() - 1; i >= 0; --i)
-        {
-            if (Candidates[i].Weight > 0.f) return i;
-        }
-        return INDEX_NONE;
+        return PickWeightedIndex(Candidates.Num(), [&Candidates](int32 i) { return Candidates[i].Weight; });
     };
 
     int32 ChosenIdx = PickWeighted();
@@ -2075,8 +1967,7 @@ void UNPCActionComponent::ExecuteGiveItem(AActor* TargetActor, const FString& It
     }
 
     // 차감 전에 원본 데이터·수령처를 모두 확보 — 하나라도 없으면 건드리지 않는다(증발 방지).
-    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
 
     FItemData Data;
     if (!ItemManager || !ItemManager->GetItemDataByID(ItemID, Data))
@@ -2167,33 +2058,17 @@ void UNPCActionComponent::ExecutePickUp(FVector Location)
 
 void UNPCActionComponent::PerformPickupAtDestination()
 {
-    UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager || !InventoryComponent) return;
 
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter) return;
 
     // 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
+    // 액션 1회당 1개 묶음만 — 범위 내 전부 쓸어 담지 않는다.
+    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped)) continue;
-
-        FItemData Data;
-        if (!ItemManager->GetItemDataByID(Dropped->ItemData.ItemTemplateID, Data))
-        {
-            UE_LOG(LogTemp, Error, TEXT("[NPCAction] 아이템 데이터 없음: %s"), *Dropped->ItemData.ItemTemplateID);
-            continue;
-        }
-
-        // 실패 시 액터를 남겨 다시 시도할 수 있게 한다.
-        if (!InventoryComponent->AddItem(Data, Dropped->Amount)) continue;
-
-        UE_LOG(LogTemp, Log, TEXT("[NPCAction] 줍기: %s x%d"), *Data.ItemID, Dropped->Amount);
-        // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
-        Dropped->ConsumeItem();
-        break; // 액션 1회당 1개 묶음만 줍는다 — 범위 내 전부 쓸어 담지 않는다.
+        if (Dropped->TryPickupInto(InventoryComponent)) break;
     }
 }
 
@@ -2211,7 +2086,7 @@ void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID, int32 Amo
     }
 
     BasePlayActionMedia(TEXT("Drop"));
-    UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f);
+    UAISense_Hearing::ReportNoiseEvent(GetWorld(), OwnerCharacter->GetActorLocation(), NPCActionKeys::Noise_Drop, OwnerCharacter, 0.f, NPCActionKeys::NoiseTag_Drop);
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] 드랍: %s"), *TargetTemplateID);
 }
 
@@ -2235,20 +2110,12 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
 {
     if (!TargetActor) return;
 
-    // 기존 추적 타이머 초기화 후 새 대상 설정
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(TrackTimer);
-    }
+    // 기존 추적 해제 후 새 대상 설정, 즉시 첫 이동 명령
+    StopTracking();
     TrackedTarget = TargetActor;
-
-    // 즉시 첫 이동 명령
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    if (ASmartNPCAIController* AICon = GetOwnerAIController())
     {
-        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
-        {
-            AICon->MoveToActor(TargetActor, 150.f);
-        }
+        AICon->MoveToActor(TargetActor, 150.f);
     }
 
     // 0.5초 간격으로 MoveToActor 재발행 (대상이 이동하는 경우 추적 유지)
@@ -2269,19 +2136,24 @@ void UNPCActionComponent::UpdateTrackPosition()
     AActor* Target = TrackedTarget.Get();
     if (!IsValid(Target))
     {
-        if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(TrackTimer);
-        TrackedTarget.Reset();
+        StopTracking();
         UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Track 대상 소멸 — 추적 중단"), *GetOwnerAgentID());
         return;
     }
 
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    if (ASmartNPCAIController* AICon = GetOwnerAIController())
     {
-        if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
-        {
-            AICon->MoveToActor(Target, 150.f);
-        }
+        AICon->MoveToActor(Target, 150.f);
     }
+}
+
+void UNPCActionComponent::StopTracking()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TrackTimer);
+    }
+    TrackedTarget.Reset();
 }
 
 void UNPCActionComponent::ExecuteScout(FVector StartLocation, FVector EndLocation)
@@ -2388,9 +2260,9 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
         // Sit/Sleep 은 위에서 가구 타겟 필수 처리(무가구 = 무동작) — 여기 도달 불가.
         case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
-        case EAction::Dance: BaseDance(StringParam); break;
-        case EAction::Sing:  BaseSing(StringParam); break;
-        case EAction::Emote: BaseEmote(StringParam); break;
+        case EAction::Dance:
+        case EAction::Sing:
+        case EAction::Emote: BasePlayActionMedia(StringParam); break;
         // 추가 Lifestyle 타입 확장이 필요하다면 여기에 분기를 추가합니다.
         default: break;
     }

@@ -86,18 +86,6 @@ void UWebSocketClient::TryReconnect()
     }
 }
 
-void UNetworkClientBase::Initialize(const FString& InURL)
-{
-    TargetURL = InURL;
-    Socket = NewObject<UWebSocketClient>(this);
-    if (Socket)
-    {
-        Socket->OnMessageReceived.AddDynamic(this, &UNetworkClientBase::OnMessageReceivedHandler);
-        Socket->OnConnectionChanged.AddDynamic(this, &UNetworkClientBase::OnConnectionChangedHandler);
-        Socket->Initialize(TargetURL);
-    }
-}
-
 void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
 {
     // Python StateUpdatePayload 스키마에 맞춰 snake_case로 직접 조립.
@@ -122,12 +110,7 @@ void ULLMNetworkClient::SendStateUpdate(const FGameStateData& StateData)
     // perceived_targets는 비어있어도 OK (기본값 빈 배열)
     Payload->SetArrayField(TEXT("perceived_targets"), TArray<TSharedPtr<FJsonValue>>{});
 
-    FString PayloadJson;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&PayloadJson);
-    FJsonSerializer::Serialize(Payload, Writer);
-
-    const FString Envelope = FEnvelopeBuilder::BuildStateUpdate(PayloadJson);
-    SendPrompt(Envelope);
+    SendMessage(FEnvelopeBuilder::BuildStateUpdate(Payload));
 }
 
 

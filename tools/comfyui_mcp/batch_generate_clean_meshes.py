@@ -8,8 +8,6 @@
 """
 
 import asyncio
-import csv
-import json
 import os
 import random
 import sys
@@ -24,7 +22,6 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import trimesh
 

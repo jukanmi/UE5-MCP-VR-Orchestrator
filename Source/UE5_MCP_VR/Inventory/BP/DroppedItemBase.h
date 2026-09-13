@@ -50,6 +50,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Item|Action")
     void ConsumeItem();
 
+    /** 이 아이템을 인벤토리로 획득 — 마스터 데이터 조회 → AddItem → 액터 소멸. 실패(미등록 ID·공간/무게 부족)면
+     *  액터를 그대로 남겨 다시 시도할 수 있게 하고 false. 플레이어 픽업·NPC 픽업이 같은 경로를 쓴다. */
+    UFUNCTION(BlueprintCallable, Category = "Item|Action")
+    bool TryPickupInto(class UInventoryComponent* Inventory);
+
+    /**
+     * 물리·콜리전·상호작용 구체를 한 번에 잠그거나 되살린다. 쥠·거래 접시 잠금 = true, 놓음·던짐·취소 = false.
+     * 밖에서 ItemMesh 를 직접 만지지 말 것 — 되살릴 때 프로파일을 다시 지정해야 채널 응답까지 돌아오고,
+     * 잠글 때 상호작용 구체까지 꺼야 쥔 물건이 주변 아이템 검색에 다시 걸리지 않는다. 그 지식은 여기 한 곳에만 둔다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "Item|Action")
+    void SetPhysicsFrozen(bool bFrozen);
+
     /**
      * 손에서 놓아 던진다 — 물리·충돌을 되살리고 속도를 실은 뒤, 짧은 창 동안만 타격 판정을 켠다.
      * 데미지 계수는 던진 쪽(VRPawn)의 동역학 튜닝을 그대로 받는다. 근접 스윙과 같은 값으로

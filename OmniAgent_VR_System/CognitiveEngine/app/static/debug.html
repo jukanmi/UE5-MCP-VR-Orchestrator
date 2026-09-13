@@ -248,12 +248,6 @@ function impClass(imp) {
   return 'imp-normal';
 }
 
-function llmLabel(imp) {
-  if (imp === 'core') return 'gemma4-12b';
-  if (imp === 'high') return 'qwen3:8b';
-  return 'gemma4:e4b';
-}
-
 // ── Affinity ──────────────────────────────────────────────
 
 async function loadAffinity() {
@@ -368,7 +362,7 @@ async function loadNPCs() {
         </select>
       </td>
       <td>
-        <span class="${impClass(n.importance)} llm-badge" id="llm-${n.npc_id}">${llmLabel(n.importance)}</span>
+        <span class="${impClass(n.importance)} llm-badge" id="llm-${n.npc_id}">${n.llm_model}</span>
       </td>
       <td>
         <button class="btn-save" onclick="saveImportance('${n.npc_id}')">저장</button>
@@ -377,10 +371,10 @@ async function loadNPCs() {
   `).join('');
 }
 
+// 모델명은 서버(llm_factory.model_for_importance)가 진실 — 저장 응답으로 갱신한다.
 function updateImpBadge(npcId) {
   const sel = document.getElementById(`imp-${npcId}`);
   const badge = document.getElementById(`llm-${npcId}`);
-  badge.textContent = llmLabel(sel.value);
   badge.className = `${impClass(sel.value)} llm-badge`;
 }
 
@@ -393,6 +387,7 @@ async function saveImportance(npcId) {
   });
   if (res.ok) {
     const d = await res.json();
+    document.getElementById(`llm-${npcId}`).textContent = d.llm_model;
     showToast(`${npcId}: importance=${imp} → ${d.llm_model}`);
   } else {
     showToast('저장 실패', false);

@@ -20,13 +20,13 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import ast
 import re
 from collections import Counter
 
 from ..state import AgentState
 from ...utils.train_logger import log_rules_result
-from .dialogue import _vr_get
 from ...schemas.actions import (
     ACTION_CATEGORY,
     ACTION_REQUIRED_PARAMS,
@@ -36,6 +36,8 @@ from ...schemas.actions import (
 )
 from ...utils import db_manager
 
+
+logger = logging.getLogger(__name__)
 
 # world_constants.json에서 유효 ID 목록 및 월드 경계 로드
 VALID_NPC_IDS: set[str] = set(WORLD_CONSTANTS.get("valid_npc_ids", []))
@@ -135,11 +137,10 @@ def _missing_required_group(action: "GameAction") -> str | None:
 
 
 # ActionType → (param_key, 상한 상수키, 상한 기본, 음수시 값, 음수 로그표기, 비유효시 값, 로그 라벨)
-# Attack.damage / Move.speed / Heal.amount 의 [0, 상한] 클램핑을 단일 테이블로 통합.
+# Attack.damage / Move.speed 의 [0, 상한] 클램핑을 단일 테이블로 통합.
 _NUMERIC_CLAMP_RULES: dict[str, tuple] = {
     "Attack": ("damage", "MAX_DAMAGE", 100, "0", "0", "10", "damage"),
     "Move": ("speed", "MAX_SPEED", 600, "300", "기본값 300", "300", "speed"),
-    "Heal": ("amount", "MAX_HEALTH", 100, "0", "0", "10", "heal amount"),
 }
 
 
@@ -184,19 +185,19 @@ def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | 
     missing = _missing_required_group(action)
     if missing:
         reason = f"{action.ActionType} 필수 파라미터 누락 ({missing}) → 액션 제거"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
     if not _is_target_id_valid(target_id, runtime_targets):
         reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # ── [신규] 좌표 범위 검증 ───────────────────────────────────
     if not _is_target_loc_in_bounds(target_loc_str):
         reason = f"target_loc {target_loc_str} 이 WORLD_BOUNDS 밖 → 액션 제거 (action: {action.ActionType})"
-        print(f"[Rules] X {reason}")
+        logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
     # Dialogue 액션은 수치 파라미터 없음 → 검증 불필요
@@ -237,16 +238,16 @@ def _validate_batch(
         all_corrections.extend(corrections)
 
     if not validated_actions:
-        print(f"[Rules] X {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
+        logger.error(f"[Rules] X {batch.AgentID} 모든 액션 검증 실패. 이유: {'; '.join(all_corrections)}")
         batch.Actions = []
     else:
         batch.Actions = validated_actions
         _correct_mode_mismatch(batch)
         if all_corrections:
             summary = "; ".join(all_corrections)
-            print(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
+            logger.info(f"[Rules] OK {batch.AgentID} {len(all_corrections)}개 보정: {summary}")
         else:
-            print(f"[Rules] OK {batch.AgentID} 검증 통과")
+            logger.info(f"[Rules] OK {batch.AgentID} 검증 통과")
 
     if log_ctx is not None:
         log_rules_result(
@@ -274,7 +275,7 @@ def _correct_mode_mismatch(batch: "ActionBatch") -> None:
         return
     majority, _count = Counter(non_common).most_common(1)[0]
     if batch.Mode != majority and batch.Mode not in non_common:
-        print(f"[Rules] FIX Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
+        logger.info(f"[Rules] FIX Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
         batch.Mode = majority
 
 
@@ -291,16 +292,14 @@ def rules_node(state: AgentState) -> dict:
     if not action_batches:
         batch = state.get("action_batch")
         if not batch:
-            print("[Rules] ActionBatch 없음, 조용히 종료")
+            logger.warning("[Rules] ActionBatch 없음, 조용히 종료")
             return {"next": "End", "current_speaker": "Rules"}
         action_batches = {batch.AgentID: batch}
 
     # UE5 prompt 동봉 valid_targets(런타임 등록 NPC) — 타겟 검증의 우선 진실.
-    vr_context = state.get("vr_context")
-    runtime_list = _vr_get(vr_context, "valid_targets", None) if vr_context else None
-    # vr_context 가 검증 안 된 raw dict 로도 흘러듦(_vr_get 이중 대응) — UE5 가 배열 대신
-    # 문자열을 보내면 set("Elara") 가 문자 단위로 분해돼 유효 액션이 조용히 제거됨. 시퀀스만 변환.
-    runtime_targets: set[str] | None = set(runtime_list) if isinstance(runtime_list, (list, tuple, set)) else None
+    # GesPrompt 가 List[str] 로 검증하므로 문자열이 통째로 오는 경우는 여기 도달 전에 걸러진다.
+    runtime_list = state["vr_context"].valid_targets
+    runtime_targets: set[str] | None = set(runtime_list) if runtime_list else None
 
     # 파인튜닝 로그 조인 키 — Stage1 LLM 레코드와 msg_id+attempt 로 매칭 (train_logger)
     log_ctx = {"msg_id": state.get("msg_id", ""), "attempt": state.get("rules_retry_count", 0)}
@@ -328,18 +327,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     규칙(Rule) 기반으로 점수를 증감시킨 뒤 DB Manager 캐시에 즉시 반영.
     """
     # 1. Player ID와 Source(NPC) ID 확인
-    # vr_context가 엉망이거나 null이면 건너뜀 (MVP용 방어코드)
-    vr_context = state.get("vr_context")
-    if not vr_context:
-        return
-
-    player_id = (
-        vr_context.get("player_id", "Player")
-        if isinstance(vr_context, dict)
-        else getattr(vr_context, "player_id", "Player")
-        if vr_context
-        else "Player"
-    )
+    player_id = state["vr_context"].player_id or "Player"
     npc_id = batch.AgentID
 
     if not npc_id:
@@ -362,9 +350,6 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
             if action.ActionType == "Attack":
                 score_delta -= 10
                 interaction_summary.append("Attacked player (-10)")
-            elif action.ActionType == "Heal":
-                score_delta += 5
-                interaction_summary.append("Healed player (+5)")
             elif action.ActionType == "Dialogue":
                 facial = action.FacialState
                 if facial == "Happy":
@@ -377,7 +362,7 @@ def _evaluate_and_update_affinity(state: AgentState, batch: "ActionBatch"):
     # 3. 점수 변화가 있다면 DB 매니저를 통해 캐시 업데이트
     if score_delta != 0:
         summary_str = ", ".join(interaction_summary)
-        print(f"[Rules] AFFINITY Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
+        logger.info(f"[Rules] AFFINITY Affinity Delta for {npc_id} -> {player_id}: {score_delta} ({summary_str})")
         # 비동기 환경 내에서 안전하게 동기 함수 호출 (캐싱만 하므로 빠름)
         db_manager.update_affinity_sync(
             source_id=npc_id,

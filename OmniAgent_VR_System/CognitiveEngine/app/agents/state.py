@@ -18,7 +18,6 @@
 ║ FIELD CATEGORIES:                                                            ║
 ║   • Input:     vr_context (UE5에서 수신)                                   ║
 ║   • Cache:     cached_world_state (state_update 수신 시만 갱신, LLM 미호출) ║
-║   • History:   failed_action_history (action_failed 이력 누적)              ║
 ║   • Pipeline:  natural_context, structured_responses, target_npc            ║
 ║   • Routing:   next, current_speaker                                        ║
 ║   • Output:    action_batch (UE5로 전송)                                   ║
@@ -30,8 +29,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-from typing import TypedDict, Annotated, List, Optional, Dict, Any
-from langgraph.graph.message import add_messages
+from typing import TypedDict, List, Optional, Dict, Any
 from ..schemas.vr_context import GesPrompt
 from ..schemas.actions import ActionBatch, DialogueResponse
 
@@ -61,12 +59,6 @@ class AgentState(TypedDict):
     #      "현재 환경 컨텍스트"로 활용한다. 매 요청마다 덮어씌운다.
     cached_world_state: Optional[Dict[str, Any]]
 
-    # [신규] action_failed 실패 이력 누적 목록
-    # WHY: Python이 내린 명령이 UE5에서 실패할 경우, 그 이유를
-    #      다음 추론 컨텍스트에 포함시켜 동일 실수를 반복하지 않게 한다.
-    #      리스트에 append하는 방식으로 누적. 최대 N개 유지는 Interface Input 에이전트가 담당.
-    failed_action_history: List[Dict[str, Any]]
-
     # ── 파이프라인 중간 상태 ─────────────────────────────────────────
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트
     natural_context: Optional[str]
@@ -83,10 +75,6 @@ class AgentState(TypedDict):
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
 
-    # Dialogue 에이전트가 결정하는 행동 모드 / 표정
-    behavior_mode: Optional[str]
-    facial_state: Optional[str]
-
     # ── 내부 라우팅 상태 ─────────────────────────────────────────────
     next: str
     current_speaker: str
@@ -97,9 +85,6 @@ class AgentState(TypedDict):
 
     # [멀티 NPC] Interface_Output Stage3 출력: npc_id → ActionBatch
     action_batches: Optional[Dict[str, ActionBatch]]
-
-    # ── LangGraph 메시지 히스토리 ────────────────────────────────────
-    messages: Annotated[List[Any], add_messages]
 
     # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
     # Rules 거부 시 Dialogue 재시도 횟수. 최대 1회 — 초과 시 폴백 배치로 종료(무한루프 차단).

@@ -1,8 +1,8 @@
 // NPCDialogueWidget — NPC 머리 위 WorldSpace 말풍선 자막 위젯.
 //
-// 구 ChatWidget(제거됨) 대체. 입력은 ASR 이 담당하므로 본 위젯은 출력(대사 표시) 전용.
-// ASmartNPC 의 UWidgetComponent 가 이 클래스를 자식 WBP 로 띄우고, ShowSubtitle 경로에서
-// SetDialogue 로 텍스트를 채운다. 표시/숨김 타이밍·빌보드는 ASmartNPC 가 관리.
+// 출력(대사 표시) 전용 — 입력은 HUD ChatInput 이 담당.
+// UNPCDialogueUIComponent 가 이 클래스를 자식 WBP 로 띄우고, ShowSubtitle 경로에서
+// SetDialogue 로 텍스트를 채운다. 표시/숨김 타이밍·빌보드는 그 컴포넌트가 관리.
 //
 // WBP 사용법:
 //   - WBP 없이 이 클래스를 위젯 클래스로 바로 지정해도 된다 — 트리를 코드로 짓는다.

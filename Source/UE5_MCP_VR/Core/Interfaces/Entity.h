@@ -75,10 +75,6 @@ public:
   void ApplyResourceDelta(float DeltaHealth, float DeltaMana, float DeltaStamina);
 
   UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
-            Category = "Character|Tags")
-  void SetStateTag(FGameplayTag Tag);
-
-  UFUNCTION(BlueprintNativeEvent, BlueprintCallable,
             Category = "Character|Attributes")
   bool IsHostileTo(const TScriptInterface<ICharacterBase> &Other) const;
 };

@@ -116,16 +116,6 @@ struct UE5_MCP_VR_API FItemData : public FTableRowBase
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Item|Durability", meta = (EditCondition = "bHasDurability"))
     float CurrentDurability = 100.0f;
 
-    // 내구도 회복 (구조체 멤버 함수는 복사된 인스턴스의 값을 변경함)
-    void RepairItem(float Amount)
-    {
-        CurrentDurability += Amount;
-        if (CurrentDurability > MaxDurability)
-        {
-            CurrentDurability = MaxDurability;
-        }
-    }
-
     // --- Visuals ---
 
     // UI 아이콘 (인벤토리 창 표시용)

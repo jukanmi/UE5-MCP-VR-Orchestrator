@@ -1,9 +1,7 @@
 #include "NPC/Components/NPCStateComponent.h"
-#include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Action/NPCActionComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
-#include "Utils/DiceSystem.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
 #include "Engine/GameInstance.h"
@@ -78,20 +76,18 @@ void UNPCStateComponent::ApplyMovementSpeed()
     CMC->MaxWalkSpeed = GetAttributes().Movement.WalkSpeed;
 }
 
-// --- Reflex ---
+// --- Plan ---
 
-bool UNPCStateComponent::TryReflexAction(int32 Difficulty)
+void UNPCStateComponent::SetCurrentPlan(const FNPCPlan& NewPlan)
 {
-    int32 PerceptionBonus = FMath::Clamp(GetAttributes().BaseStats.Perception, 0, 100);
-    int32 Roll = UDiceSystem::RollD100();
-    int32 Total = Roll + PerceptionBonus;
-
-    bool bSuccess = Total >= Difficulty;
-
-    UE_LOG(LogTemp, Log, TEXT("[NPCState] Reflex Check: Roll(%d) + Perception(%d) = %d vs DC(%d) → %s"),
-        Roll, PerceptionBonus, Total, Difficulty, bSuccess ? TEXT("SUCCESS") : TEXT("FAIL"));
-
-    return bSuccess;
+    CurrentPlan = NewPlan;
+    CurrentPlan.bIsValid = true;
+    bDangerReplanPending = false;
+    bPlanAchievedPending = false;
+    TurnsOnCurrentPlan = 0;
+    UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: plan 갱신 goal=\"%s\" steps=%d"),
+        *GetOwner()->GetName(), *CurrentPlan.Goal, CurrentPlan.Steps.Num());
+    OnPlanUpdated.Broadcast(CurrentPlan);
 }
 
 // --- Damage ---
@@ -165,14 +161,8 @@ void UNPCStateComponent::FlushEventReport()
     }
 
     // 반사 이력 동봉 — 통보와 같은 배로 보내야 다음 replan 이 "이미 반응함"에서 출발한다.
-    FString Payload = UMCPJsonUtils::SerializePerceptionReport(
+    const TSharedRef<FJsonObject> Payload = UMCPJsonUtils::BuildPerceptionReport(
         OwnerNPC->AgentID, RefinedEvents, TEXT(""), PendingReflexAction);
-    if (Payload.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: Perception 직렬화 실패 — flush 건너뜀"), *OwnerNPC->AgentID);
-        LocalEventQueue.Empty();
-        return;
-    }
     // location_decision 응답 대기 중에는 Event Report 전송 금지.
     // 같은 LLM WebSocket으로 두 요청이 겹치면 location_decision_result가 타임아웃으로 유실됨.
     if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
@@ -206,34 +196,13 @@ void UNPCStateComponent::ReportCombatVictory(const FString& DefeatedTargetID)
     if (!Manager) return;
 
     // 단발 이벤트라 디바운스 큐 미경유. danger=0 — Python 게이트는 report_type 으로 식별.
-    FPerceptionData Victory;
-    Victory.TargetID = DefeatedTargetID;
-    Victory.SenseType = ESenseType::Other;
-    Victory.Location = OwnerNPC->GetActorLocation();
-    Victory.Distance = 0.f;
-    Victory.DangerScore = 0.f;
+    const FPerceptionData Victory(DefeatedTargetID, ESenseType::Other, OwnerNPC->GetActorLocation(),
+                                  OwnerNPC->GetActorLocation(), 0.f);
 
-    const FString Payload = UMCPJsonUtils::SerializePerceptionReport(
-        OwnerNPC->AgentID, { Victory }, TEXT("combat_victory"));
-    if (Payload.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[NPCState] %s: 승리 보고 직렬화 실패 — 전송 생략"), *OwnerNPC->AgentID);
-        return;
-    }
-
-    Manager->SendEventReport(OwnerNPC->AgentID, Payload);
+    Manager->SendEventReport(OwnerNPC->AgentID,
+        UMCPJsonUtils::BuildPerceptionReport(OwnerNPC->AgentID, { Victory }, TEXT("combat_victory")));
     UE_LOG(LogTemp, Log, TEXT("[NPCState] %s: 전투 승리 보고 전송 (defeated=%s)"),
         *OwnerNPC->AgentID, *DefeatedTargetID);
-}
-
-// --- Internal Helper ---
-
-ASmartNPCAIController* UNPCStateComponent::GetOwnerAIController() const
-{
-    APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    if (!OwnerPawn) return nullptr;
-    
-    return Cast<ASmartNPCAIController>(OwnerPawn->GetController());
 }
 
 // --- Affinity ---

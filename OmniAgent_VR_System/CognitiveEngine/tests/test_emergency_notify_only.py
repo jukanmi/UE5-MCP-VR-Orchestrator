@@ -22,7 +22,7 @@ from unittest.mock import patch, AsyncMock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.schemas.envelope import MessageEnvelope, EmergencyReportPayload, PerceptionData
+from app.schemas.envelope import MessageEnvelope, EmergencyReportPayload
 
 
 def _envelope(danger: float, reflex_action: str = "") -> MessageEnvelope:

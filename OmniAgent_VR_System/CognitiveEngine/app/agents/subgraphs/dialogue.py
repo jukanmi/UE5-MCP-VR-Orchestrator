@@ -27,6 +27,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import yaml
 import os
 import re
@@ -39,11 +40,14 @@ from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
 from ..state import AgentState
+from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
 from ...utils.id_utils import ci_id_map
-from ...schemas.actions import DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
+from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 from .prompts import DIALOGUE_STRUCTURED_PROMPT, PLAN_SYSTEM_PROMPT
 
+
+logger = logging.getLogger(__name__)
 
 PERSONAS_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas")
 
@@ -66,7 +70,7 @@ def _schema_with_target_enum(valid_targets: tuple) -> dict | None:
     target = schema.get("$defs", {}).get("DialogueActionItem", {}).get("properties", {}).get("target")
     if target is None:
         # pydantic 스키마 구조 변경 시 조용한 미적용 방지 — 로그 남기고 기본 스키마.
-        print("[Dialogue] target enum 주입 실패: 스키마에 DialogueActionItem.target 없음")
+        logger.error("[Dialogue] target enum 주입 실패: 스키마에 DialogueActionItem.target 없음")
         return None
     # "" = target 미사용 액션(스키마 default). description 의 자유서술과 enum 충돌 방지 위해 교체.
     target["enum"] = [""] + list(valid_targets)
@@ -122,9 +126,9 @@ def _create_persona(agent_id: str) -> dict:
     try:
         with open(save_path, "w", encoding="utf-8") as f:
             yaml.dump(persona, f, allow_unicode=True, default_flow_style=False)
-        print(f"[Dialogue] Persona '{agent_id}' not found → created: {save_path}")
+        logger.warning(f"[Dialogue] Persona '{agent_id}' not found → created: {save_path}")
     except Exception as e:
-        print(f"[Dialogue] Persona 파일 생성 실패: {e}")
+        logger.error(f"[Dialogue] Persona 파일 생성 실패: {e}")
     return persona
 
 
@@ -171,22 +175,6 @@ def _serialize_dialogue(obj: DialogueResponse) -> str:
     return "\n".join(lines)
 
 
-def _vr_get(vr_context, key: str, default=None):
-    """vr_context(dict 또는 GesPrompt 객체)에서 key 추출 — 없으면 default.
-    interface 경계에서 dict/pydantic 둘 다 흘러들어와 매 필드마다 반복되던
-    isinstance 분기를 단일화."""
-    if not vr_context:
-        return default
-    if isinstance(vr_context, dict):
-        return vr_context.get(key, default)
-    return getattr(vr_context, key, default)
-
-
-def _vr_player_id(vr_context) -> str:
-    """vr_context 에서 player_id 추출 — 없으면 "Player"."""
-    return _vr_get(vr_context, "player_id", "Player") or "Player"
-
-
 @dataclass
 class _Stage1Context:
     """_dialogue_single Stage1 입력 번들 — 컨텍스트 수집 단계와 LLM 호출 단계의 경계."""
@@ -214,17 +202,17 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     memory = persona.get("memory_summary", {})
     memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
-    vr_context = state.get("vr_context")
-    player_id = _vr_player_id(vr_context)
+    vr_context: GesPrompt = state["vr_context"]  # interface_input 이 항상 객체로 정규화
+    player_id = vr_context.player_id or "Player"
 
     try:
         relation = await db_manager.get_affinity(npc_id, player_id)
         sentiment = f"{relation.reputation_tag} (Score: {relation.affinity_score})"
     except Exception as e:
-        print(f"[Dialogue] Affinity 조회 실패 ({npc_id}): {e}")
+        logger.error(f"[Dialogue] Affinity 조회 실패 ({npc_id}): {e}")
         sentiment = memory.get("sentiment", "Neutral")
 
-    clean_query = _vr_get(vr_context, "voice_transcript", "") or ""
+    clean_query = vr_context.voice_transcript or ""
 
     rag_context = await asyncio.to_thread(retrieve_context, npc_id, clean_query, 3) if clean_query else ""
     # 캐시 미스 시 ConversationMemory._load_from_file 이 동기 JSON read 를 수행한다.
@@ -234,7 +222,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
 
     # NPC 인벤토리 — UE5 가 prompt 마다 동적 전송(npc_id → items). 없으면 "None".
     # 주입 목적: NPC 가 보유 아이템만 GiveItem/HandObject 하도록 근거 제공.
-    inv_map = _vr_get(vr_context, "npc_inventory", None) or {}
+    inv_map = vr_context.npc_inventory or {}
     inv_items = inv_map.get(npc_id, []) or []
     if inv_items:
         # 표시명과 함께 id 를 괄호로 노출한다. GiveItem/UseItem 은 UE5 에서 ItemID 로 조회되는데,
@@ -248,7 +236,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
 
     # 유효 타깃 vocabulary — UE5 ResolveActionTarget 해석 가능 키워드(valid_targets).
     # 있으면 프롬프트 명시 + 스키마 target enum 강제, 없으면 종전 자유문자열(하위호환).
-    valid_targets = _vr_get(vr_context, "valid_targets", None)
+    valid_targets = vr_context.valid_targets
     valid_targets_str = ", ".join(valid_targets) if valid_targets else "Player, Self, Enemy, or an NPC name"
 
     fmt_kwargs = dict(
@@ -274,7 +262,7 @@ async def _run_stage1_llm(
     structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
     user_content = f"Context: {ctx.natural_context}"
 
-    print(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")
+    logger.info(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")
 
     resp = None
     try:
@@ -294,7 +282,7 @@ async def _run_stage1_llm(
             log_extra=log_extra,
         )
     except Exception as e:
-        print(f"[Dialogue] Stage1 LLM 오류 ({npc_id}), 구조화 폴백 재시도: {e}")
+        logger.warning(f"[Dialogue] Stage1 LLM 오류 ({npc_id}), 구조화 폴백 재시도: {e}")
         # 폴백도 구조화: target enum 없이(폴백은 valid_targets 미보장) 기본 스키마 + temp↑(다양성).
         try:
             resp = await ollama_structured(
@@ -307,7 +295,7 @@ async def _run_stage1_llm(
                 log_extra={**log_extra, "fallback": True} if log_extra else None,
             )
         except Exception as e2:
-            print(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
+            logger.warning(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
             resp = None
 
     if resp is None:
@@ -320,8 +308,8 @@ async def _run_stage1_llm(
 
     plan_achieved = bool(resp.plan_achieved)
     if plan_achieved:
-        print(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
-    print(f"[Dialogue] Stage1 응답 ({npc_id}): '{resp.speech[:60]}...'")
+        logger.info(f"[Dialogue] Stage1 plan 달성 감지 ({npc_id})")
+    logger.info(f"[Dialogue] Stage1 응답 ({npc_id}): '{resp.speech[:60]}...'")
     return resp, plan_achieved
 
 
@@ -364,7 +352,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
     """
     sections = "\n\n".join(f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items())
 
-    print(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
+    logger.info(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
     try:
         result = await ollama_structured(
             PLAN_SYSTEM_PROMPT,
@@ -377,7 +365,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
             log_extra={"stage": "stage2", "msg_id": msg_id, "npc_ids": list(raw_responses)},
         )
     except Exception as e:
-        print(f"[Dialogue] Stage2 오류, plan 생략: {e}")
+        logger.error(f"[Dialogue] Stage2 오류, plan 생략: {e}")
         return {}
 
     # npc_id 매칭: 12B 가 헤더를 그대로 복사하지만 대소문자 흔들림 대비 lower 매핑.
@@ -386,7 +374,7 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
     for item in result.npcs:
         npc_id = id_map.get(item.npc_id.strip().lower())
         if npc_id is None:
-            print(f"[Dialogue] Stage2 미상 npc_id 무시: '{item.npc_id}'")
+            logger.warning(f"[Dialogue] Stage2 미상 npc_id 무시: '{item.npc_id}'")
             continue
         # 12B 가 간혹 "1. " 번호 접두사를 붙임 — 제거 (실측).
         steps = [re.sub(r"^\s*\d+[.)]\s*", "", s).strip() for s in item.steps if s.strip()]
@@ -398,14 +386,14 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
         goal = item.goal.strip()
         if goal.casefold() == item.npc_id.strip().casefold():
             goal = steps[0] if steps else ""
-            print(f"[Dialogue] Stage2 goal 이 npc_id 와 동일 — 첫 step 으로 대체 ({npc_id}): '{goal}'")
+            logger.info(f"[Dialogue] Stage2 goal 이 npc_id 와 동일 — 첫 step 으로 대체 ({npc_id}): '{goal}'")
 
         # steps 가 스키마 필드명을 그대로 뱉은 경우(실측: ["Moca","goal","steps"])도 버린다.
         FIELD_ECHO = {"goal", "steps", "npc_id", item.npc_id.strip().casefold()}
         steps = [st for st in steps if st.casefold() not in FIELD_ECHO]
 
         if not goal or not steps:
-            print(f"[Dialogue] Stage2 plan 오염으로 폐기 ({npc_id})")
+            logger.warning(f"[Dialogue] Stage2 plan 오염으로 폐기 ({npc_id})")
             continue
 
         plan = {"goal": goal, "steps": steps}
@@ -414,14 +402,14 @@ async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id:
             relation = await db_manager.get_affinity(npc_id, player_id)
             plan["relation_snapshot"] = relation.affinity_score if relation else 0
         except Exception as e:
-            print(f"[Dialogue] plan affinity 조회 실패 ({npc_id}): {e}")
+            logger.error(f"[Dialogue] plan affinity 조회 실패 ({npc_id}): {e}")
             plan["relation_snapshot"] = 0
         npc_plans[npc_id] = plan
 
     for npc_id in raw_responses:
         if npc_id not in npc_plans:
-            print(f"[Dialogue] Stage2 plan 누락 ({npc_id})")
-    print(f"[Dialogue] Stage2 plan 산출 완료 ({len(npc_plans)}/{len(raw_responses)}개)")
+            logger.warning(f"[Dialogue] Stage2 plan 누락 ({npc_id})")
+    logger.info(f"[Dialogue] Stage2 plan 산출 완료 ({len(npc_plans)}/{len(raw_responses)}개)")
     return npc_plans
 
 
@@ -433,14 +421,11 @@ async def dialogue_node(state: AgentState):
     Stage 2: 플래너 × 1 plan 산출 (requires_replan=True 시만, 대사 무변경)
     Output:  structured_responses Dict[npc_id, DialogueResponse]
     """
-    npcs = state.get("target_npcs") or []
-    if not npcs:
-        single = state.get("target_npc", "Elara")
-        npcs = [single] if single else ["Elara"]
+    npcs = state.get("target_npcs") or [state.get("target_npc") or DEFAULT_NPC]
 
     # 재계획 분기: False=e4b 단독 경량 루프(플래너 스킵), True=풀 파이프라인+plan 산출.
     requires_replan = state.get("requires_replan", True)
-    print(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
+    logger.info(f"[Dialogue] 대상 NPC: {npcs} | requires_replan={requires_replan}")
 
     # Stage 1: 병렬 e4b 호출 — 구조화 DialogueResponse 직접 산출.
     results = await asyncio.gather(*[_dialogue_single(state, npc_id) for npc_id in npcs])
@@ -456,11 +441,10 @@ async def dialogue_node(state: AgentState):
     raw_responses: Dict[str, str] = {}
     if requires_replan:
         raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
-        vr_context = state.get("vr_context")
-        player_id = _vr_player_id(vr_context)
+        player_id = state["vr_context"].player_id or "Player"
         npc_plans = await _generate_plans(raw_responses, player_id, state.get("msg_id", ""))
     else:
-        print("[Dialogue] 경량 루프: Stage2 스킵 (e4b 단독)")
+        logger.info("[Dialogue] 경량 루프: Stage2 스킵 (e4b 단독)")
 
     return {
         "structured_responses": structured_responses,

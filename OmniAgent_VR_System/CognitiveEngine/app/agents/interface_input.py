@@ -21,12 +21,15 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import logging
 import re
 import unicodedata
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 from ..utils.id_utils import ci_id_map, ci_get
 
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompt Injection / Jailbreak 탐지 패턴 목록
@@ -119,24 +122,6 @@ def _format_perceived_targets(state: AgentState) -> str:
     return ", ".join(pts)
 
 
-def _format_failed_history(state: AgentState) -> str:
-    """실패 이력 컨텍스트 조각(". Recently FAILED ...") — 이력 없으면 "".
-    WHY: 미주입 시 NPC 가 직전에 실패한 액션(예: Move PathNotFound)을 그대로
-    반복 시도함. main.py 가 prompt 마다 스냅샷 후 클리어하므로 무한 누적 없음.
-    최근 3건만 — 프롬프트 비대화 방지 (state.py "최대 N개 유지" 책임 이행)."""
-    failed_history = state.get("failed_action_history") or []
-    if not failed_history:
-        return ""
-    recent = failed_history[-3:]
-    fails = "; ".join(
-        f"{f.get('failed_action_type', 'Unknown')}"
-        f" by {f.get('executor_npc_id', 'unknown')}"
-        f" (reason: {f.get('reason', 'unknown')})"
-        for f in recent
-    )
-    return f". Recently FAILED actions (do NOT retry the same way): {fails}"
-
-
 def _format_plan_context(state: AgentState) -> str:
     """계획 컨텍스트 조각(". Current goal ...") — 해당 plan 없으면 "".
     WHY: replan=False 경량 루프에서 저장된 plan(goal/steps)을 주입해 e4b 캐릭터 드리프트 차단.
@@ -199,31 +184,36 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     if perceived_str not in ("Unknown", "None visible/audible"):
         natural_context += f", nearby: {perceived_str}"
 
-    natural_context += _format_failed_history(state)
     natural_context += _format_plan_context(state)
     natural_context += _format_nearby_furniture(vr_context)
 
     return natural_context
 
 
+# 누락·변환 실패 시 뒤 노드에 넘겨줄 빈 컨텍스트 — 뒤 노드(dialogue·rules)는 vr_context 가 항상
+# GesPrompt 객체라고 가정하므로 None 을 흘려보내지 않는다.
+def _empty_vr_context() -> GesPrompt:
+    return GesPrompt(player_id="Player", voice_transcript="", timestamp=0.0)
+
+
 def _coerce_vr_context(vr_context):
-    """vr_context 정규화 — (GesPrompt, None) 또는 (None, 폴백 응답 dict).
+    """vr_context 정규화 — (GesPrompt, None) 또는 (빈 GesPrompt, 폴백 응답 dict).
     누락/변환 실패 시에도 그래프가 끊기지 않게 Dialogue 로 넘기는 기존 동작 유지."""
     if not vr_context:
-        print("[Interface Input] ERROR: vr_context 없음")
-        return None, {
+        logger.error("[Interface Input] vr_context 없음")
+        return _empty_vr_context(), {
             "natural_context": "Player input is empty.",
             "current_speaker": "Interface_Input",
             "next": "Dialogue",
         }
 
-    # dict → GesPrompt 변환 (WebSocket에서 raw dict로 올 수 있음)
+    # dict → GesPrompt 변환 (디버그 경로 등에서 raw dict 로 올 수 있음)
     if isinstance(vr_context, dict):
         try:
             vr_context = GesPrompt(**vr_context)
         except Exception as e:
-            print(f"[Interface Input] GesPrompt 변환 실패: {e}")
-            return None, {
+            logger.error(f"[Interface Input] GesPrompt 변환 실패: {e}")
+            return _empty_vr_context(), {
                 "natural_context": "Player said something but context is unclear.",
                 "current_speaker": "Interface_Input",
                 "next": "Dialogue",
@@ -238,7 +228,7 @@ def _guardrail_block(transcript: str):
     is_injected, matched_pattern = _check_prompt_injection(transcript)
     if not is_injected:
         return None
-    print(f"[Interface Input] WARN  GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
+    logger.warning(f"[Interface Input] GUARDRAIL TRIGGERED: '{matched_pattern}' in '{transcript[:50]}'")
     return {
         "has_error": True,
         "error_msg": f"Prompt injection detected. Pattern: {matched_pattern}",
@@ -251,7 +241,7 @@ def _emergency_interrupt(vr_context: GesPrompt, transcript: str):
     """[긴급 인터럽트] Hit/Ambush — LLM 추론 지연 없이 즉각 응전 컨텍스트. 해당 없으면 None."""
     if vr_context.last_event not in ["Hit", "Ambush"]:
         return None
-    print(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
+    logger.warning(f"[Interface Input] !!! 긴급 이벤트: {vr_context.last_event} !!!")
     emergency_context = (
         f"EMERGENCY: Player is under attack ({vr_context.last_event})! "
         f'Player said: "{transcript}". '
@@ -279,6 +269,7 @@ def interface_input_node(state: AgentState) -> dict:
     """
     vr_context, fallback = _coerce_vr_context(state.get("vr_context"))
     if fallback is not None:
+        fallback["vr_context"] = vr_context
         return fallback
 
     transcript = vr_context.voice_transcript or ""
@@ -287,7 +278,7 @@ def interface_input_node(state: AgentState) -> dict:
     if blocked is not None:
         return blocked
 
-    print(f"[Interface Input] Transcript: '{transcript}'")
+    logger.info(f"[Interface Input] Transcript: '{transcript}'")
 
     emergency = _emergency_interrupt(vr_context, transcript)
     if emergency is not None:
@@ -295,18 +286,20 @@ def interface_input_node(state: AgentState) -> dict:
 
     # ── 구조화 컨텍스트 조합 (위치/제스처/perceived/실패이력/plan) ──
     natural_context = _build_natural_context(vr_context, state, transcript)
-    print(f"[Interface Input] Natural context: {natural_context[:100]}...")
+    logger.info(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
-    target_npcs = _extract_target_npcs(transcript, vr_context)
+    target_npcs = _extract_target_npcs(transcript)
 
     result = {
+        # 정규화된 객체를 state 로 돌려준다 — 뒤 노드가 dict/객체 이중 대응을 하지 않게.
+        "vr_context": vr_context,
         "natural_context": natural_context,
         "current_speaker": "Interface_Input",
         "next": "Dialogue",
     }
     # 대상을 찾은 경우에만 state에 기록 → 없으면 기존 값(C++ AgentID 등) 보존.
-    # target_npc(단일)는 첫 매칭 — 단일 NPC 호환 경로/TTS 폴백용.
+    # target_npc(단일)는 첫 매칭 — 단일 NPC 호환 경로용.
     if target_npcs:
         result["target_npc"] = target_npcs[0]
         result["target_npcs"] = target_npcs
@@ -318,7 +311,7 @@ def interface_input_node(state: AgentState) -> dict:
 MAX_TARGET_NPCS = 3
 
 
-def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
+def _extract_target_npcs(transcript: str) -> list[str]:
     """
     대화 내용에서 대상 NPC들을 추출한다 (발화 등장 순서 보존, 중복 제거).
 
@@ -335,7 +328,7 @@ def _extract_target_npcs(transcript: str, vr_context: GesPrompt) -> list[str]:
     # lower→원본 ID 매핑 — C++ NPCMap 은 대소문자 구분, 원래 케이스 보존 필수.
     id_map = ci_id_map(valid_ids)
     known_npcs = (
-        [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "guard", "merchant", "blacksmith"]
+        [npc.lower() for npc in valid_ids] if valid_ids else ["elara", "james", "skadi", "moca", "guard"]
     )
     # Player 는 발화 주체이지 대상 NPC 아님 — 제외 (없으면 Player 페르소나가 응답 생성).
     known_npcs = [npc for npc in known_npcs if npc != "player"]

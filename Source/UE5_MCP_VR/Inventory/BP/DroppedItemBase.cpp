@@ -4,6 +4,7 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Inventory/Types/ItemRegistryOptions.h"
 #include "Inventory/BP/ItemDataAsset.h"   // FItemData — ItemManager.h 가 include 하지 않아 직접 건다
+#include "Inventory/Components/InventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
@@ -97,20 +98,17 @@ void ADroppedItemBase::BeginPlay()
     }
 
     // ItemManager 서브시스템 검출 및 안전한 초기 등록
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UItemManager* ItemManager = UItemManager::Get(this))
     {
-        if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
-        {
-            ItemManager->RegisterDroppedItem(ItemData.ItemInstanceID, ItemData.ItemActor, ItemData.ItemTemplateID);
+        ItemManager->RegisterDroppedItem(ItemData.ItemInstanceID, ItemData.ItemActor, ItemData.ItemTemplateID);
 
-            // 질량을 마스터 테이블의 Weight(kg)로 확정한다. 지정하지 않으면 엔진이 충돌 형상의
-            // 부피에 기본 밀도를 곱해 추정하는데, 생성 메시는 부피가 제각각이라 돌멩이가 깃털처럼
-            // 뜨거나 반대가 된다. 투척 피해가 ½mv² 라 질량이 곧 타격감이기도 하다.
-            FItemData Row;
-            if (ItemMesh && ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Row) && Row.Weight > 0.f)
-            {
-                ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
-            }
+        // 질량을 마스터 테이블의 Weight(kg)로 확정한다. 지정하지 않으면 엔진이 충돌 형상의
+        // 부피에 기본 밀도를 곱해 추정하는데, 생성 메시는 부피가 제각각이라 돌멩이가 깃털처럼
+        // 뜨거나 반대가 된다. 투척 피해가 ½mv² 라 질량이 곧 타격감이기도 하다.
+        FItemData Row;
+        if (ItemMesh && ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Row) && Row.Weight > 0.f)
+        {
+            ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
         }
     }
 }
@@ -118,15 +116,63 @@ void ADroppedItemBase::BeginPlay()
 void ADroppedItemBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     // 맵에서 사라지는 어떤 경우(파괴, 레벨 언로드 등)에도 댕글링 포인터를 유발하지 않고 매니저 캐시에서 삭제되게 합니다.
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UItemManager* ItemManager = UItemManager::Get(this))
     {
-        if (UItemManager* ItemManager = GameInstance->GetSubsystem<UItemManager>())
-        {
-            ItemManager->UnregisterDroppedItem(ItemData.ItemInstanceID);
-        }
+        ItemManager->UnregisterDroppedItem(ItemData.ItemInstanceID);
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+bool ADroppedItemBase::TryPickupInto(UInventoryComponent* Inventory)
+{
+    UItemManager* ItemManager = UItemManager::Get(this);
+    if (!Inventory || !ItemManager) return false;
+
+    FItemData Data;
+    if (!ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Data))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[DroppedItem] 픽업 실패 — 아이템 데이터 없음: %s"), *ItemData.ItemTemplateID);
+        return false;
+    }
+
+    if (!Inventory->AddItem(Data, Amount))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[DroppedItem] 픽업 실패(공간·무게 부족): %s"), *Data.ItemID);
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[DroppedItem] 픽업: %s x%d → %s"), *Data.ItemID, Amount, *GetNameSafe(Inventory->GetOwner()));
+    // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
+    ConsumeItem();
+    return true;
+}
+
+void ADroppedItemBase::SetPhysicsFrozen(bool bFrozen)
+{
+    if (!ItemMesh) return;
+
+    if (bFrozen)
+    {
+        // 물리 바디가 남아 있으면 자기 캡슐·바닥을 밀어 손이 튀거나 소유자가 밀려난다.
+        ItemMesh->SetSimulatePhysics(false);
+        ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+    else
+    {
+        // SetCollisionEnabled 만으로는 잠근 동안 바뀐 채널 응답이 복구되지 않는다 — 프로파일 재지정.
+        // Pawn 은 평상시 Overlap: 바닥에 놓인 물건이 다가오는 캡슐에 밀려 도망다니지 않게.
+        ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+        ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+        ItemMesh->SetSimulatePhysics(true);
+    }
+
+    // 상호작용 구체 — 켠 채로 두면 쥔/잠긴 물건이 ItemManager::GetItemsInRange 오버랩에 계속 걸려
+    // 반대 손으로 다시 집거나 남이 주워 가게 된다.
+    if (InteractionSphere)
+    {
+        InteractionSphere->SetCollisionEnabled(bFrozen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+    }
 }
 
 void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
@@ -139,16 +185,13 @@ void ADroppedItemBase::LaunchThrown(const FVector& Velocity, AActor* Thrower,
     ThrowMinSpeedMs = MinSpeedMs;
     ThrownBy = Thrower;
 
-    // 쥘 때 껐던 콜리전·물리를 되돌린다. 프로파일을 다시 지정하는 이유는 SetCollisionEnabled 만으로는
-    // 쥐는 동안 바뀐 채널 응답이 복구되지 않기 때문.
-    ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+    SetPhysicsFrozen(false);
 
     // 던지는 동안에는 Pawn 을 막는다. OnComponentHit 은 블로킹 충돌에서만 오므로, 평상시처럼
     // Overlap 으로 두면 던진 물건이 NPC 를 그냥 통과해 타격 콜백이 아예 발생하지 않는다.
     // 창이 닫히면(EndThrowWindow) 다시 통과로 되돌려 바닥에 놓인 물건이 지나가는 폰에
     // 밀려 도망다니지 않게 한다.
     ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-    ItemMesh->SetSimulatePhysics(true);
     // 물리 바디의 Hit 이벤트는 기본으로 꺼져 있다 — 켜지 않으면 OnComponentHit 이 아예 안 온다.
     ItemMesh->SetNotifyRigidBodyCollision(true);
     ItemMesh->SetPhysicsLinearVelocity(Velocity);

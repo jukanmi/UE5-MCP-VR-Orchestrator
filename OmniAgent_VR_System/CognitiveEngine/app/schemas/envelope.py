@@ -11,7 +11,6 @@ WHY (설계 의도):
 MESSAGE TYPE 분류:
   • state_update : 주기적 NPC 상태 동기화 (LLM 호출 없이 캐싱만)
   • prompt       : 플레이어 음성/제스처 명령 (LLM 파이프라인 실행)
-  • action_failed: Python이 내린 명령이 UE5에서 실패했음을 알리는 콜백
 
 """
 
@@ -28,7 +27,6 @@ import time
 class EEnvelopeType(str, Enum):
     STATE_UPDATE = "state_update"  # UE5 상태 주기 동기화
     PROMPT = "prompt"  # 플레이어 명령/대화
-    ACTION_FAILED = "action_failed"  # UE5에서 명령 실행 실패 통보
     EMERGENCY_REPORT = "emergency_report"  # 긴급 이벤트 배치 전송
     LOCATION_DECISION = "location_decision"  # EQS 후보 → LLM 전술 위치 결정 요청
 
@@ -47,19 +45,7 @@ class PerceptionData(BaseModel):
     sense_type: str  # "Sight", "Hearing", "Other"
     distance: float
     danger_score: float = 0.0  # C++ FPerceptionData.DangerScore 대응
-    in_line_of_sight: bool = False
     location: Dict[str, float]  # {"x", "y", "z"}
-    activity_context: str = "Idle"
-
-
-class EQSQueryResult(BaseModel):
-    """EQS 공간 쿼리의 최적 좌표 결과 (상위 1~3개만 전송)."""
-
-    label: str  # e.g. "best_cover", "best_attack_pos"
-    x: float
-    y: float
-    z: float
-    score: float = 0.0
 
 
 class StateUpdatePayload(BaseModel):
@@ -119,19 +105,6 @@ class PromptPayload(BaseModel):
     nearby_furniture: Optional[List[Dict[str, Any]]] = None
 
 
-class ActionFailedPayload(BaseModel):
-    """
-    action_failed 타입의 payload.
-    WHY: Python이 내린 명령이 UE5 물리/충돌/상태 검증에서 실패했을 때 돌아오는 콜백.
-         ref_msg_id를 통해 '어떤 명령'이 실패했는지 추적하여
-         다음 추론 시 동일한 실수를 반복하지 않도록 이력에 기록한다.
-    """
-
-    failed_action_type: str  # 실패한 액션 종류 (e.g., "Move", "Attack")
-    reason: str  # 실패 이유 (e.g., "PathNotFound", "TargetDead")
-    executor_npc_id: str  # 명령을 시도했던 NPC ID
-
-
 class EmergencyReportPayload(BaseModel):
     """
     emergency_report 타입의 payload.
@@ -185,7 +158,7 @@ class MessageEnvelope(BaseModel):
 
     필드 역할:
       msg_id     : 이 메시지의 고유 ID. 요청-응답 추적 및 중복 감지용.
-      ref_msg_id : 이 메시지가 참조하는 이전 메시지 ID. action_failed에서 필수.
+      ref_msg_id : 이 메시지가 참조하는 이전 메시지 ID(예약, 현재 송신 타입 없음).
       auth_token : WebSocket 메시지 수준 인증 토큰. 핸드셰이크 외에도 매 메시지 검증.
       timestamp  : 메시지 생성 시각 (Unix epoch float). Stale 패킷 감지용.
       type       : 메시지 목적 분류 (EEnvelopeType).
@@ -194,7 +167,7 @@ class MessageEnvelope(BaseModel):
 
     protocol_version: int = 1
     msg_id: str
-    ref_msg_id: Optional[str] = None  # action_failed가 아니면 None 가능
+    ref_msg_id: Optional[str] = None
     auth_token: str
     timestamp: float = Field(default_factory=time.time)
     type: EEnvelopeType
@@ -207,10 +180,6 @@ class MessageEnvelope(BaseModel):
     def parse_state_update_payload(self) -> StateUpdatePayload:
         """payload를 StateUpdatePayload로 파싱. type이 state_update일 때만 호출할 것."""
         return StateUpdatePayload(**self.payload)
-
-    def parse_action_failed_payload(self) -> ActionFailedPayload:
-        """payload를 ActionFailedPayload로 파싱. type이 action_failed일 때만 호출할 것."""
-        return ActionFailedPayload(**self.payload)
 
     def parse_emergency_report_payload(self) -> EmergencyReportPayload:
         """payload를 EmergencyReportPayload로 파싱. type이 emergency_report일 때만 호출할 것."""

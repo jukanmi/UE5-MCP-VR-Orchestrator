@@ -7,7 +7,6 @@
 #include "NPC/Struct/NPCActionTypes.h"             // EFacialState
 #include "NPCStateComponent.generated.h"
 
-class ASmartNPCAIController;
 class ASmartNPC;
 
 /**
@@ -109,10 +108,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     void ApplyMovementSpeed();
 
-    // [의도(Why)] NPC가 예상치 못한 위협을 감지할 때, 스스로의 '지각력(Perception)' 스탯에 기반해 즉각 대응할 수 기회를 부여합니다.
-    UFUNCTION(BlueprintCallable, Category = "NPC|Reflex")
-    bool TryReflexAction(int32 Difficulty);
-
     UFUNCTION(BlueprintCallable, Category = "NPC|Stats")
     float ApplyDamage(float DamageAmount, float Multiplier = 1.0f);
 
@@ -198,15 +193,7 @@ public:
 
     // 재계획 응답 수신 시 호출 — plan 저장 + danger·achieved 플래그 리셋.
     UFUNCTION(BlueprintCallable, Category = "NPC|Plan")
-    void SetCurrentPlan(const FNPCPlan& NewPlan)
-    {
-        CurrentPlan = NewPlan;
-        CurrentPlan.bIsValid = true;
-        bDangerReplanPending = false;
-        bPlanAchievedPending = false;
-        TurnsOnCurrentPlan = 0;
-        OnPlanUpdated.Broadcast(CurrentPlan);
-    }
+    void SetCurrentPlan(const FNPCPlan& NewPlan);
 
     /** prompt 를 한 번 보낼 때마다 호출 — 현재 plan 으로 몇 턴을 보냈는지 센다. */
     void NotePlanTurnElapsed() { ++TurnsOnCurrentPlan; }
@@ -241,9 +228,6 @@ protected:
     virtual void BeginPlay() override;
 
 private:
-    // 캐싱: Owner의 AIController에서 Blackboard 접근 시 사용
-    ASmartNPCAIController* GetOwnerAIController() const;
-
     // --- Event Debounce ---
     FTimerHandle EventDebounceTimer;
     TArray<FPerceptionData> LocalEventQueue;

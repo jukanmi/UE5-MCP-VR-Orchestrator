@@ -10,50 +10,6 @@
 class ASmartNPC;
 class FJsonObject;
 
-// NPC 관리를 담당하는 클래스
-UCLASS(BlueprintType)
-class UE5_MCP_VR_API UNPCMap : public UObject
-{
-    GENERATED_BODY()
-
-public:
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void RegisterNPC(const FString& InAgentID, ASmartNPC* InNPC)
-    {
-        // nullptr/빈 ID 등록 차단 — 무효 엔트리는 FindRef 기반 조회 불변식을 깨뜨림
-        if (!InNPC || InAgentID.IsEmpty())
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[NPCMap] RegisterNPC 무시 — null NPC 또는 빈 AgentID (%s)"), *InAgentID);
-            return;
-        }
-        ActiveNPCs.Add(InAgentID, InNPC);
-    };
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void UnregisterNPC(const FString& InAgentID){ ActiveNPCs.Remove(InAgentID); };
-
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    ASmartNPC* GetValidNPC(const FString& AgentID) const{ return ActiveNPCs.FindRef(AgentID); };
-
-    const TMap<FString, ASmartNPC*>& GetActiveNPCs() const { return ActiveNPCs; }
-
-    void DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch);
-
-    /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달.
-     *  RequestGen 은 EQS 요청 세대 번호 — 0 이면 stale 검사 우회(레거시 호환). */
-    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason = TEXT(""), uint32 RequestGen = 0);
-
-    /** 이미 파싱된 JSON에서 ModeActionRequest를 추출하여 NPC들에 분배. */
-    void DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root);
-
-    void OnWebSocketMessageReceived(const FString& JsonMessage);
-
-private:
-    UPROPERTY()
-    TMap<FString, ASmartNPC*> ActiveNPCs;
-};
-
-
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCResponseReceived, const FString&, NPCName, const FString&, Message);
 
 UCLASS(BlueprintType, Blueprintable)
@@ -81,18 +37,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     ASmartNPC* GetNPCById(const FString& AgentID) const;
 
-    /** 등록된 전체 NPC 순회용 (근처 아군 탐색 등). NPCMap 미초기화 시 빈 맵 반환. */
-    const TMap<FString, ASmartNPC*>& GetActiveNPCs() const
-    {
-        static const TMap<FString, ASmartNPC*> Empty;
-        return NPCMap ? NPCMap->GetActiveNPCs() : Empty;
-    }
+    /** 등록된 전체 NPC 순회용 (근처 아군 탐색 등). */
+    const TMap<FString, ASmartNPC*>& GetActiveNPCs() const { return ActiveNPCs; }
 
     // === 취합된 긴급 인지 이벤트 전송 (단일 LLM 채널, Python이 SLM/LLM 자동 라우팅) ===
-    UFUNCTION(BlueprintCallable, Category = "MCP|AI")
-    void SendEventReport(const FString& AgentID, const FString& CombinedPayload);
+    void SendEventReport(const FString& AgentID, const TSharedRef<FJsonObject>& Payload);
 
-    // === 디버그: WebSocket 메시지 직접 주입 ===
+    // === 디버그: ActionBatch JSON 직접 주입(서버 없이 배치 분배 검증) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")
     void OnWebSocketMessageReceived(const FString& JsonMessage);
 
@@ -101,7 +52,7 @@ public:
 
     /** 플레이어 발화를 대상 NPC로 전송 (단순 대화).
      *  PromptPayload(snake_case) 조립 → BuildPrompt → SendEnvelopePromptToLLM.
-     *  응답은 기존 ActionBatch(Dialogue) 경로로 NPC가 처리(TTS 포함). */
+     *  응답은 기존 ActionBatch(Dialogue) 경로로 NPC가 처리. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Dialogue")
     void SendPlayerDialogue(const FString& PlayerID, const FString& TargetNpcId, const FString& Text);
 
@@ -140,11 +91,22 @@ private:
     /** 동시 넉다운 수(트리거형이라 평소 0). */
     int32 ActiveKnockdownCount = 0;
 
+    /** AgentID → NPC. 등록/해제는 RegisterNPC/UnregisterNPC 만. */
     UPROPERTY()
-    UNPCMap* NPCMap;
+    TMap<FString, ASmartNPC*> ActiveNPCs;
 
     UPROPERTY()
     ULLMNetworkClient* LLMClient;
+
+    /** ActionBatch 를 해당 NPC 로 전달. 미등록 AgentID 는 경고 후 스킵. */
+    void DeliverToNPC(const FString& TargetAgentID, const FActionBatch& ActionBatch);
+
+    /** LLM이 선택한 전술 위치 후보 ID를 해당 NPC의 ActionComponent로 전달.
+     *  RequestGen 은 EQS 요청 세대 번호 — 0 이면 stale 검사 우회(레거시 호환). */
+    void DeliverLocationDecision(const FString& AgentID, const FString& ChosenCandidateId, const FString& Reason, uint32 RequestGen);
+
+    /** 이미 파싱된 JSON에서 ModeActionRequest를 추출하여 NPC들에 분배. */
+    void DeliverParsedActionBatches(const TSharedPtr<FJsonObject>& Root);
 
     FTimerHandle StateUpdateTimerHandle;
 

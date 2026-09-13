@@ -14,14 +14,7 @@ NOTE: 현재 Rules 계약은 GameAction(ActionType, Parameters) 기반 — targe
       각 케이스는 대상 액션의 필수 파라미터를 반드시 채워야 한다(Attack→target_id, Dialogue→text).
 """
 
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from app.agents.subgraphs.rules import (
-    _is_target_id_valid,
-    _is_target_loc_in_bounds,
     validate_and_clamp_action,
 )
 from app.schemas.actions import GameAction
@@ -115,39 +108,3 @@ class TestValueClamping:
         )
         assert action is not None
         assert float(action.Parameters["speed"]) <= 600
-
-
-def run_all_tests():
-    """모든 테스트를 실행하고 결과를 출력한다."""
-    test_classes = [TestTargetIdValidation, TestCoordinateValidation, TestValueClamping]
-
-    passed = 0
-    failed = 0
-
-    print("=== Rules Validation 테스트 시작 ===\n")
-
-    for cls in test_classes:
-        print(f"--- {cls.__name__} ---")
-        instance = cls()
-        test_methods = [m for m in dir(instance) if m.startswith("test_")]
-
-        for method_name in test_methods:
-            try:
-                getattr(instance, method_name)()
-                print(f"  ✅ PASS: {method_name}")
-                passed += 1
-            except AssertionError as e:
-                print(f"  ❌ FAIL: {method_name} → {e}")
-                failed += 1
-            except Exception as e:
-                print(f"  ⚠️  ERROR: {method_name} → {e}")
-                failed += 1
-        print()
-
-    print(f"=== 결과: {passed}개 통과 / {failed}개 실패 ===")
-    return failed == 0
-
-
-if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)

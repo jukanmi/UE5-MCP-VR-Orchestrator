@@ -1,6 +1,7 @@
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "Engine/Engine.h"
+#include "Core/Utils/SubsystemUtils.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 
@@ -19,10 +20,7 @@ void UFurnitureManager::Deinitialize()
 
 UFurnitureManager* UFurnitureManager::Get(const UObject* WorldContext)
 {
-    if (!WorldContext) return nullptr;
-    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
-    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
-    return GI ? GI->GetSubsystem<UFurnitureManager>() : nullptr;
+    return SubsystemUtils::GetGameSubsystem<UFurnitureManager>(WorldContext);
 }
 
 void UFurnitureManager::RegisterFurniture(const FString& InFurnitureID, AFurnitureActor* InFurniture)
@@ -67,9 +65,6 @@ AFurnitureActor* UFurnitureManager::FindNearestVacantSitable(const FVector& Loca
     {
         AFurnitureActor* Furniture = Pair.Value;
         if (!IsValid(Furniture) || Furniture->IsOccupied()) continue;
-
-        // 플레이어 착석은 Seat/Bed 만.
-        if (Furniture->FurnitureType != EFurnitureType::Seat && Furniture->FurnitureType != EFurnitureType::Bed) continue;
 
         const float DistSq = FVector::DistSquared2D(Furniture->GetActorLocation(), Location);
         if (DistSq < BestDistSq)

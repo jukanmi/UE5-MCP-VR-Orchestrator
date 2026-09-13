@@ -9,13 +9,11 @@ Audits scenarios_seed_draft.yaml for Speaker (NPC) vs Listener (Player) role con
 
 import yaml
 import os
-import json
 
 YAML_PATH = r'C:\github\UE5_MCP_VR\OmniAgent_VR_System\CognitiveEngine\finetune\data\synth\scenarios_seed_draft.yaml'
 
 def fix_speaker_listener_perspective(item):
     npc = item.get('npc', '')
-    cat = item.get('category', '')
     utt = item.get('utterance', '')
     gold = item.get('gold', {})
     actions = gold.get('actions', [])

@@ -34,6 +34,16 @@ bool AFurnitureActor::TryOccupy(AActor* Occupant)
     return true;
 }
 
+bool AFurnitureActor::TryOccupyAndSeat(AActor* Occupant, bool bYawOnly)
+{
+    if (!TryOccupy(Occupant)) return false;
+
+    const FTransform SeatXf = GetSeatTransform();
+    const FRotator Rot = bYawOnly ? FRotator(0.f, SeatXf.Rotator().Yaw, 0.f) : SeatXf.Rotator();
+    Occupant->SetActorLocationAndRotation(SeatXf.GetLocation(), Rot, false, nullptr, ETeleportType::TeleportPhysics);
+    return true;
+}
+
 void AFurnitureActor::Release(AActor* Occupant)
 {
     // 실점유자만 해제 — 스테일 호출이 새 점유자를 쫓아내지 못하게 가드.
@@ -53,24 +63,18 @@ void AFurnitureActor::BeginPlay()
         FurnitureID = FString::Printf(TEXT("Furniture_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Short));
     }
 
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UFurnitureManager* Manager = UFurnitureManager::Get(this))
     {
-        if (UFurnitureManager* Manager = GameInstance->GetSubsystem<UFurnitureManager>())
-        {
-            Manager->RegisterFurniture(FurnitureID, this);
-        }
+        Manager->RegisterFurniture(FurnitureID, this);
     }
 }
 
 void AFurnitureActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     // 파괴·레벨 언로드 어느 경우에도 매니저 캐시에 댕글링 포인터를 남기지 않는다.
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UFurnitureManager* Manager = UFurnitureManager::Get(this))
     {
-        if (UFurnitureManager* Manager = GameInstance->GetSubsystem<UFurnitureManager>())
-        {
-            Manager->UnregisterFurniture(FurnitureID);
-        }
+        Manager->UnregisterFurniture(FurnitureID);
     }
 
     Super::EndPlay(EndPlayReason);

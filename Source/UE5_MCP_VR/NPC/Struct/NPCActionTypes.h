@@ -46,14 +46,6 @@ enum class EMoveType : uint8
 	Crouch
 };
 
-UENUM(BlueprintType)
-enum class EAttackType : uint8
-{
-	Melee,
-	Range,
-	Magic
-};
-
 /** ENPCRelation: 호감도 임계값으로 분류한 대상과의 관계.
  *  단일 소유는 NPCStateComponent::GetRelation — GetAffinityMultiplier 도 이 값을 배율로 변환할 뿐이다.
  *  Any 는 반사 룰 필터 전용 와일드카드로, GetRelation 이 반환하는 일은 없다. */
@@ -75,6 +67,15 @@ enum class ESenseType : uint8
 	Hearing    UMETA(DisplayName = "Hearing"),
 	Hit        UMETA(DisplayName = "Hit"),
 	Other      UMETA(DisplayName = "Other")
+};
+
+/** EKnockdownPhase: 넉다운 진행 단계. None=평상, Ragdoll=쓰러져 안착 대기, GettingUp=기상 몽타주·블렌드 복귀 중. */
+UENUM(BlueprintType)
+enum class EKnockdownPhase : uint8
+{
+	None,
+	Ragdoll,
+	GettingUp
 };
 
 
@@ -250,7 +251,7 @@ struct FLocationCandidate
 {
     GENERATED_BODY()
 
-    /** "SAFE_0", "OPTIMAL_1" 형태 - LLM 응답에서 식별자로 사용 */
+    /** "SAFE" / "OPTIMAL" / "AGGRESSIVE" — 카테고리명 그대로. LLM 응답의 chosen_id 가 이 값과 대조된다 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Tactical")
     FString CandidateId;
 

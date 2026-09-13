@@ -4,7 +4,6 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
-#include "NPC/Components/NPCAudioStreamComponent.h"
 #include "TimerManager.h"
 #include "UI/Widgets/NPCDialogueWidget.h"
 
@@ -28,10 +27,6 @@ UNPCDialogueUIComponent::UNPCDialogueUIComponent()
 void UNPCDialogueUIComponent::BeginPlay()
 {
     Super::BeginPlay();
-
-    // 자막 싱크 — 자기 소유자의 오디오 컴포넌트 재생 시작/종료를 구독한다.
-    // 여기서 실패해도(오디오 컴포넌트가 늦게 붙는 경우) 표시할 때마다 재시도한다.
-    TryBindAudioSubtitle();
 }
 
 void UNPCDialogueUIComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -59,77 +54,22 @@ FString UNPCDialogueUIComponent::GetSpeakerName() const
     return FString();
 }
 
-void UNPCDialogueUIComponent::TryBindAudioSubtitle()
-{
-    if (bAudioSubtitleBound) return;
-
-    AActor* Owner = GetOwner();
-    if (!Owner) return;
-
-    if (UNPCAudioStreamComponent* Audio = Owner->FindComponentByClass<UNPCAudioStreamComponent>())
-    {
-        Audio->OnAudioStarted.AddDynamic(this, &UNPCDialogueUIComponent::HandleSubtitleAudioStarted);
-        Audio->OnAudioCompleted.AddDynamic(this, &UNPCDialogueUIComponent::HandleSubtitleAudioCompleted);
-        bAudioSubtitleBound = true;
-    }
-}
-
-void UNPCDialogueUIComponent::ShowSubtitle(const FString& Text, bool bWaitForAudio)
+void UNPCDialogueUIComponent::ShowSubtitle(const FString& Text)
 {
     if (Text.IsEmpty()) return;
 
-    // 액션 dialogue 후 같은 발화의 TTS 가 뒤따라 오는 경우 — 같은 텍스트면 깜빡임 없이 이어감.
-    const bool bSameText = (Text == CurrentSubtitleText);
     CurrentSubtitleText = Text;
-
-    // 늦게 첨부된 오디오 컴포넌트 대비 바인딩 재시도.
-    TryBindAudioSubtitle();
-
-    FTimerManager& Timers = GetWorld()->GetTimerManager();
-
-    if (bWaitForAudio)
-    {
-        // 음성 시작(HandleSubtitleAudioStarted)이 표시를 맡는다.
-        bSubtitleWaitingForAudio = true;
-
-        // 같은 텍스트가 폴백으로 이미 보이는 중이면 유지, 아니면 텍스트만 세팅(숨김) 후 Started 대기.
-        ApplySubtitle(bSameText && IsVisible());
-
-        // 안전 상한 — 음성이 시작/완료되지 않아도(에러·끊김) 영구 표시 방지.
-        Timers.SetTimer(SubtitleHideTimer, this, &UNPCDialogueUIComponent::HideSubtitle,
-                        SubtitleMaxDuration, false);
-        return;
-    }
-
-    // 즉시 표시 + 길이 비례 폴백 타이머.
-    bSubtitleWaitingForAudio = false;
     ApplySubtitle(true);
 
+    // 길이 비례 타이머 후 숨김. 재요청은 타이머만 연장한다.
     const float Duration = SubtitleFallbackDuration + SubtitlePerCharDuration * Text.Len();
+    FTimerManager& Timers = GetWorld()->GetTimerManager();
     Timers.ClearTimer(SubtitleHideTimer);
     Timers.SetTimer(SubtitleHideTimer, this, &UNPCDialogueUIComponent::HideSubtitle, Duration, false);
 }
 
-void UNPCDialogueUIComponent::HandleSubtitleAudioStarted()
-{
-    // 음성 재생 시작 — 대기 중이던 자막 표시.
-    if (CurrentSubtitleText.IsEmpty()) return;
-    bSubtitleWaitingForAudio = false;
-    ApplySubtitle(true);
-
-    // Completed 정상 도착 시 숨김. 누락(에러·끊김) 대비 안전 상한 갱신.
-    GetWorld()->GetTimerManager().SetTimer(SubtitleHideTimer, this,
-        &UNPCDialogueUIComponent::HideSubtitle, SubtitleMaxDuration, false);
-}
-
-void UNPCDialogueUIComponent::HandleSubtitleAudioCompleted()
-{
-    HideSubtitle();
-}
-
 void UNPCDialogueUIComponent::HideSubtitle()
 {
-    bSubtitleWaitingForAudio = false;
     GetWorld()->GetTimerManager().ClearTimer(SubtitleHideTimer);
     CurrentSubtitleText.Reset();
     ApplySubtitle(false);

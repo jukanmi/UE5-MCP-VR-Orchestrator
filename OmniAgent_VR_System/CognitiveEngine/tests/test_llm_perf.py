@@ -3,12 +3,9 @@ SPEC_llm_perf 검증 — 웜업 스로틀·실패 삼킴·모델 ID·디바운�
 """
 
 import asyncio
-import threading
 import time
-import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -17,14 +14,15 @@ import pytest
 
 def _make_main_module():
     """main 모듈의 핵심 심볼만 임포트해 테스트 격리."""
-    import importlib, sys
+    import importlib
+    import sys
     if "app.main" in sys.modules:
         return sys.modules["app.main"]
     return importlib.import_module("app.main")
 
 
 def _reset_prewarm(mod):
-    mod._last_core_prewarm = 0.0
+    mod.STATE.last_core_prewarm = 0.0
 
 
 def test_prewarm_calls_http_once():
@@ -37,7 +35,7 @@ def test_prewarm_calls_http_once():
     client_mock.post = post_mock
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
             await mod._prewarm_core_llm()  # 스로틀 — 무시
 
@@ -54,7 +52,7 @@ def test_prewarm_swallows_exception():
     client_mock.post = AsyncMock(side_effect=Exception("connection refused"))
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()  # should not raise
 
     asyncio.run(run())  # 예외 전파 없으면 통과
@@ -75,7 +73,7 @@ def test_prewarm_uses_stage2_model_not_default():
     client_mock.post = fake_post
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
 
     asyncio.run(run())
@@ -101,7 +99,7 @@ def test_prewarm_body_has_no_prompt_key():
     client_mock.post = fake_post
 
     async def run():
-        with patch.object(mod, "_get_ollama_client", return_value=client_mock):
+        with patch.object(mod.llm_factory, "get_ollama_client", return_value=client_mock):
             await mod._prewarm_core_llm()
 
     asyncio.run(run())
@@ -112,7 +110,7 @@ def test_prewarm_body_has_no_prompt_key():
 # memory_manager 디바운스
 # ──────────────────────────────────────────────────────────────────────────────
 
-from app.utils.memory_manager import ConversationMemory, SUMMARIZE_DEBOUNCE_S
+from app.utils.memory_manager import ConversationMemory
 
 
 def _make_memory(tmp_path, agent_id="test_npc") -> ConversationMemory:

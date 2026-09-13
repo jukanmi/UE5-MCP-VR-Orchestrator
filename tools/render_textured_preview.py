@@ -10,7 +10,6 @@ import sys
 
 import numpy as np
 import trimesh
-from PIL import Image
 
 import matplotlib
 

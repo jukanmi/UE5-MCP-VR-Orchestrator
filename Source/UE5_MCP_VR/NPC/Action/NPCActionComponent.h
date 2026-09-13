@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Utils/MovementUtils.h"   // FSavedFriction
 #include "Components/ActorComponent.h"
 #include "Network/MCPJsonUtils.h" // FGameAction, FActionBatch
 #include "NPC/Struct/NPCActionTypes.h" // Enums
@@ -44,7 +45,6 @@ class UNPCInventoryComponent;
 class UInventoryComponent;
 class UAnimMontage;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCDialogue, const FString&, AgentID, const FString&, DialogueText);
 
@@ -58,9 +58,6 @@ public:
 
     // --- Action Events ---
     // Blackboard 제어 결합도를 낮추기 위한 이벤트 (SmartNPCAIController 등이 바인딩하여 사용)
-    UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
-    FOnActionStateChanged OnActionStarted;
-
     UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
     FOnAllActionsStopped OnActionStoppedAll;
 
@@ -235,28 +232,10 @@ protected:
     void BaseLieUp();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSignalAllies(const FString& SignAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseComfort(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseEmote(const FString& EmoteAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseDance(const FString& DanceAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSing(const FString& SingAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseStopCurrentAction();
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    TMap<FString, int32> BaseDetectEntityInRange(float Range, EEntityType EntityType);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
 
     /** 몽타주를 재생했으면 true 반환(완료는 몽타주 종료 콜백이 처리). 재생할 몽타주가 없으면 false(즉시형). */
@@ -305,6 +284,13 @@ private:
 
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
+
+    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸 공통 경로. */
+    void StopTracking();
+
+    /** 이동 공통 전처리 — MaxWalkSpeed 반영, PathFollowing 완료 콜백 바인딩, 비동기 대기 플래그.
+     *  반환된 컨트롤러로 MoveToLocation/MoveToActor 를 발행하고 HandleImmediateMoveResult 로 넘긴다. 컨트롤러 없으면 nullptr. */
+    class AAIController* PrepareMove(EMoveType SpeedType);
 
     // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지) ---
     /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
@@ -463,9 +449,7 @@ public:
     void StartDodgeMove(const FVector& Direction);
     void StopDodgeMove();
     bool bDodgeMoveActive = false;
-    float SavedGroundFriction = 8.f;
-    float SavedBrakingDecelWalking = 2048.f;
-    float SavedBrakingFrictionFactor = 2.f;
+    FSavedFriction SavedDodgeFriction;
 
     /** MaxActionDuration 초과 시 강제 완료(워치독). */
     void HandleActionWatchdog();
@@ -503,7 +487,7 @@ public:
     // [2] Combat Behaviors
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType);
+    void ExecuteAttackAction(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteBlock(AActor* TargetActor);
@@ -656,8 +640,9 @@ private:
     bool DoesReflexRuleMatch(const FReflexRule& Rule, ESenseType Sense, const FString& EventType,
                              ENPCRelation Relation, float BaseDanger, float Distance) const;
 
-    /** 가중 분포 추첨. 후보가 없으면 EAction::Idle 반환. */
-    static EAction PickWeightedReflexAction(const TMap<EAction, float>& Weights);
+    /** 가중 분포 추첨 — 합 구하고 굴려 빼 나간다. 유효 가중치가 없으면 INDEX_NONE,
+     *  부동소수 잔여로 못 고르면 마지막 유효 후보. 반사 룰(TMap)과 전투 셀렉터(TArray)가 같이 쓴다. */
+    static int32 PickWeightedIndex(int32 Num, TFunctionRef<float(int32)> WeightAt);
 
 public:
 

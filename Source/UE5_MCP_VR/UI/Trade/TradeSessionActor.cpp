@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Core/BP/VRPawn.h"
+#include "Core/Utils/EngineShapes.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -15,20 +16,12 @@
 
 namespace
 {
-    UStaticMesh* LoadCube()
-    {
-        return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-    }
-
     // 색이 곧 라벨이다 — 글자를 넣으려면 위젯이 넷 더 필요한데, 초록/빨강이면 설명이 필요 없다.
     void TintMesh(UStaticMeshComponent* Mesh, UObject* Outer, const FLinearColor& Color)
     {
         if (!Mesh) return;
-        if (UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
-                nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial")))
+        if (UMaterialInstanceDynamic* MID = EngineShapes::MakeEmissiveMID(Outer, Color))
         {
-            UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, Outer);
-            MID->SetVectorParameterValue(TEXT("Color"), Color);
             Mesh->SetMaterial(0, MID);
         }
     }
@@ -83,7 +76,7 @@ void ATradeSessionActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    UStaticMesh* Cube = LoadCube();
+    UStaticMesh* Cube = EngineShapes::LoadCube();
     UStaticMeshComponent* Meshes[] = { PlayerPlate, NpcPlate, AcceptButton, CancelButton };
     for (UStaticMeshComponent* Mesh : Meshes)
     {
@@ -108,8 +101,7 @@ bool ATradeSessionActor::InitSession(ASmartNPC* InNpc, APawn* InPlayer,
     GetAmount = FMath::Max(InGetAmount, 0);
 
     UInventoryComponent* NpcInv = InNpc ? InNpc->FindComponentByClass<UInventoryComponent>() : nullptr;
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!NpcInv || !ItemManager) return false;
 
     // NPC 가 내놓을 물건을 지금 인벤토리에서 빼 실물로 만든다. 여기서 빼두지 않으면
@@ -224,8 +216,7 @@ bool ATradeSessionActor::Accept()
     UInventoryComponent* NpcInv = TargetNpc ? TargetNpc->FindComponentByClass<UInventoryComponent>() : nullptr;
     UInventoryComponent* PlayerInv = Player.IsValid() ? Player->FindComponentByClass<UInventoryComponent>() : nullptr;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
+    UItemManager* ItemManager = UItemManager::Get(this);
     if (!NpcInv || !PlayerInv || !ItemManager) return false;
 
     // 요구 수량 검사 — 모자라면 아무것도 옮기지 않고 세션을 유지한다(더 올릴 수 있게).
@@ -310,20 +301,8 @@ void ATradeSessionActor::ReleaseAll()
 
 void ATradeSessionActor::SetItemLocked(ADroppedItemBase* Item, bool bLocked)
 {
-    if (!IsValid(Item) || !Item->ItemMesh) return;
+    if (!IsValid(Item)) return;
 
     Item->bTradeLocked = bLocked;
-
-    if (bLocked)
-    {
-        Item->ItemMesh->SetSimulatePhysics(false);
-        Item->ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
-    else
-    {
-        // 쥐기 해제와 같은 복구 절차 — 프로파일을 다시 지정해야 채널 응답까지 돌아온다.
-        Item->ItemMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
-        Item->ItemMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-        Item->ItemMesh->SetSimulatePhysics(true);
-    }
+    Item->SetPhysicsFrozen(bLocked);
 }

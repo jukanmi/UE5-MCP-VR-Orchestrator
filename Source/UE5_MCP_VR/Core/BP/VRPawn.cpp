@@ -10,6 +10,7 @@
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
+#include "Core/Utils/EngineShapes.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -26,7 +27,6 @@
 #include "NPC/Subsystems/NPCManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
-#include "Core/Components/VoiceInputComponent.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
@@ -100,9 +100,6 @@ AVRPawn::AVRPawn()
     StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
     StimuliSource->RegisterWithPerceptionSystem();
 
-    // 음성 입력 컴포넌트
-    VoiceInput = CreateDefaultSubobject<UVoiceInputComponent>(TEXT("VoiceInput"));
-
     // 인벤토리 컴포넌트
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
@@ -169,14 +166,6 @@ AVRPawn::AVRPawn()
     ItemTooltipComp->SetVisibility(false);
     ItemTooltipComp->SetWidgetClass(UItemTooltipWidget::StaticClass());
 
-    // 마이크 입력 표시 구 — 왼손(음성 입력이 왼손 X버튼)에 붙인다.
-    VoiceLevelOrb = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VoiceLevelOrb"));
-    VoiceLevelOrb->SetupAttachment(MotionControllerLeft);
-    VoiceLevelOrb->SetRelativeLocation(VoiceOrbLocation);
-    VoiceLevelOrb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    VoiceLevelOrb->SetCastShadow(false);
-    VoiceLevelOrb->SetVisibility(false);
-
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
     bUseControllerRotationPitch = false;
@@ -199,55 +188,23 @@ void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 음성 입력 — 대상/플레이어 공급자 + transcript 콜백 바인딩
-    if (VoiceInput)
-    {
-        VoiceInput->ResolveTargetNpc = [this]()
-        {
-            if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
-            return CurrentTargetNPCID;
-        };
-        VoiceInput->ResolvePlayerId = [this]() { return GetName(); };
-        VoiceInput->OnTranscriptReady.BindUObject(this, &AVRPawn::HandleVoiceTranscript);
-    }
-
     // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
     // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
     if (PointerBeam && PointerDot)
     {
-        UStaticMesh* Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-        UStaticMesh* Sphere   = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-        UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
+        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
 
-        if (Cylinder) PointerBeam->SetStaticMesh(Cylinder);
-        if (Sphere)   PointerDot->SetStaticMesh(Sphere);
-
-        if (Emissive)
+        // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
+        PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
+        if (PointerMID)
         {
-            PointerMID = UMaterialInstanceDynamic::Create(Emissive, this);
             PointerBeam->SetMaterial(0, PointerMID);
             PointerDot->SetMaterial(0, PointerMID);
-            // EmissiveMeshMaterial 의 벡터 파라미터는 "Color" 하나뿐(2026-09-05 에디터 실측).
-            PointerMID->SetVectorParameterValue(TEXT("Color"), PointerColor);
         }
 
         // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
         PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
-    }
-
-    // 마이크 표시 구 — 포인터와 같은 엔진 에셋을 쓰되 색은 따로 간다(포인터 색이 같이 바뀌면 안 된다).
-    if (VoiceLevelOrb)
-    {
-        if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
-        {
-            VoiceLevelOrb->SetStaticMesh(Sphere);
-        }
-        if (UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial")))
-        {
-            VoiceOrbMID = UMaterialInstanceDynamic::Create(Emissive, this);
-            VoiceOrbMID->SetVectorParameterValue(TEXT("Color"), VoiceOrbColor);
-            VoiceLevelOrb->SetMaterial(0, VoiceOrbMID);
-        }
     }
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
@@ -329,7 +286,6 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateHUDPanelGaze(DeltaTime);
     UpdatePointerVisual();
     UpdateItemTooltip();
-    UpdateVoiceIndicator();
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
 
@@ -573,13 +529,6 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
             EIC->BindAction(IA_Attack, ETriggerEvent::Canceled,  this, &AVRPawn::OnAttackReleased);
         }
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
-        if (IA_VoiceInput)
-        {
-            // Push-to-talk: 누름 시작 → 녹음, 뗌 → 종료
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Started,   this, &AVRPawn::OnVoiceStart);
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Completed, this, &AVRPawn::OnVoiceStop);
-            EIC->BindAction(IA_VoiceInput, ETriggerEvent::Canceled,  this, &AVRPawn::OnVoiceStop);
-        }
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
@@ -738,21 +687,13 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     }
     TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 
-    // 마찰·제동을 0 으로 두면 Launch 속도가 감쇠 없이 유지돼 등속 이동이 된다.
-    // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
-    SavedGroundFriction        = MC->GroundFriction;
-    SavedBrakingDecelWalking   = MC->BrakingDecelerationWalking;
-    SavedBrakingFrictionFactor = MC->BrakingFrictionFactor;
-    MC->GroundFriction             = 0.f;
-    MC->BrakingDecelerationWalking = 0.f;
-    MC->BrakingFrictionFactor      = 0.f;
-
     bDashActive = true;
     DashTimeRemaining = DashDuration;
     LastDashTime = Now;
 
+    // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
     const float DashSpeed = DashDistance / FMath::Max(KINDA_SMALL_NUMBER, DashDuration);
-    LaunchCharacter(Dir * DashSpeed, true, false);   // Z 미오버라이드 — 중력 유지
+    MovementUtils::BeginFrictionlessLaunch(*this, Dir * DashSpeed, SavedDashFriction);
 }
 
 void AVRPawn::UpdateDash(float DeltaTime)
@@ -772,16 +713,10 @@ void AVRPawn::StopDash()
     bDashActive = false;
     DashTimeRemaining = 0.f;
 
-    UCharacterMovementComponent* MC = GetCharacterMovement();
-    if (!MC) return;
-
-    MC->GroundFriction             = SavedGroundFriction;
-    MC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-    MC->BrakingFrictionFactor      = SavedBrakingFrictionFactor;
-
-    // 마찰 원복만으론 몇 프레임 더 미끄러진다 — 수평 잔류 속도를 즉시 제거(낙하 Z 는 유지).
-    MC->Velocity.X = 0.f;
-    MC->Velocity.Y = 0.f;
+    if (UCharacterMovementComponent* MC = GetCharacterMovement())
+    {
+        MovementUtils::EndFrictionlessLaunch(*MC, SavedDashFriction);
+    }
 }
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
@@ -1101,19 +1036,23 @@ bool AVRPawn::TryPickupNearby()
 {
     if (!Inventory) return false;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-    if (!ItemManager) return false;
+    // HUD 갱신은 Inventory->OnInventoryChanged → PlayerHUDWidget 델리게이트가 자동 처리.
+    ADroppedItemBase* Nearest = FindNearestItem(GetActorLocation(), PickupInteractRange);
+    return Nearest && Nearest->TryPickupInto(Inventory);
+}
 
-    // 등록된 월드 아이템 풀에서 반경 내 후보 조회 — NPC ExecutePickUp 과 동일 원천.
-    const FVector Origin = GetActorLocation();
+ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) const
+{
+    UItemManager* ItemManager = UItemManager::Get(this);
+    if (!ItemManager) return nullptr;
+
     ADroppedItemBase* Nearest = nullptr;
     float NearestDistSq = TNumericLimits<float>::Max();
-
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(Origin, PickupInteractRange))
+    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(Origin, Radius))
     {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped)) continue;
+        // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
+        // 손에 쥔 것이 겹쳐 복사가 된다.
+        if (Dropped->bTradeLocked) continue;
 
         const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
         if (DistSq < NearestDistSq)
@@ -1122,29 +1061,7 @@ bool AVRPawn::TryPickupNearby()
             Nearest = Dropped;
         }
     }
-    if (!Nearest) return false;
-
-    // TemplateID → 마스터 DataTable 원본 데이터. 미등록 ID 면 줍지 않고 남겨둔다.
-    FItemData Data;
-    if (!ItemManager->GetItemDataByID(Nearest->ItemData.ItemTemplateID, Data))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 픽업 실패 — 아이템 데이터 없음: %s"),
-            *Nearest->ItemData.ItemTemplateID);
-        return false;
-    }
-
-    // 무게/슬롯 초과 시 실패 — 월드 액터를 남겨 다시 시도할 수 있게 한다.
-    if (!Inventory->AddItem(Data, Nearest->Amount))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업 실패(공간·무게 부족): %s"), *Data.ItemID);
-        return false;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 픽업: %s x%d"), *Data.ItemID, Nearest->Amount);
-    // ConsumeItem 이 Destroy → EndPlay 에서 ItemManager 등록 해제까지 처리.
-    Nearest->ConsumeItem();
-    // HUD 갱신은 Inventory->OnInventoryChanged → PlayerHUDWidget 델리게이트가 자동 처리.
-    return true;
+    return Nearest;
 }
 
 void AVRPawn::DumpInventoryHUD()
@@ -1303,13 +1220,9 @@ bool AVRPawn::TrySitOnNearbyFurniture()
     if (!Mgr) return false;
 
     // 반경 내 최근접 빈 착석 가구(Seat/Bed) — 탐색은 매니저 공용 헬퍼.
+    // Yaw 만 — 카메라 높이는 불변(멀미 안전).
     AFurnitureActor* Nearest = Mgr->FindNearestVacantSitable(GetActorLocation(), FurnitureInteractRange);
-    if (!Nearest || !Nearest->TryOccupy(this)) return false;
-
-    // SeatPoint 스냅 — Yaw 만 적용(VR 캡슐 기울임 방지). 카메라 높이는 불변(멀미 안전).
-    const FTransform SeatXf = Nearest->GetSeatTransform();
-    SetActorLocationAndRotation(SeatXf.GetLocation(), FRotator(0.f, SeatXf.Rotator().Yaw, 0.f),
-        false, nullptr, ETeleportType::TeleportPhysics);
+    if (!Nearest || !Nearest->TryOccupyAndSeat(this, /*bYawOnly=*/true)) return false;
     SeatedFurniture = Nearest;
 
     UE_LOG(LogTemp, Log, TEXT("[VRPawn] 착석: %s"), *Nearest->FurnitureID);
@@ -1389,32 +1302,8 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
     if (!HandController) return nullptr;
 
-    UGameInstance* GI = GetGameInstance();
-    UItemManager* ItemManager = GI ? GI->GetSubsystem<UItemManager>() : nullptr;
-    if (!ItemManager) return nullptr;
-
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    const FVector HandLoc = HandController->GetComponentLocation();
-
-    ADroppedItemBase* Nearest = nullptr;
-    float NearestDistSq = TNumericLimits<float>::Max();
-    for (const FDroppedItemData& Candidate : ItemManager->GetItemsInRange(HandLoc, Radius))
-    {
-        ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(Candidate.ItemActor);
-        if (!IsValid(Dropped) || !Dropped->ItemMesh) continue;
-
-        // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
-        // 손에 쥔 것이 겹쳐 복사가 된다.
-        if (Dropped->bTradeLocked) continue;
-
-        const float DistSq = FVector::DistSquared(HandLoc, Dropped->GetActorLocation());
-        if (DistSq < NearestDistSq)
-        {
-            NearestDistSq = DistSq;
-            Nearest = Dropped;
-        }
-    }
-    return Nearest;
+    return FindNearestItem(HandController->GetComponentLocation(), Radius);
 }
 
 void AVRPawn::UpdateItemTooltip()
@@ -1469,26 +1358,6 @@ void AVRPawn::UpdateItemTooltip()
     }
 
     if (!ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(true);
-}
-
-void AVRPawn::UpdateVoiceIndicator()
-{
-    if (!VoiceLevelOrb) return;
-
-    const bool bTalking = VoiceInput && VoiceInput->IsTalking();
-    if (!bTalking)
-    {
-        if (VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(false);
-        return;
-    }
-
-    // 무음이어도 구는 보여야 한다 — "녹음 중"이라는 사실 자체가 표시다.
-    // 엔진 기본 구는 지름 100cm 라 실치수/100 이 스케일.
-    const float Level = VoiceInput->GetInputLevel();
-    const float Diameter = VoiceOrbBaseSize * (1.f + 2.f * Level);
-    VoiceLevelOrb->SetRelativeScale3D(FVector(Diameter / 100.f));
-
-    if (!VoiceLevelOrb->IsVisible()) VoiceLevelOrb->SetVisibility(true);
 }
 
 void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
@@ -1617,31 +1486,6 @@ FVector AVRPawn::GetHandLocation(bool bRightHand) const
     return HandController ? HandController->GetComponentLocation() : GetActorLocation();
 }
 
-void AVRPawn::SendNPCDialogue(const FString& Text)
-{
-    if (CurrentTargetNPCID.IsEmpty())
-    {
-        DetectNearbyNPC();
-    }
-    if (CurrentTargetNPCID.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SendNPCDialogue 실패 — 대상 NPC 없음"));
-        return;
-    }
-    // player_id = actor 이름 — affinity DB 키와 일치
-    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
-}
-
-void AVRPawn::OnVoiceStart(const FInputActionValue& Value)
-{
-    if (VoiceInput) VoiceInput->StartTalking();
-}
-
-void AVRPawn::OnVoiceStop(const FInputActionValue& Value)
-{
-    if (VoiceInput) VoiceInput->StopTalking();
-}
-
 void AVRPawn::OnChatKey()
 {
     if (HUDWidget) HUDWidget->FocusChatInput();
@@ -1649,22 +1493,14 @@ void AVRPawn::OnChatKey()
 
 void AVRPawn::SayToNpc(const FString& Text)
 {
-    // 타겟 미지정이면 근접 탐지 후 transcript 경로 재사용 — 음성/채팅이 같은 전송 함수를 탄다.
+    // 타겟 미지정이면 근접 탐지. player_id = actor 이름 — affinity DB 키와 일치.
     if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
-    HandleVoiceTranscript(GetName(), FString(), Text);
-}
-
-void AVRPawn::HandleVoiceTranscript(const FString& PlayerId, const FString& TargetNpc, const FString& Transcript)
-{
-    // ASR transcript → 기존 단순 대화 경로 재사용. 대상은 ASR 가 echo 한 값 우선,
-    // 없으면 현재 타겟. 스텁 transcript("[ASR stub] …")도 그대로 흘려보내 end-to-end 검증.
-    const FString Target = TargetNpc.IsEmpty() ? CurrentTargetNPCID : TargetNpc;
-    if (Target.IsEmpty() || Transcript.IsEmpty())
+    if (CurrentTargetNPCID.IsEmpty() || Text.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] Voice transcript 폐기 — target/transcript 비어있음"));
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SayToNpc 폐기 — target/text 비어있음"));
         return;
     }
-    PlayerInteractionUtils::SendDialogueToNpc(this, PlayerId.IsEmpty() ? GetName() : PlayerId, Target, Transcript);
+    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
 }
 
 void AVRPawn::LogIKMetrics()
@@ -1765,9 +1601,7 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
 
 void AVRPawn::SaveCheckpoint(const FVector& Location, const FRotator& Rotation)
 {
-    PawnDeathUtils::SaveCheckpoint(CurrentStats,
-        Location, Rotation, bHasCheckpoint, CheckpointLocation,
-        CheckpointRotation, CheckpointHP, TEXT("VRPawn"));
+    PawnDeathUtils::SaveCheckpoint(CurrentStats, Location, Rotation, Checkpoint, TEXT("VRPawn"));
 }
 
 // ============================================================================
@@ -1794,8 +1628,7 @@ void AVRPawn::HandleDeath()
 
 void AVRPawn::Respawn()
 {
-    PawnDeathUtils::Respawn(this, CurrentStats, bHasCheckpoint, CheckpointLocation,
-        CheckpointRotation, CheckpointHP, GameplayTags, TEXT("VRPawn"));
+    PawnDeathUtils::Respawn(this, CurrentStats, Checkpoint, GameplayTags, TEXT("VRPawn"));
 
     // 텔레포트 전 손 위치가 남아 있으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다.
     // 근거리 리스폰은 9000cm/s 글리치 가드에도 걸리지 않아 허위 타격이 나간다.

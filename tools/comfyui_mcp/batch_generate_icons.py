@@ -9,7 +9,6 @@
 
 import asyncio
 import csv
-import json
 import os
 import random
 import sys

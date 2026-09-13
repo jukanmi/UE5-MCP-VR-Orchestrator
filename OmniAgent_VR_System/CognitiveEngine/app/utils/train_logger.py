@@ -8,11 +8,14 @@
 핫패스 보호: 호출측이 spawn_background(asyncio.to_thread(...)) 로 fire-and-forget —
 여기 함수들은 동기 append 만 담당 (memory_manager._save_to_file 과 동일 관례).
 """
+import logging
 import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+logger = logging.getLogger(__name__)
 LOG_DIR = Path(__file__).parent.parent / "data" / "train_logs"
 
 _lock = threading.Lock()
@@ -30,7 +33,7 @@ def _append(record: dict) -> None:
             with open(path, "a", encoding="utf-8") as fp:
                 fp.write(line + "\n")
     except Exception as e:  # noqa: BLE001
-        print(f"[TrainLogger] 기록 실패(무시): {e}")
+        logger.warning(f"[TrainLogger] 기록 실패(무시): {e}")
 
 
 def log_llm_call(

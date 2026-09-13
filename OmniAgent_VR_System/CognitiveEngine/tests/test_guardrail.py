@@ -6,11 +6,6 @@ Purpose: Interface Input Agent의 Prompt Guardrail 유닛 테스트.
   - 악의적 입력(Jailbreak 패턴) → has_error=True 반환
   - 정상 입력 → has_error 없음(False), natural_context 생성
 """
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from app.agents.interface_input import _check_prompt_injection
 
 
@@ -59,33 +54,3 @@ class TestPromptGuardrail:
     def test_empty_input(self):
         is_injected, _ = _check_prompt_injection("")
         assert not is_injected, "빈 입력은 통과해야 함"
-
-
-def run_all_tests():
-    """모든 테스트를 실행하고 결과를 출력한다."""
-    test = TestPromptGuardrail()
-    test_methods = [m for m in dir(test) if m.startswith("test_")]
-
-    passed = 0
-    failed = 0
-
-    print("=== Guardrail 테스트 시작 ===\n")
-    for method_name in test_methods:
-        try:
-            getattr(test, method_name)()
-            print(f"✅ PASS: {method_name}")
-            passed += 1
-        except AssertionError as e:
-            print(f"❌ FAIL: {method_name} → {e}")
-            failed += 1
-        except Exception as e:
-            print(f"⚠️  ERROR: {method_name} → {e}")
-            failed += 1
-
-    print(f"\n=== 결과: {passed}개 통과 / {failed}개 실패 ===")
-    return failed == 0
-
-
-if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)

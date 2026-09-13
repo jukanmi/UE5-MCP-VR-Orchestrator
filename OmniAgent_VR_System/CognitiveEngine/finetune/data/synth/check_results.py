@@ -1,4 +1,5 @@
-import yaml, collections
+import yaml
+import collections
 
 data = yaml.safe_load(open('generated/scenarios.yaml', encoding='utf-8'))
 ac = collections.Counter()
