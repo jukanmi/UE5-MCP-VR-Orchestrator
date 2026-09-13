@@ -8,8 +8,6 @@ environments, and categories.
 
 import os
 import yaml
-import json
-import random
 
 SYNTH_DIR = r'C:\github\UE5_MCP_VR\OmniAgent_VR_System\CognitiveEngine\finetune\data\synth'
 

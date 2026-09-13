@@ -18,11 +18,9 @@ WHY (설계 의도):
 import hmac
 import logging
 import os
-import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from .schemas.envelope import MessageEnvelope
 
 logger = logging.getLogger(__name__)
 

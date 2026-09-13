@@ -16,7 +16,6 @@ import re
 import random
 import argparse
 import collections
-import urllib.request
 import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,29 +91,28 @@ def load_parquet_lorebook_scenarios() -> list:
     for idx, row in df.iterrows():
         c_name = str(row.get("Character Name", f"NPC_{idx}"))
         c_bio = str(row.get("Character Bio", ""))
-        c_loc = str(row.get("Location Description", ""))
         sys_prompt = str(row.get("System Prompt", ""))
 
         bio_lower = c_bio.lower()
         furn_id, furn_type = "Chair_01", "Chair"
         if any(w in bio_lower for w in ["combat", "bounty", "fighter", "battle", "warrior", "vampire", "hunter"]):
-            cat, mode, facial = "Combat", "Combat", "Angry"
+            mode, facial = "Combat", "Angry"
             actions = [{"type": "Attack", "target": "Enemy"}]
         elif any(w in bio_lower for w in ["scholar", "magic", "mystic", "investigate", "secret"]):
-            cat, mode, facial = "Investigation", "Investigation", "Surprised"
+            mode, facial = "Investigation", "Surprised"
             actions = [{"type": "Investigate", "loc": "100,200,0"}]
         elif any(w in bio_lower for w in ["merchant", "trader", "shop", "gold", "coin"]):
-            cat, mode, facial = "Task", "Task", "Happy"
+            mode, facial = "Task", "Happy"
             actions = [{"type": "GiveItem", "target": "Player", "item": "TradeItem"}]
         elif any(w in bio_lower for w in ["sleep", "rest", "inn", "bed", "weary", "drowsy"]):
-            cat, mode, facial = "Lifestyle", "Lifestyle", "Tired"
+            mode, facial = "Lifestyle", "Tired"
             actions = [{"type": "Sleep", "target": "Bed_01"}]
             furn_id, furn_type = "Bed_01", "Bed"
         elif any(w in bio_lower for w in ["tavern", "chair", "seat", "sit"]):
-            cat, mode, facial = "Lifestyle", "Lifestyle", "Neutral"
+            mode, facial = "Lifestyle", "Neutral"
             actions = [{"type": "Sit", "target": "Chair_01"}]
         else:
-            cat, mode, facial = "Social", "Social", "Happy"
+            mode, facial = "Social", "Happy"
             actions = [{"type": "Comfort", "target": "Player"}]
 
         scenario = {
@@ -170,47 +168,31 @@ def is_parrot(speech: str, utterance: str) -> bool:
 
 
 def teacher_speech(persona: dict, seed: dict, actions: list, timeout=20) -> dict | None:
-    """Ollama teacher call with fallback offline template generation if Ollama fails/times out"""
-    acts = "; ".join(f"{a['type']}({a.get('target') or a.get('item') or a.get('loc') or ''})" for a in actions) or "없음(대화만)"
+    """speech_hint 가 자연스러운 한국어면 그대로, 아니면 액션별 오프라인 템플릿 (Ollama 호출 제거됨)"""
     hint = seed.get("gold", {}).get("speech_hint", "")
-    utterance = seed.get("utterance", "")
 
     # If hint exists and is already natural Korean speech, we can use it directly
     if hint and len(hint) >= 5 and not re.search(r"[a-zA-Z]{5,}", hint):
         return {"speech": hint, "tone": "calmly"}
 
-    user = (
-        f"NPC: {persona['name']} ({persona.get('role','')})\n"
-        f"말투 예시:\n{_format_speech_style(persona.get('speech_style'))}\n"
-        f"플레이어 발화: \"{utterance}\"\n"
-        f"수행 액션: {acts}\n"
-        + (f"대사 방향: {hint}\n" if hint else "")
-        + "이 순간의 NPC 대사를 써라."
-    )
-    messages = [{"role": "system", "content": SPEECH_SYSTEM}, {"role": "user", "content": user}]
-
-    # Bypass Ollama entirely for offline generation
-    pass
-
     # High quality fallback template when offline or Ollama times out
-    name = persona.get("name", "NPC")
     action_type = actions[0]["type"] if actions else "Dialogue"
     fallback_templates = {
-        "Attack": f"어이 거기! 감히 내 앞에서 무기를 드러내다니, 그냥 두고 보지 않겠다!",
-        "Block": f"방심하지 마라! 방패로 막아내고 신속히 전열을 가다듬는다.",
-        "Dodge": f"조심해라, 공격을 가볍게 피하고 거리를 벌린다!",
-        "Flee": f"위험하군! 일단 여기서 빠져나가 안전한 곳으로 퇴각하자.",
-        "Investigate": f"주변 기운이 심상치 않은데... 이 주변을 꼼꼼히 조사를 해보겠네.",
-        "GiveItem": f"여기 자네에게 도움이 될 물품일세. 잘 활용하도록 하게.",
-        "UseItem": f"잠시만 기다려주게. 소지품을 챙겨 신속히 사용하도록 하겠네.",
-        "Sit": f"휴, 피로가 몰려오는군. 잠시 의자에 앉아서 마음을 가다듬겠네.",
-        "Sleep": f"몸이 매우 무겁군요... 잠시 침대에 누워 휴식을 취하겠습니다.",
-        "Comfort": f"걱정하지 말게. 지나간 일은 잊고 용기를 내어 앞으로 나아가세.",
-        "Follow": f"좋습니다. 내 바로 당신의 뒤를 따라가며 사방을 경계하겠소.",
-        "TurnTo": f"음? 나를 부른 것인가? 시선을 돌려 상대를 응시하지.",
-        "Trade": f"반갑네! 내가 가진 물품들과 가치 있는 거래를 시작해보겠나?",
+        "Attack": "어이 거기! 감히 내 앞에서 무기를 드러내다니, 그냥 두고 보지 않겠다!",
+        "Block": "방심하지 마라! 방패로 막아내고 신속히 전열을 가다듬는다.",
+        "Dodge": "조심해라, 공격을 가볍게 피하고 거리를 벌린다!",
+        "Flee": "위험하군! 일단 여기서 빠져나가 안전한 곳으로 퇴각하자.",
+        "Investigate": "주변 기운이 심상치 않은데... 이 주변을 꼼꼼히 조사를 해보겠네.",
+        "GiveItem": "여기 자네에게 도움이 될 물품일세. 잘 활용하도록 하게.",
+        "UseItem": "잠시만 기다려주게. 소지품을 챙겨 신속히 사용하도록 하겠네.",
+        "Sit": "휴, 피로가 몰려오는군. 잠시 의자에 앉아서 마음을 가다듬겠네.",
+        "Sleep": "몸이 매우 무겁군요... 잠시 침대에 누워 휴식을 취하겠습니다.",
+        "Comfort": "걱정하지 말게. 지나간 일은 잊고 용기를 내어 앞으로 나아가세.",
+        "Follow": "좋습니다. 내 바로 당신의 뒤를 따라가며 사방을 경계하겠소.",
+        "TurnTo": "음? 나를 부른 것인가? 시선을 돌려 상대를 응시하지.",
+        "Trade": "반갑네! 내가 가진 물품들과 가치 있는 거래를 시작해보겠나?",
     }
-    sp = fallback_templates.get(action_type, f"알겠네. 지시한 대로 신속하게 작업을 진행하도록 하겠네.")
+    sp = fallback_templates.get(action_type, "알겠네. 지시한 대로 신속하게 작업을 진행하도록 하겠네.")
     return {"speech": sp, "tone": "calmly"}
 
 

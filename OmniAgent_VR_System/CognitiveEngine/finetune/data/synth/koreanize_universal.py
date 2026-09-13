@@ -9,7 +9,6 @@ import os
 import yaml
 import json
 import urllib.request
-import re
 
 SYNTH_DIR = r'C:\github\UE5_MCP_VR\OmniAgent_VR_System\CognitiveEngine\finetune\data\synth'
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -58,16 +57,6 @@ def process_scenarios(limit=10):
         
     print(f"Processing Stage 1 Scenarios (limit={limit})...")
     golden = []
-    
-    schema = {
-        "type": "object",
-        "properties": {
-            "utterance_ko": {"type": "string", "description": "자연스러운 한국어 대사"},
-            "location_ko": {"type": "string", "description": "장소 묘사 한국어"},
-            "persona_ko": {"type": "string", "description": "직업과 성격 요약 한국어"}
-        },
-        "required": ["utterance_ko", "location_ko", "persona_ko"]
-    }
     
     # We will simply mock the LLM translation for speed if the LLM is not available.
     # In a real run, this would loop over raw_data.

@@ -29,7 +29,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-from typing import TypedDict, Annotated, List, Optional, Dict, Any
+from typing import TypedDict, List, Optional, Dict, Any
 from ..schemas.vr_context import GesPrompt
 from ..schemas.actions import ActionBatch, DialogueResponse
 

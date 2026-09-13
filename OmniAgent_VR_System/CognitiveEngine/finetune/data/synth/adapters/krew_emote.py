@@ -7,7 +7,10 @@
 
 지문→Emote 매핑은 키워드 규칙 — 미매칭 지문은 raw 로 남겨 후속 검토.
 """
-import json, os, re, collections
+import json
+import os
+import re
+import collections
 import pandas as pd
 
 # 지문 키워드 → (Emote 스타일, FacialState) — C++ emote 어휘 확정 전 임시 스타일명

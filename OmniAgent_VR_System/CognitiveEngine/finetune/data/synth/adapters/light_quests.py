@@ -7,7 +7,11 @@ timeline 동사를 EAction 으로 매핑 → Stage2 goal+steps seed.
 character 는 직업 키워드로 우리 5 NPC(Elara/James/Skadi/Moca/Guard) 리맵.
 goal/steps 영문 유지 — 한국어화는 koreanize_stage2.py(teacher)가 후단 처리.
 """
-import json, glob, os, re, collections
+import json
+import glob
+import os
+import re
+import collections
 
 # LIGHT timeline 동사 → (EAction, 기본슬롯). 슬롯은 graph 매칭이 우선, 미매칭 시 기본슬롯.
 VERB_MAP = {

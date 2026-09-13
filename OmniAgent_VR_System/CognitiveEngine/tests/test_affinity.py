@@ -1,6 +1,5 @@
 import asyncio
 import json
-import httpx
 import websockets
 
 

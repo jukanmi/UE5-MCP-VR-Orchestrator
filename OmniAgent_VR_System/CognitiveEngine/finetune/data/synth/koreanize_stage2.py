@@ -6,7 +6,12 @@ teacher 가 goal/steps 를 자연스러운 한국어 plan 으로 재작성 —
 PLAN_SYSTEM_PROMPT 검수 기준(구체적 goal, 실행 가능한 2~4 steps) 준수.
 출력: golden_plan_seed_light.yaml (사람 검수용 초안 — golden_plan_seed.yaml 과 별도 파일).
 """
-import json, os, re, random, argparse, urllib.request
+import json
+import os
+import re
+import random
+import argparse
+import urllib.request
 
 OLLAMA = "http://localhost:11434/api/chat"
 MODEL = "gemma4-12b"  # llm_factory.py MODELS["gemma4"] 와 동일 태그

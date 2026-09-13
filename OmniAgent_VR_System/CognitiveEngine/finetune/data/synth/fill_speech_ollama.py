@@ -13,7 +13,6 @@ import argparse
 import json
 import os
 import re
-import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 

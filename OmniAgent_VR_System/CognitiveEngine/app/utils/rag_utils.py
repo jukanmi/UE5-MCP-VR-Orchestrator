@@ -6,7 +6,7 @@ Each NPC has their own vector store for personalized context retrieval.
 
 import logging
 import os
-from typing import Optional, List
+from typing import Optional
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS

@@ -15,7 +15,6 @@ WHY: main.py 리팩토링으로 미들웨어가 분리되었으므로,
   [8] _process_message state_update → "cached" 응답 확인 (통합)
 """
 
-import sys
 import os
 import time
 import json
@@ -27,8 +26,6 @@ os.environ["WS_AUTH_TOKEN"] = "test-token-for-unit-test"
 from app.schemas.envelope import (
     MessageEnvelope,
     EEnvelopeType,
-    StateUpdatePayload,
-    PromptPayload,
 )
 from app.middleware import validate_auth_token, is_stale_packet
 

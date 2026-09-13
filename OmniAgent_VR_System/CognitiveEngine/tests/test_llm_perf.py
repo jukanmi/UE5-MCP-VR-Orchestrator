@@ -3,12 +3,9 @@ SPEC_llm_perf 검증 — 웜업 스로틀·실패 삼킴·모델 ID·디바운�
 """
 
 import asyncio
-import threading
 import time
-import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -17,7 +14,8 @@ import pytest
 
 def _make_main_module():
     """main 모듈의 핵심 심볼만 임포트해 테스트 격리."""
-    import importlib, sys
+    import importlib
+    import sys
     if "app.main" in sys.modules:
         return sys.modules["app.main"]
     return importlib.import_module("app.main")
@@ -112,7 +110,7 @@ def test_prewarm_body_has_no_prompt_key():
 # memory_manager 디바운스
 # ──────────────────────────────────────────────────────────────────────────────
 
-from app.utils.memory_manager import ConversationMemory, SUMMARIZE_DEBOUNCE_S
+from app.utils.memory_manager import ConversationMemory
 
 
 def _make_memory(tmp_path, agent_id="test_npc") -> ConversationMemory:
