@@ -1,4 +1,4 @@
-"""시나리오 NPC 콘텐츠를 런타임 위치로 심는다 — `python -m app.story.seed [--no-index]`.
+"""시나리오 NPC 콘텐츠를 런타임 위치로 심는다 — `python -m app.story.seed [--no-index] [--affinity-only]`.
 
 personas/·knowledge/ 는 gitignore(런타임 데이터)라 시나리오 페르소나·지식의 원본은
 app/story/content/npcs/ 에 두고, 이 스크립트가 복사 + FAISS 재빌드한다. 기존 페르소나·지식 .md 는 덮어쓴다(conversation_memory.json 은 보존).
@@ -30,6 +30,9 @@ PERSONAS_DIR = Path("app/agents/personas/generic")
 PLAYER_KEY = "BP_VRPawn_C_0"
 ALLIES = ["Elara", "James", "Skadi", "Moca", "Guard"]
 BOSSES = ["Commander_Vorg", "DemonLord"]  # main.yaml boss_id 와 일치
+# 포로 연출: Elara 는 전초기지 우리 안에 갇혀 있고 Vorg 는 그녀를 방치한다. Hostile 로 두면 레벨 시작 즉시
+# 우리 안에서 교전이 붙어 플레이어 도착 전에 결판난다(시야 30m 안). 중립(0) = 시야 danger 0.3 → 무교전.
+CAPTIVE_PAIRS = {("Commander_Vorg", "Elara")}
 
 
 async def seed_affinity() -> None:
@@ -37,8 +40,9 @@ async def seed_affinity() -> None:
     for boss in BOSSES:
         await db_manager.set_affinity_direct(boss, PLAYER_KEY, -100, "story_seed")
         for ally in ALLIES:
-            await db_manager.set_affinity_direct(boss, ally, -100, "story_seed")
-            await db_manager.set_affinity_direct(ally, boss, -100, "story_seed")
+            score = 0 if (boss, ally) in CAPTIVE_PAIRS else -100
+            await db_manager.set_affinity_direct(boss, ally, score, "story_seed")
+            await db_manager.set_affinity_direct(ally, boss, score, "story_seed")
     for ally in ALLIES:
         await db_manager.set_affinity_direct(ally, PLAYER_KEY, 20, "story_seed")
     print(f"[Seed] affinity: 보스 {BOSSES} ↔ 플레이어/아군 Hostile, 아군→플레이어 20")
@@ -71,5 +75,6 @@ def seed(index: bool = True) -> list[str]:
 
 
 if __name__ == "__main__":
-    seed(index="--no-index" not in sys.argv)
+    if "--affinity-only" not in sys.argv:
+        seed(index="--no-index" not in sys.argv)
     asyncio.run(seed_affinity())
