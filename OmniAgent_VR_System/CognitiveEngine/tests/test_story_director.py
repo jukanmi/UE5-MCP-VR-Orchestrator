@@ -110,6 +110,17 @@ def test_story_event_sets_flag_and_transitions(machine):
     assert out["Story"] == {"beat_id": "b3", "quest_log": "용을 잡자", "side": [], "events": []}
 
 
+def test_npc_died_event_routes_to_boss_killed(machine):
+    """플레이어 단독 처치 경로 — 보스 사망 story_event 가 combat_victory 와 동일하게 전이시킨다."""
+    from app.main import _handle_story_event
+
+    machine.state.main_beat = "b3"
+    machine.needs_direction = False
+    with patch("app.story.director.ollama_structured", AsyncMock(return_value=_resp())):
+        out = json.loads(asyncio.run(_handle_story_event(_envelope("story_event", {"event": "npc_died", "name": "DragonBoss"}))))
+    assert out["Story"]["beat_id"] == "end" and "npc_died:DragonBoss" not in machine.state.flags
+
+
 def test_replan_prompt_injects_story_directive(machine):
     """replan 턴: AgentState.story_directive 채움 → Stage2 sections 에 STORY DIRECTIVE 블록."""
     from app.agents.subgraphs.dialogue import _story_directive_block

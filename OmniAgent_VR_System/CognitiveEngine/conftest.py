@@ -7,7 +7,12 @@ sys.path 를 append 하던 부수효과 — 수집 순서 의존이라 신뢰 �
 이 conftest 가 CognitiveEngine 루트를 명시 삽입해 결정적으로 고정한다.
 """
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# 유닛 테스트가 실제 app/story/content + story_state.json 을 건드리고 디렉터 LLM 을 실호출하는 것 차단.
+# 스토리 테스트는 set_story(machine) 으로 임시 상태기계를 명시 주입한다(test_story_director.py 참조).
+os.environ.setdefault("STORY_ENABLED", "0")

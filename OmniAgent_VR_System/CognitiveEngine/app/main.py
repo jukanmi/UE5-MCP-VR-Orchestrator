@@ -293,6 +293,10 @@ async def _handle_story_event(envelope: MessageEnvelope) -> str:
     """story_event → 플래그 세팅 → 전이 평가. 행동 없음(빈 배치) + 전이 시 Story 블록."""
     payload = envelope.parse_story_event_payload()
     logger.info(f"[Story] 이벤트 수신: {payload.event}/{payload.name} (agent={payload.agent_id})")
+    # npc_died 는 boss_killed 경로 — combat_victory 는 아군 NPC 가 그 보스와 교전 중일 때만 오므로,
+    # 플레이어 단독 처치도 잡으려면 보스 자신의 사망 이벤트(name=AgentID)가 필요하다.
+    if payload.event == "npc_died":
+        return _empty_batch_json(story=await _story_trigger("combat_victory", {"target_id": payload.name}))
     return _empty_batch_json(story=await _story_trigger("flag", {"name": payload.flag_name}))
 
 

@@ -43,3 +43,14 @@ def test_shipped_content_is_valid():
 
     c = load_content(CONTENT_DIR)
     assert c.main.start in c.beats
+
+
+def test_shipped_npc_goals_have_scenario_personas():
+    """비트 시트가 지목한 NPC 마다 content/npcs/<npc>/persona.yaml 이 있어야 seed 후 Stage1 페르소나가 맞물린다."""
+    from app.story import CONTENT_DIR
+
+    c = load_content(CONTENT_DIR)
+    beats = list(c.beats.values()) + list(c.sides.values())
+    npcs = {npc for b in beats for npc in b.npc_goals} | {b.complete_when.npc_id for b in beats if b.complete_when.npc_id}
+    missing = [n for n in npcs if not (CONTENT_DIR / "npcs" / n.lower() / "persona.yaml").exists()]
+    assert not missing, f"시나리오 페르소나 없음: {missing}"

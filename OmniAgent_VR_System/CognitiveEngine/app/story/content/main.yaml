@@ -1,32 +1,113 @@
-# 작가 비트 시트 — 더미 3비트. 실제 콘텐츠로 교체할 것 (구조는 docs/SPEC_story_director.md §3.2).
+# 작가 비트 시트 — docs/STORY_SCENARIO.md §3 기준 (부서진 성검의 맹세, 5막 7비트).
 # complete_when.type: talked_to(npc_id, min_turns) | boss_killed(boss_id) | flag(name)
-title: 용의 그림자
-start: b1_arrival
+# boss_id 는 보스 SmartNPC 의 AgentID 와 정확히 일치해야 한다(combat_victory target_id / npc_died 이벤트).
+title: "부서진 성검의 맹세"
+start: "b1_kingdom_fall"
+
 beats:
-  - id: b1_arrival
-    title: 마을 도착
-    summary: 플레이어가 마을에 도착. 용의 위협을 NPC 들이 암시한다.
+  # ──────────────────────────────────────────────────────────
+  # 1막: 도입
+  # ──────────────────────────────────────────────────────────
+  - id: "b1_kingdom_fall"
+    title: "성문 앞의 피신"
+    summary: "왕국이 기습으로 불타고 스승을 잃은 주인공이 성문에 도착했다."
     npc_goals:
-      Elara: 플레이어에게 북쪽 동굴의 용 이야기를 흘린다
-      Guard: 성문 밖 위험을 경고하고 무기 준비를 권한다
-    quest_log: 마을 사람들과 이야기해 용에 대해 알아보자
-    complete_when: {type: talked_to, npc_id: Elara, min_turns: 2}
-    next: b2_prepare
-    unlocks_side: [s_lost_brother]
-  - id: b2_prepare
-    title: 출정 준비
-    summary: 플레이어가 무기와 정보를 갖추고 북쪽 동굴로 향할 준비를 한다.
+      Guard: "플레이어의 부상을 확인하고 성문 안 임시 거처로 안내한다"
+    quest_log: "불타는 성문을 지나 경비병에게 상황을 확인하자"
+    complete_when:
+      type: "talked_to"
+      npc_id: "Guard"
+      min_turns: 1
+    next: "b2_james_order"
+
+  - id: "b2_james_order"
+    title: "도적의 오더"
+    summary: "James가 부서진 성검의 가치를 알아보고 동료 규합을 제안한다."
     npc_goals:
-      Guard: 플레이어에게 검을 쥐어 주고 동굴 입구 위치를 알려준다
-    quest_log: 경비병에게 무기를 받고 북쪽 동굴로 향하자
-    complete_when: {type: flag, name: entered_cave}
-    next: b3_dragon
-  - id: b3_dragon
-    title: 용 처치
-    summary: 동굴 깊은 곳에서 용과 대결한다.
+      James: "성검의 상태를 지적하며 숲의 마법사 Moca와 화력 담당 Skadi를 찾으라고 오더를 내린다"
+    quest_log: "James의 조언을 듣고 은신처의 동료들을 찾으러 가자"
+    complete_when:
+      type: "talked_to"
+      npc_id: "James"
+      min_turns: 2
+    next: "b3_recruit_party"
+    unlocks_side: ["s_moca_herbs"]
+
+  # ──────────────────────────────────────────────────────────
+  # 2막: 전개
+  # ──────────────────────────────────────────────────────────
+  - id: "b3_recruit_party"
+    title: "마법사와 거너"
+    summary: "조용한 마법사 Moca와 화끈한 거너 Skadi가 합류한다."
     npc_goals:
-      Guard: 플레이어와 함께 용에 맞서 싸운다
-    quest_log: 용을 쓰러뜨리자
-    complete_when: {type: boss_killed, boss_id: DragonBoss}
-    next: end
-    events: []   # Phase C 예: [{cmd: spawn_enemy, enemy_id: zombie, loc: EastBridge, count: 3}]
+      Moca: "조용한 목소리로 성검 조각의 마력 반응 위치를 플레이어에게 알려준다"
+      Skadi: "마왕군 놈들을 날려버릴 준비가 됐다며 화끈하게 무기를 점검한다"
+    quest_log: "Moca와 Skadi를 파티에 영입하고 성검 복원 단서를 찾자"
+    complete_when:
+      type: "talked_to"
+      npc_id: "Moca"
+      min_turns: 2
+    next: "b4_reforge_and_elara"
+
+  - id: "b4_reforge_and_elara"
+    title: "기사단장의 생환"
+    summary: "마왕군 간부를 처치하고 생존한 기사단장 Elara를 구출한다."
+    npc_goals:
+      Elara: "살아남은 주인공을 격려하며 기사단의 깃발을 걸고 합류를 선언한다"
+      James: "기사단장까지 모였으니 마왕군 요새 공략 플랜을 브리핑한다"
+      Moca: "조용히 성검을 1차 복구하지만 어딘가 불안하고 초조한 기색을 보인다"
+    quest_log: "기사단장 Elara와 합류하여 성검 1차 복원을 마치자"
+    complete_when:
+      type: "boss_killed"
+      boss_id: "Commander_Vorg"
+    next: "b5_moca_betrayal"
+
+  # ──────────────────────────────────────────────────────────
+  # 3막: 위기 — Moca의 배신
+  # ──────────────────────────────────────────────────────────
+  - id: "b5_moca_betrayal"
+    title: "빼앗긴 성검과 Moca의 눈물"
+    summary: "Moca가 성검을 마왕군에 넘기고 사라지지만, James가 진실을 꿰뚫어보고 마왕성 잠입을 지시한다."
+    npc_goals:
+      James: "절망한 플레이어의 멱살을 잡고 Moca의 눈물에 담긴 진실과 마왕성 침투 작전을 오더한다"
+      Elara: "스승의 검이 없어도 기사의 의지는 꺾이지 않는다고 플레이어에게 용기를 준다"
+      Skadi: "Moca를 협박한 마왕 놈들을 가루로 만들어 버리겠다고 화력 지원을 맹세한다"
+    quest_log: "Moca가 성검을 들고 사라졌다. James의 오더를 따라 마왕성으로 향하자"
+    complete_when:
+      type: "talked_to"
+      npc_id: "James"
+      min_turns: 2
+    next: "b6_save_moca_and_boss"
+
+  # ──────────────────────────────────────────────────────────
+  # 4막: 절정 — 마왕성 결전
+  # ──────────────────────────────────────────────────────────
+  - id: "b6_save_moca_and_boss"
+    title: "마왕성 결전과 각성"
+    summary: "마왕성에 갇힌 Moca를 구출하고, 동료들의 염원과 Moca의 마력으로 성검을 빛으로 각성시켜 마왕을 처단한다."
+    npc_goals:
+      Moca: "눈물로 참회하며 성검 파편에 자신의 모든 비전 마력을 주입해 진정한 빛으로 각성시킨다"
+      Skadi: "퇴로를 열기 위해 마왕군 수호병들에게 전면 포격을 퍼붓는다"
+      Elara: "마왕의 친위대를 막아서며 플레이어의 결정타 각을 만든다"
+    quest_log: "Moca를 구출하고 각성한 빛의 성검으로 마왕을 처치하자"
+    complete_when:
+      type: "boss_killed"
+      boss_id: "DemonLord"
+    next: "b7_epilogue"
+
+  # ──────────────────────────────────────────────────────────
+  # 5막: 결말
+  # ──────────────────────────────────────────────────────────
+  - id: "b7_epilogue"
+    title: "새로운 여정"
+    summary: "마왕이 소멸하고 왕국이 재건된다. Moca는 용서받고 4인은 새로운 모험을 떠난다."
+    npc_goals:
+      Guard: "영웅이 되어 돌아온 일행을 성문에서 눈물로 맞이한다"
+      Elara: "왕국 재건을 위해 남으며 주인공 일행의 앞날에 신의 가호를 빈다"
+      James: "Moca에게 평생 마법 서포트로 빚을 갚으라 츤데레 오더를 내리며 출항을 재촉한다"
+    quest_log: "재건된 왕국을 뒤로하고 동료들과 새로운 모험을 떠나자"
+    complete_when:
+      type: "talked_to"
+      npc_id: "Elara"
+      min_turns: 1
+    next: "end"
