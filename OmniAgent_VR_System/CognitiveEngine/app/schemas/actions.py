@@ -219,7 +219,7 @@ WORLD_CONSTANTS = {
     },
     "MAX_DAMAGE": 100,
     "MAX_SPEED": 600,
-    "MAX_HEALTH": 100,
+    "MAX_HEALTH": 300,  # C++ FGameResources 3배(2026-09-18)와 정합. 소비처 없음
 }
 
 # BT 카테고리 분류맵

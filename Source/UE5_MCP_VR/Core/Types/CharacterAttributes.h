@@ -54,10 +54,10 @@ struct FGameResources
 
     // Vital Resources
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resources|Vital")
-    float Health = 100.0f;
+    float Health = 300.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resources|Vital")
-    float MaxHealth = 100.0f;
+    float MaxHealth = 300.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resources|Vital")
     float Mana = 100.0f;
@@ -286,7 +286,9 @@ struct FCharacterAttributesBase
         Combat.DodgeChance = BaseStats.Dexterity * 0.5f;
         Combat.Accuracy = 70.0f + BaseStats.Dexterity * 0.3f;
 
-        Resources.MaxHealth = 50.0f + BaseStats.Constitution * 5.0f;
+        // 2026-09-18 3배(100→300 @Con10): 가속도(운동 에너지) 데미지가 AttackPower 를 넘길 수 있어
+        // 원샷 여지를 줄인다. Health 기본값도 같이 300 — 이 공식이 돌기 전 초기 HP 와 맞춘다.
+        Resources.MaxHealth = 150.0f + BaseStats.Constitution * 15.0f;
         Resources.MaxMana = 20.0f + BaseStats.Intelligence * 3.0f + BaseStats.Wisdom * 2.0f;
         Resources.MaxStamina = 50.0f + BaseStats.Constitution * 2.0f + BaseStats.Dexterity * 2.0f;
 
