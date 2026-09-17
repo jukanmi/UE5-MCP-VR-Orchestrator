@@ -167,3 +167,6 @@ enc_temp_folder/
 # VS 확장이 머신마다 자동 설치하는 로컬 도구 플러그인 — 리포로 공유하지 않는다.
 # (.uproject 에는 Enabled 로 남으므로, VS 확장 없는 머신은 로딩 시 비활성화 안내가 뜬다)
 Plugins/VisualStudioTools/
+
+# 스토리 디렉터 진행 상태 (런타임 생성)
+OmniAgent_VR_System/CognitiveEngine/app/story/story_state.json

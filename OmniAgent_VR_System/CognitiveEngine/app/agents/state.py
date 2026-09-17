@@ -53,6 +53,8 @@ class AgentState(TypedDict):
     npc_plans: Optional[Dict[str, Any]]
     # plan_achieved: e4b Stage1 이 plan 달성 감지 시 per-NPC true. main.py 가 PlanAchieved 로 회신.
     plan_achieved: Optional[Dict[str, bool]]
+    # story_directive: 스토리 디렉터 캐시 npc_id → {goal, hint}. replan 턴에만 실려 Stage2 sections 에 주입.
+    story_directive: Optional[Dict[str, Any]]
 
     # [신규] state_update 수신 시 캐시되는 최신 월드 상태
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시

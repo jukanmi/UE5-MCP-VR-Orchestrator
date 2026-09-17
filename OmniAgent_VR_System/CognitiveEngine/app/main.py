@@ -12,6 +12,7 @@ import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from .schemas.envelope import (
     MessageEnvelope,
@@ -31,6 +32,7 @@ from .utils.async_tasks import spawn_background
 from .middleware import validate_auth_token, is_stale_packet
 from .server_state import STATE
 from .debug_routes import build_router
+from .story import get_story, direct_if_needed
 
 # 핸들러 없는 logger 는 INFO 레벨 메시지가 콘솔에 출력되지 않는다 (Python 기본 lastResort
 # 핸들러는 WARNING 이상만 처리). uvicorn 도 자기 logger 만 설정하므로 명시적으로 잡아준다.
@@ -97,6 +99,7 @@ async def lifespan(app: FastAPI):
     await db_manager.init_db()
     await db_manager.start_background_sync()
     await _check_ollama_model()
+    get_story()  # 비트 시트 검증 — 참조 오류면 여기서 ValueError 로 기동 실패
     yield
     # --- Shutdown ---
     await db_manager.stop_background_sync()
@@ -246,6 +249,9 @@ async def _process_llm_message(raw_data: str) -> str:
         elif envelope.type == EEnvelopeType.LOCATION_DECISION:
             return await _handle_location_decision(envelope)
 
+        elif envelope.type == EEnvelopeType.STORY_EVENT:
+            return await _handle_story_event(envelope)
+
         else:
             logger.error(f"[Main] 알 수 없는 메시지 타입: {envelope.type}")
             return json.dumps({"error": f"Unknown message type: {envelope.type}"})
@@ -263,9 +269,31 @@ async def _process_llm_message(raw_data: str) -> str:
         return json.dumps({"error": "Internal server error", "detail": str(e)})
 
 
-def _empty_batch_json(mode: NPCBehaviorMode = "Common") -> str:
-    """액션 없는 기본 ModeActionRequest JSON — 폴백/무행동 공통 응답."""
-    return ModeActionRequest(Mode=mode, ActionBatches={}).model_dump_json()
+def _empty_batch_json(mode: NPCBehaviorMode = "Common", story: Optional[dict] = None) -> str:
+    """액션 없는 기본 ModeActionRequest JSON — 폴백/무행동 공통 응답. story 는 비트 전이 직후만."""
+    return ModeActionRequest(Mode=mode, ActionBatches={}, Story=story).to_json()
+
+
+async def _story_trigger(kind: str, data: dict) -> Optional[dict]:
+    """스토리 트리거 공통 경로: 상태기계 전이 → dirty 면 디렉터 → 응답에 실을 Story 블록(없으면 None).
+    스토리 비활성이면 no-op. 예외는 삼킨다 — 스토리가 NPC 응답을 막으면 안 된다."""
+    story = get_story()
+    if story is None:
+        return None
+    try:
+        await story.on_trigger(kind, data)
+        await direct_if_needed(story, f"{kind}:{data}")
+        return story.take_story_block()
+    except Exception as e:
+        logger.error(f"[Story] 트리거 처리 실패 ({kind}): {e}")
+        return None
+
+
+async def _handle_story_event(envelope: MessageEnvelope) -> str:
+    """story_event → 플래그 세팅 → 전이 평가. 행동 없음(빈 배치) + 전이 시 Story 블록."""
+    payload = envelope.parse_story_event_payload()
+    logger.info(f"[Story] 이벤트 수신: {payload.event}/{payload.name} (agent={payload.agent_id})")
+    return _empty_batch_json(story=await _story_trigger("flag", {"name": payload.flag_name}))
 
 
 async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
@@ -322,7 +350,8 @@ async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
     defeated = payload.perceptions[0].target_id if payload.perceptions else "Unknown"
     logger.info(f"[Main] 전투 승리 보고: npc={agent_id}, defeated={defeated} — 메모리 기록, 무행동")
     _record_event_memory_bg(agent_id, f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).", "victory-memory")
-    return _empty_batch_json()
+    # 보스 처치 = 스토리 종착 플래그. 현재 비트 boss_id 와 일치할 때만 전이(상태기계가 판정).
+    return _empty_batch_json(story=await _story_trigger("combat_victory", {"target_id": defeated}))
 
 
 async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
@@ -409,6 +438,17 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     if requires_replan:
         spawn_background(_prewarm_core_llm(), label="core-prewarm")
 
+    # 스토리 디렉티브 — replan 턴에만 Stage2 입력으로. 캐시 없음(첫 기동)이면 여기서 1회 디렉터 호출,
+    # 이후는 비트 전이 때까지 캐시 재사용(LLM 0회).
+    story_directive = None
+    story = get_story()
+    if requires_replan and story is not None:
+        try:
+            await direct_if_needed(story, "replan")
+            story_directive = story.directive_for([target_npc_from_payload] if target_npc_from_payload else [])
+        except Exception as e:
+            logger.error(f"[Story] 디렉티브 조회 실패(무시): {e}")
+
     async with STATE.world_state_lock:
         # 대상 NPC 자신의 최신 상태만 주입 — 없으면 None(프롬프트에서 "Unknown" 처리).
         world_snap = STATE.cached_world_states.get(target_npc_from_payload.lower()) if target_npc_from_payload else None
@@ -418,6 +458,7 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
         requires_replan=requires_replan,
         current_plan=current_plan,
         npc_plans=None,
+        story_directive=story_directive or None,
         next="",
         current_speaker="",
         natural_context=None,
@@ -435,9 +476,9 @@ async def _build_prompt_state(envelope: MessageEnvelope) -> AgentState:
     )
 
 
-def _finalize_prompt_response(result: dict) -> str:
+def _finalize_prompt_response(result: dict, story: Optional[dict] = None) -> str:
     """그래프 결과 → ModeActionRequest JSON. ActionBatch 추출(멀티/단일 호환)·plan
-    회신 조립. ActionBatch 없으면 빈 배치 JSON."""
+    회신 조립. ActionBatch 없으면 빈 배치 JSON. story 는 비트 전이 직후 응답에만."""
     # 멀티 NPC: action_batches 우선, 없으면 단일 action_batch 호환
     action_batches: dict = result.get("action_batches") or {}
     if not action_batches:
@@ -447,7 +488,7 @@ def _finalize_prompt_response(result: dict) -> str:
 
     if not action_batches:
         logger.warning("[Main] 에이전트가 ActionBatch를 생성하지 않았습니다.")
-        return _empty_batch_json()
+        return _empty_batch_json(story=story)
 
     logger.info(f"[Main] ActionBatch 생성 완료: {list(action_batches.keys())}")
     first_batch = next(iter(action_batches.values()))
@@ -466,8 +507,9 @@ def _finalize_prompt_response(result: dict) -> str:
         ActionBatches=action_batches,
         NpcPlans=npc_plans,
         PlanAchieved=plan_achieved,
+        Story=story,
     )
-    return wrapper.model_dump_json()
+    return wrapper.to_json()
 
 
 async def _handle_prompt(envelope: MessageEnvelope) -> str:
@@ -484,7 +526,12 @@ async def _handle_prompt(envelope: MessageEnvelope) -> str:
         traceback.print_exc()
         return _empty_batch_json()
 
-    return _finalize_prompt_response(result)
+    # talked_to 카운트는 대화가 실제로 성립한 턴만 — 에러/폴백 턴을 세면 플레이어 체감 턴 수와 어긋난다.
+    story = None
+    target = initial_state.get("target_npc")
+    if target and not result.get("has_error") and (result.get("action_batches") or result.get("action_batch")):
+        story = await _story_trigger("talked_to", {"npc_id": target})
+    return _finalize_prompt_response(result, story)
 
 
 async def _handle_state_update(envelope: MessageEnvelope) -> str:

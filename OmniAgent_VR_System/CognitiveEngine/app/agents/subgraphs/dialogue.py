@@ -34,7 +34,7 @@ import re
 import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict
+from typing import Dict, Optional
 from ...utils.llm_factory import ollama_structured, STAGE1_MODEL, STAGE2_MODEL
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
@@ -343,14 +343,35 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
     return npc_id, resp, plan_achieved
 
 
-async def _generate_plans(raw_responses: Dict[str, str], player_id: str, msg_id: str = "") -> Dict[str, dict]:
+def _story_directive_block(story_directive: Optional[Dict[str, dict]], npc_ids) -> str:
+    """스토리 디렉터 goal/hint → Stage2 sections 앞 블록. 대상 NPC 에 해당하는 항목 없으면 ""."""
+    if not story_directive:
+        return ""
+    id_map = ci_id_map(npc_ids)
+    lines = []
+    for npc, d in story_directive.items():
+        real = id_map.get(npc.strip().lower())
+        if real and d.get("goal"):
+            lines.append(f"{real}: {d['goal']}" + (f" — {d['hint']}" if d.get("hint") else ""))
+    return "=== STORY DIRECTIVE ===\n" + "\n".join(lines) + "\n\n" if lines else ""
+
+
+async def _generate_plans(
+    raw_responses: Dict[str, str],
+    player_id: str,
+    msg_id: str = "",
+    story_directive: Optional[Dict[str, dict]] = None,
+) -> Dict[str, dict]:
     """
     Stage 2: plan 전용 산출. 재계획(requires_replan=True) 경로에서만 호출.
     대사는 건드리지 않음 — Stage1 출력이 그대로 최종 (정제는 Stage1 프롬프트가 담당).
     grammar 강제(PlanBatchResponse)로 goal/steps 형식 보장 — 텍스트 [Plan:] 파싱 제거.
+    story_directive: 스토리 디렉터 캐시(npc→{goal,hint}) — 있으면 sections 앞에 STORY DIRECTIVE 블록.
     반환: npc_plans npc_id→{goal, steps, relation_snapshot}. 실패 시 {} (plan 생략).
     """
-    sections = "\n\n".join(f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items())
+    sections = _story_directive_block(story_directive, raw_responses) + "\n\n".join(
+        f"=== NPC: {npc_id} ===\n{raw}" for npc_id, raw in raw_responses.items()
+    )
 
     logger.info(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
     try:
@@ -442,7 +463,9 @@ async def dialogue_node(state: AgentState):
     if requires_replan:
         raw_responses = {npc_id: _serialize_dialogue(resp) for npc_id, resp in structured_responses.items()}
         player_id = state["vr_context"].player_id or "Player"
-        npc_plans = await _generate_plans(raw_responses, player_id, state.get("msg_id", ""))
+        npc_plans = await _generate_plans(
+            raw_responses, player_id, state.get("msg_id", ""), state.get("story_directive")
+        )
     else:
         logger.info("[Dialogue] 경량 루프: Stage2 스킵 (e4b 단독)")
 

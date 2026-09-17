@@ -26,6 +26,7 @@ enum class EEnvelopeType : uint8
     Prompt,         // "prompt"       - 플레이어 명령/대화
     EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
     LocationDecision,// "location_decision" - EQS 후보 → LLM 전술 위치 결정 요청
+    StoryEvent,     // "story_event" - 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거. 송신 코드는 Phase B
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder

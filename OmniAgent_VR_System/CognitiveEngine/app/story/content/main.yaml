@@ -1,0 +1,32 @@
+# 작가 비트 시트 — 더미 3비트. 실제 콘텐츠로 교체할 것 (구조는 docs/SPEC_story_director.md §3.2).
+# complete_when.type: talked_to(npc_id, min_turns) | boss_killed(boss_id) | flag(name)
+title: 용의 그림자
+start: b1_arrival
+beats:
+  - id: b1_arrival
+    title: 마을 도착
+    summary: 플레이어가 마을에 도착. 용의 위협을 NPC 들이 암시한다.
+    npc_goals:
+      Elara: 플레이어에게 북쪽 동굴의 용 이야기를 흘린다
+      Guard: 성문 밖 위험을 경고하고 무기 준비를 권한다
+    quest_log: 마을 사람들과 이야기해 용에 대해 알아보자
+    complete_when: {type: talked_to, npc_id: Elara, min_turns: 2}
+    next: b2_prepare
+    unlocks_side: [s_lost_brother]
+  - id: b2_prepare
+    title: 출정 준비
+    summary: 플레이어가 무기와 정보를 갖추고 북쪽 동굴로 향할 준비를 한다.
+    npc_goals:
+      Guard: 플레이어에게 검을 쥐어 주고 동굴 입구 위치를 알려준다
+    quest_log: 경비병에게 무기를 받고 북쪽 동굴로 향하자
+    complete_when: {type: flag, name: entered_cave}
+    next: b3_dragon
+  - id: b3_dragon
+    title: 용 처치
+    summary: 동굴 깊은 곳에서 용과 대결한다.
+    npc_goals:
+      Guard: 플레이어와 함께 용에 맞서 싸운다
+    quest_log: 용을 쓰러뜨리자
+    complete_when: {type: boss_killed, boss_id: DragonBoss}
+    next: end
+    events: []   # Phase C 예: [{cmd: spawn_enemy, enemy_id: zombie, loc: EastBridge, count: 3}]

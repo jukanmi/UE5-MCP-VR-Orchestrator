@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Dict
+from typing import Any, List, Literal, Dict, Optional
 
 NPCBehaviorMode = Literal[
     "Combat",  # 전투 모드
@@ -182,6 +182,12 @@ class ModeActionRequest(BaseModel):
     NpcPlans: Dict[str, Dict] = Field(default_factory=dict)
     # e4b Stage1 이 plan 달성 감지 시 per-NPC true. UE5 가 수신 시 FlagPlanAchieved() 호출.
     PlanAchieved: Dict[str, bool] = Field(default_factory=dict)
+    # 스토리 디렉터 블록 {beat_id, quest_log, side, events} — 비트 전이 직후 응답에만 실림.
+    # None 이면 직렬화에서 생략(exclude_none) — UE5 는 키 부재 = 변화 없음.
+    Story: Optional[Dict[str, Any]] = None
+
+    def to_json(self) -> str:
+        return self.model_dump_json(exclude_none=True)
 
 
 WORLD_CONSTANTS = {

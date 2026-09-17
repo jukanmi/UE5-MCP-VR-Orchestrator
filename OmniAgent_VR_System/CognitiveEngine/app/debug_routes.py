@@ -190,7 +190,7 @@ async def api_npc_command(npc_id: str, req: NpcCommandRequest):
             ],
         )
         wrapper = ModeActionRequest(Mode=req.mode, ActionBatches={npc_id: batch})
-        await STATE.send_to_ue(wrapper.model_dump_json())
+        await STATE.send_to_ue(wrapper.to_json())
         logger.info(f"[Debug] NPC 명령 전송: {npc_id} → {req.action_type}")
         return {"status": "ok", "npc_id": npc_id, "action": req.action_type}
     except Exception as e:

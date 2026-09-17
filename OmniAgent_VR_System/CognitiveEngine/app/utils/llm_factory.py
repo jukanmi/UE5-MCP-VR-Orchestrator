@@ -111,6 +111,8 @@ MODELS = {
 STAGE2_MODEL = "mid"
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
+# 스토리 디렉터(app/story) — 비트 전이 시만 호출. 31B 클라우드, 무료 티어 동시 1.
+STORY_MODEL = "cloud_gemma4"
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 

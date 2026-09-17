@@ -29,6 +29,7 @@ class EEnvelopeType(str, Enum):
     PROMPT = "prompt"  # 플레이어 명령/대화
     EMERGENCY_REPORT = "emergency_report"  # 긴급 이벤트 배치 전송
     LOCATION_DECISION = "location_decision"  # EQS 후보 → LLM 전술 위치 결정 요청
+    STORY_EVENT = "story_event"  # 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +147,19 @@ class LocationDecisionPayload(BaseModel):
     candidates: List[LocationCandidate]
 
 
+class StoryEventPayload(BaseModel):
+    """story_event 타입의 payload. 스토리 상태기계 플래그 세팅용(app/story).
+    event="flag" 면 name 이 그대로 플래그 이름, 그 외는 "<event>:<name>" 플래그로 기록."""
+
+    event: str  # "flag" | "zone_enter" | "item_acquired"
+    name: str  # flag 이름 / 구역 id / 아이템 id
+    agent_id: Optional[str] = None
+
+    @property
+    def flag_name(self) -> str:
+        return self.name if self.event == "flag" else f"{self.event}:{self.name}"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 최상위 Envelope 모델
 # WHY: 모든 UE5 → Python 메시지의 '봉투' 역할.
@@ -188,3 +202,7 @@ class MessageEnvelope(BaseModel):
     def parse_location_decision_payload(self) -> LocationDecisionPayload:
         """payload를 LocationDecisionPayload로 파싱. type이 location_decision일 때만 호출할 것."""
         return LocationDecisionPayload(**self.payload)
+
+    def parse_story_event_payload(self) -> StoryEventPayload:
+        """payload를 StoryEventPayload로 파싱. type이 story_event일 때만 호출할 것."""
+        return StoryEventPayload(**self.payload)
