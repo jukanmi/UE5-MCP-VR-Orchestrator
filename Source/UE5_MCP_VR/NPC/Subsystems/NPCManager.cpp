@@ -7,6 +7,7 @@
 #include "NPC/Action/NPCActionComponent.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
+#include "Story/StorySubsystem.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
@@ -507,6 +508,20 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                         UE_LOG(LogTemp, Log, TEXT("[NPCManager] Plan 달성 감지: %s → 다음 턴 재계획"), *AgentID);
                     }
                 }
+            }
+        }
+    }
+
+    // ── 스토리 디렉터 블록 ────────────────────────────────────────────
+    // Story(PascalCase) 는 비트 전이 직후 응답에만 실린다(평소 키 부재 = 변화 없음).
+    // 어떤 응답(prompt/emergency/story_event)에도 붙을 수 있어 ActionBatches 와 독립으로 본다.
+    {
+        const TSharedPtr<FJsonObject>* StoryObj = nullptr;
+        if (Root->TryGetObjectField(TEXT("Story"), StoryObj))
+        {
+            if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+            {
+                Story->ApplyStoryJson(*StoryObj);
             }
         }
     }
