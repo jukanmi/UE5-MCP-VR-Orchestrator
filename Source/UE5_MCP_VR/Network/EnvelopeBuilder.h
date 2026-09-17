@@ -67,6 +67,12 @@ public:
      */
     static FString BuildStateUpdate(const TSharedRef<FJsonObject>& Payload);
 
+    /**
+     * story_event Envelope 생성. 스토리 상태기계 트리거(npc_died·item_acquired·zone_enter·flag).
+     * @param Payload - {event, name, agent_id?} FJsonObject (Python StoryEventPayload 와 1:1)
+     */
+    static FString BuildStoryEvent(const TSharedRef<FJsonObject>& Payload);
+
 private:
     // ─────────────────────────────────────────────────────────────────────
     // 내부 헬퍼

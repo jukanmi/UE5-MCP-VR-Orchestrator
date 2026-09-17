@@ -541,6 +541,25 @@ void UNPCManager::SendEventReport(const FString& AgentID, const TSharedRef<FJson
     }
 }
 
+void UNPCManager::SendStoryEvent(const FString& Event, const FString& Name, const FString& AgentID)
+{
+    if (!LLMClient || !LLMClient->IsConnected())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] story_event 미전송(서버 미연결): %s/%s"), *Event, *Name);
+        return;
+    }
+    // 키는 Python StoryEventPayload 와 1:1 (event/name/agent_id).
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("event"), Event);
+    Payload->SetStringField(TEXT("name"), Name);
+    if (!AgentID.IsEmpty())
+    {
+        Payload->SetStringField(TEXT("agent_id"), AgentID);
+    }
+    LLMClient->SendMessage(FEnvelopeBuilder::BuildStoryEvent(Payload));
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] story_event 전송: %s/%s"), *Event, *Name);
+}
+
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)
 {
     OnNPCResponseReceived.Broadcast(AgentID, DialogueText);

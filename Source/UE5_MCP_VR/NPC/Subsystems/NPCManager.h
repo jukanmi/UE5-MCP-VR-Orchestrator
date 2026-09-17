@@ -43,6 +43,12 @@ public:
     // === 취합된 긴급 인지 이벤트 전송 (단일 LLM 채널, Python이 SLM/LLM 자동 라우팅) ===
     void SendEventReport(const FString& AgentID, const TSharedRef<FJsonObject>& Payload);
 
+    /** story_event Envelope 송신 — 스토리 상태기계(app/story) 트리거.
+     *  Event: "npc_died"(Name=AgentID → boss_killed 평가) | "item_acquired"(Name=ItemID) | "zone_enter" | "flag".
+     *  서버 미연결이면 로그만 남기고 버린다(스토리는 재접속 후 다음 트리거로 따라잡는다). */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Story")
+    void SendStoryEvent(const FString& Event, const FString& Name, const FString& AgentID = TEXT(""));
+
     // === 디버그: ActionBatch JSON 직접 주입(서버 없이 배치 분배 검증) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")
     void OnWebSocketMessageReceived(const FString& JsonMessage);

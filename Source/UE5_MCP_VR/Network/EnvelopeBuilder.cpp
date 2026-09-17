@@ -79,3 +79,8 @@ FString FEnvelopeBuilder::BuildStateUpdate(const TSharedRef<FJsonObject>& Payloa
 {
     return BuildEnvelope(EEnvelopeType::StateUpdate, Payload);
 }
+
+FString FEnvelopeBuilder::BuildStoryEvent(const TSharedRef<FJsonObject>& Payload)
+{
+    return BuildEnvelope(EEnvelopeType::StoryEvent, Payload);
+}

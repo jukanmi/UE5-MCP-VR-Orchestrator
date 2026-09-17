@@ -51,6 +51,8 @@ def test_shipped_npc_goals_have_scenario_personas():
 
     c = load_content(CONTENT_DIR)
     beats = list(c.beats.values()) + list(c.sides.values())
-    npcs = {npc for b in beats for npc in b.npc_goals} | {b.complete_when.npc_id for b in beats if b.complete_when.npc_id}
+    npcs = {npc for b in beats for npc in b.npc_goals}
+    npcs |= {b.complete_when.npc_id for b in beats if b.complete_when.npc_id}
+    npcs |= {b.complete_when.boss_id for b in beats if b.complete_when.boss_id}  # 보스도 SmartNPC — 페르소나 필요
     missing = [n for n in npcs if not (CONTENT_DIR / "npcs" / n.lower() / "persona.yaml").exists()]
     assert not missing, f"시나리오 페르소나 없음: {missing}"

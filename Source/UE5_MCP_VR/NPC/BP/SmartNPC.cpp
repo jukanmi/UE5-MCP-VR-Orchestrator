@@ -184,7 +184,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
         // 가해자 불명이면 자기 위치(거리 0).
         const FPerceptionData DamageEventPerc(
-            DamageCauser ? DamageCauser->GetName() : TEXT("Unknown"), ESenseType::Hit,
+            PerceptionIdFor(DamageCauser), ESenseType::Hit,
             DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation(), GetActorLocation(), 1.0f);
         StateComponent->RequestEventCognition(DamageEventPerc);
     }
@@ -250,6 +250,13 @@ void ASmartNPC::PerformAttackHit()
     }
 }
 
+FString ASmartNPC::PerceptionIdFor(const AActor* Actor)
+{
+    if (!Actor) return TEXT("Unknown");
+    const ASmartNPC* NPC = Cast<ASmartNPC>(Actor);
+    return (NPC && !NPC->AgentID.IsEmpty()) ? NPC->AgentID : Actor->GetName();
+}
+
 void ASmartNPC::HandleDeath()
 {
     if (bIsDead) return;
@@ -267,9 +274,12 @@ void ASmartNPC::HandleDeath()
         ActionComponent->StopAllActions();
     }
 
-    // 3. NPCMap에서 즉시 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음
+    // 3. 스토리 트리거 + NPCMap 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음.
+    //    npc_died 는 boss_killed 판정용. 아군 NPC 의 combat_victory 는 그 NPC 가 이 대상과 교전 중일 때만
+    //    오므로, 플레이어가 단독으로 보스를 잡는 경로는 죽는 쪽이 직접 알린다.
     if (UNPCManager* Manager = UNPCManager::Get(this))
     {
+        Manager->SendStoryEvent(TEXT("npc_died"), AgentID, AgentID);
         Manager->UnregisterNPC(AgentID);
     }
 

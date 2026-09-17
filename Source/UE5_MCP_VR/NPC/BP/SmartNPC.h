@@ -81,6 +81,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     FString AgentID;
 
+    /** perception·호감도·승리 보고에 쓰는 대상 식별자 — SmartNPC 는 AgentID, 그 외(플레이어 폰 등)는 액터 이름.
+     *  객체 이름(BP_SmartNPC_C_UAID_…)은 레벨 재배치마다 바뀌어 호감도 행·스토리 boss_id 가 어긋난다. */
+    static FString PerceptionIdFor(const AActor* Actor);
+
     /** 이 NPC가 사용할 StateTree 에셋 (StateTreeAISchema). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     UStateTree* StateTreeAsset;

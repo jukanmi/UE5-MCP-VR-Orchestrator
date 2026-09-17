@@ -7,18 +7,41 @@ app/story/content/npcs/ 에 두고, 이 스크립트가 복사 + FAISS 재빌드
   content/npcs/_world.md                → app/agents/knowledge/<npc>/lore/world.md   (전 NPC 공통)
   content/npcs/<npc>/{persona,history}.md → app/agents/knowledge/<npc>/{persona,history}/<npc>.md
 
-서버 실행 중이면 재시작 필요 — load_persona 가 lru_cache 라 재시작 전엔 옛 페르소나가 남는다.
+호감도도 시딩한다: 보스↔플레이어·보스↔아군 = -100(Hostile, 시야만으로 교전), 아군→플레이어 = 20(중립 —
+과거 PIE 피격으로 남은 Hostile 행 초기화). C++ 는 affinity ≤ -30 을 Hostile 로 본다.
+
+서버 실행 중이면 재시작 필요 — load_persona 가 lru_cache 고 affinity 캐시도 프로세스 안에 있다.
 """
 
+import asyncio
 import shutil
 import sys
 from pathlib import Path
 
+from ..utils import db_manager
 from ..utils.build_knowledge import rebuild
 from ..utils.rag_utils import KNOWLEDGE_BASE_PATH
 
 NPCS_DIR = Path(__file__).parent / "content" / "npcs"
 PERSONAS_DIR = Path("app/agents/personas/generic")
+
+# perception·대화가 플레이어 id 로 폰 액터 이름을 쓴다(VRPawn::GetName). 폰 클래스가 바뀌면 여기도.
+# ponytail: 플레이어 id 를 "Player" 상수로 통일하는 게 정답 — C++ 3곳(VRPawn·HUD·PerceptionIdFor) 동시 수정 필요.
+PLAYER_KEY = "BP_VRPawn_C_0"
+ALLIES = ["Elara", "James", "Skadi", "Moca", "Guard"]
+BOSSES = ["Commander_Vorg", "DemonLord"]  # main.yaml boss_id 와 일치
+
+
+async def seed_affinity() -> None:
+    await db_manager.init_db()
+    for boss in BOSSES:
+        await db_manager.set_affinity_direct(boss, PLAYER_KEY, -100, "story_seed")
+        for ally in ALLIES:
+            await db_manager.set_affinity_direct(boss, ally, -100, "story_seed")
+            await db_manager.set_affinity_direct(ally, boss, -100, "story_seed")
+    for ally in ALLIES:
+        await db_manager.set_affinity_direct(ally, PLAYER_KEY, 20, "story_seed")
+    print(f"[Seed] affinity: 보스 {BOSSES} ↔ 플레이어/아군 Hostile, 아군→플레이어 20")
 
 
 def seed(index: bool = True) -> list[str]:
@@ -49,3 +72,4 @@ def seed(index: bool = True) -> list[str]:
 
 if __name__ == "__main__":
     seed(index="--no-index" not in sys.argv)
+    asyncio.run(seed_affinity())
