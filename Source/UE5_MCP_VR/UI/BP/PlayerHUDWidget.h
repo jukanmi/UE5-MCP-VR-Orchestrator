@@ -15,6 +15,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Inventory/Components/InventoryComponent.h" // FInventorySlot (UFUNCTION 반환 타입 노출)
+#include "Story/StorySubsystem.h"                  // FStoryState (UFUNCTION 인자 타입 — UHT 는 전방선언 불가)
 #include "PlayerHUDWidget.generated.h"
 
 class UProgressBar;
@@ -138,6 +139,17 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Chat")
     float ChatTargetRadius = 500.f;
 
+    // --- Quest Log (스토리 디렉터) ---
+
+    /** 퀘스트 로그 — WBP 에 "QuestLogText" 이름 UTextBlock 배치 시 자동 바인딩(선택).
+     *  UStorySubsystem::OnStoryUpdated(비트 전이 직후 응답)에 맞춰 quest_log 한 문장을 표시. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* QuestLogText;
+
+    /** 퀘스트 로그 접두어 — "퀘스트: <quest_log>". */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
+    FString QuestLogPrefix = TEXT("퀘스트: ");
+
     // --- Inventory 열기/닫기 ---
 
     /** 인벤토리 패널 — WBP 에 "InventoryPanel" 이름 위젯 배치 시 자동 바인딩(선택).
@@ -173,6 +185,10 @@ protected:
     /** NPCManager::OnNPCResponseReceived → ChatLog 한 줄. */
     UFUNCTION()
     void HandleNPCResponse(const FString& NPCName, const FString& Message);
+
+    /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신. */
+    UFUNCTION()
+    void HandleStoryUpdated(const FStoryState& State);
 
     virtual void NativeDestruct() override;
 

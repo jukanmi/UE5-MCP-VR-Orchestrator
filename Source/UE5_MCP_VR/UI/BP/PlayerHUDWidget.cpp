@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Components/ScrollBox.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Story/StorySubsystem.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
 #include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
@@ -44,6 +45,18 @@ void UPlayerHUDWidget::NativeConstruct()
             Manager->OnNPCResponseReceived.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
         }
     }
+    // 퀘스트 로그 — 위젯이 Story 블록보다 늦게 떠도 마지막 상태로 초기화(HasState).
+    if (QuestLogText)
+    {
+        if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+        {
+            Story->OnStoryUpdated.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleStoryUpdated);
+            if (Story->HasState())
+            {
+                HandleStoryUpdated(Story->GetCurrentState());
+            }
+        }
+    }
 }
 
 void UPlayerHUDWidget::NativeDestruct()
@@ -52,7 +65,17 @@ void UPlayerHUDWidget::NativeDestruct()
     {
         Manager->OnNPCResponseReceived.RemoveDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
     }
+    if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+    {
+        Story->OnStoryUpdated.RemoveDynamic(this, &UPlayerHUDWidget::HandleStoryUpdated);
+    }
     Super::NativeDestruct();
+}
+
+void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
+{
+    if (!QuestLogText) return;
+    QuestLogText->SetText(FText::FromString(QuestLogPrefix + State.QuestLog));
 }
 
 void UPlayerHUDWidget::AppendChatLine(const FString& Speaker, const FString& Text)
