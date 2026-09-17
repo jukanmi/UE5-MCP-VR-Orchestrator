@@ -101,6 +101,7 @@ MODELS = {
     "cloud_kimi": "kimi-k3",  # 멀티모달+추론 (pull 필요)
     "cloud_gpt_large": "gpt-oss:120b-cloud",  # 설치됨, 동작 확인
     "cloud_gpt_small": "gpt-oss:20b-cloud",  # 미테스트
+    "cloud_gemma4": "gemma4:cloud",  # 31B, 무료 티어 가능(2026-09-17 실측), Stage2 후보
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
