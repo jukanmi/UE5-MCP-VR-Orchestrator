@@ -221,10 +221,9 @@ def house(zone, x, y, yaw=0.0, w=1, d=1, mat="brick", roof_mat="walnut", door_si
             wyaw = math.degrees(math.atan2(by - ay, bx - ax)) + yaw
             key = "door" if (side == door_side and i == n // 2) else ("window" if window and i == 0 and side != door_side else "wall")
             place(zone, key, wx, wy, yaw=wyaw, mat=mat)
-    # 지붕: 쐐기 2개 맞대기 (Shape_Wedge_A 100 각, 피벗 모서리)
+    # 지붕: 우진각 — Shape_QuadPyramid(100 각, 피벗 바닥 중심) 처마 15% 돌출. Wedge_A 는 위에서 본 삼각 기둥이라 지붕 불가.
     rx, ry = R(0, 0)
-    place(zone, "wedge", rx, ry, yaw=yaw + 90, scale=(hh / 50, hw / 50 * 1.05, 2.2), mat=roof_mat, z_off=400)
-    place(zone, "wedge", rx, ry, yaw=yaw - 90, scale=(hh / 50, hw / 50 * 1.05, 2.2), mat=roof_mat, z_off=400)
+    place(zone, "pyramid", rx, ry, yaw=yaw, scale=(hw / 50 * 1.15, hh / 50 * 1.15, 1.6 + 0.4 * max(w, d)), mat=roof_mat, z_off=398)
 
 
 def road(zone, pts, width=1, mat="pebble"):
@@ -427,7 +426,7 @@ def build_village():
     place(z, "cyl", wx, wy, scale=(0.9, 0.9, 0.15), mat="water", z_off=60, collision=False)
     place(z, "pillar", wx - 70, wy, scale=(0.4, 0.4, 0.5), mat="wood")
     place(z, "pillar", wx + 70, wy, scale=(0.4, 0.4, 0.5), mat="wood")
-    place(z, "wedge", wx, wy, yaw=90, scale=(1.6, 1.4, 1.0), mat="walnut", z_off=250)
+    place(z, "pyramid", wx, wy, scale=(2.4, 2.4, 1.0), mat="walnut", z_off=250)
     trigger("plaza", px, py, ext=(1000, 1000, 250))
     # 집들 (광장·길·은신처 피해서)
     houses = [
@@ -443,7 +442,7 @@ def build_village():
         place(z, "table", mx, my, mat="wood")
         place(z, "pillar", mx - 150, my + 150, scale=(0.3, 0.3, 0.5), mat="wood")
         place(z, "pillar", mx + 150, my + 150, scale=(0.3, 0.3, 0.5), mat="wood")
-        place(z, "wedge", mx, my + 150, yaw=90, scale=(1.5, 3.4, 0.8), mat=random.choice(["rust", "gold", "walnut"]), z_off=250)
+        place(z, "cube", mx, my, yaw=0, scale=(3.6, 2.2, 0.08), mat=random.choice(["rust", "gold", "walnut"]), z_off=240, pitch=0, roll=-12)
     crates = [(mx + random.uniform(-500, 500), my + random.uniform(-200, 500), 0, random.uniform(0, 360), s, s, s)
               for (mx, my) in [(-3000, -2200), (1900, -1500), (-600, -3300)] for s in [random.uniform(0.5, 0.9) for _ in range(4)]]
     hism(z, "cube", crates, mat="wood")
@@ -610,7 +609,7 @@ def build_outpost():
             posts.append((x, y, 0, random.uniform(0, 360), 0.55, 0.55, random.uniform(3.2, 3.8)))
     hism(z, "cyl", posts, mat="walnut")
     for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
-        tower(z, ox + sx * OUT_HW, oy + sy * OUT_HW, h=2, mat="walnut", roof="wedge", roof_mat="rust")
+        tower(z, ox + sx * OUT_HW, oy + sy * OUT_HW, h=2, mat="walnut", roof="pyramid", roof_mat="rust")
     torch(z, ox - OUT_HW - 200, oy - 600)
     torch(z, ox - OUT_HW - 200, oy + 600)
     floor_grid(z, ox, oy, 4, 4, mat="pebble")
