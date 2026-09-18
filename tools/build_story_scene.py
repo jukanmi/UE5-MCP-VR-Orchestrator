@@ -82,8 +82,14 @@ def load(path):
 
 def ground_z(x, y):
     hit = unreal.SystemLibrary.line_trace_single(
-        WORLD, unreal.Vector(x, y, 5000), unreal.Vector(x, y, -5000),
-        unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, False, [], unreal.DrawDebugTrace.NONE, True,
+        WORLD,
+        unreal.Vector(x, y, 5000),
+        unreal.Vector(x, y, -5000),
+        unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
+        False,
+        [],
+        unreal.DrawDebugTrace.NONE,
+        True,
     ).to_tuple()
     if hit[0] and hit[9] and "Landscape" in hit[9].get_class().get_name():
         return hit[5].z
@@ -105,7 +111,9 @@ def _finish(a, label):
 def place(zone, mesh_key, x, y, yaw=0.0, scale=(1, 1, 1), mat=None, z_off=0.0, pitch=0.0, roll=0.0, collision=True):
     z = ground_z(x, y) + z_off
     # unreal.Rotator 위치 인자는 (roll, pitch, yaw) — 키워드로만 넘긴다
-    a = EAS.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x, y, z), unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw))
+    a = EAS.spawn_actor_from_class(
+        unreal.StaticMeshActor, unreal.Vector(x, y, z), unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw)
+    )
     a.set_mobility(unreal.ComponentMobility.STATIC)
     smc = a.static_mesh_component
     smc.set_static_mesh(load(MESH[mesh_key]))
@@ -132,7 +140,14 @@ def torch(zone, x, y, scale=1.0):
 def campfire(zone, x, y, scale=1.5):
     for i in range(6):
         ang = 2 * math.pi * i / 6
-        place(zone, "rock", x + 90 * math.cos(ang), y + 90 * math.sin(ang), yaw=random.uniform(0, 360), scale=(0.25, 0.25, 0.15))
+        place(
+            zone,
+            "rock",
+            x + 90 * math.cos(ang),
+            y + 90 * math.sin(ang),
+            yaw=random.uniform(0, 360),
+            scale=(0.25, 0.25, 0.15),
+        )
     emitter(zone, FIRE, x, y, 10.0, scale)
 
 
@@ -153,7 +168,9 @@ def chair(zone, x, y, yaw=0.0, scale=1.0, fid=None):
 
 
 def trigger(zone, x, y, ext=(450, 450, 200)):
-    a = EAS.spawn_actor_from_class(unreal.StoryZoneTrigger, unreal.Vector(x, y, ground_z(x, y) + 100), unreal.Rotator(0, 0, 0))
+    a = EAS.spawn_actor_from_class(
+        unreal.StoryZoneTrigger, unreal.Vector(x, y, ground_z(x, y) + 100), unreal.Rotator(0, 0, 0)
+    )
     a.set_editor_property("ZoneName", zone)
     a.get_editor_property("Box").set_box_extent(unreal.Vector(*ext))
     return _finish(a, f"SCN_{zone}_trigger")
@@ -183,14 +200,31 @@ def floor_grid(zone, cx, cy, nx, ny, mat="stone", z_off=2.0):
     for i in range(nx):
         for j in range(ny):
             # Floor_400x400 피벗은 모서리(0..400) — 중심 정렬 -200
-            place(zone, "floor", cx + (i - (nx - 1) / 2) * 400 - 200, cy + (j - (ny - 1) / 2) * 400 - 200, mat=mat, z_off=z_off)
+            place(
+                zone,
+                "floor",
+                cx + (i - (nx - 1) / 2) * 400 - 200,
+                cy + (j - (ny - 1) / 2) * 400 - 200,
+                mat=mat,
+                z_off=z_off,
+            )
 
 
 def ring(zone, cx, cy, r, n, mesh="pillar", mat="stone", scale=(1, 1, 1), tilt=0.0, z_off=0.0):
     for i in range(n):
         ang = 2 * math.pi * i / n
-        place(zone, mesh, cx + r * math.cos(ang), cy + r * math.sin(ang), yaw=math.degrees(ang), scale=scale, mat=mat,
-              roll=random.uniform(-tilt, tilt), pitch=random.uniform(-tilt, tilt), z_off=z_off)
+        place(
+            zone,
+            mesh,
+            cx + r * math.cos(ang),
+            cy + r * math.sin(ang),
+            yaw=math.degrees(ang),
+            scale=scale,
+            mat=mat,
+            roll=random.uniform(-tilt, tilt),
+            pitch=random.uniform(-tilt, tilt),
+            z_off=z_off,
+        )
 
 
 def tower(zone, x, y, h=2, mat="hewn", roof="pyramid", roof_mat="basalt", fire_top=True):
@@ -211,7 +245,12 @@ def house(zone, x, y, yaw=0.0, w=1, d=1, mat="brick", roof_mat="walnut", door_si
         return x + px * math.cos(rad) - py * math.sin(rad), y + px * math.sin(rad) + py * math.cos(rad)
 
     floor_grid(zone, x, y, w, d, mat="pine", z_off=1.0)
-    sides = {"s": ((-hw, -hh), (hw, -hh)), "e": ((hw, -hh), (hw, hh)), "n": ((hw, hh), (-hw, hh)), "w": ((-hw, hh), (-hw, -hh))}
+    sides = {
+        "s": ((-hw, -hh), (hw, -hh)),
+        "e": ((hw, -hh), (hw, hh)),
+        "n": ((hw, hh), (-hw, hh)),
+        "w": ((-hw, hh), (-hw, -hh)),
+    }
     for side, ((ax, ay), (bx, by)) in sides.items():
         n = max(1, int(round(math.hypot(bx - ax, by - ay) / 400)))
         for i in range(n):
@@ -219,11 +258,24 @@ def house(zone, x, y, yaw=0.0, w=1, d=1, mat="brick", roof_mat="walnut", door_si
             px, py = ax + (bx - ax) * t, ay + (by - ay) * t
             wx, wy = R(px, py)
             wyaw = math.degrees(math.atan2(by - ay, bx - ax)) + yaw
-            key = "door" if (side == door_side and i == n // 2) else ("window" if window and i == 0 and side != door_side else "wall")
+            key = (
+                "door"
+                if (side == door_side and i == n // 2)
+                else ("window" if window and i == 0 and side != door_side else "wall")
+            )
             place(zone, key, wx, wy, yaw=wyaw, mat=mat)
     # 지붕: 우진각 — Shape_QuadPyramid(100 각, 피벗 바닥 중심) 처마 15% 돌출. Wedge_A 는 위에서 본 삼각 기둥이라 지붕 불가.
     rx, ry = R(0, 0)
-    place(zone, "pyramid", rx, ry, yaw=yaw, scale=(hw / 50 * 1.15, hh / 50 * 1.15, 1.6 + 0.4 * max(w, d)), mat=roof_mat, z_off=398)
+    place(
+        zone,
+        "pyramid",
+        rx,
+        ry,
+        yaw=yaw,
+        scale=(hw / 50 * 1.15, hh / 50 * 1.15, 1.6 + 0.4 * max(w, d)),
+        mat=roof_mat,
+        z_off=398,
+    )
 
 
 def road(zone, pts, width=1, mat="pebble"):
@@ -253,8 +305,11 @@ def ensure_hism_bp():
     bp = unreal.AssetToolsHelpers.get_asset_tools().create_asset(name, path, unreal.Blueprint, factory)
     sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
     root = sds.k2_gather_subobject_data_for_blueprint(bp)[0]
-    handle, _ = sds.add_new_subobject(unreal.AddNewSubobjectParams(
-        parent_handle=root, new_class=unreal.HierarchicalInstancedStaticMeshComponent, blueprint_context=bp))
+    handle, _ = sds.add_new_subobject(
+        unreal.AddNewSubobjectParams(
+            parent_handle=root, new_class=unreal.HierarchicalInstancedStaticMeshComponent, blueprint_context=bp
+        )
+    )
     sds.rename_subobject(handle, unreal.Text("HISM"))
     unreal.BlueprintEditorLibrary.compile_blueprint(bp)
     unreal.EditorAssetLibrary.save_loaded_asset(bp)
@@ -272,9 +327,13 @@ def hism(zone, mesh_key, transforms, mat=None, collision=True):
         h.set_material(0, load(MAT[mat]))
     if not collision:
         h.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    # Static 자식은 Static 부모에만 붙음 — DefaultSceneRoot 도 함께 Static
+    a.root_component.set_mobility(unreal.ComponentMobility.STATIC)
     h.set_mobility(unreal.ComponentMobility.STATIC)
-    xs = [unreal.Transform(unreal.Vector(x, y, ground_z(x, y) + zo), unreal.Rotator(yaw=yaw), unreal.Vector(sx, sy, sz))
-          for (x, y, zo, yaw, sx, sy, sz) in transforms]
+    xs = [
+        unreal.Transform(unreal.Vector(x, y, ground_z(x, y) + zo), unreal.Rotator(yaw=yaw), unreal.Vector(sx, sy, sz))
+        for (x, y, zo, yaw, sx, sy, sz) in transforms
+    ]
     h.add_instances(xs, False, True, True)
     HISM_TOTAL[zone] = HISM_TOTAL.get(zone, 0) + len(xs)
     return _finish(a, _label(zone) + "_hism_" + mesh_key)
@@ -299,7 +358,9 @@ def forest_patch(zone, cx, cy, r, n_trees, dead=False, density_bush=0.6, density
             cw = random.uniform(2.4, 3.6)
             crowns.append((x, y, h * 100 * 0.5, random.uniform(0, 360), cw, cw, random.uniform(3.0, 4.2)))
             if random.random() < 0.5:
-                crowns.append((x, y, h * 100 * 0.78, random.uniform(0, 360), cw * 0.7, cw * 0.7, random.uniform(2.2, 3.0)))
+                crowns.append(
+                    (x, y, h * 100 * 0.78, random.uniform(0, 360), cw * 0.7, cw * 0.7, random.uniform(2.2, 3.0))
+                )
     for _ in range(int(n_trees * density_bush)):
         ang, rr = random.uniform(0, 2 * math.pi), r * math.sqrt(random.random())
         x, y = cx + rr * math.cos(ang), cy + rr * math.sin(ang)
@@ -350,6 +411,8 @@ def find_actor(agent_id=None, cls=None):
 
 
 def move_actor(a, x, y, z_off=0.0, face=None, yaw=None):
+    # 기존 액터는 modify() 없이 옮기면 외부 액터 패키지가 dirty 안 돼 저장에서 빠진다(실측)
+    a.modify(True)
     z = ground_z(x, y) + z_off
     loc = unreal.Vector(x, y, z)
     a.set_actor_location(loc, False, False)
@@ -370,20 +433,20 @@ def move_npc(agent_id, x, y, face=None):
 
 # ═════════════════════════════════════════════════════════════════════
 # 레이아웃 상수 (cm). 맵 ±25000.
-VIL = (-1000.0, -2000.0)       # 마을 중심
+VIL = (-1000.0, -2000.0)  # 마을 중심
 VIL_HW, VIL_HH = 4200.0, 2600.0  # 마을 성벽 반폭/반높이 → 84m × 52m
-GATE_N = (VIL[0], VIL[1] + VIL_HH)      # 북문 (-1000, 600)
-GATE_W = (VIL[0] - VIL_HW, VIL[1])      # 서문 (-5200, -2000)
+GATE_N = (VIL[0], VIL[1] + VIL_HH)  # 북문 (-1000, 600)
+GATE_W = (VIL[0] - VIL_HW, VIL[1])  # 서문 (-5200, -2000)
 GATE_S = (VIL[0] + 1400, VIL[1] - VIL_HH)  # 남문 (400, -4600)
-PLAZA = (VIL[0], VIL[1] + 200)          # 광장 (-1000, -1800)
+PLAZA = (VIL[0], VIL[1] + 200)  # 광장 (-1000, -1800)
 HIDEOUT = (VIL[0] - 2600, VIL[1] - 1400)  # 은신처 (-3600, -3400)
-RUINS = (-1000.0, 6500.0)                # 불타는 성 폐허(시작)
+RUINS = (-1000.0, 6500.0)  # 불타는 성 폐허(시작)
 LIBRARY = (-10500.0, -3200.0)
 FOREST = (7500.0, -7500.0)
 FOREST_R = 5200.0
-CLEARING = (7000.0, -6800.0)             # 약초 빈터
-BOMB = (11000.0, -4200.0)                # 폭격 자리(Skadi)
-RIVER_X = 13800.0                        # 강 중심선 x, 남북
+CLEARING = (7000.0, -6800.0)  # 약초 빈터
+BOMB = (11000.0, -4200.0)  # 폭격 자리(Skadi)
+RIVER_X = 13800.0  # 강 중심선 x, 남북
 BRIDGE = (RIVER_X, -1500.0)
 OUTPOST = (19000.0, -500.0)  # 서벽 x=16800 — 다리(12400..15200) 와 안 겹치게
 OUT_HW = 2200.0
@@ -396,8 +459,15 @@ def build_village():
     # 성벽 + 모서리 탑 + 문 3 (북=정문, 서, 남)
     cx, cy = VIL
     n_seg_x = int(2 * VIL_HW / 400)
-    rect_walls(z, cx, cy, VIL_HW, VIL_HH, mat="hewn",
-               doors={"n": n_seg_x // 2, "w": int(2 * VIL_HH / 400) // 2, "s": int((GATE_S[0] - (cx - VIL_HW)) / 400)})
+    rect_walls(
+        z,
+        cx,
+        cy,
+        VIL_HW,
+        VIL_HH,
+        mat="hewn",
+        doors={"n": n_seg_x // 2, "w": int(2 * VIL_HH / 400) // 2, "s": int((GATE_S[0] - (cx - VIL_HW)) / 400)},
+    )
     rect_walls(z, cx, cy, VIL_HW, VIL_HH, mat="hewn", z_off=400)  # 2층
     for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
         tower(z, cx + sx * VIL_HW, cy + sy * VIL_HH, h=3)
@@ -409,7 +479,7 @@ def build_village():
     torch(z, gx - 420, gy - 250)
     torch(z, gx + 420, gy - 250)
     # 서문·남문 횃불
-    for (dx, dy) in [GATE_W, GATE_S]:
+    for dx, dy in [GATE_W, GATE_S]:
         torch(z, dx + 300 if dy == GATE_W[1] else dx - 300, dy + 300 if dx == GATE_S[0] else dy - 300)
     # 광장: 바닥·제단·기둥·벤치·우물
     px, py = PLAZA
@@ -430,27 +500,60 @@ def build_village():
     trigger("plaza", px, py, ext=(1000, 1000, 250))
     # 집들 (광장·길·은신처 피해서)
     houses = [
-        (-3200, -900, 0, 2, 1), (-3200, 200, 0, 1, 1), (800, 200, 180, 2, 1), (1600, -800, 90, 1, 2),
-        (2400, -2600, 90, 1, 2), (-2400, -3600, 0, 2, 1), (500, -3700, 0, 1, 1), (2600, 100, 180, 1, 1),
-        (-1000, -4000, 0, 2, 1), (1800, -3900, 180, 1, 1),
+        (-3200, -900, 0, 2, 1),
+        (-3200, 200, 0, 1, 1),
+        (800, 200, 180, 2, 1),
+        (1600, -800, 90, 1, 2),
+        (2400, -2600, 90, 1, 2),
+        (-2400, -3600, 0, 2, 1),
+        (500, -3700, 0, 1, 1),
+        (2600, 100, 180, 1, 1),
+        (-1000, -4000, 0, 2, 1),
+        (1800, -3900, 180, 1, 1),
     ]
-    for (hx, hy, yaw, w, d) in houses:
-        house(z, hx, hy, yaw=yaw, w=w, d=d, mat=random.choice(["brick", "wall", "cut"]),
-              roof_mat=random.choice(["walnut", "pine", "basalt"]), door_side="s")
+    for hx, hy, yaw, w, d in houses:
+        house(
+            z,
+            hx,
+            hy,
+            yaw=yaw,
+            w=w,
+            d=d,
+            mat=random.choice(["brick", "wall", "cut"]),
+            roof_mat=random.choice(["walnut", "pine", "basalt"]),
+            door_side="s",
+        )
     # 시장: 가판대(테이블+천장 쐐기) + 상자·통
     for i, (mx, my) in enumerate([(-200, -3000), (400, -3000), (1000, -3000)]):
         place(z, "table", mx, my, mat="wood")
         place(z, "pillar", mx - 150, my + 150, scale=(0.3, 0.3, 0.5), mat="wood")
         place(z, "pillar", mx + 150, my + 150, scale=(0.3, 0.3, 0.5), mat="wood")
-        place(z, "cube", mx, my, yaw=0, scale=(3.6, 2.2, 0.08), mat=random.choice(["rust", "gold", "walnut"]), z_off=240, pitch=0, roll=-12)
-    crates = [(mx + random.uniform(-500, 500), my + random.uniform(-200, 500), 0, random.uniform(0, 360), s, s, s)
-              for (mx, my) in [(-3000, -2200), (1900, -1500), (-600, -3300)] for s in [random.uniform(0.5, 0.9) for _ in range(4)]]
+        place(
+            z,
+            "cube",
+            mx,
+            my,
+            yaw=0,
+            scale=(3.6, 2.2, 0.08),
+            mat=random.choice(["rust", "gold", "walnut"]),
+            z_off=240,
+            pitch=0,
+            roll=-12,
+        )
+    crates = [
+        (mx + random.uniform(-500, 500), my + random.uniform(-200, 500), 0, random.uniform(0, 360), s, s, s)
+        for (mx, my) in [(-3000, -2200), (1900, -1500), (-600, -3300)]
+        for s in [random.uniform(0.5, 0.9) for _ in range(4)]
+    ]
     hism(z, "cube", crates, mat="wood")
-    barrels = [(bx + random.uniform(-300, 300), by + random.uniform(-300, 300), 0, 0, 0.5, 0.5, 0.8)
-               for (bx, by) in [(-2800, -1900), (2200, -1300), (900, -3500)] for _ in range(3)]
+    barrels = [
+        (bx + random.uniform(-300, 300), by + random.uniform(-300, 300), 0, 0, 0.5, 0.5, 0.8)
+        for (bx, by) in [(-2800, -1900), (2200, -1300), (900, -3500)]
+        for _ in range(3)
+    ]
     hism(z, "cyl", barrels, mat="walnut")
     # 가로등 횃불
-    for (tx, ty) in [(-2000, -1000), (600, -1000), (-2000, -3000), (1700, -300), (-3600, -2000), (2600, -3600)]:
+    for tx, ty in [(-2000, -1000), (600, -1000), (-2000, -3000), (1700, -300), (-3600, -2000), (2600, -3600)]:
         torch(z, tx, ty)
     # 은신처: 2×2 건물 + 작업대·서가·침대
     hx, hy = HIDEOUT
@@ -459,15 +562,9 @@ def build_village():
     place(z, "shelf", hx - 300, hy - 300, yaw=90, mat="wood")
     place(z, "shelf", hx + 300, hy - 300, yaw=-90, mat="wood")
     place(z, "lamp", hx + 380, hy + 100, yaw=180, z_off=220)
-    bed = find_actor(cls="BP_Bed_C")
-    if bed:
-        move_actor(bed, hx + 180, hy + 200, 0, yaw=90)
     trigger("hideout", hx, hy, ext=(420, 420, 250))
     # 성문 트리거 (문 바로 안쪽)
     trigger("gate", gx, gy - 300, ext=(800, 300, 250))
-    # NPC
-    move_npc("Guard", gx + 250, gy - 500, face=(gx, gy + 900))
-    move_npc("James", px + 400, py + 350, face=PLAZA)
 
 
 def build_ruins():
@@ -482,27 +579,32 @@ def build_ruins():
     for i in range(3):
         wall_line(z, rx - 1600 + i * 400, ry - 1200, rx - 1200 + i * 400, ry - 1200, mat="hewn")
     ring(z, rx, ry, 900, 8, mesh="pillar", mat="hewn", tilt=14.0)
-    for (dx, dy, yaw, pitch) in [(-800, 300, 20, -35), (700, -500, -30, 40), (300, 800, 60, -50)]:
+    for dx, dy, yaw, pitch in [(-800, 300, 20, -35), (700, -500, -30, 40), (300, 800, 60, -50)]:
         place(z, "wall3", rx + dx, ry + dy, yaw=yaw, pitch=pitch, mat="hewn")
     tower(z, rx - 1600, ry + 1200, h=2, fire_top=True)
     tower(z, rx + 1600, ry + 1200, h=1, fire_top=True)
     # 불·연기
-    for (dx, dy, s) in [(-500, 200, 2.2), (600, 500, 1.8), (200, -700, 2.5), (-1100, -300, 1.6), (1000, -200, 2.0)]:
+    for dx, dy, s in [(-500, 200, 2.2), (600, 500, 1.8), (200, -700, 2.5), (-1100, -300, 1.6), (1000, -200, 2.0)]:
         emitter(z, FIRE, rx + dx, ry + dy, 10, s)
         emitter(z, SMOKE, rx + dx, ry + dy, 200, s)
-    debris = [(rx + random.uniform(-1500, 1500), ry + random.uniform(-1100, 1100), 0, random.uniform(0, 360), s, s, s * 0.6)
-              for s in [random.uniform(0.4, 1.3) for _ in range(40)]]
+    debris = [
+        (rx + random.uniform(-1500, 1500), ry + random.uniform(-1100, 1100), 0, random.uniform(0, 360), s, s, s * 0.6)
+        for s in [random.uniform(0.4, 1.3) for _ in range(40)]
+    ]
     hism(z, "cube", debris, mat="basalt")
-    hism(z, "rock", [(rx + random.uniform(-1700, 1700), ry + random.uniform(-1300, 1300), 0, random.uniform(0, 360), s, s, s)
-                     for s in [random.uniform(0.6, 1.5) for _ in range(14)]])
+    hism(
+        z,
+        "rock",
+        [
+            (rx + random.uniform(-1700, 1700), ry + random.uniform(-1300, 1300), 0, random.uniform(0, 360), s, s, s)
+            for s in [random.uniform(0.6, 1.5) for _ in range(14)]
+        ],
+    )
     # 왕좌홀 흔적: 제단 + 부서진 조각상
     place(z, "cube", rx, ry, scale=(2.0, 2.0, 0.3), mat="basalt", z_off=2)
     place(z, "statue", rx, ry, z_off=32, scale=(1.3, 1.3, 1.3), mat="rust", pitch=25)
     # PlayerStart(ry+600) 가 박스 안에 있으면 스폰 시 BeginOverlap 이 안 뜬다(실측) — 남쪽 절반만 덮어 걸어 나가며 밟게
     trigger("ruins", rx, ry - 500, ext=(1600, 500, 300))
-    ps = find_actor(cls="PlayerStart")
-    if ps:
-        print("[scene] PlayerStart →", move_actor(ps, rx, ry + 600, 100, yaw=-90))  # 폐허 안, 남향 → 성문
 
 
 def build_library():
@@ -512,28 +614,62 @@ def build_library():
     # 열주 2열 + 부서진 지붕 조각 + 서가 회랑
     for i in range(6):
         for sy in (-1, 1):
-            place(z, "pillar", lx - 1000 + i * 400, ly + sy * 600, mat="stone", scale=(1.2, 1.2, 1.4),
-                  roll=random.uniform(-10, 10) if random.random() < 0.4 else 0)
+            place(
+                z,
+                "pillar",
+                lx - 1000 + i * 400,
+                ly + sy * 600,
+                mat="stone",
+                scale=(1.2, 1.2, 1.4),
+                roll=random.uniform(-10, 10) if random.random() < 0.4 else 0,
+            )
     wall_line(z, lx - 1300, ly + 900, lx + 1300, ly + 900, mat="brick", mesh="wall3", window_every=2)
     wall_line(z, lx - 1300, ly - 900, lx - 500, ly - 900, mat="brick", mesh="wall3")
     wall_line(z, lx + 400, ly - 900, lx + 1300, ly - 900, mat="brick", mesh="wall3")
     wall_line(z, lx - 1300, ly + 900, lx - 1300, ly - 900, mat="brick", mesh="wall3", window_every=2)
-    for (dx, dy, yaw, roll) in [(-300, 550, 0, -8), (100, 550, 0, 0), (500, 550, 0, 6), (-1250, 200, 90, 0), (-1250, -200, 90, -5),
-                                (900, 550, 0, 0), (-700, 550, 0, 0)]:
+    for dx, dy, yaw, roll in [
+        (-300, 550, 0, -8),
+        (100, 550, 0, 0),
+        (500, 550, 0, 6),
+        (-1250, 200, 90, 0),
+        (-1250, -200, 90, -5),
+        (900, 550, 0, 0),
+        (-700, 550, 0, 0),
+    ]:
         place(z, "shelf", lx + dx, ly + dy, yaw=yaw, roll=roll, mat="wood")
-    for (dx, dy, yaw, pitch) in [(300, -300, 30, -40), (-900, 100, -20, 30)]:
+    for dx, dy, yaw, pitch in [(300, -300, 30, -40), (-900, 100, -20, 30)]:
         place(z, "wall3", lx + dx, ly + dy, yaw=yaw, pitch=pitch, mat="brick")
     place(z, "statue", lx, ly - 400, scale=(1.5, 1.5, 1.5), mat="stone")
     chair(z, lx + 60, ly + 80, yaw=-90, fid="Chair_Library_Reading")  # 탁자(-Y) 를 본다
     place(z, "table", lx + 60, ly - 120, mat="wood")
-    hism(z, "cube", [(lx + random.uniform(-1200, 1200), ly + random.uniform(-800, 800), 0, random.uniform(0, 360), 0.25, 0.35, 0.08)
-                     for _ in range(60)], mat="pine")  # 흩어진 책
-    hism(z, "rock", [(lx + random.uniform(-1800, 1800), ly + random.uniform(-1400, 1400), 0, random.uniform(0, 360), s, s, s)
-                     for s in [random.uniform(0.5, 1.4) for _ in range(12)]])
+    hism(
+        z,
+        "cube",
+        [
+            (
+                lx + random.uniform(-1200, 1200),
+                ly + random.uniform(-800, 800),
+                0,
+                random.uniform(0, 360),
+                0.25,
+                0.35,
+                0.08,
+            )
+            for _ in range(60)
+        ],
+        mat="pine",
+    )  # 흩어진 책
+    hism(
+        z,
+        "rock",
+        [
+            (lx + random.uniform(-1800, 1800), ly + random.uniform(-1400, 1400), 0, random.uniform(0, 360), s, s, s)
+            for s in [random.uniform(0.5, 1.4) for _ in range(12)]
+        ],
+    )
     torch(z, lx - 1300, ly - 1100)
     torch(z, lx + 1300, ly - 1100)
     trigger("library", lx, ly, ext=(1400, 1000, 300))
-    move_npc("Moca", lx + 60, ly + 190, face=(lx + 60, ly - 120))
 
 
 def build_forest():
@@ -541,11 +677,20 @@ def build_forest():
     fx, fy = FOREST
     cxp, cyp = CLEARING
     bx, by = BOMB
-    forest_patch(z, fx, fy, FOREST_R, 520, exclude=[(cxp, cyp, 900), (bx, by, 900), (GATE_S[0] + 2500, GATE_S[1] - 1500, 900)])
+    forest_patch(
+        z, fx, fy, FOREST_R, 520, exclude=[(cxp, cyp, 900), (bx, by, 900), (GATE_S[0] + 2500, GATE_S[1] - 1500, 900)]
+    )
     # 약초 빈터: 바위 원 + 약초(초록 덤불) + 드롭
     ring(z, cxp, cyp, 700, 7, mesh="rock", scale=(1.0, 1.0, 0.7))
-    hism(z, "bush", [(cxp + random.uniform(-500, 500), cyp + random.uniform(-500, 500), 0, random.uniform(0, 360), 0.5, 0.5, 0.5)
-                     for _ in range(16)], collision=False)
+    hism(
+        z,
+        "bush",
+        [
+            (cxp + random.uniform(-500, 500), cyp + random.uniform(-500, 500), 0, random.uniform(0, 360), 0.5, 0.5, 0.5)
+            for _ in range(16)
+        ],
+        collision=False,
+    )
     drop_cls = unreal.EditorAssetLibrary.load_blueprint_class("/Game/Blueprint/Entity/BP_DropItem")
     d = EAS.spawn_actor_from_class(drop_cls, unreal.Vector(cxp, cyp, ground_z(cxp, cyp) + 20), unreal.Rotator(0, 0, 0))
     item = d.get_editor_property("ItemData")
@@ -555,16 +700,22 @@ def build_forest():
     campfire(z, cxp + 350, cyp - 300, 1.0)
     trigger("forest", cxp, cyp, ext=(1200, 1200, 300))
     # 폭격 자리: 분화구(토러스) + 연기 + 잔해 + 부서진 마왕군 수레
-    for (dx, dy, s) in [(0, 0, 3.0), (600, 400, 2.0), (-500, 500, 2.4)]:
+    for dx, dy, s in [(0, 0, 3.0), (600, 400, 2.0), (-500, 500, 2.4)]:
         place(z, "torus", bx + dx, by + dy, scale=(s, s, 0.25), mat="basalt", z_off=0, collision=False)
         emitter(z, SMOKE, bx + dx, by + dy, 30, 1.5)
     emitter(z, FIRE, bx + 600, by + 400, 10, 1.2)
-    hism(z, "cube", [(bx + random.uniform(-900, 900), by + random.uniform(-900, 900), 0, random.uniform(0, 360), s, s, s * 0.5)
-                     for s in [random.uniform(0.3, 1.0) for _ in range(30)]], mat="basalt")
+    hism(
+        z,
+        "cube",
+        [
+            (bx + random.uniform(-900, 900), by + random.uniform(-900, 900), 0, random.uniform(0, 360), s, s, s * 0.5)
+            for s in [random.uniform(0.3, 1.0) for _ in range(30)]
+        ],
+        mat="basalt",
+    )
     place(z, "cube", bx + 900, by - 300, yaw=30, scale=(2.0, 1.2, 0.8), mat="walnut", roll=25)  # 뒤집힌 수레
     place(z, "torus", bx + 700, by - 200, yaw=90, scale=(0.8, 0.8, 0.2), mat="rust", pitch=90)
     place(z, "rock", bx - 700, by - 600, scale=(2.4, 2.4, 1.3))  # Skadi 가 올라선 바위
-    move_npc("Skadi", bx - 700, by - 250, face=OUTPOST)
 
 
 def build_river_bridge():
@@ -572,7 +723,9 @@ def build_river_bridge():
     # 강: 남북 긴 수면 (충돌 없음) + 강둑 바위
     for i in range(-6, 7):
         place(z, "plane", RIVER_X, i * 4000, scale=(9.0, 40.0, 1.0), mat="water", z_off=4, collision=False)
-    scatter(z, RIVER_X, 0, 900, 24000, 260, "rock", smin=0.4, smax=1.3, exclude=[(BRIDGE[0], BRIDGE[1], 1400)], zflat=0.4)
+    scatter(
+        z, RIVER_X, 0, 900, 24000, 260, "rock", smin=0.4, smax=1.3, exclude=[(BRIDGE[0], BRIDGE[1], 1400)], zflat=0.4
+    )
     # 다리: 상판 + 난간 기둥 + 교각
     bx, by = BRIDGE
     for i in range(-3, 4):
@@ -620,11 +773,23 @@ def build_outpost():
     place(z, "pyramid", ox - 900, oy + 1100, scale=(9.0, 9.0, 3.5), mat="rust")  # 천막
     place(z, "table", ox, oy, mat="wood")
     campfire(z, ox - 500, oy - 900, 1.6)
-    hism(z, "cube", [(ox + random.uniform(-1800, 1800), oy + random.uniform(-1800, 1800), 0, random.uniform(0, 360), s, s, s)
-                     for s in [random.uniform(0.4, 0.9) for _ in range(18)]], mat="wood")
-    hism(z, "cyl", [(ox + random.uniform(-1800, 1800), oy + random.uniform(-1800, 1800), 0, 0, 0.5, 0.5, 0.8) for _ in range(8)], mat="rust")
+    hism(
+        z,
+        "cube",
+        [
+            (ox + random.uniform(-1800, 1800), oy + random.uniform(-1800, 1800), 0, random.uniform(0, 360), s, s, s)
+            for s in [random.uniform(0.4, 0.9) for _ in range(18)]
+        ],
+        mat="wood",
+    )
+    hism(
+        z,
+        "cyl",
+        [(ox + random.uniform(-1800, 1800), oy + random.uniform(-1800, 1800), 0, 0, 0.5, 0.5, 0.8) for _ in range(8)],
+        mat="rust",
+    )
     # 마왕군 깃발: 기둥 + 검은 판
-    for (fx_, fy_) in [(ox - OUT_HW + 500, oy - 900), (ox - OUT_HW + 500, oy + 900), (ox, oy + 1900)]:
+    for fx_, fy_ in [(ox - OUT_HW + 500, oy - 900), (ox - OUT_HW + 500, oy + 900), (ox, oy + 1900)]:
         place(z, "pillar", fx_, fy_, scale=(0.35, 0.35, 1.3), mat="rust")
         place(z, "cube", fx_ + 60, fy_, scale=(0.06, 1.0, 1.4), mat="basalt", z_off=480, collision=False)
     # 포로 우리 (Elara)
@@ -632,8 +797,6 @@ def build_outpost():
     ring(z, cx, cy, 300, 8, mesh="pillar", mat="rust", scale=(0.5, 0.5, 0.8))
     place(z, "torus", cx, cy, scale=(3.4, 3.4, 0.2), mat="rust", z_off=390, collision=False)
     trigger("outpost", ox - OUT_HW + 400, oy, ext=(500, 900, 300))  # 서문 안쪽
-    move_npc("Elara", cx, cy, face=(ox, oy))
-    move_npc("Commander_Vorg", ox - 300, oy - 300, face=(ox - OUT_HW, oy))
 
 
 def build_citadel():
@@ -647,7 +810,7 @@ def build_citadel():
     for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
         tower(z, cx + sx * H, cy + sy * H, h=4, mat="basalt", roof="pyramid", roof_mat="rust")
         place(z, "pyramid", cx + sx * H, cy + sy * H, scale=(3.5, 3.5, 12.0), mat="basalt", z_off=1600)
-    for (dx, dy) in [(0, H), (-H, 0), (H, 0)]:
+    for dx, dy in [(0, H), (-H, 0), (H, 0)]:
         tower(z, cx + dx, cy + dy, h=3, mat="basalt", roof="pyramid", roof_mat="rust")
     gx, gy = cx, cy - H
     for sx in (-1, 1):
@@ -659,8 +822,18 @@ def build_citadel():
     floor_grid(z, cx, cy, 16, 16, mat="basalt")
     kx, ky = cx, cy + 1200
     for lvl in range(3):
-        rect_walls(z, kx, ky, 1400, 1000, mat="basalt", seg=400, doors={"s": 3} if lvl == 0 else None, z_off=lvl * 400,
-                   window_every=3 if lvl > 0 else 0)
+        rect_walls(
+            z,
+            kx,
+            ky,
+            1400,
+            1000,
+            mat="basalt",
+            seg=400,
+            doors={"s": 3} if lvl == 0 else None,
+            z_off=lvl * 400,
+            window_every=3 if lvl > 0 else 0,
+        )
     place(z, "pyramid", kx, ky, scale=(30.0, 22.0, 6.0), mat="rust", z_off=1200)
     for sx in (-1, 1):
         place(z, "pyramid", kx + sx * 1400, ky + 1000, scale=(3.0, 3.0, 10.0), mat="basalt", z_off=1200)
@@ -680,38 +853,122 @@ def build_citadel():
     ring(z, bx, by, 380, 5, mesh="pillar", mat="rust", scale=(0.5, 0.5, 0.9))
     for i in range(5):
         ang = 2 * math.pi * i / 5
-        place(z, "torus", bx + 380 * math.cos(ang), by + 380 * math.sin(ang), scale=(0.4, 0.4, 0.2), mat="rust", z_off=420, pitch=90,
-              collision=False)
+        place(
+            z,
+            "torus",
+            bx + 380 * math.cos(ang),
+            by + 380 * math.sin(ang),
+            scale=(0.4, 0.4, 0.2),
+            mat="rust",
+            z_off=420,
+            pitch=90,
+            collision=False,
+        )
     emitter(z, SMOKE, bx, by, 40, 1.2)
     # 안뜰 잡동사니: 우리·창(기둥)·잔해
-    hism(z, "cube", [(cx + random.uniform(-3000, 3000), cy + random.uniform(-3000, -400), 0, random.uniform(0, 360), s, s, s * 0.6)
-                     for s in [random.uniform(0.4, 1.4) for _ in range(40)]], mat="basalt")
-    hism(z, "pillar", [(cx + random.uniform(-3200, 3200), cy + random.uniform(-3200, -600), 0, random.uniform(0, 360), 0.3, 0.3,
-                        random.uniform(0.5, 0.9)) for _ in range(30)], mat="rust")
-    for (dx, dy) in [(-1500, -2500), (1500, -2500), (-2800, 1500), (2800, 1500)]:
+    hism(
+        z,
+        "cube",
+        [
+            (
+                cx + random.uniform(-3000, 3000),
+                cy + random.uniform(-3000, -400),
+                0,
+                random.uniform(0, 360),
+                s,
+                s,
+                s * 0.6,
+            )
+            for s in [random.uniform(0.4, 1.4) for _ in range(40)]
+        ],
+        mat="basalt",
+    )
+    hism(
+        z,
+        "pillar",
+        [
+            (
+                cx + random.uniform(-3200, 3200),
+                cy + random.uniform(-3200, -600),
+                0,
+                random.uniform(0, 360),
+                0.3,
+                0.3,
+                random.uniform(0.5, 0.9),
+            )
+            for _ in range(30)
+        ],
+        mat="rust",
+    )
+    for dx, dy in [(-1500, -2500), (1500, -2500), (-2800, 1500), (2800, 1500)]:
         campfire(z, cx + dx, cy + dy, 1.8)
     trigger("citadel", gx, gy + 700, ext=(1200, 700, 400))
-    move_npc("DemonLord", kx, ky + 700, face=(kx, ky - 3000))
 
 
 def build_roads():
     z = "road"
     road(z, [RUINS, (RUINS[0], RUINS[1] - 1800), GATE_N, (GATE_N[0], GATE_N[1] - 700), PLAZA], width=2)
-    road(z, [PLAZA, (PLAZA[0] - 2000, PLAZA[1] - 300), GATE_W, (GATE_W[0] - 900, GATE_W[1]), (LIBRARY[0] + 2200, LIBRARY[1] - 200), LIBRARY])
-    road(z, [PLAZA, (1400, -3000), GATE_S, (GATE_S[0], GATE_S[1] - 900), (3500, -6200), (CLEARING[0] - 900, CLEARING[1])])
-    road(z, [(CLEARING[0] + 900, CLEARING[1]), (BOMB[0] - 1200, BOMB[1]), (BOMB[0], BOMB[1] + 1200), (BRIDGE[0] - 1700, BRIDGE[1])])
-    road(z, [(BRIDGE[0] + 1700, BRIDGE[1]), (OUTPOST[0] - OUT_HW - 900, BRIDGE[1]), (OUTPOST[0] - OUT_HW - 900, OUTPOST[1]),
-             (OUTPOST[0] - OUT_HW + 200, OUTPOST[1])])
-    road(z, [(OUTPOST[0], OUTPOST[1] + OUT_HW), (OUTPOST[0], OUTPOST[1] + OUT_HW + 2000), (CITADEL[0], CITADEL[1] - CIT_HW - 2200),
-             (CITADEL[0], CITADEL[1] - CIT_HW - 300)], width=2)
+    road(
+        z,
+        [
+            PLAZA,
+            (PLAZA[0] - 2000, PLAZA[1] - 300),
+            GATE_W,
+            (GATE_W[0] - 900, GATE_W[1]),
+            (LIBRARY[0] + 2200, LIBRARY[1] - 200),
+            LIBRARY,
+        ],
+    )
+    road(
+        z, [PLAZA, (1400, -3000), GATE_S, (GATE_S[0], GATE_S[1] - 900), (3500, -6200), (CLEARING[0] - 900, CLEARING[1])]
+    )
+    road(
+        z,
+        [
+            (CLEARING[0] + 900, CLEARING[1]),
+            (BOMB[0] - 1200, BOMB[1]),
+            (BOMB[0], BOMB[1] + 1200),
+            (BRIDGE[0] - 1700, BRIDGE[1]),
+        ],
+    )
+    road(
+        z,
+        [
+            (BRIDGE[0] + 1700, BRIDGE[1]),
+            (OUTPOST[0] - OUT_HW - 900, BRIDGE[1]),
+            (OUTPOST[0] - OUT_HW - 900, OUTPOST[1]),
+            (OUTPOST[0] - OUT_HW + 200, OUTPOST[1]),
+        ],
+    )
+    road(
+        z,
+        [
+            (OUTPOST[0], OUTPOST[1] + OUT_HW),
+            (OUTPOST[0], OUTPOST[1] + OUT_HW + 2000),
+            (CITADEL[0], CITADEL[1] - CIT_HW - 2200),
+            (CITADEL[0], CITADEL[1] - CIT_HW - 300),
+        ],
+        width=2,
+    )
 
 
 def build_wilderness():
     """맵 나머지 채우기 — 마을 밖 초원·숲·바위 들판·죽은 숲. 구역/길은 제외."""
     z = "wild"
-    ex = [(VIL[0], VIL[1], 6000), (RUINS[0], RUINS[1], 2800), (LIBRARY[0], LIBRARY[1], 2800), (FOREST[0], FOREST[1], FOREST_R + 600),
-          (BRIDGE[0], BRIDGE[1], 2400), (OUTPOST[0], OUTPOST[1], OUT_HW + 1200), (CITADEL[0], CITADEL[1], CIT_HW + 1500),
-          (RIVER_X, 0, 1200), (RIVER_X, 8000, 1200), (RIVER_X, -8000, 1200), (RIVER_X, 16000, 1200), (RIVER_X, -16000, 1200)]
+    ex = [
+        (VIL[0], VIL[1], 6000),
+        (RUINS[0], RUINS[1], 2800),
+        (LIBRARY[0], LIBRARY[1], 2800),
+        (FOREST[0], FOREST[1], FOREST_R + 600),
+        (BRIDGE[0], BRIDGE[1], 2400),
+        (OUTPOST[0], OUTPOST[1], OUT_HW + 1200),
+        (CITADEL[0], CITADEL[1], CIT_HW + 1500),
+        (RIVER_X, 0, 1200),
+        (RIVER_X, 8000, 1200),
+        (RIVER_X, -8000, 1200),
+        (RIVER_X, 16000, 1200),
+        (RIVER_X, -16000, 1200),
+    ]
     forest_patch(z, -17000, -16000, 6500, 420, exclude=ex)
     forest_patch(z, -16500, 14000, 7000, 460, exclude=ex)
     forest_patch(z, 16500, -17000, 6000, 380, exclude=ex)
@@ -724,14 +981,45 @@ def build_wilderness():
     scatter(z, 20000, 20000, 4500, 4500, 60, "rock", smin=3.0, smax=6.0, exclude=ex, zflat=0.8)  # 북동 바위산
     scatter(z, -21000, 3000, 3500, 6000, 50, "rock", smin=3.0, smax=6.0, exclude=ex, zflat=0.8)  # 서쪽 바위산
     # 이정표(길 갈림)
-    for (sx, sy, yaw) in [(GATE_S[0], GATE_S[1] - 1200, 0), (BOMB[0] - 1400, BOMB[1] + 300, 45), (OUTPOST[0], OUTPOST[1] + OUT_HW + 1200, 90)]:
+    for sx, sy, yaw in [
+        (GATE_S[0], GATE_S[1] - 1200, 0),
+        (BOMB[0] - 1400, BOMB[1] + 300, 45),
+        (OUTPOST[0], OUTPOST[1] + OUT_HW + 1200, 90),
+    ]:
         place(z, "pillar", sx, sy, scale=(0.3, 0.3, 0.45), mat="wood")
         place(z, "cube", sx, sy, yaw=yaw, scale=(0.9, 0.12, 0.25), mat="pine", z_off=200)
+
+
+def place_actors():
+    """기존 액터(NPC·PlayerStart·Bed) 스토리 위치 재배치. 전체 재빌드 없이 단독 호출 가능 —
+    파일을 모듈 레벨 `with unreal.ScopedEditorTransaction` 줄에서 잘라 앞부분만 exec 한 뒤 place_actors() + save_dirty_packages."""
+    gx, gy = GATE_N
+    px, py = PLAZA
+    hx, hy = HIDEOUT
+    rx, ry = RUINS
+    lx, ly = LIBRARY
+    bx, by = BOMB
+    ox, oy = OUTPOST
+    kx, ky = CITADEL[0], CITADEL[1] + 1200  # 아성
+    ps = find_actor(cls="PlayerStart")
+    if ps:
+        print("[scene] PlayerStart →", move_actor(ps, rx, ry + 600, 100, yaw=-90))  # 폐허 안, 남향 → 성문
+    bed = find_actor(cls="BP_Bed_C")
+    if bed:
+        move_actor(bed, hx + 180, hy + 200, 0, yaw=90)
+    move_npc("Guard", gx + 250, gy - 500, face=(gx, gy + 900))
+    move_npc("James", px + 400, py + 350, face=PLAZA)
+    move_npc("Moca", lx + 60, ly + 190, face=(lx + 60, ly - 120))
+    move_npc("Skadi", bx - 700, by - 250, face=OUTPOST)
+    move_npc("Elara", ox + 900, oy + 300, face=(ox, oy))  # 포로 우리
+    move_npc("Commander_Vorg", ox - 300, oy - 300, face=(ox - OUT_HW, oy))
+    move_npc("DemonLord", kx, ky + 700, face=(kx, ky - 3000))  # 왕좌
 
 
 def build_env():
     nav = find_actor(cls="NavMeshBoundsVolume")
     if nav:
+        nav.modify(True)
         nav.set_actor_location(unreal.Vector(0, 0, 400), False, False)
         nav.set_actor_scale3d(unreal.Vector(255, 255, 18))  # 51000×51000×3600
         print("[scene] NavMeshBounds → 전 맵")
@@ -739,6 +1027,7 @@ def build_env():
     if fog:
         comp = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
         if comp:
+            fog.modify(True)
             comp.set_fog_density(0.02)
             comp.set_fog_inscattering_color(unreal.LinearColor(0.55, 0.5, 0.6, 1.0))
             print("[scene] fog 조정")
@@ -755,6 +1044,7 @@ def build():
     build_citadel()
     build_roads()
     build_wilderness()
+    place_actors()
     build_env()
 
 
