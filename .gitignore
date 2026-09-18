@@ -173,3 +173,6 @@ OmniAgent_VR_System/CognitiveEngine/app/story/story_state.json
 
 # StarterContent 서브셋 — Engine/Samples/StarterContent/Content 에서 복사(2026-09-18). 다른 클론은 재복사(Memo 참조)
 Content/StarterContent/
+
+# 외부 무료 에셋 원본(CC0 zip/FBX) — tools/fetch_assets.py 가 받음, 재현 가능하니 미추적
+RawAssets/
