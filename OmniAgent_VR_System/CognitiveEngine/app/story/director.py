@@ -90,7 +90,8 @@ async def run_director(m: StoryMachine, reason: str) -> dict:
             log_extra={"stage": "story_director", "beat": m.state.main_beat},
         )
     except Exception as e:
-        logger.warning(f"[Story] 디렉터 LLM 실패 — 작가 원문 사용 (beat={m.state.main_beat}): {e}")
+        # {e!r}: asyncio.TimeoutError 는 str() 이 빈 문자열이라 타임아웃(DIRECTOR_TIMEOUT_S)이 로그에서 안 보였다.
+        logger.warning(f"[Story] 디렉터 LLM 실패 — 작가 원문 사용 (beat={m.state.main_beat}): {e!r}")
         return _fallback(m)
 
     # 후보 밖 side id·미상 npc 는 버린다 — LLM 이 스토리 상태를 만지지 못하게.

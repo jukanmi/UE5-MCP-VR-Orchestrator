@@ -289,7 +289,11 @@ def interface_input_node(state: AgentState) -> dict:
     logger.info(f"[Interface Input] Natural context: {natural_context[:100]}...")
 
     # ── 대상 NPC 추출 (단순 휴리스틱, 멀티 NPC) ─────────────────
-    target_npcs = _extract_target_npcs(transcript)
+    # UE5 가 명시한 대상(플레이어가 마주 보고 말한 NPC)이 있으면 그게 곧 청자다. 발화 속 이름은 "~에 대해"
+    # 언급인 경우가 대부분 — "James 가 당신을 찾으라고 했어요" 를 Moca 에게 말했는데 James 가 답하고
+    # talked_to 는 Moca 에 적립되던 실측 사고(2026-09-18 전 루프 주행). 이름 추출은 명시 대상이 없을 때만.
+    explicit = state.get("target_npc")
+    target_npcs = [explicit] if explicit else _extract_target_npcs(transcript)
 
     result = {
         # 정규화된 객체를 state 로 돌려준다 — 뒤 노드가 dict/객체 이중 대응을 하지 않게.
