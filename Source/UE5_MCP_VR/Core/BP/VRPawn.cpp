@@ -1502,6 +1502,7 @@ void AVRPawn::SayToNpc(const FString& Text)
         return;
     }
     PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
+    PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), CurrentTargetNPCID, Text);
 }
 
 void AVRPawn::LogIKMetrics()

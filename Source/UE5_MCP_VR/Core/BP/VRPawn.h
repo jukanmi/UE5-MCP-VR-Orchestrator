@@ -474,6 +474,7 @@ public:
     // ============================================================================
 
     virtual FString GetEntityID_Implementation() const override { return GetName(); }
+    virtual FString GetEntityID_Implementation() const override { return TEXT("Player"); }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
@@ -482,6 +483,7 @@ public:
     { CurrentStats.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
     virtual FString GetPlayerName_Implementation() const override { return GetName(); }
+    virtual FString GetPlayerName_Implementation() const override { return TEXT("Player"); }
     virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 
     virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;

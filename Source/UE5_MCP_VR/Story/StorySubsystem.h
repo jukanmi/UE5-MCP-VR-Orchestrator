@@ -49,6 +49,9 @@ public:
     /** 응답 JSON 의 `Story` 오브젝트 → CurrentState 갱신 + OnStoryUpdated. 필수 키 없으면 false, 로그 후 무시. */
     bool ApplyStoryJson(const TSharedPtr<FJsonObject>& StoryObj);
 
+    /** 개별 이벤트(spawn_enemy 등) 실행 */
+    void ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj);
+
     UFUNCTION(BlueprintPure, Category = "MCP|Story")
     const FStoryState& GetCurrentState() const { return CurrentState; }
 
