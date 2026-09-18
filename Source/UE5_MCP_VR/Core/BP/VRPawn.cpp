@@ -1587,7 +1587,35 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
         return 0.f;
     }
 
-    float Actual = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    // EnemyCharacter 와 같은 공식: 원시 − 방어력 (최소 0).
+    float Actual = FMath::Max(0.f, Raw - CurrentStats.Combat.Defense);
+
+    // Block/Parry — 아이템을 쥔 손이 공격자 쪽(수평 내적 ≥ BlockDotThreshold)에 있으면 막은 것.
+    // 그 손이 ParryHandSpeed 이상으로 움직이는 중이면 패링(데미지 0), 아니면 단순 방어(BlockDamageScale).
+    // 수평 투영 이유: 손은 캡슐 중심보다 늘 위에 있어 3D 내적으론 높이 든 손이 방어로 안 잡힘.
+    if (Actual > 0.f && DamageCauser && Inventory)
+    {
+        const FVector PlayerLoc = GetActorLocation();
+        const FVector AttackDir = (DamageCauser->GetActorLocation() - PlayerLoc).GetSafeNormal2D();
+        for (const bool bRight : { true, false })
+        {
+            if (!Inventory->GetHeldItem(bRight ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand)) continue;
+            const FVector HandDir = (GetHandLocation(bRight) - PlayerLoc).GetSafeNormal2D();
+            if (FVector::DotProduct(HandDir, AttackDir) < BlockDotThreshold) continue;
+
+            const float HandSpeed = (bRight ? HandVelRight : HandVelLeft).Size();
+            const bool  bParry    = HandSpeed >= ParryHandSpeed;
+            Actual = bParry ? 0.f : Actual * BlockDamageScale;
+            const FString Msg = FString::Printf(TEXT("[VRPawn] %s (%s손 %.0f cm/s) 데미지 %.1f (raw %.1f, def %.1f)"),
+                bParry ? TEXT("Parried") : TEXT("Blocked"), bRight ? TEXT("오른") : TEXT("왼"),
+                HandSpeed, Actual, Raw, CurrentStats.Combat.Defense);
+            UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, bParry ? FColor::Cyan : FColor::Yellow, Msg);
+            break;
+        }
+    }
+
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 
     if (CurrentStats.Resources.Health <= 0.f)

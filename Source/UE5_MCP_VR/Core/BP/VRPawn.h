@@ -348,6 +348,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
     float HandVelSmoothing = 0.5f;
 
+    /** 방어 판정 — 아이템 쥔 손 방향(수평)·공격자 방향 내적이 이 이상이면 Block. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+    float BlockDotThreshold = 0.6f;
+
+    /** 패링 임계(cm/s). Block 성립 + 그 손 속도가 이 이상이면 데미지 0. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block")
+    float ParryHandSpeed = 150.f;
+
+    /** 단순 Block 시 남는 데미지 배율(0.2 = 80% 경감). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BlockDamageScale = 0.2f;
+
     /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
     float KnockbackScale = 150.f;
@@ -473,7 +485,6 @@ public:
     // IPlayerBase / IEntity 구현
     // ============================================================================
 
-    virtual FString GetEntityID_Implementation() const override { return GetName(); }
     virtual FString GetEntityID_Implementation() const override { return TEXT("Player"); }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
@@ -482,7 +493,6 @@ public:
     virtual void ApplyResourceDelta_Implementation(float DeltaHealth, float DeltaMana, float DeltaStamina) override
     { CurrentStats.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
-    virtual FString GetPlayerName_Implementation() const override { return GetName(); }
     virtual FString GetPlayerName_Implementation() const override { return TEXT("Player"); }
     virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 
