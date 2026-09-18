@@ -6,6 +6,8 @@
 #include "NPC/Subsystems/NPCManager.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
@@ -13,8 +15,10 @@
 
 AEnemyCharacter::AEnemyCharacter()
 {
-    PrimaryActorTick.bCanEverTick = false;  // 행동은 컨트롤러 틱, 반응은 래그돌 컴포넌트 틱
+    PrimaryActorTick.bCanEverTick = true;  // 로코모션 클립 선택만 — 행동은 컨트롤러 틱
+    PrimaryActorTick.TickInterval = 0.1f;
     AIControllerClass = AEnemyAIController::StaticClass();
+    GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);  // AnimBP 없이 클립 직접 재생
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
     RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
@@ -36,6 +40,8 @@ AEnemyCharacter::AEnemyCharacter()
         CMC->bOrientRotationToMovement = true;
         CMC->RotationRate = FRotator(0.f, 540.f, 0.f);
         CMC->bUseControllerDesiredRotation = false;
+        // RVO 회피는 켜지 않는다 — 켜면 타겟 앞 1.7~2.2m 에서 두 명이 서로 피하느라 v=0 으로 얼어 공격 사거리(170)에
+        // 영영 못 든다(실측 32초 무타격). 끼임의 실제 원인은 나무 수관 충돌이었고 그쪽을 고쳤다.
     }
 }
 
@@ -52,6 +58,32 @@ void AEnemyCharacter::BeginPlay()
     }
 
     GameplayTagUtils::AddState(GameplayTags, TAG_State_Idle);
+    PlayLoco(IdleAnim);
+}
+
+void AEnemyCharacter::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    UpdateLocomotionAnim();
+}
+
+// ============================================================================
+// 애니메이션 (단일 노드)
+// ============================================================================
+void AEnemyCharacter::PlayLoco(UAnimSequence* Anim)
+{
+    if (!Anim || CurrentLocoAnim.Get() == Anim) return;
+    CurrentLocoAnim = Anim;
+    GetMesh()->PlayAnimation(Anim, /*bLooping=*/true);
+}
+
+void AEnemyCharacter::UpdateLocomotionAnim()
+{
+    if (bIsDead || IsAttacking()) return;
+    if (RagdollComponent && RagdollComponent->IsKnockedDown()) return;  // 래그돌이 메시를 쥐고 있음
+    const float Speed = GetVelocity().Size2D();
+    const float RunThreshold = (Attributes.Movement.WalkSpeed + Attributes.Movement.RunSpeed) * 0.5f;
+    PlayLoco(Speed < 10.f ? IdleAnim : (Speed < RunThreshold ? WalkAnim : RunAnim));
 }
 
 bool AEnemyCharacter::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const
@@ -119,24 +151,28 @@ float AEnemyCharacter::StartAttack(AActor* Target)
 
     SetCurrentAttackTarget(Target);
 
-    if (AttackMontage)
+    // 클립 1회 재생(없으면 포즈 유지) — 점유 시간은 클립 길이, 판정은 AttackHitDelay 시점 1회.
+    float Len = 0.6f;
+    if (AttackAnim)
     {
-        const float Len = PlayAnimMontage(AttackMontage);
-        if (Len > 0.f) return Len;
+        CurrentLocoAnim = nullptr;  // 끝나면 로코모션 틱이 Idle 로 되돌림
+        GetMesh()->PlayAnimation(AttackAnim, /*bLooping=*/false);
+        Len = AttackAnim->GetPlayLength();
     }
-
-    // 몽타주 없음(에셋 미배정·재생 실패) — 0.3초 뒤 1회 판정으로 폴백. 노티파이 윈도우 대체.
+    const float Now = GetWorld()->GetTimeSeconds();
+    AttackEndTime = Now + Len;
     BeginAttackHitWindow();
-    GetWorldTimerManager().SetTimer(FallbackHitTimer, this, &AEnemyCharacter::FallbackAttackHit, 0.3f, false);
-    return 0.6f;
+    GetWorldTimerManager().SetTimer(AttackHitTimer, this, &AEnemyCharacter::OnAttackHitTime,
+        FMath::Clamp(AttackHitDelay, 0.05f, Len), false);
+    return Len;
 }
 
 bool AEnemyCharacter::IsAttacking() const
 {
-    return GetCurrentMontage() != nullptr || GetWorldTimerManager().IsTimerActive(FallbackHitTimer);
+    return GetWorld() && GetWorld()->GetTimeSeconds() < AttackEndTime;
 }
 
-void AEnemyCharacter::FallbackAttackHit()
+void AEnemyCharacter::OnAttackHitTime()
 {
     PerformAttackHit();
 }
@@ -151,8 +187,8 @@ void AEnemyCharacter::HandleDeath()
 
     GameplayTags.Reset();
     GameplayTagUtils::AddState(GameplayTags, TAG_State_Condition_Dead);
-    StopAnimMontage();
-    GetWorldTimerManager().ClearTimer(FallbackHitTimer);
+    GetWorldTimerManager().ClearTimer(AttackHitTimer);
+    AttackEndTime = -1.f;
 
     // 스토리 — boss_killed 판정(name=EnemyID). 수량 퀘스트 flag 는 스포너가 OnEnemyDied 에서 센다.
     if (UNPCManager* Manager = UNPCManager::Get(this))

@@ -376,7 +376,8 @@ def forest_patch(zone, cx, cy, r, n_trees, dead=False, density_bush=0.6, density
             rocks.append((x, y, 0, random.uniform(0, 360), s, s, s * random.uniform(0.6, 1.2)))
     hism(zone, "cyl", trunks, mat="basalt" if dead else "wood")
     if crowns:
-        hism(zone, "cone", crowns, mat="grass")
+        # 수관은 시각용 — 충돌 있으면 밑동 높이(1.3~2.3m)에서 캐릭터 캡슐(1.76m)이 걸려 AI 가 끼인다(실측)
+        hism(zone, "cone", crowns, mat="grass", collision=False)
     if bushes and not dead:
         hism(zone, "bush", bushes, collision=False)
     hism(zone, "rock", rocks)

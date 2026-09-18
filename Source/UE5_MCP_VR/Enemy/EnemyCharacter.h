@@ -7,7 +7,7 @@
 
 class UAIPerceptionStimuliSourceComponent;
 class UNPCRagdollComponent;
-class UAnimMontage;
+class UAnimSequence;
 class AEnemyCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, DeadEnemy);
@@ -16,6 +16,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, Dead
  * 필드 적 — LLM 없는 일반 게임식 몬스터. 서브퀘스트 토벌 대상(도적·오크·망령).
  * 행동은 AEnemyAIController(배회→추적→공격→복귀), 피격·타격 규약은 ACombatCharacter 그대로라
  * 플레이어 스윙·투사체·아군 NPC 공격이 전부 같은 경로로 맞고, 아군 NPC 시야에도 잡힌다(StimuliSource).
+ * 애니메이션은 AnimBP 없이 단일 노드(SingleNode) 재생 — 속도로 Idle/Walk/Run 을 고르고 공격은 클립 1회.
+ * AnimBP 는 에디터 그래프 편집이 필요해 스크립트로 못 만들고, 로우폴리 적은 크로스페이드 없어도 충분.
  * SmartNPC 와 달리 NPCManager 에 등록하지 않는다 — 서버 prompt·perception 보고 없음.
  * 사망 시 story_event npc_died(name=EnemyID) → 디렉터 boss_killed 평가(Orc_Vagron 등).
  * 토벌 수량 퀘스트(도적 3명)는 스포너가 킬 수를 세어 flag 로 보낸다(AEnemySpawner::KillFlag).
@@ -37,17 +39,39 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
     FCharacterAttributesBase Attributes;
 
-    /** 공격 몽타주 — `NPC Attack Hit Window` 노티파이 필수(없으면 데미지 0). 미지정 시 타이머 폴백 판정. */
+    // --- 애니메이션 (단일 노드) — 미지정 슬롯은 건너뜀(T 포즈). ---
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Anim")
+    UAnimSequence* IdleAnim = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Anim")
+    UAnimSequence* WalkAnim = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Anim")
+    UAnimSequence* RunAnim = nullptr;
+
+    /** 공격 클립 1회 재생. 판정은 시작 후 AttackHitDelay 초에 1회(노티파이 대신 시간 기준). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Anim")
+    UAnimSequence* AttackAnim = nullptr;
+
+    /** 공격 클립 시작 → 타격 판정까지(초). 클립의 임팩트 프레임에 맞춘다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Combat")
-    UAnimMontage* AttackMontage = nullptr;
+    float AttackHitDelay = 0.4f;
 
     /** AttackPower → 실데미지 환산 배율. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Combat")
     float AttackDamageScale = 1.0f;
 
-    /** 공격 시작 후 다음 공격까지 대기(초). 몽타주 길이와 별개. */
+    /** 공격 시작 후 다음 공격까지 대기(초). 클립 길이와 별개(둘 중 긴 쪽). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Combat")
     float AttackCooldown = 1.5f;
+
+    /** HP 비율이 이 아래로 처음 떨어지면 도주(0=안 함). 보스는 0. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Smart", meta = (ClampMin = "0", ClampMax = "1"))
+    float FleeHealthPct = 0.25f;
+
+    /** 도주 지속(초) — 끝나면 재교전. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Smart")
+    float FleeDuration = 5.f;
 
     /** 사망 후 시체 유지(초) — 래그돌 안착·시신 노출 여유. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
@@ -65,11 +89,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
     UNPCRagdollComponent* RagdollComponent;
 
-    /** 타겟에게 공격 1회 시작(타겟 저장 + 몽타주). 반환: 이번 공격이 점유하는 시간(초). 이미 공격 중·사망이면 0. */
+    /** 타겟에게 공격 1회 시작(타겟 저장 + 클립 재생). 반환: 이번 공격이 점유하는 시간(초). 이미 공격 중·사망이면 0. */
     float StartAttack(AActor* Target);
 
-    /** 공격 몽타주(또는 폴백 판정 타이머) 진행 중. */
+    /** 공격 클립 진행 중. */
     bool IsAttacking() const;
+
+    /** 체력 비율 0~1. AI 도주 판단용. */
+    float GetHealthPercent() const { return Attributes.Resources.GetHealthPercent(); }
 
     /** HP 0 → 사망. 태그·스토리 이벤트·AI 정지·래그돌·수명. 중복 호출 무시. */
     UFUNCTION(BlueprintCallable, Category = "Enemy")
@@ -95,13 +122,20 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
     virtual float ComputeAttackDamage() const override { return Attributes.Combat.AttackPower * AttackDamageScale; }
 
 private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags", meta = (AllowPrivateAccess = "true"))
     FGameplayTagContainer GameplayTags;
 
-    // 몽타주 미배정 폴백 — 고정 지연 뒤 1회 판정(노티파이 윈도우 대체).
-    FTimerHandle FallbackHitTimer;
-    void FallbackAttackHit();
+    // 공격 판정 타이머(AttackHitDelay) + 공격 점유 종료 시각.
+    FTimerHandle AttackHitTimer;
+    float AttackEndTime = -1.f;
+    void OnAttackHitTime();
+
+    // 단일 노드 로코모션 — 현재 재생 클립(같은 클립 재요청 방지).
+    TWeakObjectPtr<UAnimSequence> CurrentLocoAnim;
+    void UpdateLocomotionAnim();
+    void PlayLoco(UAnimSequence* Anim);
 };
