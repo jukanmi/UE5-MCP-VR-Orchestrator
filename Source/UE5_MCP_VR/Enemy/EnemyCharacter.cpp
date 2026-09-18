@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
@@ -24,6 +25,11 @@ AEnemyCharacter::AEnemyCharacter()
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
     RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
+
+    // 손 소품 — 생성자에선 소켓을 못 정한다(BP 가 HandPropSocket 을 나중에 덮어씀). PostInitializeComponents 에서 붙인다.
+    HandProp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HandProp"));
+    HandProp->SetupAttachment(GetMesh());
+    HandProp->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // 캡슐·NPC 인지 방해 금지(타격은 공격 판정이 담당)
 
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
     if (StimuliSource)
@@ -44,6 +50,24 @@ AEnemyCharacter::AEnemyCharacter()
         CMC->bUseControllerDesiredRotation = false;
         // RVO 회피는 켜지 않는다 — 켜면 타겟 앞 1.7~2.2m 에서 두 명이 서로 피하느라 v=0 으로 얼어 공격 사거리(170)에
         // 영영 못 든다(실측 32초 무타격). 끼임의 실제 원인은 나무 수관 충돌이었고 그쪽을 고쳤다.
+    }
+}
+
+void AEnemyCharacter::PostInitializeComponents()
+{
+    Super::PostInitializeComponents();
+
+    // BP 상대 트랜스폼(손안 오프셋)은 유지한 채 소켓만 바꿔 단다. 소켓이 없으면 메시 루트에 남아 눈에 띄게 어긋난다(로그로 잡음).
+    if (HandProp && HandProp->GetStaticMesh())
+    {
+        if (GetMesh()->DoesSocketExist(HandPropSocket))
+        {
+            HandProp->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, HandPropSocket);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Enemy] %s: HandPropSocket %s 없음 — 소품이 메시 루트에 붙음"), *EnemyID, *HandPropSocket.ToString());
+        }
     }
 }
 

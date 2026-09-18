@@ -7,6 +7,7 @@
 
 class UAIPerceptionStimuliSourceComponent;
 class UNPCRagdollComponent;
+class UStaticMeshComponent;
 class UAnimSequence;
 class USoundBase;
 class AEnemyCharacter;
@@ -103,6 +104,15 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
     UNPCRagdollComponent* RagdollComponent;
 
+    /** 손에 쥔 소품(횃불·무기) — 비주얼 전용, 충돌 없음. 메시·손안 오프셋은 BP(make_enemy_bps.py)가 넣고,
+     *  소켓은 HandPropSocket. 래그돌 시 본을 따라간다. 메시가 비어 있으면 그냥 빈 컴포넌트. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+    UStaticMeshComponent* HandProp;
+
+    /** HandProp 을 붙일 본/소켓. 릭마다 다르다 — Quaternius RPG 는 Fist_L, UE5 마네킹 규약(Bestiary)은 hand_l. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Prop")
+    FName HandPropSocket = TEXT("hand_l");
+
     /** 타겟에게 공격 1회 시작(타겟 저장 + 클립 재생). 반환: 이번 공격이 점유하는 시간(초). 이미 공격 중·사망이면 0. */
     float StartAttack(AActor* Target);
 
@@ -135,6 +145,7 @@ public:
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override;
 
 protected:
+    virtual void PostInitializeComponents() override;
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
     virtual float ComputeAttackDamage() const override { return Attributes.Combat.AttackPower * AttackDamageScale; }

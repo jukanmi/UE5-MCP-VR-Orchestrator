@@ -1,9 +1,10 @@
 """서브퀘스트 적 BP 생성 — /Game/Blueprint/Enemy/{BP_Enemy, BP_Bandit, BP_OrcVagron, BP_KnightWraith}. 멱등(있으면 값만 갱신).
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")`.
-메시·애니는 Quaternius RPG Characters(CC0), 사운드는 Kenney(CC0) — RawAssets → /Game/Enemy/{Quaternius,Sounds} (tools/fetch_assets.py + 에디터 임포트).
+메시·애니는 Quaternius(RPG Characters CC0 · Bestiary/UAL itch.io → tools/import_itch_assets.py), 사운드는 Kenney(CC0).
 AnimBP 없음 — AEnemyCharacter 가 Idle/Walk/Run/Attack 클립을 단일 노드로 직접 재생하므로 BP 엔 클립 4개만 꽂는다.
-종류별 자식 BP 가 EnemyID·BaseStats·스케일·메시·클립을 다르게 가진다. 스탯 → 파생치는 BeginPlay 의 RecalculateCombatStats.
+종류별 자식 BP 가 EnemyID·BaseStats·스케일·메시·클립·손 소품을 다르게 가진다. 스탯 → 파생치는 BeginPlay 의 RecalculateCombatStats.
+클립 이름 규칙은 릭마다 다르다 — RPG Characters 는 {char}_Anim_CharacterArmature_{clip}, Bestiary 는 UAL 리타겟 결과 {char}_{clip}.
 """
 
 import unreal
@@ -11,8 +12,14 @@ import unreal
 DIR = "/Game/Blueprint/Enemy"
 BASE = f"{DIR}/BP_Enemy"
 Q = "/Game/Enemy/Quaternius"
+PROPS = "/Game/Core/Mesh/Props"
 
-# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율)
+# 릭별 클립 이름 — RPG Characters(Rogue/Warrior/Wizard) vs Bestiary(Imp/Puglin, UAL 리타겟).
+RPG = {"idle": "Idle", "walk": "Walk", "run": "Run", "fmt": "{char}_Anim_CharacterArmature_{clip}"}
+UAL = {"idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "fmt": "{char}_{clip}"}
+
+# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 릭, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율, 손 소품)
+# 손 소품: (Props 메시 이름, 본/소켓, 상대 위치, 상대 회전) 또는 None. 오프셋은 T 포즈 SceneCapture 로 맞춘 값 — PIE 에서 재확인.
 # 참고 공식(CharacterAttributes.h): ATK=Str×1.5, DEF=Con, HP=150+Con×15, 속도는 Dex.
 # 플레이어 스윙 데미지는 ½mv² 클램프(최대 100)라 HP 가 곧 필요 타수 — 도적 3~4방, 오크 10방+ 목표.
 KINDS = [
@@ -20,34 +27,40 @@ KINDS = [
         "BP_Bandit",
         "Bandit_Raider",
         "Rogue",
+        RPG,
         "Dagger_Attack",
         0.35,
         {"strength": 12, "constitution": 6, "dexterity": 14},
         1.0,
         1.4,
         0.25,
+        None,
     ),
     (
         "BP_OrcVagron",
         "Orc_Vagron",
         "Warrior",
+        RPG,
         "Sword_Attack",
         0.5,
         {"strength": 24, "constitution": 30, "dexterity": 8},
         1.35,
         2.2,
         0.0,
+        ("Torch_Metal", "Fist_L", unreal.Vector(0, 0, 0), unreal.Rotator(roll=0, pitch=0, yaw=0)),
     ),
     (
         "BP_KnightWraith",
         "Knight_Wraith",
         "Wizard",
+        RPG,
         "Staff_Attack",
         0.45,
         {"strength": 14, "constitution": 10, "dexterity": 20},
         1.05,
         1.2,
         0.15,
+        None,
     ),
 ]
 
@@ -59,8 +72,8 @@ def load(path):
     return a
 
 
-def anim(char, clip):
-    return load(f"{Q}/{char}/{char}_Anim_CharacterArmature_{clip}")
+def anim(char, rig, clip):
+    return load(f"{Q}/{char}/" + rig["fmt"].format(char=char, clip=clip))
 
 
 def ensure_bp(path, parent_class):
@@ -104,7 +117,7 @@ save(base)
 print("[enemy] base:", BASE)
 
 # ── 종류별 자식 ──────────────────────────────────────────────────────
-for name, enemy_id, char, attack_clip, hit_delay, stats, scale, cooldown, flee in KINDS:
+for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, flee, prop in KINDS:
     bp = ensure_bp(f"{DIR}/{name}", base.generated_class())
     c = cdo_of(bp)
     c.set_editor_property("EnemyID", enemy_id)
@@ -117,18 +130,24 @@ for name, enemy_id, char, attack_clip, hit_delay, stats, scale, cooldown, flee i
     c.set_editor_property("AttackCooldown", cooldown)
     c.set_editor_property("AttackHitDelay", hit_delay)
     c.set_editor_property("FleeHealthPct", flee)
-    # 메시 — Quaternius 릭(X_Bot 아님). 피벗이 발이라 캡슐 반높이만큼 내리고, FBX 정면(+Y)을 UE 정면(+X)으로.
+    # 메시 — Quaternius 릭(X_Bot 아님). 피벗이 발이라 캡슐 반높이만큼 내리고, 정면(+Y, RPG·Bestiary 공통)을 UE 정면(+X)으로.
     mesh = c.mesh
     mesh.set_skeletal_mesh_asset(load(f"{Q}/{char}/{char}"))
     mesh.set_editor_property("physics_asset_override", load(f"{Q}/{char}/{char}_PhysicsAsset"))
     mesh.set_editor_property("relative_location", unreal.Vector(0, 0, -88))
     mesh.set_editor_property("relative_rotation", unreal.Rotator(roll=0, pitch=0, yaw=-90))
     mesh.set_editor_property("anim_class", None)
-    c.set_editor_property("IdleAnim", anim(char, "Idle"))
-    c.set_editor_property("WalkAnim", anim(char, "Walk"))
-    c.set_editor_property("RunAnim", anim(char, "Run"))
-    c.set_editor_property("AttackAnim", anim(char, attack_clip))
+    c.set_editor_property("IdleAnim", anim(char, rig, rig["idle"]))
+    c.set_editor_property("WalkAnim", anim(char, rig, rig["walk"]))
+    c.set_editor_property("RunAnim", anim(char, rig, rig["run"]))
+    c.set_editor_property("AttackAnim", anim(char, rig, attack_clip))
     c.capsule_component.set_editor_property("relative_scale3d", unreal.Vector(scale, scale, scale))
+    # 손 소품 — 소켓 부착은 AEnemyCharacter::PostInitializeComponents(HandPropSocket). 여기선 메시·손안 오프셋만.
+    hp = c.get_editor_property("HandProp")
+    hp.set_static_mesh(load(f"{PROPS}/{prop[0]}") if prop else None)
+    c.set_editor_property("HandPropSocket", prop[1] if prop else "hand_l")
+    hp.set_editor_property("relative_location", prop[2] if prop else unreal.Vector(0, 0, 0))
+    hp.set_editor_property("relative_rotation", prop[3] if prop else unreal.Rotator(roll=0, pitch=0, yaw=0))
     save(bp)
     chk = unreal.get_default_object(unreal.EditorAssetLibrary.load_blueprint_class(f"{DIR}/{name}"))
     print(
@@ -140,4 +159,8 @@ for name, enemy_id, char, attack_clip, hit_delay, stats, scale, cooldown, flee i
         "attack",
         chk.get_editor_property("AttackAnim").get_name(),
         f"len={chk.get_editor_property('AttackAnim').get_play_length():.2f}s",
+        "prop",
+        getattr(chk.get_editor_property("HandProp").get_static_mesh(), "get_name", lambda: None)(),
+        "@",
+        chk.get_editor_property("HandPropSocket"),
     )
