@@ -1,4 +1,4 @@
-"""서브퀘스트 적 BP 생성 — /Game/Blueprint/Enemy/{BP_Enemy, BP_Bandit, BP_OrcVagron, BP_KnightWraith}. 멱등(있으면 값만 갱신).
+"""서브퀘스트 적 BP 생성 — /Game/Blueprint/Enemy/{BP_Enemy, BP_Enemy_Bandit, BP_Enemy_OrcVagron, BP_Enemy_Wraith}. 멱등(있으면 값만 갱신).
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")`.
 메시·애니는 Quaternius(RPG Characters CC0 · Bestiary/UAL itch.io → tools/import_itch_assets.py), 사운드는 Kenney(CC0).
@@ -24,7 +24,7 @@ UAL = {"idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "fmt": "
 # 플레이어 스윙 데미지는 ½mv² 클램프(최대 100)라 HP 가 곧 필요 타수 — 도적 3~4방, 오크 10방+ 목표.
 KINDS = [
     (
-        "BP_Bandit",
+        "BP_Enemy_Bandit",
         "Bandit_Raider",
         "Rogue",
         RPG,
@@ -37,7 +37,7 @@ KINDS = [
         None,
     ),
     (
-        "BP_OrcVagron",
+        "BP_Enemy_OrcVagron",
         "Orc_Vagron",
         "Warrior",
         RPG,
@@ -50,7 +50,7 @@ KINDS = [
         ("Torch_Metal", "Fist_L", unreal.Vector(0, 0, 0), unreal.Rotator(roll=0, pitch=0, yaw=0)),
     ),
     (
-        "BP_KnightWraith",
+        "BP_Enemy_Wraith",
         "Knight_Wraith",
         "Wizard",
         RPG,
