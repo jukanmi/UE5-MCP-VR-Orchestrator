@@ -14,6 +14,7 @@
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "NPC/BP/NPCAnimInstance.h"
 
 // 물리 애니메이션 PD — 방향만 애니 포즈로 복원. 위치/속도/최대힘은 0 으로 둬야
 // PD 가 위치까지 당겨 래그돌 낙하·충돌과 다투지 않는다(필드 누락 시 흔한 함정).
@@ -429,6 +430,16 @@ void UNPCRagdollComponent::BeginGetUp()
 
     // 3) 기상 몽타주 + 전신 블렌드 램프(시뮬→애니). 현재 블렌드 1 에서 Tick 이 0 으로.
     GetUpBlendWeight = 1.0f;
+    
+    // 포즈 스냅샷 저장 및 즉시 물리 끄기 (AnimBP 캐시 포즈 블렌드 연동)
+    MeshComp->SnapshotPose(FName(TEXT("RagdollSnapshot")));
+    StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+    
+    if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+    {
+        Anim->RagdollBlendWeight = GetUpBlendWeight;
+    }
+
     UAnimMontage* Montage = bFaceUp ? GetUpMontage_FaceUp : GetUpMontage_FaceDown;
     if (Montage)
     {
@@ -493,8 +504,10 @@ void UNPCRagdollComponent::FinishGetUp()
 
     if (USkeletalMeshComponent* MeshComp = GetOwnerMesh())
     {
-        MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
-        StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+        if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+        {
+            Anim->RagdollBlendWeight = 0.f;
+        }
         // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
         MeshComp->SetCollisionProfileName(OriginalMeshProfile);
         MeshComp->SetCollisionEnabled(OriginalMeshCollision);
