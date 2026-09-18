@@ -8,6 +8,7 @@
 class UAIPerceptionStimuliSourceComponent;
 class UNPCRagdollComponent;
 class UAnimSequence;
+class USoundBase;
 class AEnemyCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, DeadEnemy);
@@ -52,6 +53,19 @@ public:
     /** 공격 클립 1회 재생. 판정은 시작 후 AttackHitDelay 초에 1회(노티파이 대신 시간 기준). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Anim")
     UAnimSequence* AttackAnim = nullptr;
+
+    // --- 사운드 — 배열이면 매번 랜덤 1개(같은 소리 반복 회피). 비어 있으면 무음. ---
+    /** 피격(비치사). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Sound")
+    TArray<USoundBase*> HitSounds;
+
+    /** 공격 시작(휘두름). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Sound")
+    TArray<USoundBase*> AttackSounds;
+
+    /** 사망. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Sound")
+    TArray<USoundBase*> DeathSounds;
 
     /** 공격 클립 시작 → 타격 판정까지(초). 클립의 임팩트 프레임에 맞춘다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Combat")
@@ -133,6 +147,8 @@ private:
     FTimerHandle AttackHitTimer;
     float AttackEndTime = -1.f;
     void OnAttackHitTime();
+
+    void PlayOneOf(const TArray<USoundBase*>& Sounds) const;
 
     // 단일 노드 로코모션 — 현재 재생 클립(같은 클립 재요청 방지).
     TWeakObjectPtr<UAnimSequence> CurrentLocoAnim;

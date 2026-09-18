@@ -7,6 +7,8 @@
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Animation/AnimSequence.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
@@ -86,6 +88,15 @@ void AEnemyCharacter::UpdateLocomotionAnim()
     PlayLoco(Speed < 10.f ? IdleAnim : (Speed < RunThreshold ? WalkAnim : RunAnim));
 }
 
+void AEnemyCharacter::PlayOneOf(const TArray<USoundBase*>& Sounds) const
+{
+    if (Sounds.Num() == 0) return;
+    if (USoundBase* S = Sounds[FMath::RandRange(0, Sounds.Num() - 1)])
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, S, GetActorLocation());
+    }
+}
+
 bool AEnemyCharacter::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const
 {
     const UObject* Obj = Other.GetObject();
@@ -131,6 +142,7 @@ float AEnemyCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const&
     }
 
     if (RagdollComponent) RagdollComponent->ReactToHit(Effective);
+    PlayOneOf(HitSounds);
 
     // 반격 — 때린 쪽(플레이어·아군 NPC)을 즉시 타겟으로. 투사체는 Causer 가 탄이라 Instigator 폰을 우선.
     AActor* Attacker = (EventInstigator && EventInstigator->GetPawn()) ? Cast<AActor>(EventInstigator->GetPawn()) : DamageCauser;
@@ -161,6 +173,7 @@ float AEnemyCharacter::StartAttack(AActor* Target)
     }
     const float Now = GetWorld()->GetTimeSeconds();
     AttackEndTime = Now + Len;
+    PlayOneOf(AttackSounds);
     BeginAttackHitWindow();
     GetWorldTimerManager().SetTimer(AttackHitTimer, this, &AEnemyCharacter::OnAttackHitTime,
         FMath::Clamp(AttackHitDelay, 0.05f, Len), false);
@@ -203,6 +216,7 @@ void AEnemyCharacter::HandleDeath()
     }
 
     if (RagdollComponent) RagdollComponent->EnterDeathRagdoll();
+    PlayOneOf(DeathSounds);
 
     OnEnemyDied.Broadcast(this);
     SetLifeSpan(CorpseLifetime);

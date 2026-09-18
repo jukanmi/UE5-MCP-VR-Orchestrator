@@ -1,7 +1,7 @@
 """서브퀘스트 적 BP 생성 — /Game/Blueprint/Enemy/{BP_Enemy, BP_Bandit, BP_OrcVagron, BP_KnightWraith}. 멱등(있으면 값만 갱신).
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")`.
-메시·애니는 Quaternius RPG Characters(CC0, RawAssets → /Game/Enemy/Quaternius, tools/fetch_assets.py + FBX 임포트).
+메시·애니는 Quaternius RPG Characters(CC0), 사운드는 Kenney(CC0) — RawAssets → /Game/Enemy/{Quaternius,Sounds} (tools/fetch_assets.py + 에디터 임포트).
 AnimBP 없음 — AEnemyCharacter 가 Idle/Walk/Run/Attack 클립을 단일 노드로 직접 재생하므로 BP 엔 클립 4개만 꽂는다.
 종류별 자식 BP 가 EnemyID·BaseStats·스케일·메시·클립을 다르게 가진다. 스탯 → 파생치는 BeginPlay 의 RecalculateCombatStats.
 """
@@ -86,9 +86,20 @@ def save(bp):
 
 
 # ── 베이스 (공통 값만) ─────────────────────────────────────────────
+SND = "/Game/Enemy/Sounds"
+
+
+def sounds(prefix, n):
+    return [load(f"{SND}/S_{prefix}_{i}") for i in range(n)]
+
+
 base = ensure_bp(BASE, unreal.EnemyCharacter)
 cdo = cdo_of(base)
 cdo.set_editor_property("CorpseLifetime", 5.0)
+# 사운드(Kenney CC0, tools/fetch_assets.py → 에디터 임포트). 자식이 상속 — 종류별 차이 없음.
+cdo.set_editor_property("HitSounds", sounds("Hit_Punch", 5))
+cdo.set_editor_property("AttackSounds", [load(f"{SND}/S_Swing_Slice_{i}") for i in (1, 2, 3)])
+cdo.set_editor_property("DeathSounds", sounds("Death_Thud", 3))
 save(base)
 print("[enemy] base:", BASE)
 
