@@ -27,6 +27,7 @@ PERSONAS_DIR = Path("app/agents/personas/generic")
 
 # perception·대화가 플레이어 id 로 폰 액터 이름을 쓴다(VRPawn::GetName). 폰 클래스가 바뀌면 여기도.
 # ponytail: 플레이어 id 를 "Player" 상수로 통일하는 게 정답 — C++ 3곳(VRPawn·HUD·PerceptionIdFor) 동시 수정 필요.
+PLAYER_KEY = "BP_VRPawn_C_0"
 PLAYER_KEY = "Player"
 ALLIES = ["Elara", "James", "Skadi", "Moca", "Guard"]
 BOSSES = ["Commander_Vorg", "DemonLord"]  # main.yaml boss_id 와 일치
