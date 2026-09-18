@@ -160,6 +160,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
 FString ASmartNPC::PerceptionIdFor(const AActor* Actor)
 {
     if (!Actor) return TEXT("Unknown");
+    if (Actor->Implements<UPlayerBase>()) return PlayerIds::Player;
     const ACombatCharacter* C = Cast<ACombatCharacter>(Actor);
     const FString Id = C ? C->GetCombatId() : FString();
     return Id.IsEmpty() ? Actor->GetName() : Id;

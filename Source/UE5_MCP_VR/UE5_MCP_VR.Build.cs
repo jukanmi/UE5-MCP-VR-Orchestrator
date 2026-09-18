@@ -10,7 +10,7 @@ public class UE5_MCP_VR : ModuleRules
 	
 		PublicIncludePaths.Add(ModuleDirectory);
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "AIModule", "GameplayTasks", "NavigationSystem", "HTTP", "GameplayTags", "StateTreeModule", "GameplayStateTreeModule", "HeadMountedDisplay", "XRBase" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "AIModule", "GameplayTasks", "NavigationSystem", "HTTP", "GameplayTags", "StateTreeModule", "GameplayStateTreeModule", "HeadMountedDisplay", "XRBase", "DeveloperSettings" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "JsonUtilities" });
 
