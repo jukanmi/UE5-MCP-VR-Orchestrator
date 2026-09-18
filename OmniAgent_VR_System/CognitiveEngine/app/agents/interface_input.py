@@ -105,6 +105,46 @@ def _format_location(vr_context: GesPrompt) -> str:
     return "Unknown"
 
 
+def _format_stats(vr_context: GesPrompt) -> str:
+    """NPC 스탯 조각 — 체력/스테미나 등을 자연어로 변환."""
+    if not vr_context.stats:
+        return ""
+    stats = vr_context.stats
+    hp = stats.get("hp", 0)
+    max_hp = stats.get("max_hp", 100)
+    return f", Your HP is {hp}/{max_hp}"
+
+def _format_inventory(vr_context: GesPrompt, state: AgentState) -> str:
+    """NPC 인벤토리 조각 — 현재 들고 있는 무기와 가방 속 아이템 인지."""
+    inventory = getattr(vr_context, "npc_inventory", None)
+    target_npc = state.get("target_npc")
+    
+    if not (inventory and isinstance(inventory, dict) and target_npc):
+        return ""
+        
+    npc_inv = ci_get(inventory, target_npc)
+    if not npc_inv or not isinstance(npc_inv, list):
+        return ""
+        
+    backpack = []
+    equipped = []
+    
+    for item in npc_inv:
+        item_id = item.get("id", "?")
+        count = item.get("count", 1)
+        if item.get("equipped"):
+            equipped.append(f"{item_id}")
+        else:
+            backpack.append(f"{item_id} (x{count})")
+            
+    res = ""
+    if equipped:
+        res += f", You are holding: {', '.join(equipped)}"
+    if backpack:
+        res += f", In backpack: {', '.join(backpack)}"
+        
+    return res
+
 def _format_perceived_targets(state: AgentState) -> str:
     """주변 타겟(perceived_targets) 문자열 — state_update 로 캐시된 최신 상태 참조.
     prompt envelope 에는 perceived_targets 가 없어 cached_world_state 를 씀."""
@@ -173,12 +213,16 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     location_str = _format_location(vr_context)
     gesture_str = _format_gestures(vr_context.gestures)
     perceived_str = _format_perceived_targets(state)
+    stats_str = _format_stats(vr_context)
+    inv_str = _format_inventory(vr_context, state)
 
     natural_context = f'Player said: "{transcript}"'
     if gesture_str != "None":
         natural_context += f", with gestures: {gesture_str}"
     if location_str != "Unknown":
         natural_context += f", at location {location_str}"
+    natural_context += stats_str
+    natural_context += inv_str
     if vr_context.last_event:
         natural_context += f", last event: {vr_context.last_event}"
     if perceived_str not in ("Unknown", "None visible/audible"):

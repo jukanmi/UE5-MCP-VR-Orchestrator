@@ -235,6 +235,12 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     {
         if (UNPCStateComponent* StateComp = TargetNPC->GetStateComponent())
         {
+            // [REVIEW FIX] NPC 체력(Stats) 인지
+            TSharedPtr<FJsonObject> StatsObj = MakeShared<FJsonObject>();
+            StatsObj->SetNumberField("hp", StateComp->GetAttributes().Resources.Health);
+            StatsObj->SetNumberField("max_hp", StateComp->GetAttributes().Resources.MaxHealth);
+            Payload->SetObjectField("stats", StatsObj);
+
             bRequiresReplan = StateComp->ShouldReplan();
             if (!bRequiresReplan)
             {
