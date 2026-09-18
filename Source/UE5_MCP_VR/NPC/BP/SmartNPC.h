@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "Core/BP/CombatCharacter.h"  // 피격/타격 공통 베이스(bIsDead·공격 판정 윈도우·부위 배율)
 #include "Engine/TimerHandle.h"
 #include "Core/Interfaces/Entity.h"  // INPCEntity → ICharacterEntity → IGameplayTagAssetInterface 포함
 #include "NPC/Components/NPCStateComponent.h"
@@ -23,20 +23,8 @@ struct FActionBatch;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
 
-// [의도(Why)] 히트스캔이 채워주는 본 이름을 부위로 분류해 부위별 데미지 배율을 적용하기 위함.
-UENUM(BlueprintType)
-enum class EBodyPartType : uint8
-{
-    Torso     UMETA(DisplayName="몸통"),    // 배율 1.0 (기본·본 미식별 폴백)
-    Head      UMETA(DisplayName="머리"),    // 배율 2.0
-    ArmLeft   UMETA(DisplayName="왼팔"),    // 배율 0.75
-    ArmRight  UMETA(DisplayName="오른팔"),  // 배율 0.75
-    LegLeft   UMETA(DisplayName="왼다리"),  // 배율 0.75
-    LegRight  UMETA(DisplayName="오른다리"),// 배율 0.75
-};
-
 UCLASS(BlueprintType, Blueprintable)
-class UE5_MCP_VR_API ASmartNPC : public ACharacter, public INPC
+class UE5_MCP_VR_API ASmartNPC : public ACombatCharacter, public INPC
 {
 	GENERATED_BODY()
 
@@ -81,9 +69,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
     FString AgentID;
 
-    /** perception·호감도·승리 보고에 쓰는 대상 식별자 — SmartNPC 는 AgentID, 그 외(플레이어 폰 등)는 액터 이름.
+    /** perception·호감도·승리 보고에 쓰는 대상 식별자 — 전투 캐릭터는 GetCombatId(SmartNPC=AgentID,
+     *  EnemyCharacter=EnemyID), 그 외(플레이어 폰 등)는 액터 이름.
      *  객체 이름(BP_SmartNPC_C_UAID_…)은 레벨 재배치마다 바뀌어 호감도 행·스토리 boss_id 가 어긋난다. */
     static FString PerceptionIdFor(const AActor* Actor);
+    virtual FString GetCombatId() const override { return AgentID; }
 
     /** 이 NPC가 사용할 StateTree 에셋 (StateTreeAISchema). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Identity")
@@ -131,11 +121,7 @@ public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-    // === Death ===
-
-    /** 사망 여부. true이면 NPC맵에서 퇴출 완료 + 모든 액션 중지 상태. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|State")
-    bool bIsDead = false;
+    // === Death === (bIsDead 는 ACombatCharacter)
 
     /** 사망 시 브로드캐스트. BP에서 사망 애니메이션·VFX 연결용. */
     UPROPERTY(BlueprintAssignable, Category = "MCP|State")
@@ -178,52 +164,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|State")
     void HandleDeath();
 
-    // ====================================================================
-    // 공격 판정 (NPC→타겟) — AM_Attack 의 AnimNotifyState_NPCAttackHit 가 구동.
+    // 공격 판정(SetCurrentAttackTarget/PerformAttackHit·거리·arc 게이트)은 ACombatCharacter.
+    // ExecuteAttackAction 이 LLM 지정 타겟을 세팅하고 AM_Attack 의 노티파이가 소비.
     // 데미지 값 = NPCAttributes.Combat.AttackPower × AttackDamageScale (몽타주라 스윙속도 없어 고정).
-    // ====================================================================
-
-    /** ExecuteAttackAction 이 LLM 지정 타겟을 저장. 노티파이 윈도우가 이 단일 타겟만 타격(친선사격 방지). */
-    void SetCurrentAttackTarget(AActor* Target) { CurrentAttackTarget = Target; }
-
-    /** 노티파이 윈도우 진입(NotifyBegin) — 스윙당 1회 가드 리셋. */
-    void BeginAttackHitWindow() { bAttackHitConsumed = false; }
-
-    /** 노티파이 윈도우 매 틱(NotifyTick) — 타겟이 거리·arc 게이트 통과 시 1회 데미지 적용. */
-    void PerformAttackHit();
-
-    /** 타격 유효 거리(cm) — 타겟이 이 안에 들어와야 명중. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
-    float AttackHitRange = 200.f;
-
-    /** 타격 정면 arc 게이트 — forward·(타겟방향) 내적이 이 값 이상이어야 명중(0.3≈72°). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
-    float AttackHitArcCos = 0.3f;
 
     /** AttackPower → 실데미지 환산 배율. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
     float AttackDamageScale = 1.0f;
 
-    /** 플레이어 피격 시 넉백 속도(cm/s, LaunchCharacter XY). 0=넉백 끔. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
-    float NPCKnockbackSpeed = 400.f;
-
-    /** 공격 판정 디버그 — 타겟·거리·명중을 화면/로그에 표시. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Combat")
-    bool bDebugAttackHit = false;
+protected:
+    virtual float ComputeAttackDamage() const override { return NPCAttributes.Combat.AttackPower * AttackDamageScale; }
 
 private:
     void DestroyAfterDeath();
-
-    // --- 공격 판정 상태 (NPC→타겟) ---
-    TWeakObjectPtr<AActor> CurrentAttackTarget;  // ExecuteAttackAction 이 세팅, 노티파이가 소비
-    bool bAttackHitConsumed = false;             // 스윙당 1회 가드(NotifyBegin 리셋)
-
-
-
-public:
-
-    /** VR 플레이어 멜리 재타격 쿨다운용 — 마지막 피격 시각(World TimeSeconds). VRPawn 가 읽고 씀.
-     *  소유자(NPC) 가 직접 보유 → NPC 소멸 시 함께 사라져 누적/만료정리 불필요. */
-    float LastMeleeHitTime = -1000.f;
 };

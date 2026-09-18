@@ -924,7 +924,8 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 
 void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
 {
-    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→SmartNPC 공격 인지).
+    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→피격자 인지).
+    // 대상은 ACombatCharacter(SmartNPC·EnemyCharacter) — 적 클래스도 같은 스윙·투사체 규약으로 맞는다.
     // 가벼운 밀침(bPush~bStrike 사이)은 데미지 없음 = LLM 이 공격으로 안 봄.
     const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
     const bool  bPush   = SpeedMs >= MinImpactSpeed;
@@ -979,14 +980,14 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
 
     for (const FOverlapResult& O : Overlaps)
     {
-        ASmartNPC* NPC = Cast<ASmartNPC>(O.GetActor());
+        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
         if (!NPC) continue;
 
         // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
         if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
         NPC->LastMeleeHitTime = Now;
 
-        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를 발생시킴.
+        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
         // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
         if (bStrike)
         {

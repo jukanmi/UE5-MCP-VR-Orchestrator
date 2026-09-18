@@ -1,0 +1,175 @@
+#include "Enemy/EnemyCharacter.h"
+#include "Enemy/EnemyAIController.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "Core/Types/PlayerGameplayTags.h"
+#include "NPC/Components/NPCRagdollComponent.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Engine/DamageEvents.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "TimerManager.h"
+
+AEnemyCharacter::AEnemyCharacter()
+{
+    PrimaryActorTick.bCanEverTick = false;  // 행동은 컨트롤러 틱, 반응은 래그돌 컴포넌트 틱
+    AIControllerClass = AEnemyAIController::StaticClass();
+    AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+    RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
+
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    if (StimuliSource)
+    {
+        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+        StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
+        StimuliSource->RegisterWithPerceptionSystem();
+    }
+
+    // SmartNPC 와 동일 — 컨트롤러 회전 무시 + 이동 방향으로 자동 선회(옆걸음 방지).
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationYaw   = false;
+    bUseControllerRotationRoll  = false;
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->bOrientRotationToMovement = true;
+        CMC->RotationRate = FRotator(0.f, 540.f, 0.f);
+        CMC->bUseControllerDesiredRotation = false;
+    }
+}
+
+void AEnemyCharacter::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // BaseStats(BP 편집) → 파생치. HP 는 만땅에서 시작.
+    Attributes.RecalculateCombatStats();
+    Attributes.Resources.Health = Attributes.Resources.MaxHealth;
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->MaxWalkSpeed = Attributes.Movement.WalkSpeed;
+    }
+
+    GameplayTagUtils::AddState(GameplayTags, TAG_State_Idle);
+}
+
+bool AEnemyCharacter::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const
+{
+    const UObject* Obj = Other.GetObject();
+    return Obj && Obj != this && !Obj->IsA<AEnemyCharacter>();
+}
+
+// ============================================================================
+// 피격
+// ============================================================================
+float AEnemyCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
+    AController* EventInstigator, AActor* DamageCauser)
+{
+    if (bIsDead) return 0.f;
+
+    const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+
+    // 부위 배율 + 래그돌 임펄스 방향 — SmartNPC::TakeDamage 와 같은 규약.
+    float Multiplier = 1.0f;
+    if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+    {
+        const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
+        Multiplier = BodyPartMultiplierForBone(Pt.HitInfo.BoneName);
+        if (RagdollComponent) RagdollComponent->NoteHit(Pt.HitInfo.BoneName, Pt.ShotDirection);
+    }
+    else if (RagdollComponent)
+    {
+        RagdollComponent->NoteHit(NAME_None, DamageCauser
+            ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
+            : -GetActorForwardVector());
+    }
+
+    // NPCStateComponent::ApplyDamage 와 같은 공식: (원시 − 방어력) × 부위 배율.
+    const float Effective = FMath::Max(0.f, Raw - Attributes.Combat.Defense) * Multiplier;
+    Attributes.Resources.Health -= Effective;
+    UE_LOG(LogTemp, Log, TEXT("[Enemy] %s 피격 %.1f (raw %.1f, def %.1f, x%.2f) HP %.0f/%.0f"),
+        *EnemyID, Effective, Raw, Attributes.Combat.Defense, Multiplier,
+        Attributes.Resources.Health, Attributes.Resources.MaxHealth);
+
+    if (!Attributes.Resources.IsAlive())
+    {
+        HandleDeath();
+        return Effective;
+    }
+
+    if (RagdollComponent) RagdollComponent->ReactToHit(Effective);
+
+    // 반격 — 때린 쪽(플레이어·아군 NPC)을 즉시 타겟으로. 투사체는 Causer 가 탄이라 Instigator 폰을 우선.
+    AActor* Attacker = (EventInstigator && EventInstigator->GetPawn()) ? Cast<AActor>(EventInstigator->GetPawn()) : DamageCauser;
+    if (AEnemyAIController* AIC = Cast<AEnemyAIController>(GetController()))
+    {
+        AIC->SetTarget(Attacker);
+    }
+    return Effective;
+}
+
+// ============================================================================
+// 공격
+// ============================================================================
+float AEnemyCharacter::StartAttack(AActor* Target)
+{
+    if (bIsDead || !Target || IsAttacking()) return 0.f;
+    if (RagdollComponent && RagdollComponent->IsKnockedDown()) return 0.f;  // 넘어진 동안 공격 불가
+
+    SetCurrentAttackTarget(Target);
+
+    if (AttackMontage)
+    {
+        const float Len = PlayAnimMontage(AttackMontage);
+        if (Len > 0.f) return Len;
+    }
+
+    // 몽타주 없음(에셋 미배정·재생 실패) — 0.3초 뒤 1회 판정으로 폴백. 노티파이 윈도우 대체.
+    BeginAttackHitWindow();
+    GetWorldTimerManager().SetTimer(FallbackHitTimer, this, &AEnemyCharacter::FallbackAttackHit, 0.3f, false);
+    return 0.6f;
+}
+
+bool AEnemyCharacter::IsAttacking() const
+{
+    return GetCurrentMontage() != nullptr || GetWorldTimerManager().IsTimerActive(FallbackHitTimer);
+}
+
+void AEnemyCharacter::FallbackAttackHit()
+{
+    PerformAttackHit();
+}
+
+// ============================================================================
+// 사망
+// ============================================================================
+void AEnemyCharacter::HandleDeath()
+{
+    if (bIsDead) return;
+    bIsDead = true;
+
+    GameplayTags.Reset();
+    GameplayTagUtils::AddState(GameplayTags, TAG_State_Condition_Dead);
+    StopAnimMontage();
+    GetWorldTimerManager().ClearTimer(FallbackHitTimer);
+
+    // 스토리 — boss_killed 판정(name=EnemyID). 수량 퀘스트 flag 는 스포너가 OnEnemyDied 에서 센다.
+    if (UNPCManager* Manager = UNPCManager::Get(this))
+    {
+        Manager->SendStoryEvent(TEXT("npc_died"), EnemyID, EnemyID);
+    }
+
+    // AI 정지 — UnPossess 하지 않는다: 폰이 Destroy 될 때 PawnPendingDestroy 가 컨트롤러를 같이 지우게(고아 방지).
+    if (AEnemyAIController* AIC = Cast<AEnemyAIController>(GetController()))
+    {
+        AIC->OnPawnDied();
+    }
+
+    if (RagdollComponent) RagdollComponent->EnterDeathRagdoll();
+
+    OnEnemyDied.Broadcast(this);
+    SetLifeSpan(CorpseLifetime);
+
+    UE_LOG(LogTemp, Log, TEXT("[Enemy] %s 사망 — %.1f초 후 제거"), *EnemyID, CorpseLifetime);
+}

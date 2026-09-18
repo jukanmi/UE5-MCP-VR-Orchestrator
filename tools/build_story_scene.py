@@ -7,6 +7,7 @@
 동선(시작→끝):
   ruins(불타는 성 폐허, PlayerStart) → gate(성문) → plaza(광장·제단) → hideout(은신처) → 서문 → library(도서관 폐허)
   → 남문 → forest(숲·약초·폭격 자리) → bridge(강·다리) → outpost(목책 전초기지·포로 우리) → 북문 → 죽은 숲 → citadel(대성채)
+서브퀘스트 적 스포너(도적 캠프·다리 오크·죽은 숲 망령) = AEnemySpawner, 적 BP 는 tools/make_enemy_bps.py.
 구조물 = StaticMeshActor, 식생·바위·잔해 = BP_HISMCluster(HISM). 손으로 옮긴 소품은 재실행 시 초기화 — 좌표는 여기서 고친다.
 """
 
@@ -452,6 +453,11 @@ OUTPOST = (19000.0, -500.0)  # 서벽 x=16800 — 다리(12400..15200) 와 안 �
 OUT_HW = 2200.0
 CITADEL = (17500.0, 12500.0)
 CIT_HW = 3800.0
+# 서브퀘스트 적 스포너(시나리오 §4). 적 BP 는 /Game/Blueprint/Enemy (tools/make_enemy_bps.py 가 생성).
+ENEMY_BP = "/Game/Blueprint/Enemy"
+BANDIT_CAMP = (4300.0, -5600.0)  # 남쪽 숲길 외곽 — s_hunt_forest_raiders (남문 3.9km·빈터 3.1km)
+ORC_LAIR = (BRIDGE[0] + 600.0, BRIDGE[1] - 800.0)  # 다리 동쪽 교각 밑 — s_hunt_bridge_troll
+DEAD_FOREST = (11500.0, 15500.0)  # 마왕성 앞 죽은 숲 — s_hunt_dead_wraith
 
 
 def build_village():
@@ -1016,6 +1022,39 @@ def place_actors():
     move_npc("DemonLord", kx, ky + 700, face=(kx, ky - 3000))  # 왕좌
 
 
+def spawner(zone, bp_name, x, y, max_alive, interval, radius, total=0, kills_for_flag=0, flag="", min_player=1500.0):
+    """AEnemySpawner(C++) 1기. flag 는 킬 수 달성 시 story flag — 사이드퀘스트 complete_when {type: flag} 와 이름 일치."""
+    cls = unreal.EditorAssetLibrary.load_blueprint_class(f"{ENEMY_BP}/{bp_name}")
+    if cls is None:
+        raise RuntimeError(f"enemy BP missing: {ENEMY_BP}/{bp_name} — tools/make_enemy_bps.py 먼저")
+    a = EAS.spawn_actor_from_class(unreal.EnemySpawner, unreal.Vector(x, y, ground_z(x, y) + 10), unreal.Rotator(0, 0, 0))
+    a.set_editor_property("EnemyClass", cls)
+    a.set_editor_property("MaxAlive", max_alive)
+    a.set_editor_property("TotalSpawnLimit", total)
+    a.set_editor_property("SpawnInterval", float(interval))
+    a.set_editor_property("SpawnRadius", float(radius))
+    a.set_editor_property("MinPlayerDistance", float(min_player))
+    a.set_editor_property("KillsForFlag", kills_for_flag)
+    a.set_editor_property("KillFlag", flag)
+    return _finish(a, f"SCN_{zone}_spawner_{bp_name}")
+
+
+def build_enemies():
+    """서브퀘스트 토벌 대상 — 적은 PIE 에서 스포너가 주기 생성(에디터엔 스포너만)."""
+    z = "enemy"
+    # 도적 캠프(모닥불·상자·통) — 3명 유지, 3킬 → flag
+    bx, by = BANDIT_CAMP
+    campfire(z, bx, by, 1.2)
+    hism(z, "cube", [(bx + dx, by + dy, 0, yaw, 0.7, 0.7, 0.7) for dx, dy, yaw in [(260, 120, 20), (-300, 200, 70), (180, -280, 0)]], mat="wood")
+    hism(z, "cyl", [(bx - 220, by - 240, 0, 0, 0.5, 0.5, 0.8), (bx + 340, by - 60, 0, 0, 0.5, 0.5, 0.8)], mat="walnut")
+    spawner(z, "BP_Bandit", bx, by, max_alive=3, interval=30, radius=700, kills_for_flag=3, flag="forest_raiders_cleared")
+    # 다리의 도살자 — 네임드 1기, 리스폰 없음(boss_killed 는 EnemyCharacter 가 npc_died 로 송신)
+    spawner(z, "BP_OrcVagron", ORC_LAIR[0], ORC_LAIR[1], max_alive=1, interval=60, radius=300, total=1, min_player=0)
+    # 죽은 숲 망령 — 3기 유지, 5킬 → flag
+    spawner(z, "BP_KnightWraith", DEAD_FOREST[0], DEAD_FOREST[1], max_alive=3, interval=40, radius=1500, kills_for_flag=5, flag="wraiths_purified")
+    trigger("dead_forest", DEAD_FOREST[0], DEAD_FOREST[1], ext=(2500, 2500, 400))
+
+
 def build_env():
     nav = find_actor(cls="NavMeshBoundsVolume")
     if nav:
@@ -1044,6 +1083,7 @@ def build():
     build_citadel()
     build_roads()
     build_wilderness()
+    build_enemies()
     place_actors()
     build_env()
 

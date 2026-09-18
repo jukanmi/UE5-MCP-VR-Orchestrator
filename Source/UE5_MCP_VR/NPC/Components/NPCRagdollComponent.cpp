@@ -69,14 +69,14 @@ USkeletalMeshComponent* UNPCRagdollComponent::GetOwnerMesh() const
 
 bool UNPCRagdollComponent::IsOwnerDead() const
 {
-    const ASmartNPC* NPC = Cast<ASmartNPC>(GetOwner());
-    return NPC && NPC->bIsDead;
+    const ACombatCharacter* C = Cast<ACombatCharacter>(GetOwner());
+    return C && C->bIsDead;
 }
 
 FString UNPCRagdollComponent::GetOwnerAgentID() const
 {
-    const ASmartNPC* NPC = Cast<ASmartNPC>(GetOwner());
-    return NPC ? NPC->AgentID : GetNameSafe(GetOwner());
+    const ACombatCharacter* C = Cast<ACombatCharacter>(GetOwner());
+    return C ? C->GetCombatId() : GetNameSafe(GetOwner());
 }
 
 // --- 수명 ---

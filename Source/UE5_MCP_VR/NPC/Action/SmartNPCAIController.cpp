@@ -179,21 +179,8 @@ void ASmartNPCAIController::ResumeAI()
 
 bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
 {
-    if (!Target) return false;
-
-    // NPC — HandleDeath 가 세우는 플래그. Destroy 지연(3초) 동안에도 즉시 사망 판정.
-    if (const ASmartNPC* TargetNPC = Cast<ASmartNPC>(Target))
-    {
-        return TargetNPC->bIsDead;
-    }
-
-    // 플레이어(VRPawn) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
-    if (const IGameplayTagAssetInterface* TagOwner = Cast<IGameplayTagAssetInterface>(Target))
-    {
-        return TagOwner->HasMatchingGameplayTag(TAG_State_Condition_Dead);
-    }
-
-    return false;
+    // 전투 캐릭터(SmartNPC·EnemyCharacter)는 bIsDead, 플레이어는 사망 태그 — 판정은 베이스 한 곳.
+    return ACombatCharacter::IsActorDead(Target);
 }
 
 void ASmartNPCAIController::ExitCombat(AActor* DeadTarget)

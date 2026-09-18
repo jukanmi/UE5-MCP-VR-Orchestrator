@@ -77,7 +77,7 @@ protected:
     void StopSightTracking();
 
 public:
-	/** 전투 타겟 사망 판정 — SmartNPC.bIsDead / State.Condition.Dead 태그(플레이어 계열). */
+	/** 전투 타겟 사망 판정 — ACombatCharacter::IsActorDead 위임(bIsDead / State.Condition.Dead 태그). */
 	static bool IsTargetDead(const AActor* Target);
 
 	/** 전투 종료 시퀀스: 진행 액션 중단·잔여 큐 폐기 → BehaviorMode=Common → replan 플래그 → BB.TargetActor 클리어.
