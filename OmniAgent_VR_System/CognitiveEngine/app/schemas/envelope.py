@@ -104,6 +104,8 @@ class PromptPayload(BaseModel):
     # 대상 NPC 반경 내 가구 인지 컨텍스트 — [{id,type,occupied,dist_m}, ...]. UE5 NPCManager 동봉.
     # Sit/Sleep target 지정 근거(natural_context "Nearby furniture:" 조각 소스).
     nearby_furniture: Optional[List[Dict[str, Any]]] = None
+    # 대상 NPC 반경 내 바닥에 떨어진 아이템 컨텍스트 [{"id", "template_id", "dist_m"}, ...]
+    nearby_items: Optional[List[Dict[str, Any]]] = None
 
 
 class EmergencyReportPayload(BaseModel):

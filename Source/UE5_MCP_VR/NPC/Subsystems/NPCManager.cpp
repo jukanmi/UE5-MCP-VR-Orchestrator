@@ -12,6 +12,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
 #include "Core/Utils/SubsystemUtils.h"
+#include "Inventory/Subsystems/ItemManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 
 
 UNPCManager* UNPCManager::Get(const UObject* WorldContext)
@@ -345,6 +347,37 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
             }
         }
 
+
+        // 주변 바닥에 떨어진 아이템 인지 (반경 5m)
+        if (UItemManager* ItemMgr = UItemManager::Get(this))
+        {
+            if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+            {
+                const FVector NpcLoc = TargetNPC->GetActorLocation();
+                TArray<ADroppedItemBase*> NearbyItems = ItemMgr->GetItemsInRange(NpcLoc, FurnitureContextRange);
+                
+                TArray<TSharedPtr<FJsonValue>> ItemsArr;
+                for (ADroppedItemBase* ItemActor : NearbyItems)
+                {
+                    if (!IsValid(ItemActor)) continue;
+                    
+                    const float Dist = FVector::Dist2D(ItemActor->GetActorLocation(), NpcLoc);
+                    
+                    TSharedPtr<FJsonObject> ItemObj = MakeShared<FJsonObject>();
+                    ItemObj->SetStringField(TEXT("id"), ItemActor->ItemData.ItemInstanceID);
+                    ItemObj->SetStringField(TEXT("template_id"), ItemActor->ItemData.ItemTemplateID);
+                    ItemObj->SetNumberField(TEXT("dist_m"), FMath::RoundToFloat(Dist) / 100.f);
+                    ItemsArr.Add(MakeShared<FJsonValueObject>(ItemObj));
+                    
+                    TargetsArr.Add(MakeShared<FJsonValueString>(ItemActor->ItemData.ItemInstanceID));
+                }
+                
+                if (ItemsArr.Num() > 0)
+                {
+                    Payload->SetArrayField(TEXT("nearby_items"), ItemsArr);
+                }
+            }
+        }
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
 
