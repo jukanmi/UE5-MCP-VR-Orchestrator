@@ -136,6 +136,22 @@ def campfire(zone, x, y, scale=1.5):
     emitter(zone, FIRE, x, y, 10.0, scale)
 
 
+CHAIR_BP = "/Game/Blueprint/FurnitureActor/BP_Chair"
+_chair_n = 0
+
+
+def chair(zone, x, y, yaw=0.0, scale=1.0, fid=None):
+    """앉을 수 있는 의자 = BP_Chair(FurnitureActor, SM_Chair). yaw = 앉은 사람이 보는 방향(+X 기준).
+    FurnitureID 는 LLM valid_targets 로 노출되니 의미 있는 이름으로."""
+    global _chair_n
+    _chair_n += 1
+    cls = unreal.EditorAssetLibrary.load_blueprint_class(CHAIR_BP)
+    a = EAS.spawn_actor_from_class(cls, unreal.Vector(x, y, ground_z(x, y)), unreal.Rotator(yaw=yaw))
+    a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
+    a.set_editor_property("FurnitureID", fid or f"Chair_{zone}_{_chair_n:02d}")
+    return _finish(a, _label(zone) + "_chair")
+
+
 def trigger(zone, x, y, ext=(450, 450, 200)):
     a = EAS.spawn_actor_from_class(unreal.StoryZoneTrigger, unreal.Vector(x, y, ground_z(x, y) + 100), unreal.Rotator(0, 0, 0))
     a.set_editor_property("ZoneName", zone)
@@ -404,7 +420,7 @@ def build_village():
     ring(z, px, py, 700, 6, mesh="pillar", mat="stone")
     for ang in (45, 135, 225, 315):
         r = math.radians(ang)
-        place(z, "chair", px + 850 * math.cos(r), py + 850 * math.sin(r), yaw=ang + 180, mat="wood")
+        chair(z, px + 850 * math.cos(r), py + 850 * math.sin(r), yaw=ang + 180, fid=f"Chair_Plaza_{ang}")
     # 우물
     wx, wy = px + 1300, py - 900
     place(z, "torus", wx, wy, scale=(1.6, 1.6, 1.2), mat="cut", z_off=0)
@@ -508,7 +524,7 @@ def build_library():
     for (dx, dy, yaw, pitch) in [(300, -300, 30, -40), (-900, 100, -20, 30)]:
         place(z, "wall3", lx + dx, ly + dy, yaw=yaw, pitch=pitch, mat="brick")
     place(z, "statue", lx, ly - 400, scale=(1.5, 1.5, 1.5), mat="stone")
-    place(z, "chair", lx + 60, ly + 80, yaw=180, mat="wood")
+    chair(z, lx + 60, ly + 80, yaw=-90, fid="Chair_Library_Reading")  # 탁자(-Y) 를 본다
     place(z, "table", lx + 60, ly - 120, mat="wood")
     hism(z, "cube", [(lx + random.uniform(-1200, 1200), ly + random.uniform(-800, 800), 0, random.uniform(0, 360), 0.25, 0.35, 0.08)
                      for _ in range(60)], mat="pine")  # 흩어진 책
@@ -651,7 +667,8 @@ def build_citadel():
     # 왕좌: 단상 + 계단 + 왕좌 + 기둥 열 + 횃불
     place(z, "cube", kx, ky + 500, scale=(5.0, 3.0, 0.8), mat="basalt", z_off=2)
     place(z, "stairs", kx, ky + 350, yaw=-90, scale=(1.5, 1.5, 0.75), mat="basalt")
-    place(z, "chair", kx, ky + 560, yaw=-90, scale=(2.4, 2.4, 2.6), mat="rust", z_off=82)
+    th = chair(z, kx, ky + 560, yaw=-90, scale=2.4, fid="Throne_DemonLord")  # 홀 입구(-Y) 를 본다
+    th.set_actor_location(unreal.Vector(kx, ky + 560, ground_z(kx, ky + 560) + 82), False, False)
     for i in range(4):
         for sx in (-1, 1):
             place(z, "pillar", kx + sx * 700, ky - 600 + i * 350, scale=(1.2, 1.2, 2.2), mat="basalt")
@@ -745,6 +762,10 @@ with unreal.ScopedEditorTransaction("Story: 전 맵 빌드"):
     clear_scene()
     build()
 
-print("[scene] actors:", COUNTS)
+print("[scene] actors:", COUNTS, "chairs:", _chair_n)
 print("[scene] hism instances:", HISM_TOTAL)
+# RecastNavMesh 가 Static 생성이라 에디터에서 빌드한 데이터가 레벨에 저장돼야 PIE 에서 쓴다.
+# 비동기 — 몇 초 뒤 is_navigation_being_built 가 False 가 되면 save_current_level 한 번 더.
+unreal.SystemLibrary.execute_console_command(WORLD, "RebuildNavigation")
+print("[scene] RebuildNavigation 요청 — 완료 후 레벨 재저장 필요")
 print("[scene] save:", LES.save_current_level())
