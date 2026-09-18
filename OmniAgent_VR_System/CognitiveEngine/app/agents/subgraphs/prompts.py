@@ -47,6 +47,7 @@ YOUR inventory (items you currently hold): {inventory}
 
 Recent memory: {memory}
 Current sentiment toward player: {sentiment}
+Story objective (what you want from this conversation right now): {story_goal}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 

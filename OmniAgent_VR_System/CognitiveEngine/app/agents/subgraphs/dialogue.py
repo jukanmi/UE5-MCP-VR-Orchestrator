@@ -42,7 +42,7 @@ from ...utils.async_tasks import spawn_background
 from ..state import AgentState
 from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
-from ...utils.id_utils import ci_id_map
+from ...utils.id_utils import ci_get, ci_id_map
 from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 from .prompts import DIALOGUE_STRUCTURED_PROMPT, PLAN_SYSTEM_PROMPT
 
@@ -202,6 +202,11 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     memory = persona.get("memory_summary", {})
     memory_summary = "; ".join(memory.get("key_events", [])) if memory.get("key_events") else "None"
 
+    # 스토리 디렉터 goal — Stage2(plan)만 받던 걸 대사에도 1줄. Stage1 출력이 그대로 최종 대사라
+    # 비트 첫 턴이 목표를 모르고 말하던 문제(Guard 가 피난처 안내를 안 함). 없으면 "None".
+    directive = ci_get(state.get("story_directive") or {}, npc_id) or {}
+    story_goal = directive.get("goal") or "None"
+
     vr_context: GesPrompt = state["vr_context"]  # interface_input 이 항상 객체로 정규화
     player_id = vr_context.player_id or "Player"
 
@@ -246,6 +251,7 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
         speech_style=_format_speech_style(persona.get("speech_style")),
         memory=memory_summary,
         sentiment=sentiment,
+        story_goal=story_goal,
         rag_context=rag_context if rag_context else "None",
         chat_history=chat_history if chat_history else "No previous conversation",
         inventory=inventory_str,
