@@ -498,7 +498,8 @@ def build_ruins():
     # 왕좌홀 흔적: 제단 + 부서진 조각상
     place(z, "cube", rx, ry, scale=(2.0, 2.0, 0.3), mat="basalt", z_off=2)
     place(z, "statue", rx, ry, z_off=32, scale=(1.3, 1.3, 1.3), mat="rust", pitch=25)
-    trigger("ruins", rx, ry, ext=(1600, 1300, 300))
+    # PlayerStart(ry+600) 가 박스 안에 있으면 스폰 시 BeginOverlap 이 안 뜬다(실측) — 남쪽 절반만 덮어 걸어 나가며 밟게
+    trigger("ruins", rx, ry - 500, ext=(1600, 500, 300))
     ps = find_actor(cls="PlayerStart")
     if ps:
         print("[scene] PlayerStart →", move_actor(ps, rx, ry + 600, 100, yaw=-90))  # 폐허 안, 남향 → 성문
