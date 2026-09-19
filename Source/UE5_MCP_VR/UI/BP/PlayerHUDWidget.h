@@ -150,6 +150,15 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
     FString QuestLogPrefix = TEXT("퀘스트: ");
 
+    // --- Gold (상인) ---
+
+    /** 골드 — WBP 에 "GoldText" 이름 UTextBlock 배치 시 자동 바인딩(선택). UInventoryComponent::OnGoldChanged 로 갱신. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* GoldText;
+
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Gold")
+    FString GoldPrefix = TEXT("골드: ");
+
     // --- Inventory 열기/닫기 ---
 
     /** 인벤토리 패널 — WBP 에 "InventoryPanel" 이름 위젯 배치 시 자동 바인딩(선택).
@@ -189,6 +198,10 @@ protected:
     /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신. */
     UFUNCTION()
     void HandleStoryUpdated(const FStoryState& State);
+
+    /** UInventoryComponent::OnGoldChanged → GoldText 갱신. */
+    UFUNCTION()
+    void HandleGoldChanged(int32 NewGold);
 
     virtual void NativeDestruct() override;
 

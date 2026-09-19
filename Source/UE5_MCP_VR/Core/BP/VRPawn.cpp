@@ -35,6 +35,7 @@
 #include "UI/BP/PlayerHUDWidget.h"
 #include "UI/BP/ItemTooltipWidget.h"
 #include "UI/Trade/TradeSessionActor.h"
+#include "Villager/MerchantStall.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
@@ -101,7 +102,7 @@ AVRPawn::AVRPawn()
     StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
     StimuliSource->RegisterWithPerceptionSystem();
 
-    // 인벤토리 컴포넌트
+    // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
     // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯.
@@ -1043,7 +1044,7 @@ bool AVRPawn::TryPickupNearby()
     return Nearest && Nearest->TryPickupInto(Inventory);
 }
 
-ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) const
+ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, bool bIncludeDisplayed) const
 {
     UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager) return nullptr;
@@ -1055,6 +1056,8 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) 
         // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
         // 손에 쥔 것이 겹쳐 복사가 된다.
         if (Dropped->bTradeLocked) continue;
+        // 진열품은 Interact 픽업 후보에서 뺀다 — 공짜 획득 경로. 그랩은 구매 판정을 타므로 포함.
+        if (Dropped->bIsDisplayed && !bIncludeDisplayed) continue;
 
         const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
         if (DistSq < NearestDistSq)
@@ -1290,13 +1293,18 @@ void AVRPawn::HandleGrabStart(bool bLeft)
     }
 
     ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius, bLeft);
-    if (Nearest)
+    if (!Nearest) return;
+
+    // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
+    // 거부되면 손에 붙이지 않는다(붙였다 뺏으면 복사 버그 — TradeSession 의 교훈).
+    if (Nearest->bIsDisplayed)
     {
-        Inventory->AttachItemToHand(Nearest, HandSlot);
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
-        return;
+        AMerchantStall* Stall = Nearest->DisplayStall.Get();
+        if (!Stall || !Stall->TryPurchase(Nearest, Inventory)) return;
     }
 
+    Inventory->AttachItemToHand(Nearest, HandSlot);
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
@@ -1305,7 +1313,7 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     if (!HandController) return nullptr;
 
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    return FindNearestItem(HandController->GetComponentLocation(), Radius);
+    return FindNearestItem(HandController->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
 }
 
 void AVRPawn::UpdateItemTooltip()
@@ -1338,7 +1346,7 @@ void AVRPawn::UpdateItemTooltip()
         {
             if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(ItemTooltipComp->GetUserWidgetObject()))
             {
-                Tooltip->SetItem(Data, Target->Amount);
+                Tooltip->SetItem(Data, Target->Amount, Target->bIsDisplayed ? Target->DisplayPrice : -1);
             }
         }
         else
@@ -1410,6 +1418,13 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
 
     ADroppedItemBase* Item = Inventory->ReleaseHeldItem(HandSlot);
     if (!Item) return;
+
+    // 상인 매입 상자 안에서 놓았으면 판매 판정. 거부품(퀘스트·BaseValue 0)은 물리가 이미 살아 있어 상자 안에 그대로 떨어진다.
+    if (AMerchantStall* Stall = AMerchantStall::FindStallContaining(this, Item->GetActorLocation()))
+    {
+        Stall->TrySell(Item, Inventory);
+        return;
+    }
 
     // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
     // 빨려 들어가면 수락/취소를 누를 대상이 사라진다.

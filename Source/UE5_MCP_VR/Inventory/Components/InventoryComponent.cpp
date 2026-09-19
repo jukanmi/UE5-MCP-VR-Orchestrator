@@ -118,6 +118,28 @@ bool UInventoryComponent::AddItem(const FItemData& ItemData, int32 Amount, bool 
     return true;
 }
 
+bool UInventoryComponent::CanAddItem(const FItemData& Item, int32 Amount, bool bCheckWeight) const
+{
+    if (!Item.IsValidItem() || Amount <= 0) return false;
+    if (bCheckWeight && CurrentWeight + Item.Weight * static_cast<float>(Amount) > MaximumWeightLimit) return false;
+    return GetRemainingCapacityFor(Item) >= Amount;
+}
+
+void UInventoryComponent::AddGold(int32 Amount)
+{
+    if (Amount <= 0) return;
+    Gold += Amount;
+    OnGoldChanged.Broadcast(Gold);
+}
+
+bool UInventoryComponent::RemoveGold(int32 Amount)
+{
+    if (Amount <= 0 || !CanAfford(Amount)) return false;
+    Gold -= Amount;
+    OnGoldChanged.Broadcast(Gold);
+    return true;
+}
+
 int32 UInventoryComponent::TryStackItemsExisting(const FItemData& TargetItem, int32 RemainingAmount)
 {
     // 빈 공간이 남아있는 기존 슬롯을 우선적으로 찾아 아이템을 최대한 눌러 담습니다.

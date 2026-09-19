@@ -1210,8 +1210,25 @@ def villager(kind, n, x, y, radius, face=None):
     return _finish(a, f"SCN_villager_{kind}_{n}")
 
 
+def merchant_stall(merchant, x, y, yaw=0.0):
+    """AMerchantStall 1개 — 탁자 중심에 두고 상인을 연결. 진열 슬롯은 액터 로컬 오프셋(탁자 상판 위), 매입 상자는 +X 옆."""
+    z = ground_z(x, y)
+    a = EAS.spawn_actor_from_class(unreal.MerchantStall, unreal.Vector(x, y, z), unreal.Rotator(yaw=yaw))
+    a.set_editor_property("Merchant", merchant)
+    box = a.get_editor_property("BuyBoxMesh")
+    box.set_static_mesh(load(MESH["cube"]))
+    box.set_material(0, load(MAT["walnut"]))
+    box.set_editor_property("relative_scale3d", unreal.Vector(0.9, 0.9, 0.8))  # 100cm 큐브 → BuyBox extent(45,45,40)
+    box.set_editor_property("relative_location", unreal.Vector(0, 0, -40))  # 큐브 피벗이 바닥 — 판정 박스(중심 z40)와 맞춤
+    # 진열 3×2 — SM_TableRound 반지름 61·상판 z70. 물리 정지라 살짝 떠 있어도 무방.
+    a.set_editor_property(
+        "SlotOffsets", [unreal.Vector(dx, dy, 80) for dy in (-22, 22) for dx in (-38, 0, 38)]
+    )
+    return _finish(a, "SCN_villager_MerchantStall")
+
+
 def build_villager():
-    """앰비언트 주민 12명 — 서버·LLM 0(AVillagerCharacter FSM). 정적 배치(스포너 없음). 상인은 Phase 3."""
+    """앰비언트 주민 12명 + 상인 1(가판대·매입 상자) — 서버·LLM 0(AVillagerCharacter FSM). 정적 배치(스포너 없음)."""
     px, py = PLAZA
     gx, gy = GATE_N
     hx, hy = HIDEOUT
@@ -1219,7 +1236,7 @@ def build_villager():
     # 광장 4 (기둥 링 700·의자 850 바깥) + 시장 가판대 2 (상자·통 무더기 피해서)
     for i, (x, y, r) in enumerate(
         [(px - 1100, py + 200, 500), (px - 200, py + 1100, 500), (px + 1000, py - 300, 450), (px - 400, py - 1000, 500),
-         (px + 1250, py - 1550, 350), (px + 2400, py - 1100, 350)],
+         (px + 650, py - 1600, 300), (px + 2400, py - 1100, 350)],  # 5 는 상인(px+1400, py-1460) 서쪽으로
         1,
     ):
         villager("Townsfolk", i, x, y, r, face=PLAZA)
@@ -1232,6 +1249,11 @@ def build_villager():
     villager("Refugee", 5, hx - 250, hy + 150, 0, face=(hx, hy - 150))
     # 도서관 1 — Moca(lx+60, ly+190)·탁자 서쪽, 서가 회랑 쪽
     villager("Scholar", 1, lx - 600, ly + 200, 400, face=(lx + 60, ly - 120))
+    # 상인 1 — 시장 가운데 가판대(build_village 의 table (400,-3000)) 뒤(남쪽)에 서서 광장(북) 쪽을 본다. 배회 0.
+    # 가판대 액터는 탁자 중심, 매입 상자는 탁자 동쪽(+X) 옆 — 상인 손 닿는 거리.
+    mx, my = 400, -3000
+    m = villager("Merchant", 1, mx, my - 260, 0, face=(mx, my + 800))
+    merchant_stall(m, mx, my)
 
 
 def build_env():

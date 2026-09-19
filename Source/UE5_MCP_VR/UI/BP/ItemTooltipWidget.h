@@ -20,9 +20,9 @@ class UE5_MCP_VR_API UItemTooltipWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    /** 표시 내용 갱신 — 이름 + 종류·수량. 종류에 따라 이름 색이 바뀐다. */
+    /** 표시 내용 갱신 — 이름 + 종류·수량(+ 진열 가격, Price ≥ 0 일 때만). 종류에 따라 이름 색이 바뀐다. */
     UFUNCTION(BlueprintCallable, Category = "Tooltip")
-    void SetItem(const FItemData& Data, int32 Amount);
+    void SetItem(const FItemData& Data, int32 Amount, int32 Price = -1);
 
 protected:
     /** 위젯 트리를 코드로 구성 — 디자이너 트리가 없을 때만 짓는다(WBP 로 파생해도 안 깨지게). */

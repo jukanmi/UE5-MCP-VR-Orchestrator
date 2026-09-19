@@ -72,7 +72,7 @@ TSharedRef<SWidget> UItemTooltipWidget::RebuildWidget()
     return Super::RebuildWidget();
 }
 
-void UItemTooltipWidget::SetItem(const FItemData& Data, int32 Amount)
+void UItemTooltipWidget::SetItem(const FItemData& Data, int32 Amount, int32 Price)
 {
     if (NameText)
     {
@@ -83,9 +83,13 @@ void UItemTooltipWidget::SetItem(const FItemData& Data, int32 Amount)
 
     if (DetailText)
     {
-        const FString Detail = (Amount > 1)
+        FString Detail = (Amount > 1)
             ? FString::Printf(TEXT("%s  x%d"), *LabelForType(Data.ItemType), Amount)
             : LabelForType(Data.ItemType);
+        if (Price >= 0)
+        {
+            Detail += FString::Printf(TEXT("  ·  %d 골드"), Price);
+        }
         DetailText->SetText(FText::FromString(Detail));
     }
 }

@@ -1,4 +1,4 @@
-"""주민 BP 생성 — /Game/Blueprint/Villager/{BP_Villager, BP_Villager_Townsfolk, BP_Villager_Refugee, BP_Villager_Scholar}. 멱등(있으면 값만 갱신).
+"""주민 BP 생성 — /Game/Blueprint/Villager/{BP_Villager, BP_Villager_Townsfolk, BP_Villager_Refugee, BP_Villager_Scholar, BP_Villager_Merchant}. 멱등(있으면 값만 갱신).
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")`.
 메시·애니는 Quaternius Ultimate Modular Characters(CC0) "Individual Characters" FBX — 의상 1개 = 스켈레탈 메시 1 + 클립 24 내장,
@@ -33,7 +33,14 @@ KINDS = [
     ("BP_Villager_Townsfolk", "Townsfolk", "Casual_2", {"strength": 6, "constitution": 5, "dexterity": 10}, 600.0),
     ("BP_Villager_Refugee", "Refugee", "Farmer", {"strength": 5, "constitution": 4, "dexterity": 10}, 300.0),
     ("BP_Villager_Scholar", "Scholar", "Worker", {"strength": 4, "constitution": 4, "dexterity": 8}, 400.0),
+    ("BP_Villager_Merchant", "Merchant", "Casual_Hoodie", {"strength": 6, "constitution": 5, "dexterity": 8}, 0.0),
 ]
+
+# 상인 재고(Inventory.InitialDefaultItems) — ItemID 1개 = 1개. 소모품만(장비는 시작 골드 150 으로 못 산다). 총 18개.
+# 가격은 DT_ItemRegistry BaseValue(HealthPotion 60·Bandage 12·Bread 8·Torch 15·WaterSkin 15), 매입가 = 반값(최소 1).
+STOCK = {
+    "Merchant": ["HealthPotion"] * 3 + ["Bandage"] * 5 + ["Bread"] * 5 + ["Torch"] * 2 + ["WaterSkin"] * 3,
+}
 
 # ── 대사 (전 종류 공통: 베이스 BP) ─────────────────────────────────
 # 길 안내 분기 키워드 — 플레이어 채팅에 하나라도 포함되면 현재 스토리 비트의 안내문(DIRECTIONS)으로 응답.
@@ -74,6 +81,12 @@ LINES = {
         "옛 기록에 따르면 마왕은 한 번 봉인된 적이 있네.",
         "책은 제자리에 꽂아 두게. 부탁이야.",
     ],
+    "Merchant": [
+        "어서 오게. 탁자 위 물건은 집으면 바로 자네 거야 — 값만 치르면.",
+        "팔 게 있으면 옆 상자에 넣게. 반값이지만 현금일세.",
+        "치유 물약은 60 골드. 싸게 파는 거야, 요즘 약초값이 올라서.",
+        "이름표에 값이 적혀 있네. 흥정은 안 받아.",
+    ],
 }
 RULES = {
     "Townsfolk": [
@@ -93,6 +106,13 @@ RULES = {
         (["마왕", "봉인", "역사", "기록"], ["마왕은 성검으로 봉인됐다고 기록돼 있소. 그 검이 어디 있는지는… 흠.", "기록실 안쪽 서가를 보시오. 마왕 봉인 연대기가 있소."]),
         (["Moca", "모카", "마법"], ["Moca 는 안쪽 열람실에 자주 있소. 마법서 쪽이오.", "마법에 관해선 Moca 가 나보다 낫소."]),
         (["책", "도서", "읽"], ["책은 대출 안 되오. 여기서 읽으시오.", "찾는 책이 있으면 서가 번호를 말해 보시오."]),
+    ],
+    "Merchant": [
+        (["안녕", "반가"], ["어서 오게. 뭐 찾나?", "반갑네. 구경은 공짜야."]),
+        (["가격", "얼마", "값", "비싸"], ["이름표에 적힌 대로야. 물약 60, 붕대 12, 빵 8.", "비싸긴, 마물 때문에 길이 끊겨 원가가 올랐어."]),
+        (["팔", "매입", "사줘", "사 줘"], ["옆 상자에 넣게. 반값에 쳐주지.", "퀘스트 물건은 안 사네. 값이 없어."]),
+        (["물약", "포션", "치유"], ["치유 물약은 탁자 위에. 60 골드일세.", "물약은 세 병뿐이야. 서두르게."]),
+        (["빵", "음식", "먹"], ["빵은 8 골드. 피난민한테 나눠 주면 좋아하지.", "호밀빵이야. 딱딱하지만 든든하네."]),
     ],
 }
 
@@ -203,6 +223,8 @@ for name, prefix, char, stats, radius in KINDS:
         r.set_editor_property("lines", lines)
         rules.append(r)
     c.set_editor_property("KeywordRules", rules)
+    # 재고 — 상인만. 다른 종류는 빈 목록(멱등: 이전 값 제거).
+    c.get_editor_property("Inventory").set_editor_property("InitialDefaultItems", STOCK.get(prefix, []))
     attrs = c.get_editor_property("Attributes")
     bs = attrs.get_editor_property("base_stats")
     for k, v in stats.items():
@@ -232,6 +254,8 @@ for name, prefix, char, stats, radius in KINDS:
         len(chk.get_editor_property("KeywordRules")),
         "beats",
         len(chk.get_editor_property("BeatDirections")),
+        "stock",
+        len(chk.get_editor_property("Inventory").get_editor_property("InitialDefaultItems")),
         "mesh",
         chk.mesh.get_skeletal_mesh_asset().get_name(),
         f"height~{ext.z * 2:.0f}",

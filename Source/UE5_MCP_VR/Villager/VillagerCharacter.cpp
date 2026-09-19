@@ -4,6 +4,7 @@
 #include "Core/Types/PlayerGameplayTags.h"
 #include "NPC/Components/NPCRagdollComponent.h"
 #include "NPC/Components/NPCDialogueUIComponent.h"
+#include "Inventory/Components/InventoryComponent.h"
 #include "Story/StorySubsystem.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -28,6 +29,8 @@ AVillagerCharacter::AVillagerCharacter()
     // 말풍선 — 위젯 공간·크기·머리 위 오프셋은 컴포넌트 기본값(SmartNPC 와 동일).
     DialogueWidgetComp = CreateDefaultSubobject<UNPCDialogueUIComponent>(TEXT("DialogueWidget"));
     DialogueWidgetComp->SetupAttachment(GetMesh());
+
+    Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
     if (StimuliSource)

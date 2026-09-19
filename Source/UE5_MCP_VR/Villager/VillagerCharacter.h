@@ -8,6 +8,7 @@
 class UAIPerceptionStimuliSourceComponent;
 class UNPCRagdollComponent;
 class UNPCDialogueUIComponent;
+class UInventoryComponent;
 class UAnimSequence;
 class USoundBase;
 
@@ -94,6 +95,11 @@ public:
     /** 머리 위 말풍선 — SmartNPC 와 같은 컴포넌트. 발화자 이름은 ICharacterBase::GetEntityID = VillagerID. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
     UNPCDialogueUIComponent* DialogueWidgetComp;
+
+    /** 소지품 — 상인 재고(InitialDefaultItems, BP_Villager_Merchant 가 굽는다). 가판대(AMerchantStall)가 여기서 꺼내 진열하고 매입품을 넣는다.
+     *  다른 종류는 비워 둔다. 서버 프롬프트에 안 실리므로(NPCManager 미등록) 토큰 비용 0. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
+    UInventoryComponent* Inventory;
 
     // --- 대화 규칙 (make_villager_bps.py 가 굽는다) ---
     /** Interact 인사·매칭 없는 채팅에 쓰는 기본 대사 풀(랜덤 1줄). 비어 있으면 말풍선 없음. */

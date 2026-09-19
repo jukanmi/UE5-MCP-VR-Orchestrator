@@ -79,6 +79,12 @@ void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
     QuestLogText->SetText(FText::FromString(QuestLogPrefix + State.QuestLog));
 }
 
+void UPlayerHUDWidget::HandleGoldChanged(int32 NewGold)
+{
+    if (!GoldText) return;
+    GoldText->SetText(FText::FromString(GoldPrefix + FString::FromInt(NewGold)));
+}
+
 void UPlayerHUDWidget::AppendChatLine(const FString& Speaker, const FString& Text)
 {
     if (!ChatLog || !WidgetTree) return;
@@ -167,6 +173,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
             if (UInventoryComponent* OldInv = OwnerPawn->FindComponentByClass<UInventoryComponent>())
             {
                 OldInv->OnInventoryChanged.RemoveDynamic(this, &UPlayerHUDWidget::RequestInventoryRefresh);
+                OldInv->OnGoldChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleGoldChanged);
             }
         }
         OwnerPawn = CurrentPawn;
@@ -350,8 +357,10 @@ void UPlayerHUDWidget::TryBindInventoryDelegate()
     if (UInventoryComponent* Inv = GetInventory())
     {
         Inv->OnInventoryChanged.AddDynamic(this, &UPlayerHUDWidget::RequestInventoryRefresh);
+        Inv->OnGoldChanged.AddDynamic(this, &UPlayerHUDWidget::HandleGoldChanged);
         bInventoryDelegateBound = true;
-        // 바인딩 전 변경분(초기 지급 아이템 등) 반영
+        // 바인딩 전 변경분(초기 지급 아이템·시작 골드) 반영
         RequestInventoryRefresh();
+        HandleGoldChanged(Inv->GetGold());
     }
 }
