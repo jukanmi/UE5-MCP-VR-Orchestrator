@@ -86,7 +86,7 @@ KINDS = [
         1.0,
         0.3,
         None,
-        None,
+        "ImpHorn",
     ),
     (
         "BP_Enemy_Puglin",
