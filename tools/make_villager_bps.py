@@ -6,7 +6,8 @@
 없으면 여기서 Interchange 로 /Game/Villager/Quaternius/{char} 에 임포트한다(텍스처 없음 — 단색 머티리얼).
 AnimBP 없음 — AVillagerCharacter 가 Idle/Walk/Run/Wave/HitRecieve 를 단일 노드로 직접 재생하므로 BP 엔 클립 5개만 꽂는다.
 종류별 자식 BP 가 VillagerID 접두·BaseStats·의상·배회 반경을 다르게 가진다. 개체 번호(Townsfolk_3)는 build_story_scene.py 가 붙인다.
-대사 풀·키워드 규칙·비트별 길 안내(Phase 2)와 상인 재고(Phase 3)도 여기에 데이터로 둔다 — 대사 데이터의 단일 원본.
+대사 풀·키워드 규칙·비트별 길 안내(LINES/RULES/DIRECTIONS)와 상인 재고(Phase 3)도 여기에 데이터로 둔다 — 대사 데이터의 단일 원본.
+AVillagerCharacter 가 로컬 규칙으로 응답(서버·LLM 0): 길 안내 키워드 → 종류 키워드 규칙 → 기본 풀.
 """
 
 import os
@@ -33,6 +34,67 @@ KINDS = [
     ("BP_Villager_Refugee", "Refugee", "Farmer", {"strength": 5, "constitution": 4, "dexterity": 10}, 300.0),
     ("BP_Villager_Scholar", "Scholar", "Worker", {"strength": 4, "constitution": 4, "dexterity": 8}, 400.0),
 ]
+
+# ── 대사 (전 종류 공통: 베이스 BP) ─────────────────────────────────
+# 길 안내 분기 키워드 — 플레이어 채팅에 하나라도 포함되면 현재 스토리 비트의 안내문(DIRECTIONS)으로 응답.
+DIRECTION_KEYWORDS = ["길", "어디", "퀘스트", "가야", "어떻게 가", "목적지"]
+# 비트 id(main.yaml) → 구역 이름+방향. 주민은 "방향", quest_log 는 "목적" — 역할 분리.
+DIRECTIONS = {
+    "b1_kingdom_fall": "성문 안쪽에 경비병이 서 있네. 그 사람부터 만나 보게.",
+    "b2_james_order": "광장으로 가 보게. James 가 자네를 찾고 있었어.",
+    "b3_recruit_party": "서쪽 도서관에 Moca 가 있고, 숲 빈터엔 Skadi 가 있다더군. 둘 다 힘이 될 걸세.",
+    "b4_reforge_and_elara": "동쪽 다리를 건너면 전초기지야. 조심하게, 마물이 많아.",
+    "b5_moca_betrayal": "광장의 James 한테 가 보게. 급한 얼굴이던데.",
+    "b6_save_moca_and_boss": "북동쪽 마왕성… 정말 갈 텐가? 무운을 비네.",
+    "b7_epilogue": "성문 쪽으로 가 보게. 다들 자네를 기다리고 있어.",
+    "end": "이제 다 끝났지. 편히 쉬게.",
+}
+# 활성 서브퀘스트 id → 덧붙이는 한 줄.
+SIDE_DIRECTIONS = {
+    "s_moca_herbs": "약초는 남쪽 숲 빈터에 자라네.",
+}
+# 스토리 비트 미수신(서버 응답 전)·표에 없는 비트.
+NO_STORY = "글쎄, 성문 쪽 경비병한테 물어보게."
+
+# ── 종류별 기본 풀(Interact 인사·매칭 없음) + 키워드 규칙([키워드들], [응답들]) ──
+LINES = {
+    "Townsfolk": [
+        "안녕하신가. 오늘도 장이 섰어.",
+        "요즘 밤엔 문단속 잘 하게. 흉흉해.",
+        "낯선 얼굴이군. 마을에 온 걸 환영하네.",
+        "빵집 냄새 좋지? 아침마다 저래.",
+    ],
+    "Refugee": [
+        "…고향은 불탔어. 여기까지 오는 데 사흘 걸렸지.",
+        "먹을 게 좀 없나. 아이들이 굶고 있어.",
+        "마물이 또 올까 무서워. 자네는 싸울 줄 아나?",
+    ],
+    "Scholar": [
+        "쉿, 도서관에선 조용히. 뭘 찾나?",
+        "옛 기록에 따르면 마왕은 한 번 봉인된 적이 있네.",
+        "책은 제자리에 꽂아 두게. 부탁이야.",
+    ],
+}
+RULES = {
+    "Townsfolk": [
+        (["안녕", "반가", "인사"], ["그래, 반갑네.", "안녕하신가."]),
+        (["마왕", "마물", "괴물"], ["북동쪽 성에 마왕이 산다지. 밤엔 그쪽 얼씬도 마.", "마물 얘기는 그만. 소름 돋아."]),
+        (["상인", "물건", "사고", "팔"], ["시장 가판대 상인이 이것저것 팔아. 값은 좀 세지만.", "물건은 시장에서. 광장 옆이야."]),
+        (["경비", "병사"], ["경비병은 성문 안쪽에 있네.", "경비병 말은 잘 듣게. 그 사람 눈이 매서워."]),
+    ],
+    "Refugee": [
+        (["안녕", "반가"], ["…안녕. 살아 있으니 됐지.", "안녕하시오."]),
+        (["고향", "마을", "왔"], ["동쪽 마을에서 왔어. 지금은 잿더미야.", "우린 강 건너에서 도망쳐 왔네."]),
+        (["마왕", "마물", "괴물"], ["그놈들이 우리 마을을 태웠어. 제발… 막아 주게.", "마물이 오면 은신처로. 그것밖에 못 해."]),
+        (["음식", "먹", "배고"], ["빵 한 조각이라도 있으면… 고맙겠네.", "시장 상인이 빵을 판다던데 돈이 없어."]),
+    ],
+    "Scholar": [
+        (["안녕", "반가"], ["아, 안녕하시오. 조용히 부탁해요.", "반갑소. 책 보러 왔소?"]),
+        (["마왕", "봉인", "역사", "기록"], ["마왕은 성검으로 봉인됐다고 기록돼 있소. 그 검이 어디 있는지는… 흠.", "기록실 안쪽 서가를 보시오. 마왕 봉인 연대기가 있소."]),
+        (["Moca", "모카", "마법"], ["Moca 는 안쪽 열람실에 자주 있소. 마법서 쪽이오.", "마법에 관해선 Moca 가 나보다 낫소."]),
+        (["책", "도서", "읽"], ["책은 대출 안 되오. 여기서 읽으시오.", "찾는 책이 있으면 서가 번호를 말해 보시오."]),
+    ],
+}
 
 
 def load(path):
@@ -118,6 +180,10 @@ cdo = cdo_of(base)
 cdo.set_editor_property("CorpseLifetime", 10.0)
 cdo.set_editor_property("HitSounds", [load(f"{SND}/S_Hit_Punch_{i}") for i in range(5)])
 cdo.set_editor_property("DeathSounds", [load(f"{SND}/S_Death_Thud_{i}") for i in range(3)])
+cdo.set_editor_property("DirectionKeywords", DIRECTION_KEYWORDS)
+cdo.set_editor_property("BeatDirections", DIRECTIONS)
+cdo.set_editor_property("SideDirections", SIDE_DIRECTIONS)
+cdo.set_editor_property("NoStoryDirection", NO_STORY)
 save(base)
 print("[villager] base:", BASE)
 
@@ -129,6 +195,14 @@ for name, prefix, char, stats, radius in KINDS:
     c = cdo_of(bp)
     c.set_editor_property("VillagerID", prefix)
     c.set_editor_property("WanderRadius", radius)
+    c.set_editor_property("DefaultLines", LINES[prefix])
+    rules = []
+    for keywords, lines in RULES[prefix]:
+        r = unreal.VillagerKeywordRule()
+        r.set_editor_property("keywords", keywords)
+        r.set_editor_property("lines", lines)
+        rules.append(r)
+    c.set_editor_property("KeywordRules", rules)
     attrs = c.get_editor_property("Attributes")
     bs = attrs.get_editor_property("base_stats")
     for k, v in stats.items():
@@ -152,6 +226,12 @@ for name, prefix, char, stats, radius in KINDS:
         "[villager]",
         name,
         chk.get_editor_property("VillagerID"),
+        "lines",
+        len(chk.get_editor_property("DefaultLines")),
+        "rules",
+        len(chk.get_editor_property("KeywordRules")),
+        "beats",
+        len(chk.get_editor_property("BeatDirections")),
         "mesh",
         chk.mesh.get_skeletal_mesh_asset().get_name(),
         f"height~{ext.z * 2:.0f}",

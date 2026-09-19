@@ -32,6 +32,8 @@ beats:
   next: b3_recruit_party
   unlocks_side:
   - s_moca_herbs
+  - s_hunt_forest_raiders
+  - s_hunt_imp
 - id: b3_recruit_party
   title: 마법사와 거너
   summary: 조용한 마법사 Moca와 화끈한 거너 Skadi가 합류한다.

@@ -25,6 +25,7 @@
 #include "IMotionController.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Villager/VillagerCharacter.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
 #include "NPC/Struct/NPCActionKeys.h"
@@ -1467,7 +1468,13 @@ void AVRPawn::Cheat_Unequip(bool bOffHand)
 
 void AVRPawn::DetectNearbyNPC()
 {
-    const FString FoundID = PlayerInteractionUtils::FindNearestNPCId(this, 500.f);
+    // 최근접이 주민(서버 미등록)이면 로컬 인사(바라보기+Wave+대사 1줄)로 끝. 타겟 NPC 는 건드리지 않는다.
+    FString FoundID;
+    if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(this, 500.f, FoundID))
+    {
+        V->Interact(this);
+        return;
+    }
 
     // 미발견 시 기존 타겟 유지 — 빈 값 덮어쓰기로 유효 대상이 소실되는 것 방지.
     if (!FoundID.IsEmpty())
@@ -1496,6 +1503,13 @@ void AVRPawn::SayToNpc(const FString& Text)
 {
     // 타겟 미지정이면 근접 탐지. player_id 는 고정 "Player" — 서버 affinity·스토리 DB 키(PLAYER_KEY)와 일치.
     // 액터 이름(BP_VRPawn_C_0)으로도 보내면 LLM 2회 호출 + 기록 2배 오염.
+    // 최근접이 주민이면 로컬 규칙 응답 — 서버 미전송(NPCManager 미등록). SmartNPC 가 더 가까우면 종전대로.
+    FString Nearest;
+    if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(this, 500.f, Nearest))
+    {
+        V->RespondToChat(Text);
+        return;
+    }
     if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
     if (CurrentTargetNPCID.IsEmpty() || Text.IsEmpty())
     {

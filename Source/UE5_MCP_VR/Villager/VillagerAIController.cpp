@@ -245,16 +245,30 @@ bool AVillagerAIController::TryGreet(AVillagerCharacter* V, float Now)
     if (!P || ACombatCharacter::IsActorDead(P)) return false;
     if (FVector::DistSquared(P->GetActorLocation(), V->GetActorLocation()) > GreetRadius * GreetRadius) return false;
 
+    DoGreet(V, P, Now, /*bWave=*/true);
+    return true;
+}
+
+bool AVillagerAIController::GreetNow(AActor* Player, bool bWave)
+{
+    AVillagerCharacter* V = GetVillager();
+    if (!V || V->bIsDead || !Player) return false;
+    if (State == EVillagerState::Flee || State == EVillagerState::Return || State == EVillagerState::Dead) return false;
+    DoGreet(V, Player, GetWorld()->GetTimeSeconds(), bWave);
+    return true;
+}
+
+void AVillagerAIController::DoGreet(AVillagerCharacter* V, const AActor* P, float Now, bool bWave)
+{
     NextGreetTime = Now + GreetCooldown;
     StopMovement();
     FRotator Face = (P->GetActorLocation() - V->GetActorLocation()).Rotation();
     Face.Pitch = 0.f;
     Face.Roll = 0.f;
     V->SetActorRotation(Face);
-    const float Len = V->PlayWave();  // 클립 없으면 0 → 다음 틱 바로 Idle
+    const float Len = bWave ? V->PlayWave() : 0.f;  // 클립 없으면 0 → 다음 틱 바로 Idle
     State = EVillagerState::Greet;
     UE_LOG(LogTemp, Log, TEXT("[VillagerAI] %s 인사(Wave %.1fs) → %s"), *V->VillagerID, Len, *GetNameSafe(P));
-    return true;
 }
 
 void AVillagerAIController::FleeFrom(AVillagerCharacter* V, const AActor* T, float Now)

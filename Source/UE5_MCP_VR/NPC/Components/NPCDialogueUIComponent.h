@@ -46,7 +46,7 @@ private:
      *  인자 이름이 bShow 인 이유: bVisible 은 USceneComponent 의 멤버라 가려 버린다. */
     void ApplySubtitle(bool bShow);
 
-    /** 발화자 이름 — 소유 NPC 의 AgentID. 위젯 상단에 표시된다. */
+    /** 발화자 이름 — 소유 NPC 의 AgentID, INPC 미구현(주민)이면 ICharacterBase::GetEntityID. 위젯 상단에 표시된다. */
     FString GetSpeakerName() const;
 
     /** 현재 표시 중 자막 텍스트. */

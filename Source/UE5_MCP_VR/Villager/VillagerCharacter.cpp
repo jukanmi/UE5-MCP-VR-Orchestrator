@@ -3,6 +3,8 @@
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Core/Types/PlayerGameplayTags.h"
 #include "NPC/Components/NPCRagdollComponent.h"
+#include "NPC/Components/NPCDialogueUIComponent.h"
+#include "Story/StorySubsystem.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Animation/AnimSequence.h"
@@ -22,6 +24,10 @@ AVillagerCharacter::AVillagerCharacter()
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
     RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
+
+    // 말풍선 — 위젯 공간·크기·머리 위 오프셋은 컴포넌트 기본값(SmartNPC 와 동일).
+    DialogueWidgetComp = CreateDefaultSubobject<UNPCDialogueUIComponent>(TEXT("DialogueWidget"));
+    DialogueWidgetComp->SetupAttachment(GetMesh());
 
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
     if (StimuliSource)
@@ -112,6 +118,89 @@ void AVillagerCharacter::PlayOneOf(const TArray<USoundBase*>& Sounds) const
     {
         UGameplayStatics::PlaySoundAtLocation(this, S, GetActorLocation());
     }
+}
+
+// ============================================================================
+// 대화 (로컬 규칙 — 서버·LLM 0)
+// ============================================================================
+const FString& AVillagerCharacter::PickLine(const TArray<FString>& Pool)
+{
+    static const FString Empty;
+    return Pool.Num() ? Pool[FMath::RandRange(0, Pool.Num() - 1)] : Empty;
+}
+
+bool AVillagerCharacter::ContainsAny(const FString& Text, const TArray<FString>& Keywords)
+{
+    for (const FString& K : Keywords)
+    {
+        if (!K.IsEmpty() && Text.Contains(K)) return true;
+    }
+    return false;
+}
+
+void AVillagerCharacter::Say(const FString& Text)
+{
+    if (Text.IsEmpty() || bIsDead || !DialogueWidgetComp) return;
+    DialogueWidgetComp->ShowSubtitle(Text);
+    UE_LOG(LogTemp, Log, TEXT("[Villager] %s: %s"), *VillagerID, *Text);
+}
+
+bool AVillagerCharacter::Interact(AActor* Player)
+{
+    if (bIsDead) return false;
+    AVillagerAIController* AIC = Cast<AVillagerAIController>(GetController());
+    if (!AIC || !AIC->GreetNow(Player, /*bWave=*/true)) return false;  // 도주·복귀 중엔 인사 안 함
+    Say(PickLine(DefaultLines));
+    return true;
+}
+
+FString AVillagerCharacter::BuildDirections() const
+{
+    const UStorySubsystem* Story = UStorySubsystem::Get(this);
+    if (!Story || !Story->HasState()) return NoStoryDirection;
+
+    const FStoryState& St = Story->GetCurrentState();
+    FString Out = BeatDirections.FindRef(St.BeatId);
+    if (Out.IsEmpty()) Out = NoStoryDirection;
+    for (const FString& SideId : St.Side)
+    {
+        if (const FString* Extra = SideDirections.Find(SideId))
+        {
+            Out += TEXT(" ") + *Extra;
+        }
+    }
+    return Out;
+}
+
+FString AVillagerCharacter::RespondToChat(const FString& PlayerText)
+{
+    if (bIsDead) return FString();
+
+    FString Reply;
+    if (ContainsAny(PlayerText, DirectionKeywords))
+    {
+        Reply = BuildDirections();
+    }
+    else
+    {
+        for (const FVillagerKeywordRule& Rule : KeywordRules)
+        {
+            if (ContainsAny(PlayerText, Rule.Keywords))
+            {
+                Reply = PickLine(Rule.Lines);
+                break;
+            }
+        }
+        if (Reply.IsEmpty()) Reply = PickLine(DefaultLines);
+    }
+
+    // 말 걸면 멈춰 바라보기(Wave 없음) — 도주·복귀 중이면 대사만.
+    if (AVillagerAIController* AIC = Cast<AVillagerAIController>(GetController()))
+    {
+        AIC->GreetNow(UGameplayStatics::GetPlayerPawn(this, 0), /*bWave=*/false);
+    }
+    Say(Reply);
+    return Reply;
 }
 
 // ============================================================================

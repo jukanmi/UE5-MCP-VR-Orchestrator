@@ -45,11 +45,16 @@ void UNPCDialogueUIComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 FString UNPCDialogueUIComponent::GetSpeakerName() const
 {
-    // AgentID 는 INPC 로 꺼낸다 — 구체 NPC 클래스에 묶이지 않게.
+    // AgentID 는 INPC 로 꺼낸다 — 구체 NPC 클래스에 묶이지 않게. 주민(INPC 미구현)은 ICharacterBase 의 EntityID(=VillagerID).
     AActor* Owner = GetOwner();
-    if (Owner && Owner->GetClass()->ImplementsInterface(UNPC::StaticClass()))
+    if (!Owner) return FString();
+    if (Owner->GetClass()->ImplementsInterface(UNPC::StaticClass()))
     {
         return INPC::Execute_GetAgentID(Owner);
+    }
+    if (Owner->GetClass()->ImplementsInterface(UCharacterBase::StaticClass()))
+    {
+        return ICharacterBase::Execute_GetEntityID(Owner);
     }
     return FString();
 }

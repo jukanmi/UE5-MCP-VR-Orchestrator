@@ -12,6 +12,7 @@
 #include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
 #include "Inventory/Components/InventoryComponent.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
+#include "Villager/VillagerCharacter.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
@@ -121,8 +122,15 @@ void UPlayerHUDWidget::HandleChatCommitted(const FText& Text, ETextCommit::Type 
     const FString Msg = Text.ToString().TrimStartAndEnd();
     if (!Msg.IsEmpty() && OwnerPawn)
     {
-        const FString Target = PlayerInteractionUtils::FindNearestNPCId(OwnerPawn, ChatTargetRadius);
-        if (Target.IsEmpty())
+        // 최근접이 주민이면 로컬 규칙 응답(서버 미전송). SmartNPC 가 더 가까우면 서버로.
+        FString Target;
+        if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(OwnerPawn, ChatTargetRadius, Target))
+        {
+            AppendChatLine(TEXT("나"), Msg);
+            const FString Reply = V->RespondToChat(Msg);
+            if (!Reply.IsEmpty()) AppendChatLine(V->VillagerID, Reply);
+        }
+        else if (Target.IsEmpty())
         {
             UE_LOG(LogTemp, Warning, TEXT("[HUD] 채팅 폐기 — 반경 %.0fcm 내 NPC 없음"), ChatTargetRadius);
         }
