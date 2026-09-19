@@ -2,6 +2,7 @@
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")` 또는 에디터 Python 콘솔
 `py "C:/github/UE5_MCP_VR/tools/build_story_scene.py"`.
+구역만 다시: 환경변수 SCN_ONLY="village,citadel" → 그 구역(build_<zone>) 라벨만 지우고 재생성. place_actors 는 안 돈다.
 전제: Content/StarterContent (Engine/Samples 에서 복사, Memo 참조) · C++ AStoryZoneTrigger · BP_HISMCluster(이 스크립트가 없으면 생성).
 
 동선(시작→끝):
@@ -12,11 +13,13 @@
 """
 
 import math
+import os
 import random
 
 import unreal
 
 random.seed(11)
+ONLY = [z for z in os.environ.get("SCN_ONLY", "").split(",") if z]
 
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 LES = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -169,6 +172,9 @@ def chair(zone, x, y, yaw=0.0, scale=1.0, fid=None):
 
 
 def trigger(zone, x, y, ext=(450, 450, 200)):
+    for old in EAS.get_all_level_actors():  # 라벨이 SCN_<zone>_ 밖이라 구역 단독 재빌드 때 여기서 교체
+        if old.get_actor_label() == f"SCN_{zone}_trigger":
+            EAS.destroy_actor(old)
     a = EAS.spawn_actor_from_class(
         unreal.StoryZoneTrigger, unreal.Vector(x, y, ground_z(x, y) + 100), unreal.Rotator(0, 0, 0)
     )
@@ -181,11 +187,14 @@ def wall_line(zone, x0, y0, x1, y1, seg=400.0, mesh="wall", mat="stone", door_at
     """(x0,y0)→(x1,y1) 직선 벽. Wall_400x400 피벗은 시작 모서리라 세그먼트가 이어 붙는다. door_at: 문 세그먼트 인덱스들."""
     dx, dy = x1 - x0, y1 - y0
     n = max(1, int(round(math.hypot(dx, dy) / seg)))
+    step = math.hypot(dx, dy) / n  # 실제 간격(길이가 seg 배수가 아니면 seg 와 다르다)
     yaw = math.degrees(math.atan2(dy, dx))
     for i in range(n):
         t = i / n
         key = "door" if i in door_at else ("window" if window_every and i % window_every == window_every - 1 else mesh)
-        place(zone, key, x0 + dx * t, y0 + dy * t, yaw=yaw, mat=mat, z_off=z_off)
+        # 메시 길이(문·창 400, wall5 500)를 간격에 맞춰 늘려 틈 없앰. 문·창은 높이도 seg(층 높이)에 맞춤 — 500 벽에 400 문이면 위 100 구멍
+        sc = (step / (500 if key == "wall5" else 400), 1, seg / 400 if key in ("door", "window") else 1)
+        place(zone, key, x0 + dx * t, y0 + dy * t, yaw=yaw, mat=mat, z_off=z_off, scale=sc)
 
 
 def rect_walls(zone, cx, cy, hw, hh, mat="stone", doors=None, seg=400.0, mesh="wall", z_off=0.0, window_every=0):
@@ -228,13 +237,101 @@ def ring(zone, cx, cy, r, n, mesh="pillar", mat="stone", scale=(1, 1, 1), tilt=0
         )
 
 
-def tower(zone, x, y, h=2, mat="hewn", roof="pyramid", roof_mat="basalt", fire_top=True):
-    """망루/성탑: 400 각 기둥형 사각 벽 h 층 + 지붕."""
+def tower(zone, x, y, h=2, mat="hewn", roof="pyramid", roof_mat="basalt", fire_top=True, z0=0.0, doors=None):
+    """망루/성탑: 400 각 기둥형 사각 벽 h 층 + 지붕. z0 = 바닥 높이(성벽 위 소탑), doors = 첫 층 문(통로 관통용)."""
     for lvl in range(h):
-        rect_walls(zone, x, y, 200, 200, mat=mat, z_off=lvl * 400)
-    place(zone, roof, x, y, scale=(4.6, 4.6, 3.0), mat=roof_mat, z_off=h * 400)
+        rect_walls(zone, x, y, 200, 200, mat=mat, z_off=z0 + lvl * 400, doors=doors if lvl == 0 else None)
+    place(zone, roof, x, y, scale=(4.6, 4.6, 3.0), mat=roof_mat, z_off=z0 + h * 400)
     if fire_top:
-        emitter(zone, FIRE, x, y, h * 400 + 300, 0.8)
+        emitter(zone, FIRE, x, y, z0 + h * 400 + 300, 0.8)
+
+
+def thick_walls(zone, cx, cy, hw, hh, doors, mat, seg=400.0, mesh="wall", depth=400.0, turrets=()):
+    """두꺼운 성벽 2층: 바깥 벽 + depth 안쪽 벽 + 위 통로 바닥 + 바깥 흉벽·총안 + 문 통로 측벽(빈 벽 속 가림).
+    doors 는 rect_walls 와 같은 {"n"|"s"|"e"|"w": 인덱스}. turrets = 통로 위 소탑 중심들 — 그 자리 흉벽은 비운다.
+    바닥·흉벽·총안은 HISM 3 액터. 통로 바닥 z(= 2*seg) 를 돌려준다."""
+    top = 2 * seg
+    sides = {
+        "s": ((cx - hw, cy - hh), (cx + hw, cy - hh)),
+        "e": ((cx + hw, cy - hh), (cx + hw, cy + hh)),
+        "n": ((cx + hw, cy + hh), (cx - hw, cy + hh)),
+        "w": ((cx - hw, cy + hh), (cx - hw, cy - hh)),
+    }
+    floors, parapet, merlons = [], [], []
+
+    def free(x, y):
+        return all(abs(x - tx) > 210 or abs(y - ty) > 210 for tx, ty in turrets)
+
+    for side, ((x0, y0), (x1, y1)) in sides.items():
+        length = math.hypot(x1 - x0, y1 - y0)
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        nx, ny = -uy, ux  # 안쪽 법선
+        yaw = math.degrees(math.atan2(uy, ux))
+        di = doors.get(side)
+        for lvl in (0, 1):
+            d = (di,) if lvl == 0 else ()
+            wall_line(zone, x0, y0, x1, y1, seg, mesh, mat, d, 0, lvl * seg)
+            wall_line(
+                zone,
+                x0 + nx * depth,
+                y0 + ny * depth,
+                x1 + nx * depth,
+                y1 + ny * depth,
+                seg,
+                mesh,
+                mat,
+                d,
+                0,
+                lvl * seg,
+            )
+        step = length / max(1, round(length / seg))  # wall_line 과 같은 실제 세그먼트 간격
+        if di is not None:
+            for k in (0, 1):
+                px, py = x0 + ux * step * (di + k), y0 + uy * step * (di + k)
+                place(zone, "wall", px, py, yaw=yaw + 90, scale=(depth / 400, 1, top / 400), mat=mat)
+        # 통로 바닥(400 타일): 모서리 정사각형은 남·북 띠가 덮으니 동·서는 양 끝 하나씩 뺀다. z +1 = 벽 윗면과 z-fighting 방지
+        lo, hi = (0, int(length / 400)) if side in ("s", "n") else (1, int(length / 400) - 1)
+        floors += [(x0 + ux * 400 * i, y0 + uy * 400 * i, top + 1, yaw, 1, 1, 1) for i in range(lo, hi)]
+        # 바깥 흉벽 60 + 그 위 총안 요철 60(100 마다 교대)
+        for i in range(round(length / step)):
+            px, py = x0 + ux * step * (i + 0.5), y0 + uy * step * (i + 0.5)
+            if free(px, py):
+                parapet.append((px, py, top, yaw, step / 100, 0.2, 0.6))
+        for j in range(int(length / 200)):
+            px, py = x0 + ux * (200 * j + 100), y0 + uy * (200 * j + 100)
+            if free(px, py):
+                merlons.append((px, py, top + 60, yaw, 1, 0.2, 0.6))
+    hism(zone, "floor", floors, mat=mat)
+    hism(zone, "cube", parapet, mat=mat)
+    hism(zone, "cube", merlons, mat=mat)
+    return top
+
+
+def stair(zone, x, y, yaw, rise, mat, width=200.0, tread=40.0, landing=200.0):
+    """돌계단(HISM 1 액터). (x, y) = 꼭대기 끝(통로에 닿는 자리), yaw = 오르는 방향. 그 뒤로 참(landing) + 단이 내려간다.
+    단 높이 ≤ 32(NavMesh 계단 한계 35). 꼭대기 참은 에이전트 반지름(35)보다 넓어야 통로 NavMesh 와 이어진다(실측: 단 하나론 끊김).
+    tread 정육면체 블록으로 속까지 채운다 — 긴 기둥 하나로 하면 UV 가 늘어나 텍스처가 세로로 번진다(실측)."""
+    n = math.ceil(rise / 32)
+    riser = rise / n
+    nl = round(landing / tread)
+    r = math.radians(yaw)
+    ux, uy, vx, vy = math.cos(r), math.sin(r), -math.sin(r), math.cos(r)  # 오르는 방향, 폭 방향
+    nw = max(1, round(width / tread))
+    blocks = [
+        (
+            x - ux * tread * (m + 0.5) + vx * tread * (j - (nw - 1) / 2),
+            y - uy * tread * (m + 0.5) + vy * tread * (j - (nw - 1) / 2),
+            riser * lvl,
+            yaw,
+            tread / 100,
+            tread / 100,
+            riser / 100,
+        )
+        for m in range(nl + n)
+        for lvl in range(n - max(0, m - nl))
+        for j in range(nw)
+    ]
+    hism(zone, "cube", blocks, mat=mat)
 
 
 def house(zone, x, y, yaw=0.0, w=1, d=1, mat="brick", roof_mat="walnut", door_side="s", window=True):
@@ -397,7 +494,8 @@ def scatter(zone, cx, cy, hw, hh, n, mesh_key, mat=None, smin=0.6, smax=1.6, exc
 def clear_scene():
     n = 0
     for a in EAS.get_all_level_actors():
-        if a.get_actor_label().startswith("SCN_"):
+        lb = a.get_actor_label()
+        if lb.startswith("SCN_") and (not ONLY or any(lb.startswith(f"SCN_{z}_") for z in ONLY)):
             EAS.destroy_actor(a)
             n += 1
     print("[scene] cleared SCN_ actors:", n)
@@ -463,31 +561,28 @@ DEAD_FOREST = (11500.0, 15500.0)  # 마왕성 앞 죽은 숲 — s_hunt_dead_wra
 
 def build_village():
     z = "village"
-    # 성벽 + 모서리 탑 + 문 3 (북=정문, 서, 남)
+    # 성벽(두께 4.2m, 위 통로) + 모서리·성문루 소탑(통로 관통 문) + 문 3 (북=정문, 서, 남)
     cx, cy = VIL
-    n_seg_x = int(2 * VIL_HW / 400)
-    rect_walls(
-        z,
-        cx,
-        cy,
-        VIL_HW,
-        VIL_HH,
-        mat="hewn",
-        doors={"n": n_seg_x // 2, "w": int(2 * VIL_HH / 400) // 2, "s": int((GATE_S[0] - (cx - VIL_HW)) / 400)},
-    )
-    rect_walls(z, cx, cy, VIL_HW, VIL_HH, mat="hewn", z_off=400)  # 2층
-    for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
-        tower(z, cx + sx * VIL_HW, cy + sy * VIL_HH, h=3)
-    # 정문 성문루: 문 양옆 큰 기둥 + 위 통로 + 횃불
+    hw, hh = VIL_HW, VIL_HH
     gx, gy = GATE_N
-    for sx in (-1, 1):
-        tower(z, gx + sx * 700, gy, h=3, fire_top=True)
-    floor_grid(z, gx, gy, 3, 1, mat="hewn", z_off=800)
-    torch(z, gx - 420, gy - 250)
-    torch(z, gx + 420, gy - 250)
-    # 서문·남문 횃불
-    for dx, dy in [GATE_W, GATE_S]:
-        torch(z, dx + 300 if dy == GATE_W[1] else dx - 300, dy + 300 if dx == GATE_S[0] else dy - 300)
+    doors = {"n": int(2 * hw / 400) // 2, "w": int(2 * hh / 400) // 2, "s": int((GATE_S[0] - (cx - hw)) / 400)}
+    corners = [(cx + sx * (hw - 200), cy + sy * (hh - 200), sx, sy) for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]]
+    gate_turrets = [(gx - 400, gy - 200), (gx + 400, gy - 200)]  # 문 세그먼트 바로 양옆
+    top = thick_walls(z, cx, cy, hw, hh, doors, "hewn", turrets=[(x, y) for x, y, _, _ in corners] + gate_turrets)
+    for x, y, sx, sy in corners:  # 통로가 꺾이는 두 면에 문
+        tower(z, x, y, h=1, z0=top, doors={"s" if sy > 0 else "n": 0, "w" if sx > 0 else "e": 0})
+    for x, y in gate_turrets:
+        tower(z, x, y, h=1, z0=top, doors={"e": 0, "w": 0})
+    # 계단(안쪽 벽면 따라, 꼭대기 참이 소탑·문 옆 통로에 닿게): 북문 양옆 2 + 서문(문 북쪽)·남문(문 동쪽) 1
+    stair(z, gx + 600, gy - 510, 180, top, "hewn")
+    stair(z, gx - 600, gy - 510, 0, top, "hewn")
+    stair(z, GATE_W[0] + 510, GATE_W[1] + 200, -90, top, "hewn")
+    stair(z, GATE_S[0] + 400, GATE_S[1] + 510, 180, top, "hewn")
+    # 문 횃불 (벽 안쪽 면에서 200 이상 띄움, 계단 피해서)
+    torch(z, gx - 420, gy - 600)
+    torch(z, gx + 420, gy - 600)
+    torch(z, GATE_W[0] + 600, GATE_W[1] - 300)
+    torch(z, GATE_S[0] - 300, GATE_S[1] + 600)
     # 광장: 바닥·제단·기둥·벤치·우물
     px, py = PLAZA
     floor_grid(z, px, py, 5, 5, mat="stone")
@@ -505,18 +600,18 @@ def build_village():
     place(z, "pillar", wx + 70, wy, scale=(0.4, 0.4, 0.5), mat="wood")
     place(z, "pyramid", wx, wy, scale=(2.4, 2.4, 1.0), mat="walnut", z_off=250)
     trigger("plaza", px, py, ext=(1000, 1000, 250))
-    # 집들 (광장·길·은신처 피해서)
+    # 집들 (광장·길·은신처·성벽 안쪽 4.2m 띠·계단 피해서)
     houses = [
         (-3200, -900, 0, 2, 1),
-        (-3200, 200, 0, 1, 1),
-        (800, 200, 180, 2, 1),
+        (-3200, -300, 0, 1, 1),
+        (800, -300, 180, 2, 1),
         (1600, -800, 90, 1, 2),
-        (2400, -2600, 90, 1, 2),
+        (2300, -2600, 90, 1, 2),
         (-2400, -3600, 0, 2, 1),
         (500, -3700, 0, 1, 1),
-        (2600, 100, 180, 1, 1),
-        (-1000, -4000, 0, 2, 1),
-        (1800, -3900, 180, 1, 1),
+        (2500, -350, 180, 1, 1),
+        (-1000, -3900, 0, 2, 1),
+        (1900, -3700, 180, 1, 1),
     ]
     for hx, hy, yaw, w, d in houses:
         house(
@@ -571,7 +666,7 @@ def build_village():
     place(z, "lamp", hx + 380, hy + 100, yaw=180, z_off=220)
     trigger("hideout", hx, hy, ext=(420, 420, 250))
     # 성문 트리거 (문 바로 안쪽)
-    trigger("gate", gx, gy - 300, ext=(800, 300, 250))
+    trigger("gate", gx, gy - 700, ext=(800, 300, 250))
 
 
 def build_ruins():
@@ -810,19 +905,38 @@ def build_citadel():
     z = "citadel"
     cx, cy = CITADEL
     H = CIT_HW
-    # 단상(넓은 검은 대지) + 외벽 2층 + 성문루(남) + 모서리·중간 탑
+    # 단상(넓은 검은 대지) + 외벽 2층(두께 4.2m, 위 통로) + 성문루(남) + 모서리·중간 소탑 + 성문 안쪽 계단 2
     place(z, "cube", cx, cy, scale=(2 * H / 100 + 6, 2 * H / 100 + 6, 0.5), mat="basalt", z_off=-45)
-    rect_walls(z, cx, cy, H, H, mat="basalt", seg=500, mesh="wall5", doors={"s": int(2 * H / 500) // 2})
-    rect_walls(z, cx, cy, H, H, mat="basalt", seg=500, mesh="wall5", z_off=500)
-    for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
-        tower(z, cx + sx * H, cy + sy * H, h=4, mat="basalt", roof="pyramid", roof_mat="rust")
-        place(z, "pyramid", cx + sx * H, cy + sy * H, scale=(3.5, 3.5, 12.0), mat="basalt", z_off=1600)
-    for dx, dy in [(0, H), (-H, 0), (H, 0)]:
-        tower(z, cx + dx, cy + dy, h=3, mat="basalt", roof="pyramid", roof_mat="rust")
     gx, gy = cx, cy - H
-    for sx in (-1, 1):
-        tower(z, gx + sx * 900, gy, h=4, mat="basalt", roof="pyramid", roof_mat="rust")
-    floor_grid(z, gx, gy, 4, 1, mat="basalt", z_off=1000)
+    door = int(2 * H / 500) // 2
+    corners = [(cx + sx * (H - 200), cy + sy * (H - 200), sx, sy) for sx, sy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]]
+    mids = [
+        (cx, cy + H - 200, {"e": 0, "w": 0}),
+        (cx - H + 200, cy, {"n": 0, "s": 0}),
+        (cx + H - 200, cy, {"n": 0, "s": 0}),
+    ]
+    step = 2 * H / round(2 * H / 500)  # wall_line 실제 세그먼트 간격
+    gate_x = [cx - H + step * (door - 0.5), cx - H + step * (door + 1.5)]  # 문 세그먼트 양옆 슬롯 중심
+    turrets = [(x, y) for x, y, _, _ in corners] + [(x, y) for x, y, _ in mids] + [(x, gy + 200) for x in gate_x]
+    top = thick_walls(z, cx, cy, H, H, {"s": door}, "basalt", seg=500, mesh="wall5", turrets=turrets)
+    for x, y, sx, sy in corners:
+        tower(
+            z,
+            x,
+            y,
+            h=2,
+            mat="basalt",
+            roof_mat="rust",
+            z0=top,
+            doors={"s" if sy > 0 else "n": 0, "w" if sx > 0 else "e": 0},
+        )
+        place(z, "pyramid", x, y, scale=(3.5, 3.5, 12.0), mat="basalt", z_off=top + 800)
+    for x, y, d in mids:
+        tower(z, x, y, h=1, mat="basalt", roof_mat="rust", z0=top, doors=d)
+    for x in gate_x:
+        tower(z, x, gy + 200, h=2, mat="basalt", roof_mat="rust", z0=top, doors={"e": 0, "w": 0})
+    stair(z, gate_x[1] + 200, gy + 510, 180, top, "basalt")
+    stair(z, gate_x[0] - 200, gy + 510, 0, top, "basalt")
     torch(z, gx - 550, gy - 350, 1.6)
     torch(z, gx + 550, gy - 350, 1.6)
     # 안뜰 + 아성(3층 큰 건물) + 왕좌홀
@@ -1014,7 +1128,7 @@ def place_actors():
     bed = find_actor(cls="BP_Bed_C")
     if bed:
         move_actor(bed, hx + 180, hy + 200, 0, yaw=90)
-    move_npc("Guard", gx + 250, gy - 500, face=(gx, gy + 900))
+    move_npc("Guard", gx + 250, gy - 700, face=(gx, gy + 900))
     move_npc("James", px + 400, py + 350, face=PLAZA)
     move_npc("Moca", lx + 60, ly + 190, face=(lx + 60, ly - 120))
     move_npc("Skadi", bx - 700, by - 250, face=OUTPOST)
@@ -1028,7 +1142,9 @@ def spawner(zone, bp_name, x, y, max_alive, interval, radius, total=0, kills_for
     cls = unreal.EditorAssetLibrary.load_blueprint_class(f"{ENEMY_BP}/{bp_name}")
     if cls is None:
         raise RuntimeError(f"enemy BP missing: {ENEMY_BP}/{bp_name} — tools/make_enemy_bps.py 먼저")
-    a = EAS.spawn_actor_from_class(unreal.EnemySpawner, unreal.Vector(x, y, ground_z(x, y) + 10), unreal.Rotator(0, 0, 0))
+    a = EAS.spawn_actor_from_class(
+        unreal.EnemySpawner, unreal.Vector(x, y, ground_z(x, y) + 10), unreal.Rotator(0, 0, 0)
+    )
     a.set_editor_property("EnemyClass", cls)
     a.set_editor_property("MaxAlive", max_alive)
     a.set_editor_property("TotalSpawnLimit", total)
@@ -1046,13 +1162,33 @@ def build_enemies():
     # 도적 캠프(모닥불·상자·통) — 3명 유지, 3킬 → flag
     bx, by = BANDIT_CAMP
     campfire(z, bx, by, 1.2)
-    hism(z, "cube", [(bx + dx, by + dy, 0, yaw, 0.7, 0.7, 0.7) for dx, dy, yaw in [(260, 120, 20), (-300, 200, 70), (180, -280, 0)]], mat="wood")
+    hism(
+        z,
+        "cube",
+        [
+            (bx + dx, by + dy, 0, yaw, 0.7, 0.7, 0.7)
+            for dx, dy, yaw in [(260, 120, 20), (-300, 200, 70), (180, -280, 0)]
+        ],
+        mat="wood",
+    )
     hism(z, "cyl", [(bx - 220, by - 240, 0, 0, 0.5, 0.5, 0.8), (bx + 340, by - 60, 0, 0, 0.5, 0.5, 0.8)], mat="walnut")
-    spawner(z, "BP_Bandit", bx, by, max_alive=3, interval=30, radius=700, kills_for_flag=3, flag="forest_raiders_cleared")
+    spawner(
+        z, "BP_Bandit", bx, by, max_alive=3, interval=30, radius=700, kills_for_flag=3, flag="forest_raiders_cleared"
+    )
     # 다리의 도살자 — 네임드 1기, 리스폰 없음(boss_killed 는 EnemyCharacter 가 npc_died 로 송신)
     spawner(z, "BP_OrcVagron", ORC_LAIR[0], ORC_LAIR[1], max_alive=1, interval=60, radius=300, total=1, min_player=0)
     # 죽은 숲 망령 — 3기 유지, 5킬 → flag
-    spawner(z, "BP_KnightWraith", DEAD_FOREST[0], DEAD_FOREST[1], max_alive=3, interval=40, radius=1500, kills_for_flag=5, flag="wraiths_purified")
+    spawner(
+        z,
+        "BP_KnightWraith",
+        DEAD_FOREST[0],
+        DEAD_FOREST[1],
+        max_alive=3,
+        interval=40,
+        radius=1500,
+        kills_for_flag=5,
+        flag="wraiths_purified",
+    )
     trigger("dead_forest", DEAD_FOREST[0], DEAD_FOREST[1], ext=(2500, 2500, 400))
 
 
@@ -1075,6 +1211,10 @@ def build_env():
 
 def build():
     ensure_hism_bp()
+    if ONLY:
+        for zone in ONLY:
+            globals()[f"build_{zone}"]()
+        return
     build_village()
     build_ruins()
     build_library()
