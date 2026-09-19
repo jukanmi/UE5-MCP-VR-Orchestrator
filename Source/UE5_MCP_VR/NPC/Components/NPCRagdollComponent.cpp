@@ -431,14 +431,13 @@ void UNPCRagdollComponent::BeginGetUp()
     // 3) 기상 몽타주 + 전신 블렌드 램프(시뮬→애니). 현재 블렌드 1 에서 Tick 이 0 으로.
     GetUpBlendWeight = 1.0f;
     
-    // 포즈 스냅샷 저장 및 즉시 물리 끄기 (AnimBP 캐시 포즈 블렌드 연동)
-    MeshComp->SnapshotPose(FName(TEXT("RagdollSnapshot")));
-    StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
-    
+    // 래그돌 포즈 스냅샷 저장 후 즉시 물리 off — AnimBP 의 PoseSnapshot(RagdollSnapshot) 노드가 이 포즈에서 기상 애니로 블렌드.
     if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
     {
+        Anim->SavePoseSnapshot(FName(TEXT("RagdollSnapshot")));
         Anim->RagdollBlendWeight = GetUpBlendWeight;
     }
+    StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
 
     UAnimMontage* Montage = bFaceUp ? GetUpMontage_FaceUp : GetUpMontage_FaceDown;
     if (Montage)
@@ -467,22 +466,23 @@ void UNPCRagdollComponent::BeginGetUp()
     RefreshTickEnabled();
 }
 
-// 기상 블렌드 램프 — 전신 PhysicsBlendWeight 1→0, 0 도달 시 시뮬 off.
+// 기상 블렌드 램프 — AnimBP 스냅샷 블렌드 가중치 1→0. 물리는 BeginGetUp 에서 이미 껐다.
 void UNPCRagdollComponent::TickGetUpBlend(float DeltaSeconds)
 {
     USkeletalMeshComponent* MeshComp = GetOwnerMesh();
     if (!MeshComp) return;
 
-    // weight 0 도달 후 몽타주 끝날 때까지 매 프레임 무거운 물리 설정 반복 방지 — 보간 중에만 처리.
+    // 0 도달 후에는 매 프레임 쓰기 생략 — 보간 중에만 처리.
     if (GetUpBlendWeight > 0.f)
     {
         GetUpBlendWeight = FMath::FInterpConstantTo(GetUpBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
-        MeshComp->SetAllBodiesPhysicsBlendWeight(GetUpBlendWeight);
-
         if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
         {
             GetUpBlendWeight = 0.f;
-            StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+        }
+        if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+        {
+            Anim->RagdollBlendWeight = GetUpBlendWeight;
         }
     }
 }
