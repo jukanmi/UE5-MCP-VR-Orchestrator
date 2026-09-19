@@ -176,3 +176,5 @@ Content/StarterContent/
 
 # 외부 무료 에셋 원본(CC0 zip/FBX) — tools/fetch_assets.py 가 받음, 재현 가능하니 미추적
 RawAssets/
+# AI 작업 및 대화 아카이브 로그
+ai-log/
