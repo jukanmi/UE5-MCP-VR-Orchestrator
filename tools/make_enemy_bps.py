@@ -62,6 +62,33 @@ KINDS = [
         0.15,
         None,
     ),
+    # Bestiary 무료판 2종(itch.io, UAL 리타겟). 둘 다 맨손 — Punch_Cross 는 타격 프레임이 빠르다(0.3s).
+    (
+        "BP_Enemy_Imp",
+        "Imp_Fiend",
+        "Imp",
+        UAL,
+        "Punch_Cross",
+        0.3,
+        {"strength": 10, "constitution": 5, "dexterity": 18},  # 빠르고 약함 — 2~3방
+        0.9,
+        1.0,
+        0.3,
+        None,
+    ),
+    (
+        "BP_Enemy_Puglin",
+        "Puglin_Grunt",
+        "Puglin",
+        UAL,
+        "Punch_Cross",
+        0.3,
+        {"strength": 14, "constitution": 12, "dexterity": 10},  # 작고 질김 — 4~5방
+        0.8,
+        1.6,
+        0.2,
+        None,
+    ),
 ]
 
 
@@ -160,7 +187,7 @@ for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, f
         chk.get_editor_property("AttackAnim").get_name(),
         f"len={chk.get_editor_property('AttackAnim').get_play_length():.2f}s",
         "prop",
-        getattr(chk.get_editor_property("HandProp").get_static_mesh(), "get_name", lambda: None)(),
+        getattr(chk.get_editor_property("HandProp").static_mesh, "get_name", lambda: None)(),
         "@",
         chk.get_editor_property("HandPropSocket"),
     )
