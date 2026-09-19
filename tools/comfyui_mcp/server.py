@@ -2,7 +2,108 @@
 
 로컬/원격 ComfyUI 인스턴스(기본 http://127.0.0.1:8188)와 연동하여
 AI 에이전트가 텍스트-투-이미지(T2I) 생성, 워크플로우 실행, 모델 조회,
-생성 이미지 다운로드 등을 자율적으로 수행할 수 있게 해주는 MCP 서버입니다.
+생성 이미지 다운로드 등을 자율적으로 수행할 수 있게 해주는 MCP 서버입니다.Begin Map
+   Begin Level
+      Begin Actor Class=/Game/Blueprint/NPC/BP_SmartNPC.BP_SmartNPC_C Name=BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855 Archetype="/Game/Blueprint/NPC/BP_SmartNPC.BP_SmartNPC_C'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C'" ActorFolderPath="None" ExportPath="/Game/Blueprint/NPC/BP_SmartNPC.BP_SmartNPC_C'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855'"
+         Begin Object Class=/Script/Engine.CapsuleComponent Name="CollisionCylinder" Archetype="/Script/Engine.CapsuleComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:CollisionCylinder'" ExportPath="/Script/Engine.CapsuleComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CollisionCylinder'"
+         End Object
+         Begin Object Class=/Script/Engine.ArrowComponent Name="Arrow" Archetype="/Script/Engine.ArrowComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:Arrow'" ExportPath="/Script/Engine.ArrowComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Arrow'"
+         End Object
+         Begin Object Class=/Script/Engine.CharacterMovementComponent Name="CharMoveComp" Archetype="/Script/Engine.CharacterMovementComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:CharMoveComp'" ExportPath="/Script/Engine.CharacterMovementComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharMoveComp'"
+         End Object
+         Begin Object Class=/Script/Engine.SkeletalMeshComponent Name="CharacterMesh0" Archetype="/Script/Engine.SkeletalMeshComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:CharacterMesh0'" ExportPath="/Script/Engine.SkeletalMeshComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharacterMesh0'"
+            Begin Object Class=/Game/Blueprint/NPC/ABP_SmartNPC.ABP_SmartNPC_C Name="ABP_SmartNPC_C_0" ExportPath="/Game/Blueprint/NPC/ABP_SmartNPC.ABP_SmartNPC_C'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharacterMesh0.ABP_SmartNPC_C_0'"
+            End Object
+         End Object
+         Begin Object Class=/Script/UE5_MCP_VR.NPCStateComponent Name="StateComponent" Archetype="/Script/UE5_MCP_VR.NPCStateComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:StateComponent'" ExportPath="/Script/UE5_MCP_VR.NPCStateComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.StateComponent'"
+         End Object
+         Begin Object Class=/Script/UE5_MCP_VR.NPCActionComponent Name="ActionComponent" Archetype="/Script/UE5_MCP_VR.NPCActionComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:ActionComponent'" ExportPath="/Script/UE5_MCP_VR.NPCActionComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.ActionComponent'"
+         End Object
+         Begin Object Class=/Script/UE5_MCP_VR.NPCInventoryComponent Name="InventoryComponent" Archetype="/Script/UE5_MCP_VR.NPCInventoryComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:InventoryComponent'" ExportPath="/Script/UE5_MCP_VR.NPCInventoryComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.InventoryComponent'"
+         End Object
+         Begin Object Class=/Script/UE5_MCP_VR.NPCRagdollComponent Name="Ragdoll" Archetype="/Script/UE5_MCP_VR.NPCRagdollComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:Ragdoll'" ExportPath="/Script/UE5_MCP_VR.NPCRagdollComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Ragdoll'"
+         End Object
+         Begin Object Class=/Script/AIModule.AIPerceptionStimuliSourceComponent Name="StimuliSource" Archetype="/Script/AIModule.AIPerceptionStimuliSourceComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:StimuliSource'" ExportPath="/Script/AIModule.AIPerceptionStimuliSourceComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.StimuliSource'"
+         End Object
+         Begin Object Class=/Script/UE5_MCP_VR.NPCDialogueUIComponent Name="DialogueWidget" Archetype="/Script/UE5_MCP_VR.NPCDialogueUIComponent'/Game/Blueprint/NPC/BP_SmartNPC.Default__BP_SmartNPC_C:DialogueWidget'" ExportPath="/Script/UE5_MCP_VR.NPCDialogueUIComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget'"
+            Begin Object Class=/Script/Engine.BodySetup Name="BodySetup_0" ExportPath="/Script/Engine.BodySetup'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.BodySetup_0'"
+            End Object
+            Begin Object Class=/Script/Engine.MaterialInstanceDynamic Name="MID_Widget3DPassThrough_Masked_OneSided_0" ExportPath="/Script/Engine.MaterialInstanceDynamic'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.MID_Widget3DPassThrough_Masked_OneSided_0'"
+               Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MID_Widget3DPassThrough_Masked_OneSided_0EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.MID_Widget3DPassThrough_Masked_OneSided_0.MID_Widget3DPassThrough_Masked_OneSided_0EditorOnlyData'"
+               End Object
+            End Object
+         End Object
+         Begin Object Class=/Script/Engine.TextRenderComponent Name="Agent Name" Archetype="/Script/Engine.TextRenderComponent'/Game/Blueprint/NPC/BP_SmartNPC.BP_SmartNPC_C:Agent Name_GEN_VARIABLE'" ExportPath="/Script/Engine.TextRenderComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Agent Name'"
+         End Object
+         Begin Object Name="CollisionCylinder" ExportPath="/Script/Engine.CapsuleComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CollisionCylinder'"
+            BodyInstance=(MaxAngularVelocity=3599.999756)
+            RelativeLocation=(X=18750.000000,Y=-800.000000,Z=88.000000)
+            RelativeRotation=(Pitch=0.000000,Yaw=171.027374,Roll=0.000000)
+         End Object
+         Begin Object Name="Arrow" ExportPath="/Script/Engine.ArrowComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Arrow'"
+            AttachParent="CollisionCylinder"
+         End Object
+         Begin Object Name="CharMoveComp" ExportPath="/Script/Engine.CharacterMovementComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharMoveComp'"
+            WalkableFloorZ=0.710000
+            NavAgentProps=(AgentRadius=34.000000,AgentHeight=176.000000)
+         End Object
+         Begin Object Name="CharacterMesh0" ExportPath="/Script/Engine.SkeletalMeshComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharacterMesh0'"
+            Begin Object Name="ABP_SmartNPC_C_0" ExportPath="/Game/Blueprint/NPC/ABP_SmartNPC.ABP_SmartNPC_C'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.CharacterMesh0.ABP_SmartNPC_C_0'"
+            End Object
+            AttachParent="CollisionCylinder"
+            PrimaryComponentTick=(EndTickGroup=TG_PostPhysics)
+         End Object
+         Begin Object Name="StateComponent" ExportPath="/Script/UE5_MCP_VR.NPCStateComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.StateComponent'"
+         End Object
+         Begin Object Name="ActionComponent" ExportPath="/Script/UE5_MCP_VR.NPCActionComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.ActionComponent'"
+         End Object
+         Begin Object Name="InventoryComponent" ExportPath="/Script/UE5_MCP_VR.NPCInventoryComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.InventoryComponent'"
+         End Object
+         Begin Object Name="Ragdoll" ExportPath="/Script/UE5_MCP_VR.NPCRagdollComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Ragdoll'"
+         End Object
+         Begin Object Name="StimuliSource" ExportPath="/Script/AIModule.AIPerceptionStimuliSourceComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.StimuliSource'"
+         End Object
+         Begin Object Name="DialogueWidget" ExportPath="/Script/UE5_MCP_VR.NPCDialogueUIComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget'"
+            Begin Object Name="BodySetup_0" ExportPath="/Script/Engine.BodySetup'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.BodySetup_0'"
+               AggGeom=(BoxElems=((Center=(X=0.500000,Y=0.000000,Z=0.000000),X=0.010000,Y=500.000000,Z=500.000000)))
+               DefaultInstance=()
+               CollisionTraceFlag=CTF_UseSimpleAsComplex
+            End Object
+            Begin Object Name="MID_Widget3DPassThrough_Masked_OneSided_0" ExportPath="/Script/Engine.MaterialInstanceDynamic'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.MID_Widget3DPassThrough_Masked_OneSided_0'"
+               Begin Object Name="MID_Widget3DPassThrough_Masked_OneSided_0EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.DialogueWidget.MID_Widget3DPassThrough_Masked_OneSided_0.MID_Widget3DPassThrough_Masked_OneSided_0EditorOnlyData'"
+               End Object
+               Parent="/Script/Engine.MaterialInstanceConstant'/Engine/EngineMaterials/Widget3DPassThrough_Masked_OneSided.Widget3DPassThrough_Masked_OneSided'"
+               ScalarParameterValues(0)=(ParameterInfo=(Name="OpacityFromTexture"),ParameterValue=1.000000)
+               VectorParameterValues(0)=(ParameterInfo=(Name="TintColorAndOpacity"),ParameterValue=(R=1.000000,G=1.000000,B=1.000000,A=1.000000))
+               TextureParameterValues(0)=(ParameterInfo=(Name="SlateUI"))
+               EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MID_Widget3DPassThrough_Masked_OneSided_0EditorOnlyData'"
+               LightingGuid=AFA4C41A4DA863FC39D557B555F35EA2
+            End Object
+            BodyInstance=(MaxAngularVelocity=3599.999756)
+            AttachParent="CharacterMesh0"
+         End Object
+         Begin Object Name="Agent Name" ExportPath="/Script/Engine.TextRenderComponent'/Game/Level/Sample.Sample:PersistentLevel.BP_SmartNPC_C_UAID_A0AD9F201D22BB0203_1594945855.Agent Name'"
+            AttachParent="CollisionCylinder"
+            UCSSerializationIndex=0
+            bNetAddressable=True
+            CreationMethod=SimpleConstructionScript
+         End Object
+         Agent Name="Agent Name"
+         AgentID="Commander_Vorg"
+         DialogueWidgetComp="DialogueWidget"
+         Mesh="CharacterMesh0"
+         CharacterMovement="CharMoveComp"
+         CapsuleComponent="CollisionCylinder"
+         SpawnCollisionHandlingMethod=AlwaysSpawn
+         RootComponent="CollisionCylinder"
+         ActorLabel="BOSS_Commander_Vorg"
+         bIsSpatiallyLoaded=False
+      End Actor
+   End Level
+Begin Surface
+End Surface
+End Map
+
 """
 
 import asyncio
