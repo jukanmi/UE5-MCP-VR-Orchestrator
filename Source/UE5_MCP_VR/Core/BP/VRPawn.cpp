@@ -1494,14 +1494,14 @@ void AVRPawn::OnChatKey()
 
 void AVRPawn::SayToNpc(const FString& Text)
 {
-    // 타겟 미지정이면 근접 탐지. player_id = actor 이름 — affinity DB 키와 일치.
+    // 타겟 미지정이면 근접 탐지. player_id 는 고정 "Player" — 서버 affinity·스토리 DB 키(PLAYER_KEY)와 일치.
+    // 액터 이름(BP_VRPawn_C_0)으로도 보내면 LLM 2회 호출 + 기록 2배 오염.
     if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
     if (CurrentTargetNPCID.IsEmpty() || Text.IsEmpty())
     {
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SayToNpc 폐기 — target/text 비어있음"));
         return;
     }
-    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
     PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), CurrentTargetNPCID, Text);
 }
 

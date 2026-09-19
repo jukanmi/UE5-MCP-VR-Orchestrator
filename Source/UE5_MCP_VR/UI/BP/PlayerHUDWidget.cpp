@@ -128,7 +128,6 @@ void UPlayerHUDWidget::HandleChatCommitted(const FText& Text, ETextCommit::Type 
         }
         else
         {
-            PlayerInteractionUtils::SendDialogueToNpc(this, OwnerPawn->GetName(), Target, Msg);
             PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), Target, Msg);
             AppendChatLine(TEXT("나"), Msg);
         }
