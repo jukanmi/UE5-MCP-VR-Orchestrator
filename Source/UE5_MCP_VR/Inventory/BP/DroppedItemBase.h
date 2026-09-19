@@ -25,13 +25,14 @@ protected:
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
-    /** ItemTemplateID 로 DT_ItemRegistry 를 조회해 ItemMesh 를 갱신한다. 실패 시 메시를 건드리지 않는다. */
-    void SyncMeshFromItemData();
-    
     // 아이템 파괴나 레벨 전환 시 발생할 수 있는 참조 오류를 막으려면 소멸 직전에 제거해야 합니다.
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
+    /** ItemTemplateID 로 DT_ItemRegistry 를 조회해 ItemMesh 를 갱신한다. 실패 시 메시를 건드리지 않는다.
+     *  에디터 ID 변경·런타임 코드 스폰(적 드랍) 양쪽이 쓴다. */
+    void SyncMeshFromItemData();
+
     // 아이템의 시각적 형태 및 물리 연산(Simulate Physics)을 담당하는 코어 메시
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Component")
     class UStaticMeshComponent* ItemMesh;

@@ -92,6 +92,19 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
     float CorpseLifetime = 5.0f;
 
+    // --- 드랍 — 사망 시 발밑에 ADroppedItemBase 1개. 비어 있으면 드랍 없음. 플레이어가 주우면 item_acquired:<ID> 플래그(수집 서브퀘스트). ---
+    /** ItemRegistry 의 ItemID(BanditInsignia·MagicGem·TreasureKey 등). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Drop")
+    FString DropItemID;
+
+    /** 드랍 확률 0~1. 퀘스트 징표는 1.0(못 주우면 퀘스트가 막힌다). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Drop", meta = (ClampMin = "0", ClampMax = "1"))
+    float DropChance = 1.0f;
+
+    /** 드랍 액터 하나에 담기는 수량. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Drop", meta = (ClampMin = "1"))
+    int32 DropAmount = 1;
+
     /** 사망 시 브로드캐스트 — 스포너가 생존 수·킬 수 집계, BP 는 VFX. */
     UPROPERTY(BlueprintAssignable, Category = "Enemy")
     FOnEnemyDied OnEnemyDied;

@@ -4,6 +4,7 @@
 #include "Core/Types/PlayerGameplayTags.h"
 #include "NPC/Components/NPCRagdollComponent.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Animation/AnimSequence.h"
@@ -241,6 +242,26 @@ void AEnemyCharacter::HandleDeath()
 
     if (RagdollComponent) RagdollComponent->EnterDeathRagdoll();
     PlayOneOf(DeathSounds);
+
+    // 드랍 — Deferred 스폰으로 BeginPlay(ItemManager 등록) 전에 ID·수량을 넣는다(InventoryComponent::SpawnItemActor 와 같은 규약).
+    // 메시는 SyncMeshFromItemData 가 레지스트리에서 끌어온다 — 안 하면 등록만 되고 보이지 않는 드랍이 된다.
+    if (!DropItemID.IsEmpty() && FMath::FRand() < DropChance)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            const FTransform SpawnTM(FRotator::ZeroRotator, GetActorLocation() + FVector(0, 0, 30.f));
+            if (ADroppedItemBase* Drop = World->SpawnActorDeferred<ADroppedItemBase>(
+                    ADroppedItemBase::StaticClass(), SpawnTM, nullptr, nullptr,
+                    ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))
+            {
+                Drop->ItemData.ItemTemplateID = DropItemID;
+                Drop->Amount = FMath::Max(1, DropAmount);
+                Drop->SyncMeshFromItemData();
+                Drop->FinishSpawning(SpawnTM);
+                UE_LOG(LogTemp, Log, TEXT("[Enemy] %s 드랍 — %s x%d"), *EnemyID, *DropItemID, Drop->Amount);
+            }
+        }
+    }
 
     OnEnemyDied.Broadcast(this);
     SetLifeSpan(CorpseLifetime);

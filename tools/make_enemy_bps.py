@@ -18,7 +18,8 @@ PROPS = "/Game/Core/Mesh/Props"
 RPG = {"idle": "Idle", "walk": "Walk", "run": "Run", "fmt": "{char}_Anim_CharacterArmature_{clip}"}
 UAL = {"idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "fmt": "{char}_{clip}"}
 
-# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 릭, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율, 손 소품)
+# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 릭, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율, 손 소품, 드랍 아이템 ID)
+# 드랍: ItemRegistry ItemID 또는 None. 도적 → BanditInsignia(수집 서브퀘스트 s_hunt_forest_raiders), 망령 → MagicGem, 오크 → TreasureKey.
 # 손 소품: (Props 메시 이름, 본/소켓, 상대 위치, 상대 회전) 또는 None. 오프셋은 T 포즈 SceneCapture 로 맞춘 값 — PIE 에서 재확인.
 # 참고 공식(CharacterAttributes.h): ATK=Str×1.5, DEF=Con, HP=150+Con×15, 속도는 Dex.
 # 플레이어 스윙 데미지는 ½mv² 클램프(최대 100)라 HP 가 곧 필요 타수 — 도적 3~4방, 오크 10방+ 목표.
@@ -35,6 +36,7 @@ KINDS = [
         1.4,
         0.25,
         None,
+        "BanditInsignia",
     ),
     (
         "BP_Enemy_OrcVagron",
@@ -48,6 +50,7 @@ KINDS = [
         2.2,
         0.0,
         ("Torch_Metal", "Fist_L", unreal.Vector(0, 0, 0), unreal.Rotator(roll=0, pitch=0, yaw=0)),
+        "TreasureKey",
     ),
     (
         "BP_Enemy_Wraith",
@@ -61,6 +64,7 @@ KINDS = [
         1.2,
         0.15,
         None,
+        "MagicGem",
     ),
     # Bestiary 무료판 2종(itch.io, UAL 리타겟). 둘 다 맨손 — Punch_Cross 는 타격 프레임이 빠르다(0.3s).
     (
@@ -75,6 +79,7 @@ KINDS = [
         1.0,
         0.3,
         None,
+        None,
     ),
     (
         "BP_Enemy_Puglin",
@@ -87,6 +92,7 @@ KINDS = [
         0.8,
         1.6,
         0.2,
+        None,
         None,
     ),
 ]
@@ -144,7 +150,7 @@ save(base)
 print("[enemy] base:", BASE)
 
 # ── 종류별 자식 ──────────────────────────────────────────────────────
-for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, flee, prop in KINDS:
+for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, flee, prop, drop in KINDS:
     bp = ensure_bp(f"{DIR}/{name}", base.generated_class())
     c = cdo_of(bp)
     c.set_editor_property("EnemyID", enemy_id)
@@ -157,6 +163,7 @@ for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, f
     c.set_editor_property("AttackCooldown", cooldown)
     c.set_editor_property("AttackHitDelay", hit_delay)
     c.set_editor_property("FleeHealthPct", flee)
+    c.set_editor_property("DropItemID", drop or "")  # 사망 드랍(ItemRegistry ID). None = 드랍 없음
     # 메시 — Quaternius 릭(X_Bot 아님). 피벗이 발이라 캡슐 반높이만큼 내리고, 정면(+Y, RPG·Bestiary 공통)을 UE 정면(+X)으로.
     mesh = c.mesh
     mesh.set_skeletal_mesh_asset(load(f"{Q}/{char}/{char}"))
