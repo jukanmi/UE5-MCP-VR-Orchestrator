@@ -1,0 +1,12 @@
+# 서브퀘스트 — b2_james_order 전이 시 해금. 임프 토벌 + 뿔 회수.
+# 완료 신호: BP_Enemy_Imp 사망 드랍(DropItemID=ImpHorn)을 플레이어가 주우면
+# UE5 story_event {event: item_acquired, name: ImpHorn} → 플래그 "item_acquired:ImpHorn".
+id: s_hunt_imp
+title: 숲의 말썽꾸러기 임프
+available_after: b2_james_order
+summary: 숲에 나타난 비행형 임프가 마법으로 여행자들을 괴롭히고 있다. 임프를 처치하고 증거로 임프의 뿔을 가져오자.
+npc_goals:
+  James: 숲에 임프가 출몰해 마법 구체를 쏘며 장난을 친다며, 처치 증거로 임프의 뿔을 가져오라고 부탁한다
+  Guard: 공중을 날아다니는 임프 때문에 골치라며, 원거리 공격에 주의하라고 조언한다
+quest_log: 숲의 임프를 처치하고 임프의 뿔을 회수하자
+complete_when: {type: flag, name: "item_acquired:ImpHorn"}

@@ -127,7 +127,7 @@ public:
     FName HandPropSocket = TEXT("hand_l");
 
     /** 타겟에게 공격 1회 시작(타겟 저장 + 클립 재생). 반환: 이번 공격이 점유하는 시간(초). 이미 공격 중·사망이면 0. */
-    float StartAttack(AActor* Target);
+    virtual float StartAttack(AActor* Target);
 
     /** 공격 클립 진행 중. */
     bool IsAttacking() const;
