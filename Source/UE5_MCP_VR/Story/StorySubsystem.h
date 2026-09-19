@@ -25,6 +25,11 @@ struct FStoryState
     /** 지금 드러난(active) 서브퀘스트 id 목록. */
     UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
     TArray<FString> Side;
+
+    /** 퀘스트 목표물(마커가 가리킬)의 Tag (main.yaml의 quest_target_tag) */
+    UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
+    FString QuestTargetTag;
+
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryUpdated, const FStoryState&, State);

@@ -25,6 +25,15 @@ public:
     UPROPERTY(EditAnywhere, config, Category = "Spawning")
     TMap<FString, TSoftClassPtr<AEnemyCharacter>> EnemyClassMap;
 
+    /** spawn_item 요청 시 참조할 클래스 맵 (Key: item_id) */
+    UPROPERTY(EditAnywhere, config, Category = "Spawning")
+    TMap<FString, TSoftClassPtr<class ADroppedItemBase>> ItemClassMap;
+
+    /** spawn_npc 요청 시 참조할 클래스 맵 (Key: npc_id) */
+    UPROPERTY(EditAnywhere, config, Category = "Spawning")
+    TMap<FString, TSoftClassPtr<class ASmartNPC>> NPCClassMap;
+
+
     /** spawn_enemy 시 위치 태그를 가진 액터를 찾은 뒤, 이 반경 안의 네비메시에 스폰합니다. */
     UPROPERTY(EditAnywhere, config, Category = "Spawning")
     float SpawnRadius = 300.0f;

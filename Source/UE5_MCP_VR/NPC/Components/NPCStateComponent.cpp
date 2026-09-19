@@ -14,7 +14,13 @@ UNPCStateComponent::UNPCStateComponent()
 
 void UNPCStateComponent::BeginPlay()
 {
-    Super::BeginPlay();
+        Super::BeginPlay();
+
+    // 초기 호감도 지정 (BP 설정값 적용)
+    for (const auto& Elem : InitialAffinity)
+    {
+        AffinityCache.Add(Elem.Key, Elem.Value);
+    }
 
     RefreshStats();
 }

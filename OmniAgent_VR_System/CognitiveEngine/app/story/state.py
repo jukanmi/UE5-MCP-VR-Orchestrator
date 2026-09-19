@@ -100,6 +100,7 @@ class StoryMachine:
         return {
             "beat_id": self.state.main_beat,
             "quest_log": cache.get("quest_log") or (beat.quest_log if beat else "메인 퀘스트 완료"),
+            "quest_target_tag": beat.quest_target_tag if beat else "",
             "side": [sid for sid, s in self.state.side.items() if s == SIDE_ACTIVE],
             "events": list(beat.events) if beat else [],
         }

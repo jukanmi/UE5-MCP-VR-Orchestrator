@@ -34,6 +34,7 @@ class Beat(BaseModel):
     summary: str = ""  # 디렉터 컨텍스트
     npc_goals: Dict[str, str] = Field(default_factory=dict)  # 작가 초안 — LLM 폴백 원문
     quest_log: str = ""
+    quest_target_tag: str = ""
     complete_when: CompleteWhen
     next: str = END
     unlocks_side: List[str] = Field(default_factory=list)

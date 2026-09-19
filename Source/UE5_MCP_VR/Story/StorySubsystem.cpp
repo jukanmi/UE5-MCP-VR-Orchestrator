@@ -4,6 +4,25 @@
 #include "Enemy/EnemyCharacter.h"
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
+#include "Inventory/BP/DroppedItemBase.h"
+#include "NPC/BP/SmartNPC.h"
+
+namespace
+{
+    // LocTag 태그를 가진 첫 액터 위치. 비트 전이 때만 도는 경로라 전체 순회로 충분.
+    bool FindTaggedActorLocation(UWorld* World, const FString& LocTag, FVector& OutLocation)
+    {
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->ActorHasTag(FName(*LocTag)))
+            {
+                OutLocation = It->GetActorLocation();
+                return true;
+            }
+        }
+        return false;
+    }
+}
 
 UStorySubsystem* UStorySubsystem::Get(const UObject* WorldContext)
 {
@@ -20,6 +39,7 @@ bool UStorySubsystem::ApplyStoryJson(const TSharedPtr<FJsonObject>& StoryObj)
         return false;
     }
     StoryObj->TryGetStringField(TEXT("quest_log"), State.QuestLog);
+    StoryObj->TryGetStringField(TEXT("quest_target_tag"), State.QuestTargetTag);
 
     const TArray<TSharedPtr<FJsonValue>>* SideArr = nullptr;
     if (StoryObj->TryGetArrayField(TEXT("side"), SideArr))
@@ -94,18 +114,8 @@ void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)
         UWorld* World = GetWorld();
         if (!World) return;
 
-        // 위치 검색: LocTag 와 일치하는 태그를 가진 액터 탐색
-        FVector BaseLocation = FVector::ZeroVector;
-        bool bFoundLoc = false;
-        for (TActorIterator<AActor> It(World); It; ++It)
-        {
-            if (It->ActorHasTag(FName(*LocTag)))
-            {
-                BaseLocation = It->GetActorLocation();
-                bFoundLoc = true;
-                break;
-            }
-        }
+        FVector BaseLocation;
+        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
 
         if (!bFoundLoc)
         {
@@ -132,6 +142,77 @@ void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)
             World->SpawnActor<AActor>(LoadedClass, SpawnLoc, FRotator::ZeroRotator, SpawnParams);
             UE_LOG(LogTemp, Log, TEXT("[Story] spawn_enemy: %s %d기 스폰 완료 (위치: %s)"), *EnemyId, Count, *SpawnLoc.ToString());
         }
+    }
+    else if (Cmd == TEXT("spawn_item"))
+    {
+        FString ItemId, LocTag;
+        int32 Count = 1;
+
+        if (!EventObj->TryGetStringField(TEXT("item_id"), ItemId) || !EventObj->TryGetStringField(TEXT("loc"), LocTag))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_item parameter missing"));
+            return;
+        }
+        EventObj->TryGetNumberField(TEXT("count"), Count);
+
+        const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
+        if (!Settings) return;
+
+        const TSoftClassPtr<ADroppedItemBase>* ClassPtr = Settings->ItemClassMap.Find(ItemId);
+        if (!ClassPtr || ClassPtr->IsNull())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_item fail: no ItemClassMap for %s"), *ItemId);
+            return;
+        }
+
+        UClass* LoadedClass = ClassPtr->LoadSynchronous();
+        if (!LoadedClass) return;
+
+        UWorld* World = GetWorld();
+        if (!World) return;
+
+        FVector BaseLocation;
+        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
+
+        if (!bFoundLoc) return;
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+        for (int32 i = 0; i < Count; ++i)
+        {
+            World->SpawnActor<AActor>(LoadedClass, BaseLocation, FRotator::ZeroRotator, SpawnParams);
+            UE_LOG(LogTemp, Log, TEXT("[Story] spawn_item: %s"), *ItemId);
+        }
+    }
+    else if (Cmd == TEXT("spawn_npc"))
+    {
+        FString NpcId, LocTag;
+        if (!EventObj->TryGetStringField(TEXT("npc_id"), NpcId) || !EventObj->TryGetStringField(TEXT("loc"), LocTag))
+        {
+            return;
+        }
+
+        const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
+        if (!Settings) return;
+
+        const TSoftClassPtr<ASmartNPC>* ClassPtr = Settings->NPCClassMap.Find(NpcId);
+        if (!ClassPtr || ClassPtr->IsNull()) return;
+
+        UClass* LoadedClass = ClassPtr->LoadSynchronous();
+        if (!LoadedClass) return;
+
+        UWorld* World = GetWorld();
+        if (!World) return;
+
+        FVector BaseLocation;
+        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
+
+        if (!bFoundLoc) return;
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+        World->SpawnActor<AActor>(LoadedClass, BaseLocation, FRotator::ZeroRotator, SpawnParams);
+        UE_LOG(LogTemp, Log, TEXT("[Story] spawn_npc: %s"), *NpcId);
     }
     else
     {
