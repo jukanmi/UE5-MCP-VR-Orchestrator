@@ -249,7 +249,19 @@ void AEnemyCharacter::HandleDeath()
     {
         if (UWorld* World = GetWorld())
         {
-            const FTransform SpawnTM(FRotator::ZeroRotator, GetActorLocation() + FVector(0, 0, 30.f));
+            // 지면 투영 — 비행 적은 공중에서 죽어 GetActorLocation() 이 지면과 멀다. 그대로 스폰하면
+            // 낙하 거리가 길어져 랜드스케이프 콜리전이 아직 안 붙은 순간(레벨 시작 직후 등)과 겹칠 때
+            // 무한 낙하할 여지가 커진다(2026-09-19 실측). FlyingEnemyCharacter::Tick 의 고도 추적과
+            // 같은 트레이스로 지면을 먼저 찾아 낙하 구간 자체를 없앤다.
+            FVector DropLoc = GetActorLocation();
+            FHitResult GroundHit;
+            FCollisionQueryParams GroundParams;
+            GroundParams.AddIgnoredActor(this);
+            if (World->LineTraceSingleByChannel(GroundHit, DropLoc, DropLoc - FVector(0, 0, 10000.f), ECC_Visibility, GroundParams))
+            {
+                DropLoc = GroundHit.ImpactPoint;
+            }
+            const FTransform SpawnTM(FRotator::ZeroRotator, DropLoc + FVector(0, 0, 30.f));
             if (ADroppedItemBase* Drop = World->SpawnActorDeferred<ADroppedItemBase>(
                     ADroppedItemBase::StaticClass(), SpawnTM, nullptr, nullptr,
                     ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))

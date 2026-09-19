@@ -557,6 +557,7 @@ CIT_HW = 3800.0
 ENEMY_BP = "/Game/Blueprint/Enemy"
 VILLAGER_BP = "/Game/Blueprint/Villager"
 BANDIT_CAMP = (4300.0, -5600.0)  # 남쪽 숲길 외곽 — s_hunt_forest_raiders (남문 3.9km·빈터 3.1km)
+IMP_LAIR = (8800.0, -7904.0)  # 숲 동편 빈터(HISM 클러스터 150 반경 0개) — s_hunt_imp, 도적 캠프와 5.4km 이격
 ORC_LAIR = (BRIDGE[0] + 600.0, BRIDGE[1] - 800.0)  # 다리 동쪽 교각 밑 — s_hunt_bridge_troll
 DEAD_FOREST = (11500.0, 15500.0)  # 마왕성 앞 죽은 숲 — s_hunt_dead_wraith
 
@@ -1177,6 +1178,10 @@ def build_enemies():
     spawner(
         z, "BP_Bandit", bx, by, max_alive=3, interval=30, radius=700, kills_for_flag=3, flag="forest_raiders_cleared"
     )
+    # 숲의 말썽꾸러기 임프 — 비행형 1기 유지, 리스폰(총량 무제한). 완료 신호는 킬 수가 아니라
+    # ItemManager 드랍 습득(item_acquired:ImpHorn, DropChance=1.0)이라 KillFlag 불필요.
+    ix, iy = IMP_LAIR
+    spawner(z, "BP_Enemy_Imp", ix, iy, max_alive=1, interval=25, radius=800)
     # 다리의 도살자 — 네임드 1기, 리스폰 없음(boss_killed 는 EnemyCharacter 가 npc_died 로 송신)
     spawner(z, "BP_OrcVagron", ORC_LAIR[0], ORC_LAIR[1], max_alive=1, interval=60, radius=300, total=1, min_player=0)
     # 죽은 숲 망령 — 3기 유지, 5킬 → flag
@@ -1219,11 +1224,11 @@ def merchant_stall(merchant, x, y, yaw=0.0):
     box.set_static_mesh(load(MESH["cube"]))
     box.set_material(0, load(MAT["walnut"]))
     box.set_editor_property("relative_scale3d", unreal.Vector(0.9, 0.9, 0.8))  # 100cm 큐브 → BuyBox extent(45,45,40)
-    box.set_editor_property("relative_location", unreal.Vector(0, 0, -40))  # 큐브 피벗이 바닥 — 판정 박스(중심 z40)와 맞춤
+    box.set_editor_property(
+        "relative_location", unreal.Vector(0, 0, -40)
+    )  # 큐브 피벗이 바닥 — 판정 박스(중심 z40)와 맞춤
     # 진열 3×2 — SM_TableRound 반지름 61·상판 z70. 물리 정지라 살짝 떠 있어도 무방.
-    a.set_editor_property(
-        "SlotOffsets", [unreal.Vector(dx, dy, 80) for dy in (-22, 22) for dx in (-38, 0, 38)]
-    )
+    a.set_editor_property("SlotOffsets", [unreal.Vector(dx, dy, 80) for dy in (-22, 22) for dx in (-38, 0, 38)])
     return _finish(a, "SCN_villager_MerchantStall")
 
 
@@ -1235,8 +1240,14 @@ def build_villager():
     lx, ly = LIBRARY
     # 광장 4 (기둥 링 700·의자 850 바깥) + 시장 가판대 2 (상자·통 무더기 피해서)
     for i, (x, y, r) in enumerate(
-        [(px - 1100, py + 200, 500), (px - 200, py + 1100, 500), (px + 1000, py - 300, 450), (px - 400, py - 1000, 500),
-         (px + 650, py - 1600, 300), (px + 2400, py - 1100, 350)],  # 5 는 상인(px+1400, py-1460) 서쪽으로
+        [
+            (px - 1100, py + 200, 500),
+            (px - 200, py + 1100, 500),
+            (px + 1000, py - 300, 450),
+            (px - 400, py - 1000, 500),
+            (px + 650, py - 1600, 300),
+            (px + 2400, py - 1100, 350),
+        ],  # 5 는 상인(px+1400, py-1460) 서쪽으로
         1,
     ):
         villager("Townsfolk", i, x, y, r, face=PLAZA)
