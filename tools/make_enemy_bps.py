@@ -18,7 +18,7 @@ PROPS = "/Game/Core/Mesh/Props"
 RPG = {"idle": "Idle", "walk": "Walk", "run": "Run", "fmt": "{char}_Anim_CharacterArmature_{clip}"}
 UAL = {"idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "fmt": "{char}_{clip}"}
 
-# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 릭, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율, 손 소품, 드랍 아이템 ID)
+# 종류: (BP 이름, EnemyID, Quaternius 캐릭터, 릭, 공격 클립, 타격 시점(초), BaseStats, 스케일, 쿨다운, 도주 HP 비율, 손 소품, 드랍 아이템 ID, 비행 여부)
 # 드랍: ItemRegistry ItemID 또는 None. 도적 → BanditInsignia(수집 서브퀘스트 s_hunt_forest_raiders), 망령 → MagicGem, 오크 → TreasureKey.
 # 손 소품: (Props 메시 이름, 본/소켓, 상대 위치, 상대 회전) 또는 None. 오프셋은 T 포즈 SceneCapture 로 맞춘 값 — PIE 에서 재확인.
 # 참고 공식(CharacterAttributes.h): ATK=Str×1.5, DEF=Con, HP=150+Con×15, 속도는 Dex.
@@ -44,6 +44,7 @@ KINDS = [
         0.25,
         None,
         "BanditInsignia",
+        False,
     ),
     (
         "BP_Enemy_OrcVagron",
@@ -56,8 +57,9 @@ KINDS = [
         1.05,
         2.2,
         0.0,
-        ("Torch_Metal", "Fist_L", unreal.Vector(0, 0, 0), unreal.Rotator(roll=0, pitch=0, yaw=0)),
+        None,
         "TreasureKey",
+        False,
     ),
     (
         "BP_Enemy_Wraith",
@@ -72,6 +74,7 @@ KINDS = [
         0.15,
         None,
         "MagicGem",
+        False,
     ),
     # Bestiary 무료판 2종(itch.io, UAL 리타겟). 둘 다 맨손 — Punch_Cross 는 타격 프레임이 빠르다(0.3s).
     (
@@ -87,6 +90,7 @@ KINDS = [
         0.3,
         None,
         "ImpHorn",
+        True,
     ),
     (
         "BP_Enemy_Puglin",
@@ -101,6 +105,7 @@ KINDS = [
         0.2,
         None,
         None,
+        False,
     ),
 ]
 
@@ -156,21 +161,17 @@ cdo.set_editor_property("DeathSounds", sounds("Death_Thud", 3))
 save(base)
 print("[enemy] base:", BASE)
 
-# 레벨 스포너 및 과거 명칭 호환 매핑
-ALIASES = {
-    "BP_Enemy_Bandit": "BP_Bandit",
-    "BP_Enemy_OrcVagron": "BP_OrcVagron",
-    "BP_Enemy_Wraith": "BP_KnightWraith",
-}
-
 # ── 종류별 자식 ──────────────────────────────────────────────────────
-for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, flee, prop, drop in KINDS:
-    target_names = [name]
-    if name in ALIASES:
-        target_names.append(ALIASES[name])
-
-    for target_bp_name in target_names:
-        bp = ensure_bp(f"{DIR}/{target_bp_name}", base.generated_class())
+# 명칭은 BP_Enemy_* 로 통일(2026-09-20) — 과거 별칭(BP_Bandit/BP_OrcVagron/BP_KnightWraith)은
+# 폐기, 레벨 스포너도 새 이름을 직접 참조한다(build_story_scene.py).
+for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, flee, prop, drop, is_flying in KINDS:
+    for target_bp_name in [name]:
+        parent_class = unreal.FlyingEnemyCharacter if is_flying else base.generated_class()
+        bp = ensure_bp(f"{DIR}/{target_bp_name}", parent_class)
+        # 기존 임프 BP도 비행형으로 재부모화한다. 그렇지 않으면 일반 지상 적 클래스를
+        # 계속 상속해 AFlyingEnemyCharacter의 비행 이동 모드·고도 보정이 실행되지 않는다.
+        if is_flying and not isinstance(unreal.get_default_object(bp.generated_class()), unreal.FlyingEnemyCharacter):
+            unreal.BlueprintEditorLibrary.reparent_blueprint(bp, parent_class)
         c = cdo_of(bp)
         c.set_editor_property("EnemyID", enemy_id)
         attrs = c.get_editor_property("Attributes")
@@ -221,4 +222,3 @@ for name, enemy_id, char, rig, attack_clip, hit_delay, stats, scale, cooldown, f
             "@",
             chk.get_editor_property("HandPropSocket"),
         )
-

@@ -1176,18 +1176,28 @@ def build_enemies():
     )
     hism(z, "cyl", [(bx - 220, by - 240, 0, 0, 0.5, 0.5, 0.8), (bx + 340, by - 60, 0, 0, 0.5, 0.5, 0.8)], mat="walnut")
     spawner(
-        z, "BP_Bandit", bx, by, max_alive=3, interval=30, radius=700, kills_for_flag=3, flag="forest_raiders_cleared"
+        z,
+        "BP_Enemy_Bandit",
+        bx,
+        by,
+        max_alive=3,
+        interval=30,
+        radius=700,
+        kills_for_flag=3,
+        flag="forest_raiders_cleared",
     )
     # 숲의 말썽꾸러기 임프 — 비행형 1기 유지, 리스폰(총량 무제한). 완료 신호는 킬 수가 아니라
     # ItemManager 드랍 습득(item_acquired:ImpHorn, DropChance=1.0)이라 KillFlag 불필요.
     ix, iy = IMP_LAIR
     spawner(z, "BP_Enemy_Imp", ix, iy, max_alive=1, interval=25, radius=800)
     # 다리의 도살자 — 네임드 1기, 리스폰 없음(boss_killed 는 EnemyCharacter 가 npc_died 로 송신)
-    spawner(z, "BP_OrcVagron", ORC_LAIR[0], ORC_LAIR[1], max_alive=1, interval=60, radius=300, total=1, min_player=0)
+    spawner(
+        z, "BP_Enemy_OrcVagron", ORC_LAIR[0], ORC_LAIR[1], max_alive=1, interval=60, radius=300, total=1, min_player=0
+    )
     # 죽은 숲 망령 — 3기 유지, 5킬 → flag
     spawner(
         z,
-        "BP_KnightWraith",
+        "BP_Enemy_Wraith",
         DEAD_FOREST[0],
         DEAD_FOREST[1],
         max_alive=3,
