@@ -9,6 +9,7 @@
   ruins(불타는 성 폐허, PlayerStart) → gate(성문) → plaza(광장·제단) → hideout(은신처) → 서문 → library(도서관 폐허)
   → 남문 → forest(숲·약초·폭격 자리) → bridge(강·다리) → outpost(목책 전초기지·포로 우리) → 북문 → 죽은 숲 → citadel(대성채)
 서브퀘스트 적 스포너(도적 캠프·다리 오크·죽은 숲 망령) = AEnemySpawner, 적 BP 는 tools/make_enemy_bps.py.
+앰비언트 주민 12명(광장·시장·성문 안·은신처·도서관) = AVillagerCharacter 정적 배치, 주민 BP 는 tools/make_villager_bps.py.
 구조물 = StaticMeshActor, 식생·바위·잔해 = BP_HISMCluster(HISM). 손으로 옮긴 소품은 재실행 시 초기화 — 좌표는 여기서 고친다.
 """
 
@@ -554,6 +555,7 @@ CITADEL = (17500.0, 12500.0)
 CIT_HW = 3800.0
 # 서브퀘스트 적 스포너(시나리오 §4). 적 BP 는 /Game/Blueprint/Enemy (tools/make_enemy_bps.py 가 생성).
 ENEMY_BP = "/Game/Blueprint/Enemy"
+VILLAGER_BP = "/Game/Blueprint/Villager"
 BANDIT_CAMP = (4300.0, -5600.0)  # 남쪽 숲길 외곽 — s_hunt_forest_raiders (남문 3.9km·빈터 3.1km)
 ORC_LAIR = (BRIDGE[0] + 600.0, BRIDGE[1] - 800.0)  # 다리 동쪽 교각 밑 — s_hunt_bridge_troll
 DEAD_FOREST = (11500.0, 15500.0)  # 마왕성 앞 죽은 숲 — s_hunt_dead_wraith
@@ -1192,6 +1194,46 @@ def build_enemies():
     trigger("dead_forest", DEAD_FOREST[0], DEAD_FOREST[1], ext=(2500, 2500, 400))
 
 
+def villager(kind, n, x, y, radius, face=None):
+    """AVillagerCharacter 1명(BP_Villager_<kind>). VillagerID=<kind>_<n>. NavMesh 위로 투영해 허공·매몰·벽 속을 막는다."""
+    cls = unreal.EditorAssetLibrary.load_blueprint_class(f"{VILLAGER_BP}/BP_Villager_{kind}")
+    if cls is None:
+        raise RuntimeError(f"villager BP missing: {VILLAGER_BP}/BP_Villager_{kind} — tools/make_villager_bps.py 먼저")
+    want = unreal.Vector(x, y, ground_z(x, y) + 50)
+    loc = unreal.NavigationSystemV1.project_point_to_navigation(WORLD, want, None, None, unreal.Vector(300, 300, 500))
+    if abs(loc.z - want.z) < 0.01 and abs(loc.x - want.x) < 0.01 and abs(loc.y - want.y) < 0.01:
+        print(f"[scene] villager {kind}_{n}: NavMesh 투영 실패 @({x:.0f},{y:.0f}) — 그대로 배치")
+    yaw = unreal.MathLibrary.find_look_at_rotation(loc, unreal.Vector(face[0], face[1], loc.z)).yaw if face else 0.0
+    a = EAS.spawn_actor_from_class(cls, unreal.Vector(loc.x, loc.y, loc.z + 92), unreal.Rotator(yaw=yaw))
+    a.set_editor_property("VillagerID", f"{kind}_{n}")
+    a.set_editor_property("WanderRadius", float(radius))
+    return _finish(a, f"SCN_villager_{kind}_{n}")
+
+
+def build_villager():
+    """앰비언트 주민 12명 — 서버·LLM 0(AVillagerCharacter FSM). 정적 배치(스포너 없음). 상인은 Phase 3."""
+    px, py = PLAZA
+    gx, gy = GATE_N
+    hx, hy = HIDEOUT
+    lx, ly = LIBRARY
+    # 광장 4 (기둥 링 700·의자 850 바깥) + 시장 가판대 2 (상자·통 무더기 피해서)
+    for i, (x, y, r) in enumerate(
+        [(px - 1100, py + 200, 500), (px - 200, py + 1100, 500), (px + 1000, py - 300, 450), (px - 400, py - 1000, 500),
+         (px + 1250, py - 1550, 350), (px + 2400, py - 1100, 350)],
+        1,
+    ):
+        villager("Townsfolk", i, x, y, r, face=PLAZA)
+    # 성문 안 2 — 경비병(gx+250, gy-700) 옆, 계단·횃불 피해서. 웅크린 느낌으로 반경 작게
+    villager("Refugee", 1, gx - 700, gy - 350, 250, face=(gx, gy))
+    villager("Refugee", 2, gx + 750, gy - 450, 250, face=(gx, gy))
+    # 은신처 3 — 문(북) 앞 2 + 안 1(제자리)
+    villager("Refugee", 3, hx - 250, hy + 650, 300, face=(hx, hy))
+    villager("Refugee", 4, hx + 300, hy + 750, 300, face=(hx, hy))
+    villager("Refugee", 5, hx - 250, hy + 150, 0, face=(hx, hy - 150))
+    # 도서관 1 — Moca(lx+60, ly+190)·탁자 서쪽, 서가 회랑 쪽
+    villager("Scholar", 1, lx - 600, ly + 200, 400, face=(lx + 60, ly - 120))
+
+
 def build_env():
     nav = find_actor(cls="NavMeshBoundsVolume")
     if nav:
@@ -1225,6 +1267,7 @@ def build():
     build_roads()
     build_wilderness()
     build_enemies()
+    build_villager()
     place_actors()
     build_env()
 
