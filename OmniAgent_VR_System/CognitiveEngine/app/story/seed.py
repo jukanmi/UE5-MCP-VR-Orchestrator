@@ -7,7 +7,7 @@ app/story/content/npcs/ 에 두고, 이 스크립트가 복사 + FAISS 재빌드
   content/npcs/_world.md                → app/agents/knowledge/<npc>/lore/world.md   (전 NPC 공통)
   content/npcs/<npc>/{persona,history}.md → app/agents/knowledge/<npc>/{persona,history}/<npc>.md
 
-호감도도 시딩한다: 보스↔플레이어·보스↔아군 = -100(Hostile, 시야만으로 교전), 아군→플레이어 = 20(중립 —
+호감도도 시딩한다: 보스↔플레이어·보스/필드 적↔아군 = -100(Hostile, 시야만으로 교전), 아군→플레이어 = 20(중립 —
 과거 PIE 피격으로 남은 Hostile 행 초기화). C++ 는 affinity ≤ -30 을 Hostile 로 본다.
 
 서버 실행 중이면 재시작 필요 — load_persona 가 lru_cache 고 affinity 캐시도 프로세스 안에 있다.
@@ -31,6 +31,9 @@ PLAYER_KEY = "BP_VRPawn_C_0"
 PLAYER_KEY = "Player"
 ALLIES = ["Elara", "James", "Skadi", "Moca", "Guard"]
 BOSSES = ["Commander_Vorg", "DemonLord"]  # main.yaml boss_id 와 일치
+# 필드 적(AEnemyCharacter, EnemyID) — GetEntityID 가 이 값을 그대로 반환하므로 보스와 같은 방식으로
+# 시딩하면 아군 SmartNPC 의 IsHostileTo 가 시야만으로 교전에 들어간다(스포너 리스폰 개체 전부 공용 ID).
+ENEMIES = ["Bandit_Raider", "Orc_Vagron", "Knight_Wraith"]  # tools/make_enemy_bps.py KINDS 와 일치
 # 포로 연출: Elara 는 전초기지 우리 안에 갇혀 있고 Vorg 는 그녀를 방치한다. Hostile 로 두면 레벨 시작 즉시
 # 우리 안에서 교전이 붙어 플레이어 도착 전에 결판난다(시야 30m 안). 중립(0) = 시야 danger 0.3 → 무교전.
 CAPTIVE_PAIRS = {("Commander_Vorg", "Elara")}
@@ -44,9 +47,13 @@ async def seed_affinity() -> None:
             score = 0 if (boss, ally) in CAPTIVE_PAIRS else -100
             await db_manager.set_affinity_direct(boss, ally, score, "story_seed")
             await db_manager.set_affinity_direct(ally, boss, score, "story_seed")
+    for enemy in ENEMIES:
+        for ally in ALLIES:
+            await db_manager.set_affinity_direct(enemy, ally, -100, "story_seed")
+            await db_manager.set_affinity_direct(ally, enemy, -100, "story_seed")
     for ally in ALLIES:
         await db_manager.set_affinity_direct(ally, PLAYER_KEY, 20, "story_seed")
-    print(f"[Seed] affinity: 보스 {BOSSES} ↔ 플레이어/아군 Hostile, 아군→플레이어 20")
+    print(f"[Seed] affinity: 보스 {BOSSES}·필드 적 {ENEMIES} ↔ 아군 Hostile, 아군→플레이어 20")
 
 
 def seed(index: bool = True) -> list[str]:
