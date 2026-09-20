@@ -1,8 +1,15 @@
-"""스토리 전 맵 빌더 — Sample 레벨 500m×500m 전체 (2026-09-18 v2). 멱등: 라벨 SCN_* 액터 전부 삭제 후 재생성.
+"""스토리 전 맵 빌더 — Sample 레벨 500m×500m 전체 (2026-09-18 v2).
 
 에디터 안에서 실행: MCP `ue_run_python(mode="file", script="<이 파일 절대경로>")` 또는 에디터 Python 콘솔
 `py "C:/github/UE5_MCP_VR/tools/build_story_scene.py"`.
-구역만 다시: 환경변수 SCN_ONLY="village,citadel" → 그 구역(build_<zone>) 라벨만 지우고 재생성. place_actors 는 안 돈다.
+
+실행 모드(환경변수, 기본은 아무것도 안 지운다):
+  (없음)            동기화 — 라벨로 식별되는 액터(주민·스포너·가판대·NPC/PlayerStart/Bed 위치·환경)만 제자리 갱신.
+                    지오메트리·HISM 은 손대지 않고 NavMesh 도 안 돈다. 데이터(QuestOffers 등)만 바꿨을 때 이걸로.
+  SCN_ONLY=a,b      그 구역(build_<zone>) 의 SCN_<zone>_ 라벨만 지우고 재생성. place_actors 는 안 돈다.
+  SCN_FULL=1        전체 — SCN_* 전부 삭제 후 재생성 + NavMesh 재빌드(3~4분, ExternalActors 수천 개 GUID 교체 → git 잡음).
+라벨이 고정인 액터(SCN_villager_*, SCN_<zone>_spawner_*, SCN_<zone>_trigger, MerchantStall)는 어느 모드든
+같은 라벨이 남아 있으면 새로 만들지 않고 옮겨 쓴다(GUID 유지).
 전제: Content/StarterContent (Engine/Samples 에서 복사, Memo 참조) · C++ AStoryZoneTrigger · BP_HISMCluster(이 스크립트가 없으면 생성).
 
 동선(시작→끝):
@@ -21,6 +28,7 @@ import unreal
 
 random.seed(11)
 ONLY = [z for z in os.environ.get("SCN_ONLY", "").split(",") if z]
+FULL = os.environ.get("SCN_FULL") == "1"
 
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 LES = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -112,6 +120,29 @@ def _finish(a, label):
     return a
 
 
+_BY_LABEL = None
+
+
+def _spawn_or_reuse(label, cls, loc, rot):
+    """라벨이 같은 액터가 있으면 옮겨서 돌려준다(GUID 유지 — ExternalActors 파일이 안 바뀐다). 없으면 스폰.
+    호출자가 이어서 set_editor_property 하므로 modify(True) 를 먼저 걸어 WP 외부 패키지가 dirty 되게 한다."""
+    global _BY_LABEL
+    if _BY_LABEL is None:
+        _BY_LABEL = {a.get_actor_label(): a for a in EAS.get_all_level_actors()}
+    a = _BY_LABEL.get(label)
+    same = a is not None and (a.get_class() == cls if isinstance(cls, unreal.Class) else isinstance(a, cls))
+    if same:
+        a.modify(True)
+        a.set_actor_location(loc, False, False)
+        a.set_actor_rotation(rot, False)
+        return a
+    if a is not None:  # 라벨은 같은데 클래스가 바뀜(BP 교체) — 새로 만든다
+        EAS.destroy_actor(a)
+    a = EAS.spawn_actor_from_class(cls, loc, rot)
+    _BY_LABEL[label] = a
+    return a
+
+
 # ── 기본 배치 프리미티브 ─────────────────────────────────────────────
 def place(zone, mesh_key, x, y, yaw=0.0, scale=(1, 1, 1), mat=None, z_off=0.0, pitch=0.0, roll=0.0, collision=True):
     z = ground_z(x, y) + z_off
@@ -173,11 +204,11 @@ def chair(zone, x, y, yaw=0.0, scale=1.0, fid=None):
 
 
 def trigger(zone, x, y, ext=(450, 450, 200)):
-    for old in EAS.get_all_level_actors():  # 라벨이 SCN_<zone>_ 밖이라 구역 단독 재빌드 때 여기서 교체
-        if old.get_actor_label() == f"SCN_{zone}_trigger":
-            EAS.destroy_actor(old)
-    a = EAS.spawn_actor_from_class(
-        unreal.StoryZoneTrigger, unreal.Vector(x, y, ground_z(x, y) + 100), unreal.Rotator(0, 0, 0)
+    a = _spawn_or_reuse(
+        f"SCN_{zone}_trigger",
+        unreal.StoryZoneTrigger,
+        unreal.Vector(x, y, ground_z(x, y) + 100),
+        unreal.Rotator(0, 0, 0),
     )
     a.set_editor_property("ZoneName", zone)
     a.get_editor_property("Box").set_box_extent(unreal.Vector(*ext))
@@ -1151,8 +1182,11 @@ def spawner(zone, bp_name, x, y, max_alive, interval, radius, total=0, kills_for
     cls = unreal.EditorAssetLibrary.load_blueprint_class(f"{ENEMY_BP}/{bp_name}")
     if cls is None:
         raise RuntimeError(f"enemy BP missing: {ENEMY_BP}/{bp_name} — tools/make_enemy_bps.py 먼저")
-    a = EAS.spawn_actor_from_class(
-        unreal.EnemySpawner, unreal.Vector(x, y, ground_z(x, y) + 10), unreal.Rotator(0, 0, 0)
+    a = _spawn_or_reuse(
+        f"SCN_{zone}_spawner_{bp_name}",
+        unreal.EnemySpawner,
+        unreal.Vector(x, y, ground_z(x, y) + 10),
+        unreal.Rotator(0, 0, 0),
     )
     a.set_editor_property("EnemyClass", cls)
     a.set_editor_property("MaxAlive", max_alive)
@@ -1166,9 +1200,10 @@ def spawner(zone, bp_name, x, y, max_alive, interval, radius, total=0, kills_for
 
 
 def build_enemies():
-    """서브퀘스트 토벌 대상 — 적은 PIE 에서 스포너가 주기 생성(에디터엔 스포너만)."""
+    """서브퀘스트 토벌 대상 — 적은 PIE 에서 스포너가 주기 생성(에디터엔 스포너만). 캠프 소품(카운터 라벨)은 여기,
+    스포너·트리거(고정 라벨)는 sync_enemies — sync 모드에서 소품이 중복 생성되지 않게 분리."""
     z = "enemy"
-    # 도적 캠프(모닥불·상자·통) — 3명 유지, 3킬 → flag
+    # 도적 캠프(모닥불·상자·통)
     bx, by = BANDIT_CAMP
     campfire(z, bx, by, 1.2)
     hism(
@@ -1181,6 +1216,13 @@ def build_enemies():
         mat="wood",
     )
     hism(z, "cyl", [(bx - 220, by - 240, 0, 0, 0.5, 0.5, 0.8), (bx + 340, by - 60, 0, 0, 0.5, 0.5, 0.8)], mat="walnut")
+    sync_enemies()
+
+
+def sync_enemies():
+    z = "enemy"
+    bx, by = BANDIT_CAMP
+    # 도적 3명 유지, 3킬 → flag
     spawner(
         z,
         "BP_Enemy_Bandit",
@@ -1226,18 +1268,21 @@ def villager(kind, n, x, y, radius, face=None, quest_offers=None):
     if abs(loc.z - want.z) < 0.01 and abs(loc.x - want.x) < 0.01 and abs(loc.y - want.y) < 0.01:
         print(f"[scene] villager {kind}_{n}: NavMesh 투영 실패 @({x:.0f},{y:.0f}) — 그대로 배치")
     yaw = unreal.MathLibrary.find_look_at_rotation(loc, unreal.Vector(face[0], face[1], loc.z)).yaw if face else 0.0
-    a = EAS.spawn_actor_from_class(cls, unreal.Vector(loc.x, loc.y, loc.z + 92), unreal.Rotator(yaw=yaw))
+    a = _spawn_or_reuse(
+        f"SCN_villager_{kind}_{n}", cls, unreal.Vector(loc.x, loc.y, loc.z + 92), unreal.Rotator(yaw=yaw)
+    )
     a.set_editor_property("VillagerID", f"{kind}_{n}")
     a.set_editor_property("WanderRadius", float(radius))
-    if quest_offers:
-        a.set_editor_property("QuestOffers", quest_offers)
+    a.set_editor_property("QuestOffers", quest_offers or {})  # 멱등: giver 해제 시 빈 맵으로 덮는다
     return _finish(a, f"SCN_villager_{kind}_{n}")
 
 
 def merchant_stall(merchant, x, y, yaw=0.0):
     """AMerchantStall 1개 — 탁자 중심에 두고 상인을 연결. 진열 슬롯은 액터 로컬 오프셋(탁자 상판 위), 매입 상자는 +X 옆."""
     z = ground_z(x, y)
-    a = EAS.spawn_actor_from_class(unreal.MerchantStall, unreal.Vector(x, y, z), unreal.Rotator(yaw=yaw))
+    a = _spawn_or_reuse(
+        "SCN_villager_MerchantStall", unreal.MerchantStall, unreal.Vector(x, y, z), unreal.Rotator(yaw=yaw)
+    )
     a.set_editor_property("Merchant", merchant)
     box = a.get_editor_property("BuyBoxMesh")
     box.set_static_mesh(load(MESH["cube"]))
@@ -1304,6 +1349,14 @@ def build_env():
             print("[scene] fog 조정")
 
 
+def sync():
+    """기본 모드 — 라벨 고정 액터만 제자리 갱신. 지오메트리·HISM·NavMesh 는 건드리지 않는다."""
+    sync_enemies()
+    build_villager()
+    place_actors()
+    build_env()
+
+
 def build():
     ensure_hism_bp()
     if ONLY:
@@ -1325,14 +1378,18 @@ def build():
     build_env()
 
 
-with unreal.ScopedEditorTransaction("Story: 전 맵 빌드"):
-    clear_scene()
-    build()
-
-print("[scene] actors:", COUNTS, "chairs:", _chair_n)
-print("[scene] hism instances:", HISM_TOTAL)
-# RecastNavMesh 가 Static 생성이라 에디터에서 빌드한 데이터가 레벨에 저장돼야 PIE 에서 쓴다.
-# 비동기 — 몇 초 뒤 is_navigation_being_built 가 False 가 되면 save_current_level 한 번 더.
-unreal.SystemLibrary.execute_console_command(WORLD, "RebuildNavigation")
-print("[scene] RebuildNavigation 요청 — 완료 후 레벨 재저장 필요")
+if FULL or ONLY:
+    with unreal.ScopedEditorTransaction("Story: 맵 빌드"):
+        clear_scene()
+        build()
+    print("[scene] actors:", COUNTS, "chairs:", _chair_n)
+    print("[scene] hism instances:", HISM_TOTAL)
+    # RecastNavMesh 가 Static 생성이라 에디터에서 빌드한 데이터가 레벨에 저장돼야 PIE 에서 쓴다.
+    # 비동기 — 몇 초 뒤 is_navigation_being_built 가 False 가 되면 save_current_level 한 번 더.
+    unreal.SystemLibrary.execute_console_command(WORLD, "RebuildNavigation")
+    print("[scene] RebuildNavigation 요청 — 완료 후 레벨 재저장 필요")
+else:
+    with unreal.ScopedEditorTransaction("Story: 액터 동기화"):
+        sync()
+    print("[scene] sync 모드 — 지오메트리 미변경. 전체 재생성은 SCN_FULL=1, 구역은 SCN_ONLY=zone,…")
 print("[scene] save:", LES.save_current_level())
