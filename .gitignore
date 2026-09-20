@@ -102,9 +102,10 @@ docs/
 .prettierignore
 
 # ==============================================================================
-# CLAUDE & OPENAI
+# CLAUDE & OPENAI & GEMINI
 # ==============================================================================
 CLAUDE.md
+GEMINI.md
 .claude/
 .claude/skills/
 .code-review-graph/
