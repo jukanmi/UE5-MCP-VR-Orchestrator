@@ -670,7 +670,7 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     if (bDashActive || Now - LastDashTime < DashCooldownSec) return;
 
     FGameResources& Res = CurrentStats.Resources;
-    if (bStaminaExhausted || Res.Stamina < DashStaminaCost) return;
+    if (!bDebugDashFreeStamina && (bStaminaExhausted || Res.Stamina < DashStaminaCost)) return;
 
     // 방향 — 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면.
     // 이동과 같은 기준(HMD Yaw)으로 풀어야 스틱을 민 쪽과 튀어나가는 쪽이 일치한다.
@@ -681,13 +681,16 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     FVector Dir = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal2D();
     if (Dir.IsNearlyZero()) Dir = Forward;
 
-    Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
-    if (Res.Stamina <= 0.f)
+    if (!bDebugDashFreeStamina)
     {
-        bStaminaExhausted = true;
-        SetSprinting(false);
+        Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
+        if (Res.Stamina <= 0.f)
+        {
+            bStaminaExhausted = true;
+            SetSprinting(false);
+        }
+        TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
     }
-    TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 
     bDashActive = true;
     DashTimeRemaining = DashDuration;

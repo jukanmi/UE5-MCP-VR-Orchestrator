@@ -306,6 +306,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "0.0"))
     float DashStaminaCost = 20.f;
 
+    /** 디버그 전용 — true 면 대쉬가 스태미나를 소모/요구하지 않는다(쿨다운은 그대로). 기본 false. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash|Debug")
+    bool bDebugDashFreeStamina = false;
+
     // ============================================================================
     // 전투
     // ============================================================================
