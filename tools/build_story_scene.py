@@ -560,6 +560,12 @@ BANDIT_CAMP = (4300.0, -5600.0)  # 남쪽 숲길 외곽 — s_hunt_forest_raider
 IMP_LAIR = (8800.0, -7904.0)  # 숲 동편 빈터(HISM 클러스터 150 반경 0개) — s_hunt_imp, 도적 캠프와 5.4km 이격
 ORC_LAIR = (BRIDGE[0] + 600.0, BRIDGE[1] - 800.0)  # 다리 동쪽 교각 밑 — s_hunt_bridge_troll
 DEAD_FOREST = (11500.0, 15500.0)  # 마왕성 앞 죽은 숲 — s_hunt_dead_wraith
+# 퀘스트 giver 주민(Townsfolk_1) 대사 — side id 는 app/story/content/main.yaml unlocks_side 와 1:1.
+QUEST_OFFERS = {
+    "s_hunt_forest_raiders": "남쪽 숲에 도적떼가 자리를 잡았다더군. 좀 처리해 줄 수 있겠나?",
+    "s_hunt_bridge_troll": "강 다리 밑에 오크 하나가 진을 쳤어. 위험하니 조심해서 처치해 주게.",
+    "s_hunt_dead_wraith": "마왕성 앞 죽은 숲에 기사 망령들이 떠돈다더군. 정화해 줄 수 있겠나?",
+}
 
 
 def build_village():
@@ -1209,8 +1215,9 @@ def build_enemies():
     trigger("dead_forest", DEAD_FOREST[0], DEAD_FOREST[1], ext=(2500, 2500, 400))
 
 
-def villager(kind, n, x, y, radius, face=None):
-    """AVillagerCharacter 1명(BP_Villager_<kind>). VillagerID=<kind>_<n>. NavMesh 위로 투영해 허공·매몰·벽 속을 막는다."""
+def villager(kind, n, x, y, radius, face=None, quest_offers=None):
+    """AVillagerCharacter 1명(BP_Villager_<kind>). VillagerID=<kind>_<n>. NavMesh 위로 투영해 허공·매몰·벽 속을 막는다.
+    quest_offers: {side_id: 수락 대사} — 지정 시 이 개체가 서브퀘스트 giver(해금 시 머리 위 "!", Interact 로 수락)."""
     cls = unreal.EditorAssetLibrary.load_blueprint_class(f"{VILLAGER_BP}/BP_Villager_{kind}")
     if cls is None:
         raise RuntimeError(f"villager BP missing: {VILLAGER_BP}/BP_Villager_{kind} — tools/make_villager_bps.py 먼저")
@@ -1222,6 +1229,8 @@ def villager(kind, n, x, y, radius, face=None):
     a = EAS.spawn_actor_from_class(cls, unreal.Vector(loc.x, loc.y, loc.z + 92), unreal.Rotator(yaw=yaw))
     a.set_editor_property("VillagerID", f"{kind}_{n}")
     a.set_editor_property("WanderRadius", float(radius))
+    if quest_offers:
+        a.set_editor_property("QuestOffers", quest_offers)
     return _finish(a, f"SCN_villager_{kind}_{n}")
 
 
@@ -1260,7 +1269,8 @@ def build_villager():
         ],  # 5 는 상인(px+1400, py-1460) 서쪽으로
         1,
     ):
-        villager("Townsfolk", i, x, y, r, face=PLAZA)
+        # Townsfolk_1 = 서브퀘스트 giver(다리 오크·죽은 숲 망령·남쪽 도적, b2 해금 3종). 광장이라 James 근처.
+        villager("Townsfolk", i, x, y, r, face=PLAZA, quest_offers=QUEST_OFFERS if i == 1 else None)
     # 성문 안 2 — 경비병(gx+250, gy-700) 옆, 계단·횃불 피해서. 웅크린 느낌으로 반경 작게
     villager("Refugee", 1, gx - 700, gy - 350, 250, face=(gx, gy))
     villager("Refugee", 2, gx + 750, gy - 450, 250, face=(gx, gy))

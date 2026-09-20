@@ -4,6 +4,7 @@
 #include "Core/Types/PlayerGameplayTags.h"
 #include "NPC/Components/NPCRagdollComponent.h"
 #include "NPC/Components/NPCDialogueUIComponent.h"
+#include "NPC/Subsystems/NPCManager.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Story/StorySubsystem.h"
 #include "Engine/DamageEvents.h"
@@ -12,6 +13,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
@@ -29,6 +31,18 @@ AVillagerCharacter::AVillagerCharacter()
     // 말풍선 — 위젯 공간·크기·머리 위 오프셋은 컴포넌트 기본값(SmartNPC 와 동일).
     DialogueWidgetComp = CreateDefaultSubobject<UNPCDialogueUIComponent>(TEXT("DialogueWidget"));
     DialogueWidgetComp->SetupAttachment(GetMesh());
+
+    // 서브퀘스트 "!" — 말풍선(z210)보다 위, 항상 켠 채 가시성만 토글(빌보드는 UpdateQuestMarker 가 보일 때만 갱신).
+    QuestMarkerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("QuestMarker"));
+    QuestMarkerText->SetupAttachment(GetMesh());
+    QuestMarkerText->SetRelativeLocation(FVector(0.f, 0.f, 240.f));
+    QuestMarkerText->SetText(FText::FromString(TEXT("!")));
+    QuestMarkerText->SetTextRenderColor(FColor::Yellow);
+    QuestMarkerText->SetHorizontalAlignment(EHTA_Center);
+    QuestMarkerText->SetVerticalAlignment(EVRTA_TextCenter);
+    QuestMarkerText->SetWorldSize(45.f);
+    QuestMarkerText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    QuestMarkerText->SetVisibility(false);
 
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
@@ -72,6 +86,7 @@ void AVillagerCharacter::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     UpdateLocomotionAnim();
+    UpdateQuestMarker();
 }
 
 // ============================================================================
@@ -153,8 +168,47 @@ bool AVillagerCharacter::Interact(AActor* Player)
     if (bIsDead) return false;
     AVillagerAIController* AIC = Cast<AVillagerAIController>(GetController());
     if (!AIC || !AIC->GreetNow(Player, /*bWave=*/true)) return false;  // 도주·복귀 중엔 인사 안 함
+
+    const FString OfferedSide = FindOfferedSideId();
+    if (!OfferedSide.IsEmpty())
+    {
+        Say(QuestOffers.FindRef(OfferedSide));
+        if (UNPCManager* Mgr = UNPCManager::Get(this))
+        {
+            Mgr->SendStoryEvent(TEXT("quest_accept"), OfferedSide);  // available → active (서버가 멱등 판정)
+        }
+        return true;
+    }
+
     Say(PickLine(DefaultLines));
     return true;
+}
+
+FString AVillagerCharacter::FindOfferedSideId() const
+{
+    const UStorySubsystem* Story = UStorySubsystem::Get(this);
+    if (!Story || !Story->HasState()) return FString();
+    const FStoryState& St = Story->GetCurrentState();
+    for (const TPair<FString, FString>& Offer : QuestOffers)
+    {
+        if (St.AvailableSide.Contains(Offer.Key)) return Offer.Key;
+    }
+    return FString();
+}
+
+void AVillagerCharacter::UpdateQuestMarker()
+{
+    if (!QuestMarkerText) return;
+    const bool bHasOffer = !FindOfferedSideId().IsEmpty();
+    QuestMarkerText->SetVisibility(bHasOffer);
+    if (!bHasOffer) return;
+
+    // 말풍선과 같은 빌보드 공식 — Yaw 만 카메라로, 텍스트는 직립 유지.
+    if (APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        const FVector ToCam = Cam->GetCameraLocation() - QuestMarkerText->GetComponentLocation();
+        QuestMarkerText->SetWorldRotation(FRotator(0.f, ToCam.Rotation().Yaw + 180.f, 0.f));
+    }
 }
 
 FString AVillagerCharacter::BuildDirections() const

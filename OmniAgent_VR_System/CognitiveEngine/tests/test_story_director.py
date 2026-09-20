@@ -107,7 +107,14 @@ def test_story_event_sets_flag_and_transitions(machine):
     with patch("app.story.director.ollama_structured", AsyncMock(return_value=_resp(quest_log="용을 잡자"))):
         out = json.loads(asyncio.run(_handle_story_event(env)))
     assert machine.state.flags["entered_cave"] is True
-    assert out["Story"] == {"beat_id": "b3", "quest_log": "용을 잡자", "quest_target_tag": "", "side": [], "events": []}
+    assert out["Story"] == {
+        "beat_id": "b3",
+        "quest_log": "용을 잡자",
+        "quest_target_tag": "",
+        "side": [],
+        "available_side": [],
+        "events": [],
+    }
 
 
 def test_npc_died_event_routes_to_boss_killed(machine):

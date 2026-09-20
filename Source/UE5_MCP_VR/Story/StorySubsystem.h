@@ -5,6 +5,8 @@
 #include "Dom/JsonObject.h"
 #include "StorySubsystem.generated.h"
 
+class AQuestMarkerActor;
+
 /**
  * Python 스토리 디렉터가 응답 JSON 최상위 `Story` 블록으로 보내는 현재 퀘스트 상태.
  * {beat_id, quest_log, side: [...], events: [...]} — 비트 전이 직후 응답에만 실린다.
@@ -26,7 +28,11 @@ struct FStoryState
     UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
     TArray<FString> Side;
 
-    /** 퀘스트 목표물(마커가 가리킬)의 Tag (main.yaml의 quest_target_tag) */
+    /** 해금됐지만 아직 수락 전(available) 서브퀘스트 id 목록 — 퀘스트 giver 머리 위 "!" 판정용. */
+    UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
+    TArray<FString> AvailableSide;
+
+    /** 퀘스트 목표물 식별자(main.yaml quest_target_tag) — SmartNPC AgentID 또는 액터 Tag. 빈 문자열 = 마커 없음. */
     UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
     FString QuestTargetTag;
 
@@ -67,9 +73,17 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "MCP|Story")
     FOnStoryUpdated OnStoryUpdated;
 
+    /** 월드 마커(AQuestMarkerActor) 대상 지정 — AgentID(NPCManager) 우선, 없으면 액터 Tag. 빈 문자열·미발견 = 숨김.
+     *  ApplyStoryJson 이 부르지만 디버그로 직접 호출해도 된다. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Story")
+    void SetQuestTarget(const FString& Tag);
+
 private:
     UPROPERTY()
     FStoryState CurrentState;
+
+    UPROPERTY()
+    TObjectPtr<AQuestMarkerActor> QuestMarker;
 
     bool bHasState = false;
 };

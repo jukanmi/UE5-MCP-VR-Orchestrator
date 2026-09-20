@@ -102,6 +102,7 @@ class StoryMachine:
             "quest_log": cache.get("quest_log") or (beat.quest_log if beat else "메인 퀘스트 완료"),
             "quest_target_tag": beat.quest_target_tag if beat else "",
             "side": [sid for sid, s in self.state.side.items() if s == SIDE_ACTIVE],
+            "available_side": [sid for sid, s in self.state.side.items() if s == SIDE_AVAILABLE],
             "events": list(beat.events) if beat else [],
         }
 
@@ -155,6 +156,12 @@ class StoryMachine:
                 st.flags[data["name"]] = True
 
             dirty = False
+            if kind == "quest_accept":
+                sid = data.get("side_id", "")
+                if st.side.get(sid) == SIDE_AVAILABLE:
+                    st.side[sid] = SIDE_ACTIVE
+                    logger.info(f"[Story] 퀘스트 수락(giver NPC): {sid}")
+                    dirty = True
             beat = self.current_beat
             if beat and self._satisfied(beat, kind, data):
                 self._advance(beat)

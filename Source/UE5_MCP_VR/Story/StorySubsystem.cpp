@@ -6,6 +6,8 @@
 #include "NavigationSystem.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "NPC/BP/SmartNPC.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Story/QuestMarkerActor.h"
 
 namespace
 {
@@ -54,10 +56,24 @@ bool UStorySubsystem::ApplyStoryJson(const TSharedPtr<FJsonObject>& StoryObj)
         }
     }
 
+    const TArray<TSharedPtr<FJsonValue>>* AvailArr = nullptr;
+    if (StoryObj->TryGetArrayField(TEXT("available_side"), AvailArr))
+    {
+        for (const TSharedPtr<FJsonValue>& Val : *AvailArr)
+        {
+            FString Id;
+            if (Val.IsValid() && Val->TryGetString(Id))
+            {
+                State.AvailableSide.Add(Id);
+            }
+        }
+    }
+
     CurrentState = MoveTemp(State);
     bHasState = true;
-    UE_LOG(LogTemp, Log, TEXT("[Story] 비트 갱신: %s quest_log=\"%s\" side=%d"),
-        *CurrentState.BeatId, *CurrentState.QuestLog, CurrentState.Side.Num());
+    UE_LOG(LogTemp, Log, TEXT("[Story] 비트 갱신: %s quest_log=\"%s\" side=%d target=%s"),
+        *CurrentState.BeatId, *CurrentState.QuestLog, CurrentState.Side.Num(), *CurrentState.QuestTargetTag);
+    SetQuestTarget(CurrentState.QuestTargetTag);
     OnStoryUpdated.Broadcast(CurrentState);
 
     // 이벤트 파싱 (Phase C)
@@ -74,6 +90,42 @@ bool UStorySubsystem::ApplyStoryJson(const TSharedPtr<FJsonObject>& StoryObj)
     }
 
     return true;
+}
+
+void UStorySubsystem::SetQuestTarget(const FString& Tag)
+{
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    AActor* Target = nullptr;
+    if (!Tag.IsEmpty())
+    {
+        if (UNPCManager* Manager = UNPCManager::Get(this))
+        {
+            Target = Manager->GetNPCById(Tag);
+        }
+        if (!Target)
+        {
+            for (TActorIterator<AActor> It(World); It; ++It)
+            {
+                if (It->ActorHasTag(FName(*Tag))) { Target = *It; break; }
+            }
+        }
+        if (!Target)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] quest_target_tag '%s' — AgentID·Tag 모두 미발견, 마커 숨김"), *Tag);
+        }
+    }
+
+    // 마커는 월드당 1개 — PIE 재시작 등으로 월드가 바뀌면 이전 포인터는 버린다.
+    if (QuestMarker && QuestMarker->GetWorld() != World) QuestMarker = nullptr;
+    if (!QuestMarker && Target)
+    {
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        QuestMarker = World->SpawnActor<AQuestMarkerActor>(AQuestMarkerActor::StaticClass(), FTransform::Identity, Params);
+    }
+    if (QuestMarker) QuestMarker->SetTarget(Target);
 }
 
 void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)

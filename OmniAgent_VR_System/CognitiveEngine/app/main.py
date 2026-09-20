@@ -297,6 +297,9 @@ async def _handle_story_event(envelope: MessageEnvelope) -> str:
     # 플레이어 단독 처치도 잡으려면 보스 자신의 사망 이벤트(name=AgentID)가 필요하다.
     if payload.event == "npc_died":
         return _empty_batch_json(story=await _story_trigger("combat_victory", {"target_id": payload.name}))
+    # quest_accept: 퀘스트 giver 주민(AVillagerCharacter, 서버 미등록)이 available 서브를 active 로 승격.
+    if payload.event == "quest_accept":
+        return _empty_batch_json(story=await _story_trigger("quest_accept", {"side_id": payload.name}))
     return _empty_batch_json(story=await _story_trigger("flag", {"name": payload.flag_name}))
 
 
@@ -353,7 +356,9 @@ async def _handle_combat_victory(payload: EmergencyReportPayload) -> str:
     agent_id = payload.agent_id
     defeated = payload.perceptions[0].target_id if payload.perceptions else "Unknown"
     logger.info(f"[Main] 전투 승리 보고: npc={agent_id}, defeated={defeated} — 메모리 기록, 무행동")
-    _record_event_memory_bg(agent_id, f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).", "victory-memory")
+    _record_event_memory_bg(
+        agent_id, f"{agent_id}이(가) 전투에서 {defeated}을(를) 쓰러뜨렸다 (승리).", "victory-memory"
+    )
     # 보스 처치 = 스토리 종착 플래그. 현재 비트 boss_id 와 일치할 때만 전이(상태기계가 판정).
     return _empty_batch_json(story=await _story_trigger("combat_victory", {"target_id": defeated}))
 

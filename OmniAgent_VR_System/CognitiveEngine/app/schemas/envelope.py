@@ -153,7 +153,7 @@ class StoryEventPayload(BaseModel):
     """story_event 타입의 payload. 스토리 상태기계 플래그 세팅용(app/story).
     event="flag" 면 name 이 그대로 플래그 이름, 그 외는 "<event>:<name>" 플래그로 기록."""
 
-    event: str  # "flag" | "zone_enter" | "item_acquired" | "npc_died"(name=AgentID → boss_killed 평가)
+    event: str  # "flag" | "zone_enter" | "item_acquired" | "npc_died"(name=AgentID → boss_killed 평가) | "quest_accept"(name=side id, flag_name 미사용)
     name: str  # flag 이름 / 구역 id / 아이템 id
     agent_id: Optional[str] = None
 

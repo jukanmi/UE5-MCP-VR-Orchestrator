@@ -11,6 +11,7 @@ class UNPCDialogueUIComponent;
 class UInventoryComponent;
 class UAnimSequence;
 class USoundBase;
+class UTextRenderComponent;
 
 /** 채팅 키워드 규칙 1개 — 플레이어 문장에 Keywords 중 하나라도 들어 있으면 Lines 에서 랜덤 1줄. */
 USTRUCT(BlueprintType)
@@ -96,6 +97,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
     UNPCDialogueUIComponent* DialogueWidgetComp;
 
+    /** 머리 위 "!" — QuestOffers 중 하나라도 서버 AvailableSide(해금·미수락)에 있으면 표시. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
+    UTextRenderComponent* QuestMarkerText;
+
     /** 소지품 — 상인 재고(InitialDefaultItems, BP_Villager_Merchant 가 굽는다). 가판대(AMerchantStall)가 여기서 꺼내 진열하고 매입품을 넣는다.
      *  다른 종류는 비워 둔다. 서버 프롬프트에 안 실리므로(NPCManager 미등록) 토큰 비용 0. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
@@ -121,6 +126,11 @@ public:
     /** 활성 서브퀘스트 id → 덧붙일 한 줄(예: s_moca_herbs "남쪽 숲 빈터 약초"). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Villager|Dialogue")
     TMap<FString, FString> SideDirections;
+
+    /** 서브퀘스트 전달 — id → 수락 시 말할 문장. 해당 id 가 서버 AvailableSide 에 있는 동안 머리 위 "!" 표시,
+     *  Interact 로 수락하면 서버에 quest_accept 이벤트 전송(available→active) 후 마커가 사라진다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Villager|Dialogue")
+    TMap<FString, FString> QuestOffers;
 
     /** 스토리 비트 미수신(HasState()==false)·표에 없는 비트일 때 안내문. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Villager|Dialogue")
@@ -182,6 +192,12 @@ private:
 
     /** 현재 스토리 비트·활성 서브퀘스트 기준 길 안내 한 문장. */
     FString BuildDirections() const;
+
+    /** QuestOffers 중 서버 AvailableSide 에 있는 첫 side id — 없으면 빈 문자열. */
+    FString FindOfferedSideId() const;
+
+    /** 머리 위 "!" 가시성 + 카메라 빌보드 갱신(Tick 에서 호출). */
+    void UpdateQuestMarker();
     static const FString& PickLine(const TArray<FString>& Pool);
     static bool ContainsAny(const FString& Text, const TArray<FString>& Keywords);
 
