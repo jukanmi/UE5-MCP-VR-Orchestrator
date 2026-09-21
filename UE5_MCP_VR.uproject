@@ -13,10 +13,7 @@
 	"Plugins": [
 		{
 			"Name": "ModelingToolsEditorMode",
-			"Enabled": true,
-			"TargetAllowList": [
-				"Editor"
-			]
+			"Enabled": true
 		},
 		{
 			"Name": "JsonBlueprintUtilities",
@@ -27,15 +24,15 @@
 			"Enabled": true
 		},
 		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
 			"Name": "StateTree",
 			"Enabled": true
 		},
 		{
 			"Name": "GameplayStateTree",
-			"Enabled": true
-		},
-		{
-			"Name": "AudioCapture",
 			"Enabled": true
 		},
 		{
@@ -63,11 +60,18 @@
 		{
 			"Name": "OculusXR",
 			"Enabled": false,
-			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/8313d8d7e7cf4e03a33e79eb757bccba",
 			"SupportedTargetPlatforms": [
 				"Win64",
 				"Android"
 			]
+		},
+		{
+			"Name": "VisualStudioTools",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64"
+			],
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/362651520df94e4fa65492dbcba44ae2"
 		}
 	]
 }

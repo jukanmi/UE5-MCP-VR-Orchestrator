@@ -1,0 +1,122 @@
+- id: raw_lightquest_0001
+  persona: the deer (I am a deer. I live in a beautiful forest and am usually lef)
+  source_goal_en: steal worm from bird
+  context: '[번역] the deer는 I am hungry and need to eat. 을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: steal worm from bird
+    steps:
+    - eat grass 하기
+    - go meadow 하기
+    - follow Bird 하기
+    - eat Worm 하기
+- id: raw_lightquest_0002
+  persona: the deer (I am a deer. I live in a beautiful forest and am usually lef)
+  source_goal_en: get fruit
+  context: '[번역] the deer는 I want to become the leader of all the animals. 을(를) 달성하기
+    위해 행동을 개시한다.'
+  gold:
+    goal: get fruit
+    steps:
+    - go Lush meadow in the country side 하기
+    - go trees 하기
+    - wield teeth 하기
+    - eat fruit 하기
+- id: raw_lightquest_0003
+  persona: the deer (I am a deer. I live in a beautiful forest and am usually lef)
+  source_goal_en: follow butterfly
+  context: '[번역] the deer는 I want to have friends so they can warn me of the king
+    and his dogs을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: follow butterfly
+    steps:
+    - get grass from field 하기
+    - go small dirt country road 하기
+    - go flower 하기
+    - get grass from field 하기
+- id: raw_lightquest_0004
+  persona: the butterfly (I flutter around with my elaborately designed wings. I eat
+    b)
+  source_goal_en: eat worm
+  context: '[번역] the butterfly는 I want to fly through the distant field where the
+    deer is grazing.을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: eat worm
+    steps:
+    - go pretty flowers 하기
+    - go large oak tree 하기
+    - follow worm on ground 하기
+    - go luscious fruit 하기
+- id: raw_lightquest_0005
+  persona: the butterfly (I flutter around with my elaborately designed wings. I eat
+    b)
+  source_goal_en: hug deer
+  context: '[번역] the butterfly는 I want to show all the animals of the forest that
+    I love them.을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: hug deer
+    steps:
+    - drink water from the dew on a leaf to quench my thirst 하기
+    - eat a small bug to have energy to fly to the forest 하기
+    - go to the forest center where there are deer 하기
+    - go towards the bird 하기
+- id: raw_lightquest_0006
+  persona: the adventurer (I am part of a group of adventurers. We explore every dungeo)
+  source_goal_en: give flint to bandit
+  context: '[번역] the adventurer는 I must return the stolen food back to the village
+    을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: give flint to bandit
+    steps:
+    - get tool from blacksmith 하기
+    - go bandit lair 하기
+    - get flint from toolchest 하기
+    - use diplomacy with bandit 하기
+- id: raw_lightquest_0007
+  persona: the adventurer (I am part of a group of adventurers. We explore every dungeo)
+  source_goal_en: put tool on big table
+  context: '[번역] the adventurer는 I will get a good night''s sleep to become rested
+    after a long day of travel.을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: put tool on big table
+    steps:
+    - wield pick to hack away at the cave walls for gold. 하기
+    - use tool with pick to scrape at the cave walls. 하기
+    - go the Bandit Lair. 하기
+    - put boot in floor by the wall. 하기
+- id: raw_lightquest_0008
+  persona: the bandit (I steal items and money from others. I lurk on the side of
+    t)
+  source_goal_en: hit adventurer
+  context: '[번역] the bandit는 i want to maintain the secrecy of the Bandit Lair''s
+    location.을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: hit adventurer
+    steps:
+    - steal keys from adventurer 하기
+    - go Bandit Lair 하기
+    - wield knife 하기
+    - put knife in table 하기
+- id: raw_lightquest_0009
+  persona: the bandit (I steal items and money from others. I lurk on the side of
+    t)
+  source_goal_en: put boot on Empty mug
+  context: '[번역] the bandit는  I can steal the mug when no one is looking 을(를) 달성하기
+    위해 행동을 개시한다.'
+  gold:
+    goal: put boot on Empty mug
+    steps:
+    - steal boots from traveler 하기
+    - wear boots 하기
+    - follow to Bandit Lair 하기
+    - put boot in mug 하기
+- id: raw_lightquest_0010
+  persona: the maggot (I am an infant fly. I eat rotting flesh. I grow large and wi)
+  source_goal_en: hug mosquito
+  context: '[번역] the maggot는 I want new friends who can fly.을(를) 달성하기 위해 행동을 개시한다.'
+  gold:
+    goal: hug mosquito
+    steps:
+    - get rotten flesh from corpse 하기
+    - go palace kitchen 하기
+    - drop rotten flesh 하기
+    - give rotten flesh to mosquito 하기

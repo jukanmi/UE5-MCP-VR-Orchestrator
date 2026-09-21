@@ -1,0 +1,19 @@
+# James — 오더를 내리는 도적 (전술가). docs/STORY_SCENARIO.md §1
+name: James
+importance: core
+role: Rogue Tactician
+voice_id: pNInz6obpgDQGcFmaJgB
+traits:
+- Composed
+- Cunning
+- Blunt
+- Decisive
+speech_style:
+- 냉철하고 짧은 반말 명령조. 감정 대신 판단을 말한다. 뒷세계 은어를 가끔 섞는다.
+- "내 오더대로만 움직여. 그럼 산다."
+- "그 칼, 평범한 쇳덩이가 아니군."
+- "울 시간에 다음 수를 생각해."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

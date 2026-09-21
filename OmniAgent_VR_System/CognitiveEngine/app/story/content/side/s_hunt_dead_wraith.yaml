@@ -1,0 +1,12 @@
+# 서브퀘스트 — b2_james_order 전이 시 해금. 마왕성 앞 죽은 숲 망령 정화.
+# 완료 신호: AEnemySpawner(BP_Enemy_Wraith, KillsForFlag=5)가 5킬 달성 시
+# UE5 story_event {event: flag, name: wraiths_purified} 직송 → 플래그 "wraiths_purified".
+id: s_hunt_dead_wraith
+title: 죽은 숲의 망령들
+available_after: b2_james_order
+summary: James 는 마왕성 앞 죽은 숲에 떠도는 기사 망령들이 산 자를 홀린다며 정화를 부탁한다.
+npc_goals:
+  James: 죽은 숲에 떠도는 기사 망령들의 사연을 알려주고, 정화를 부탁한다
+  Guard: 죽은 숲 근처엔 얼씬도 말라던 소문을 전하며 망령들의 원거리 마법에 주의하라고 경고한다
+quest_log: 죽은 숲의 기사 망령들을 정화하자
+complete_when: {type: flag, name: "wraiths_purified"}

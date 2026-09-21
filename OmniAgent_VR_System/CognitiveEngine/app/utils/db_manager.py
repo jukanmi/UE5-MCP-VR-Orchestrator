@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "affinity.db")
 SYNC_INTERVAL_SECONDS = 5.0
 
+# 캐시·직접 설정 두 경로가 같은 UPSERT 를 쓴다.
+_UPSERT_RELATION_SQL = """
+    INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(source_id, target_id)
+    DO UPDATE SET
+        affinity_score=excluded.affinity_score,
+        reputation_tag=excluded.reputation_tag,
+        last_interaction=excluded.last_interaction,
+        updated_at=CURRENT_TIMESTAMP
+"""
+
+
+def reputation_tag_for(score: int) -> str:
+    """호감도 → 관계 태그. 임계 ±30 은 C++ NPCStateComponent::GetRelation 과 같은 값."""
+    if score <= -30:
+        return "Hostile"
+    if score >= 30:
+        return "Friendly"
+    return "Neutral"
+
+
 # --- State ---
 # Memory Cache: (source_id, target_id) -> NPCRelation
 _affinity_cache: Dict[Tuple[str, str], NPCRelation] = {}
@@ -20,6 +42,7 @@ _affinity_cache: Dict[Tuple[str, str], NPCRelation] = {}
 _cache_lock = threading.Lock()
 _sync_task: Optional[asyncio.Task] = None
 _is_shutting_down: bool = False
+
 
 async def init_db():
     """DB 디렉토리 및 테이블 생성 (최초 1회 실행)"""
@@ -42,6 +65,42 @@ async def init_db():
     except Exception as e:
         logger.error(f"[DBManager] 데이터베이스 초기화 실패: {e}")
         raise
+    await warm_cache()
+
+
+async def warm_cache() -> int:
+    """DB 전 행을 메모리 캐시에 적재. 적재 행 수 반환.
+
+    state_update 응답(get_relations_from_cache)은 캐시만 본다. 캐시는 get_affinity 가 짝 단위로
+    lazy 적재하므로, 시딩/디버그로 DB 에만 쓴 관계(보스↔아군 Hostile 등)는 그 짝을 누가 조회하기
+    전까지 C++ AffinityCache 에 영영 안 실렸다 — 2026-09-18 PIE 실측: 시드 후 45초 동안 전원 Neutral.
+    이미 캐시에 있는 짝(dirty 포함)은 덮지 않는다."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM npc_relations")
+            rows = await cursor.fetchall()
+    except Exception as e:
+        logger.error(f"[DBManager] 캐시 웜업 실패: {e}")
+        return 0
+    loaded = 0
+    with _cache_lock:
+        for row in rows:
+            key = (row["source_id"], row["target_id"])
+            if key in _affinity_cache:
+                continue
+            _affinity_cache[key] = NPCRelation(
+                source_id=row["source_id"],
+                target_id=row["target_id"],
+                affinity_score=row["affinity_score"],
+                reputation_tag=row["reputation_tag"],
+                last_interaction=row["last_interaction"],
+                is_dirty=False,
+            )
+            loaded += 1
+    logger.info(f"[DBManager] 호감도 캐시 웜업: {loaded}행")
+    return loaded
+
 
 async def start_background_sync():
     """백그라운드 동기화 태스크 시작"""
@@ -50,12 +109,13 @@ async def start_background_sync():
         _sync_task = asyncio.create_task(_background_sync_loop())
         logger.info("[DBManager] 백그라운드 캐시 동기화 태스크 시작됨.")
 
+
 async def stop_background_sync():
     """시스템 종료 시 남은 캐시를 플러시하고 태스크 종료"""
     global _is_shutting_down, _sync_task
     logger.info("[DBManager] 시스템 종료: 남아있는 더티 캐시를 강제 동기화합니다...")
     _is_shutting_down = True
-    
+
     if _sync_task:
         # 진행 중인 루프 한 번만 돌리고 취소
         await _flush_dirty_cache()
@@ -63,8 +123,9 @@ async def stop_background_sync():
         try:
             await _sync_task
         except asyncio.CancelledError:
-            pass
+            pass  # nosec B110 — cancel() 직후 예상된 정상 종료 신호
         logger.info("[DBManager] 백그라운드 캐시 동기화 태스크 종료 및 플러시 완료.")
+
 
 async def get_affinity(source_id: str, target_id: str) -> NPCRelation:
     """메모리 캐시 조회 -> 없으면 DB에서 로드 후 캐싱"""
@@ -79,24 +140,23 @@ async def get_affinity(source_id: str, target_id: str) -> NPCRelation:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT * FROM npc_relations WHERE source_id=? AND target_id=?", 
-                (source_id, target_id)
+                "SELECT * FROM npc_relations WHERE source_id=? AND target_id=?", (source_id, target_id)
             )
             row = await cursor.fetchone()
-            
+
             if row:
                 relation = NPCRelation(
-                    source_id=row['source_id'],
-                    target_id=row['target_id'],
-                    affinity_score=row['affinity_score'],
-                    reputation_tag=row['reputation_tag'],
-                    last_interaction=row['last_interaction'],
-                    is_dirty=False
+                    source_id=row["source_id"],
+                    target_id=row["target_id"],
+                    affinity_score=row["affinity_score"],
+                    reputation_tag=row["reputation_tag"],
+                    last_interaction=row["last_interaction"],
+                    is_dirty=False,
                 )
             else:
                 # DB에도 없으면 기본 0짜리 신규 생성
                 relation = NPCRelation(source_id=source_id, target_id=target_id, is_dirty=True)
-            
+
             with _cache_lock:
                 _affinity_cache[key] = relation
             return relation
@@ -105,59 +165,60 @@ async def get_affinity(source_id: str, target_id: str) -> NPCRelation:
         # 에러 시 임시 기본값 반환
         return NPCRelation(source_id=source_id, target_id=target_id)
 
+
 def update_affinity_sync(source_id: str, target_id: str, score_delta: int, interaction_summary: str = ""):
     """
-    메모리 캐시 즉각 반영 (동기 함수). 
+    메모리 캐시 즉각 반영 (동기 함수).
     FastAPI의 라우트나 다른 컴포넌트에서 await 없이 호출 가능
     초회 접근 시에는 데이터가 없을 수 있으므로 이 함수를 쓰기 전에 get_affinity를 먼저 호출했음을 가정함.
     """
     key = (source_id, target_id)
+    # 조회~가감~태그 재계산을 한 락 안에서 처리 — 락을 중간에 놓으면 같은 쌍에 대한
+    # 동시 delta 가 서로를 덮어써 read-modify-write lost update 가 발생한다.
     with _cache_lock:
         relation = _affinity_cache.get(key)
         if relation is None:
-            logger.warning(f"[DBManager] update_affinity_sync: 캐시에 존재하지 않는 대상. get_affinity를 선행 호출하세요. {key}")
+            logger.warning(
+                f"[DBManager] update_affinity_sync: 캐시에 존재하지 않는 대상. get_affinity를 선행 호출하세요. {key}"
+            )
             # 일단 0에서 가감해서 밀어넣음
             relation = NPCRelation(source_id=source_id, target_id=target_id)
             _affinity_cache[key] = relation
-    
-    # 스코어 클램핑 (-100 ~ 100)
-    new_score = relation.affinity_score + score_delta
-    relation.affinity_score = max(-100, min(100, new_score))
-    
-    # pydantic v2 필드 validation은 할당시 자동 실행되지 않으므로 수동 변경이 필요하거나,
-    # setter로 동작하게 할 수 있음. 간단하게 수동 재계산:
-    if relation.affinity_score <= -30:
-        relation.reputation_tag = "Hostile"
-    elif relation.affinity_score >= 30:
-        relation.reputation_tag = "Friendly"
-    else:
-        relation.reputation_tag = "Neutral"
-        
-    relation.last_interaction = interaction_summary
-    relation.is_dirty = True
+
+        # 스코어 클램핑 (-100 ~ 100)
+        new_score = relation.affinity_score + score_delta
+        relation.affinity_score = max(-100, min(100, new_score))
+
+        # pydantic v2 는 할당 시 validation 을 돌리지 않으므로 태그를 직접 재계산.
+        relation.reputation_tag = reputation_tag_for(relation.affinity_score)
+
+        relation.last_interaction = interaction_summary
+        relation.is_dirty = True
     logger.debug(f"[DBManager] 캐시 업데이트 (Dirty Mark): {key} -> Score: {relation.affinity_score}")
+
 
 def get_relations_from_cache(source_id: str) -> list:
     """캐시에 있는 source_id의 모든 관계를 동기적으로 반환 (state_update 응답용)."""
+    # 순회 중 to_thread 워커가 키를 추가하면 RuntimeError: dictionary changed size
+    # during iteration — _flush_dirty_cache 와 동일하게 락 하에 스냅샷을 뜬다.
+    with _cache_lock:
+        snapshot = [rel for (src, _), rel in _affinity_cache.items() if src == source_id]
     return [
         {
             "target_id": rel.target_id,
             "affinity_score": rel.affinity_score,
             "reputation_tag": rel.reputation_tag,
         }
-        for (src, _), rel in _affinity_cache.items()
-        if src == source_id
+        for rel in snapshot
     ]
 
-async def set_affinity_direct(source_id: str, target_id: str, score: int, interaction_summary: str = "debug_override") -> NPCRelation:
+
+async def set_affinity_direct(
+    source_id: str, target_id: str, score: int, interaction_summary: str = "debug_override"
+) -> NPCRelation:
     """호감도를 절대값으로 직접 설정 (디버그 대시보드용). 캐시와 DB 동시 갱신."""
     score = max(-100, min(100, score))
-    if score <= -30:
-        tag = "Hostile"
-    elif score >= 30:
-        tag = "Friendly"
-    else:
-        tag = "Neutral"
+    tag = reputation_tag_for(score)
 
     relation = NPCRelation(
         source_id=source_id,
@@ -167,20 +228,12 @@ async def set_affinity_direct(source_id: str, target_id: str, score: int, intera
         last_interaction=interaction_summary,
         is_dirty=False,
     )
-    _affinity_cache[(source_id, target_id)] = relation
+    with _cache_lock:
+        _affinity_cache[(source_id, target_id)] = relation
 
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(source_id, target_id)
-                DO UPDATE SET
-                    affinity_score=excluded.affinity_score,
-                    reputation_tag=excluded.reputation_tag,
-                    last_interaction=excluded.last_interaction,
-                    updated_at=CURRENT_TIMESTAMP
-            """, (source_id, target_id, score, tag, interaction_summary))
+            await db.execute(_UPSERT_RELATION_SQL, (source_id, target_id, score, tag, interaction_summary))
             await db.commit()
     except Exception as e:
         logger.error(f"[DBManager] set_affinity_direct 실패: {e}")
@@ -190,13 +243,11 @@ async def set_affinity_direct(source_id: str, target_id: str, score: int, intera
 
 async def delete_affinity(source_id: str, target_id: str) -> None:
     """호감도 레코드 삭제 (캐시 + DB)."""
-    _affinity_cache.pop((source_id, target_id), None)
+    with _cache_lock:
+        _affinity_cache.pop((source_id, target_id), None)
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "DELETE FROM npc_relations WHERE source_id=? AND target_id=?",
-                (source_id, target_id)
-            )
+            await db.execute("DELETE FROM npc_relations WHERE source_id=? AND target_id=?", (source_id, target_id))
             await db.commit()
     except Exception as e:
         logger.error(f"[DBManager] delete_affinity 실패: {e}")
@@ -226,6 +277,7 @@ async def _background_sync_loop():
         await asyncio.sleep(SYNC_INTERVAL_SECONDS)
         await _flush_dirty_cache()
 
+
 async def _flush_dirty_cache():
     """is_dirty=True 인 모든 캐시들을 모아 트랜잭션 단위로 일괄 저장"""
     # 순회 중 다른 스레드의 키 추가로 인한 RuntimeError 방지 — 락 하에 스냅샷.
@@ -234,35 +286,22 @@ async def _flush_dirty_cache():
     if not dirty_items:
         return
 
-    # 삽입 또는 업데이트 (UPSERT)
-    query = """
-        INSERT INTO npc_relations (source_id, target_id, affinity_score, reputation_tag, last_interaction)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(source_id, target_id) 
-        DO UPDATE SET 
-            affinity_score=excluded.affinity_score,
-            reputation_tag=excluded.reputation_tag,
-            last_interaction=excluded.last_interaction,
-            updated_at=CURRENT_TIMESTAMP
-    """
-    
     # 실행용 튜플 배열 만들기
     data_to_write = [
-        (r.source_id, r.target_id, r.affinity_score, r.reputation_tag, r.last_interaction) 
-        for r in dirty_items
+        (r.source_id, r.target_id, r.affinity_score, r.reputation_tag, r.last_interaction) for r in dirty_items
     ]
 
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("BEGIN TRANSACTION")
-            await db.executemany(query, data_to_write)
+            await db.executemany(_UPSERT_RELATION_SQL, data_to_write)
             await db.commit()
-            
+
             # DB 커밋 완전히 성공한 뒤에 메모리의 dirty 마크 제거 (원자성 확보)
             for item in dirty_items:
                 item.is_dirty = False
             logger.info(f"[DBManager] 성공적으로 {len(dirty_items)}건의 관계 데이터 동기화 완료.")
-            
+
     except Exception as e:
         logger.error(f"[DBManager] 일괄 데이터 동기화 실패. Rollback 수행됨: {e}")
         # 오류 발생 시 is_dirty는 True로 남아서 다음 턴에 재시도 됨.

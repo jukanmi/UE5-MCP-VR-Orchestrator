@@ -1,25 +1,26 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Utils/MovementUtils.h"   // FSavedFriction
 #include "Components/ActorComponent.h"
-#include "../../Network/MCPJsonUtils.h" // FGameAction, FActionBatch
-#include "../Struct/NPCActionTypes.h" // Enums
-#include "../NPCActionDataAsset.h"
+#include "Network/MCPJsonUtils.h" // FGameAction, FActionBatch
+#include "NPC/Struct/NPCActionTypes.h" // Enums
+#include "NPC/BP/NPCActionDataAsset.h"
 #include "EnvironmentQuery/EnvQuery.h"   // EQS 쿼리 에셋 참조용
 #include "EnvironmentQuery/EnvQueryTypes.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NPCActionComponent.generated.h"
 
 // --- EQS+LLM 전술 위치 결정 파이프라인 상태 ---
-// WHY: STTask_PrepareNextAction이 Tick에서 폴링하기 위한 상태 머신.
+// WHY: 진행 중 여부로 신규 요청을 게이트하기 위한 상태 머신 (폴링 아님 — 결과는 ActionQueue 주입).
+// 터미널 상태(Failed/ResultReady)를 두지 않는다: != Idle 재시작 가드에 걸려 영구 고착되므로
+// 실패·완료 모두 즉시 Idle 복귀, 재시도 억제는 LastTacticalQueryTime 쿨다운이 담당.
 UENUM()
 enum class ETacticalQueryState : uint8
 {
     Idle,          // 쿼리 없음 (기본)
     WaitingEQS,    // EQS AllMatching 쿼리 실행 중
     WaitingLLM,    // EQS 완료, LLM 응답 대기 중
-    ResultReady,   // LLM 응답 수신, 결과 준비 완료
-    Failed,        // 실패 (EQS 없음 / LLM 오류 등)
 };
 
 // --- 전술적 이동 상태 Enum ---
@@ -36,12 +37,14 @@ enum class ETacticalMoveState : uint8
 };
 
 class ASmartNPCAIController;
+class AAIController;
+class AFurnitureActor;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
+class UInventoryComponent;
 class UAnimMontage;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionStateChanged, const FGameAction&, Action);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAllActionsStopped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNPCDialogue, const FString&, AgentID, const FString&, DialogueText);
 
@@ -55,9 +58,6 @@ public:
 
     // --- Action Events ---
     // Blackboard 제어 결합도를 낮추기 위한 이벤트 (SmartNPCAIController 등이 바인딩하여 사용)
-    UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
-    FOnActionStateChanged OnActionStarted;
-
     UPROPERTY(BlueprintAssignable, Category = "NPC|Action|Events")
     FOnAllActionsStopped OnActionStoppedAll;
 
@@ -98,7 +98,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Action|EQS")
     UEnvQuery* TacticalPositionsQuery;
 
-    // --- 전술 위치 결정 파이프라인 상태 (STTask가 폴링) ---
+    // --- 전술 위치 결정 파이프라인 상태 (진행 중 게이트용 — 결과는 ActionQueue 주입) ---
 
     ETacticalQueryState TacticalQueryState = ETacticalQueryState::Idle;
 
@@ -144,6 +144,10 @@ public:
 
     FTimerHandle ActionWatchdogTimer;
 
+    /** Flee 패닉(얼어붙기) 지연 타이머 — 액션 중단 시 ClearActiveActionState 가 취소.
+     *  로컬 핸들로 두면 중단 후에도 발화해 stale Flee 가 실행됨. */
+    FTimerHandle FleePanicTimer;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "NPC|Action|Queue")
     bool bIsDialogueActive = false;
 
@@ -180,14 +184,31 @@ protected:
      *  각 함수 고유 로직은 호출부에 둔다. */
     void ClearActiveActionState();
 
+    /** 자세 플래그(bIsSit/bIsLie) 해제 — 중단(AbortCurrentAction)·전면 정지(StopAllActions) 전용.
+     *  ClearActiveActionState 에 넣으면 안 된다: OnActionCompleted 도 그걸 호출하므로 앉기
+     *  몽타주가 끝나는 즉시 자세가 풀린다. 자세는 액션 실행 플래그가 아니라 지속 상태다. */
+    void ResetPostureFlags();
+
+    /** 점유 가구 반납(Release + Reset). Sit/Sleep(지속 상태) 만 가구 점유 — ResetPostureFlags 경유.
+     *  Read/Pray 는 가구 없는 제자리 액션이라 점유·반납 없음. */
+    void ReleaseOccupiedFurniture();
+
     // Movement Speed 변환 (EMoveType → float)
     float ParseMoveSpeed(const EMoveType& Type) const;
+
+    // Parameters["style"] 문자열 → EMoveType. 미매칭·빈 문자열은 Walk 폴백.
+    EMoveType ParseMoveStyle(const FString& StyleStr) const;
 
     // ============================================================================
     // [기본 함수 (Base Functions)] 래퍼함수 구현시 사용하는 유틸 함수
     // ============================================================================
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseMove(FVector TargetLocation, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
+
+    /** BaseMove 의 액터 추적판 — MoveToActor 로 움직이는 타겟을 따라가고(자동 재경로),
+     *  AcceptanceRadius 이내 도달 시 OnMoveActionCompleted 발화. 완료·몽타주 체인은 BaseMove 와 동일. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void BaseMoveToActor(AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk, float AcceptanceRadius = 50.f);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseDialogue(const FString& DialogueText, const EFacialState Emotion);
@@ -211,28 +232,10 @@ protected:
     void BaseLieUp();
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSignalAllies(const FString& SignAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseComfort(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseEmote(const FString& EmoteAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseDance(const FString& DanceAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSing(const FString& SingAssetID);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void BaseStopCurrentAction();
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    TMap<FString, int32> BaseDetectEntityInRange(float Range, EEntityType EntityType);
-
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void BaseSendEventToActor(AActor* TargetActor, const FString& EventName);
 
 
     /** 몽타주를 재생했으면 true 반환(완료는 몽타주 종료 콜백이 처리). 재생할 몽타주가 없으면 false(즉시형). */
@@ -281,6 +284,29 @@ private:
 
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
+
+    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸 공통 경로. */
+    void StopTracking();
+
+    /** 이동 공통 전처리 — MaxWalkSpeed 반영, PathFollowing 완료 콜백 바인딩, 비동기 대기 플래그.
+     *  반환된 컨트롤러로 MoveToLocation/MoveToActor 를 발행하고 HandleImmediateMoveResult 로 넘긴다. 컨트롤러 없으면 nullptr. */
+    class AAIController* PrepareMove(EMoveType SpeedType);
+
+    // --- 전투 셀렉터 연속성 상태 (리셋은 ResetCombatSelectorState 일괄 — 개별 리셋 금지) ---
+    /** 직전 셀렉터 선택 — 연속 동일행동 페널티·Attack 상한 판정용. */
+    EAction LastCombatChoice = EAction::Idle;
+
+    /** 동일 선택 연속 횟수. */
+    int32 ConsecutiveCombatChoiceCount = 0;
+
+    /** 마지막 셀렉터 발동 시각(TimeSeconds) — CombatActionInterval 페이싱용. */
+    float LastCombatSelectTime = -1000.f;
+
+    /** 이번 전투에서 SignalAllies 를 이미 발동했는지 — 반복 신호 방지. */
+    bool bSignaledAlliesThisCombat = false;
+
+    /** SignalAlliesRadius 내 생존·비적대 NPC 존재 여부(자신·적 제외) — SignalAllies 후보 편입 게이트. */
+    bool HasNearbyAlly(const AActor* EnemyTarget) const;
 public:
     // ============================================================================
     // [EAction 래퍼 함수 (Action Wrappers)]
@@ -309,7 +335,7 @@ public:
 
     /** Perception 이벤트에서 호출 → EQS(AllMatching) 실행 → 스코어링 → LLM 전송.
      *  @param EnemyLocations  현재 인지된 적 위치 목록 (스코어링에 사용)
-     *  완료 시 TacticalQueryState = ResultReady, TacticalQueryResult에 위치 저장. */
+     *  완료 시 NotifyLocationDecisionReady가 Move 액션을 ActionQueue에 주입 후 Idle 복귀. */
     void StartTacticalQuery(const TArray<FVector>& EnemyLocations);
 
     /** Perception 이벤트에서 호출 — 쿨다운 & 상태 체크 후 전술 쿼리 시작.
@@ -386,13 +412,44 @@ public:
     // 이동 완료 후 재생할 몽타주 키 (Attack 등 근접 도착 후 재생). 비어있으면 도착 즉시 완료.
     FString PendingMoveMediaKey;
 
+    /** 이동 중인 Sit/Sleep 의 가구 목적지 — 도착 시 PlayPendingMoveMedia 가 스냅·점유에 소비.
+     *  이동 중단 시 ClearActiveActionState 가 리셋(점유 전이므로 Release 불필요). */
+    TWeakObjectPtr<AFurnitureActor> PendingFurnitureTarget;
+
+    /** 현재 점유 중인 가구 — 해제는 ResetPostureFlags 단일 경로(bIsSit/bIsLie 와 동일 라이프사이클). */
+    TWeakObjectPtr<AFurnitureActor> OccupiedFurniture;
+
+    /** ExecutePickUp 이 걸어서 도착한 뒤에만 탐색하도록 하는 플래그. BaseMove 직후 곧장
+     *  검사하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다. */
+    bool bPendingPickup = false;
+
+    /** OnMoveActionCompleted 도착 처리에서 실제 탐색·습득을 수행한다(bPendingPickup 소비).
+     *  범위 내 여러 개가 있어도 액션 1회당 1개 묶음만 줍는다. */
+    void PerformPickupAtDestination();
+
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
      *  없으면 즉시 OnActionCompleted. 도착 실패 시에도 OnActionCompleted로 큐를 푼다. */
     void OnMoveActionCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
 
+    /** MoveTo 즉시 결과(AlreadyAtGoal/Failed) 동기 처리 — OnRequestFinished 미발화 케이스.
+     *  방치 시 bActionAwaitingAsync 잔존으로 워치독까지 정지. BaseMove/BaseMoveToActor 공용. */
+    void HandleImmediateMoveResult(AAIController* AIController, EPathFollowingRequestResult::Type MoveResult);
+
+    /** 액션 미디어 재생 + 자세 플래그(bIsSit/bIsLie) — 몽타주가 실제 재생된 경우에만 자세를
+     *  세운다(미디어 미등록 시 '앉은 상태인데 서 있는' 불일치 방지). 반환: 재생 여부.
+     *  이동 후 재생(도착·AlreadyAtGoal)과 제자리 재생(BaseSitDown/BaseLieDown) 공용. */
+    bool PlayActionMediaWithPosture(const FString& MediaKey);
+
     /** BasePlayActionMedia가 건 몽타주 종료 콜백(Montage_SetEndDelegate). OnActionCompleted 호출. */
     void OnMontageActionEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    /** Dodge 등속 이동 — 몽타주 재생 성공 시 마찰·제동 0 후 RunSpeed×배율로 Launch(고정 방향 감쇠 없이 유지).
+     *  원복(StopDodgeMove)은 ClearActiveActionState 단일 경로 — 정상 종료·중단·워치독 전부 커버. */
+    void StartDodgeMove(const FVector& Direction);
+    void StopDodgeMove();
+    bool bDodgeMoveActive = false;
+    FSavedFriction SavedDodgeFriction;
 
     /** MaxActionDuration 초과 시 강제 완료(워치독). */
     void HandleActionWatchdog();
@@ -430,7 +487,7 @@ public:
     // [2] Combat Behaviors
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteAttackAction(AActor* TargetActor, EAttackType AttackType);
+    void ExecuteAttackAction(AActor* TargetActor);
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteBlock(AActor* TargetActor);
@@ -444,15 +501,169 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteSignalAllies(const FString& HandSign);
 
+    // ============================================================================
+    // [전투 행동 셀렉터 (Combat Action Selector)] — SPEC_combat_selector Phase 1
+    // 큐가 빈 Combat 상태에서 STTask_PrepareNextAction 이 호출하는 C++ 척수 반사층.
+    // LLM 재상담 없음 — 가중치 확률 + DiceSystem 주사위로 다음 전투 행동을 주입한다.
+    // 성격 차별화는 스탯 파생(Strength→공격, Agility→회피/기동, Fear·Bravery→도주)
+    // + 아래 전역 배율 튜닝만 — NPC별 에디터 수작업 없음.
+    // ============================================================================
+
+    /** Combat 중 다음 행동을 선택해 ActionQueue 에 주입. 페이싱 간격 미충족·후보 전멸 시 false.
+     *  후보: Attack / Dodge / Block / 거리조절(Move) / Flee / SignalAllies — 전부 기존 실행·완료 경로 재사용. */
+    bool SelectCombatAction(AActor* TargetActor);
+
+    /** 셀렉터 연속성 상태 리셋. StopAllActions 및 비전투 배치 수신 시 자동 호출. */
+    void ResetCombatSelectorState();
+
+    /** 셀렉터 최소 발동 간격(초) — 연속 주입 사이 숨고르기(연속 공격 상한과 별개 페이싱). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "10.0"))
+    float CombatActionInterval = 1.6f;
+
+    /** 연속 동일 행동 1회당 가중치 배율(횟수만큼 거듭제곱 누적). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float CombatRepeatPenalty = 0.5f;
+
+    /** Attack 연속 상한 — 도달 시 다음 선택에서 Attack 가중치 0(다른 행동 강제). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 MaxConsecutiveAttacks = 3;
+
+    // --- 행동별 기본 가중치(스탯·상황 배율의 기준점) ---
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Attack = 1.0f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Dodge = 0.5f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Block = 0.4f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Spacing = 0.35f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Flee = 0.4f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Signal = 0.5f;
+
+    /** 스탯 정규화 기준 — 가중치 배율 = 스탯/이 값 (10 = 평균 스탯이 배율 1.0). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0"))
+    float CombatStatNorm = 10.f;
+
+    /** 최근 피격 판정 윈도우(초, LastHitTime 기준) — 이내면 방어 행동 부스트. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float RecentHitWindow = 2.0f;
+
+    /** 최근 피격 시 Dodge/Block 가중치 배율. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0"))
+    float RecentHitDefenseBoost = 2.0f;
+
+    /** 저HP 방어 가중치 스케일 — Dodge/Block ×(1 + scale×(1-HP비율)). 하드 임계 없음(스펙). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float LowHPDefenseScale = 1.5f;
+
+    /** 저HP 도주 가중치 스케일 — Flee = 기본 × scale × (1-HP비율)² × 겁 성향. 만HP≈0. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0"))
+    float LowHPFleeScale = 4.0f;
+
+    /** Dodge/Block 이 유의미한 근접 거리(cm) — 밖이면 가중치 ×0.1. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float DefenseReactRange = 700.f;
+
+    /** 거리조절 발동 링(cm) — Min 미만=백스텝 욕구, Max 초과=접근 욕구, 목적지는 Ideal 링. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "50.0"))
+    float SpacingMinRange = 250.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SpacingMaxRange = 900.f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SpacingIdealRange = 500.f;
+
+    /** Flee 선택 시 배짱 주사위 난이도 — CheckReflex(Bravery, 이 값) 성공하면 도주 취소 후 재선택.
+     *  1 = Bravery% 확률로 버팀(용감한 놈 끝까지, 겁쟁이 일찍 도망). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 FleeBraveryDifficulty = 1;
+
+    /** SignalAllies 아군 탐색 반경(cm). 발동은 전투당 1회. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
+    float SignalAlliesRadius = 2000.f;
+
+    /** Dodge 등속 이동 속도 = RunSpeed × 이 배율 — 항상 달리기보다 빠름 보장.
+     *  Dodge 몽타주 재생 동안 고정 방향 유지(StartDodgeMove), 종료·중단 시 원복(StopDodgeMove). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "5.0"))
+    float DodgeSpeedMultiplier = 1.5f;
+
+    // ============================================================================
+    // 척수반사 테이블 (SPEC_reflex_table)
+    // ----------------------------------------------------------------------------
+    // WHY: 접적 반응을 Python SLM 에 물어보면 WS 왕복 + debounce + 추론으로 수백 ms~수 초가
+    //      걸리고, 서버가 죽으면 반사 자체가 사라진다. 규칙이 이미 결정론이므로 C++ 에서 바로
+    //      실행한다. 매칭·추첨·주입이 전부 이 컴포넌트 안에 있는 이유는 ActionQueue 가 여기
+    //      private 이고, 기존 주입 경로(전투 셀렉터·EQS 결과)도 전부 컴포넌트 내부라서다.
+    //      컨트롤러는 자극을 넘기는 TryReflexReact 호출 하나만 한다.
+    // ============================================================================
+
+    /** 퍼셉션 자극 하나를 반사 테이블에 걸어보고, 맞으면 액션을 큐에 주입한다.
+     *
+     *  @param Sense        자극 감각(Sight/Hearing)
+     *  @param EventType    Hearing 소음 태그("Drop" 등). Sight 면 빈 문자열.
+     *  @param SourceID     자극 발생 대상의 이름 — 관계 판정·Attack 타겟에 쓰인다.
+     *  @param BaseDanger   호감도 배율을 곱하기 **전**의 원본 위험도.
+     *  @param Distance     대상까지 거리(cm)
+     *  @param StimulusLoc  자극 위치 — 소음 조사·바라보기 목적지.
+     *  @return 반사가 실제로 발동했으면 true.
+     *
+     *  진행 중 액션은 강탈하지 않는다(bIsBusy·큐 비어있음 요구) — 전투 셀렉터와 같은 규율. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Reflex")
+    bool TryReflexReact(ESenseType Sense, const FString& EventType, const FString& SourceID,
+                        float BaseDanger, float Distance, const FVector& StimulusLoc);
+
+    /** 반사 룰 테이블. 기본값은 생성자에서 확정(바이너리에만 두지 말 것).
+     *  위에서부터 검사해 **처음 맞는 룰 하나만** 발동하므로, 좁은 조건을 위에 둘 것. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Reflex")
+    TArray<FReflexRule> ReflexRules;
+
+    /** 룰과 무관한 NPC 단위 최소 간격(초). 서로 다른 룰이 번갈아 튀는 것을 막는다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+    float ReflexGlobalCooldown = 1.5f;
+
+private:
+    /** 룰별 마지막 발동 시각. ReflexRules 와 인덱스 정합(첫 호출 시 크기 맞춤). */
+    TArray<float> ReflexRuleLastFireTime;
+
+    /** NPC 단위 마지막 반사 시각. */
+    float LastReflexTime = -1000.f;
+
+    /** 룰 하나가 이 자극에 걸리는지 판정. */
+    bool DoesReflexRuleMatch(const FReflexRule& Rule, ESenseType Sense, const FString& EventType,
+                             ENPCRelation Relation, float BaseDanger, float Distance) const;
+
+    /** 가중 분포 추첨 — 합 구하고 굴려 빼 나간다. 유효 가중치가 없으면 INDEX_NONE,
+     *  부동소수 잔여로 못 고르면 마지막 유효 후보. 반사 룰(TMap)과 전투 셀렉터(TArray)가 같이 쓴다. */
+    static int32 PickWeightedIndex(int32 Num, TFunctionRef<float(int32)> WeightAt);
+
+public:
+
     // ----------------------------------------------------------------------------
     // [3] Social Behaviors
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteTrade(AActor* TargetActor, const FString& GiveItemID, int32 GiveAmount, const FString& GetItemID, int32 GetAmount);
+
+    /** 거래 테이블이 뜨는 높이(cm, 바닥 기준). 손이 닿아야 하므로 허리~가슴 사이. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Trade")
+    float TradeTableHeight = 90.f;
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteGiveItem(AActor* TargetActor, const FString& ItemID, int32 Amount);
-    
+
+    /** GiveItem 수령처 해석 — TargetActor 의 UInventoryComponent 우선, 없으면 플레이어 폰 폴백.
+     *  NPC↔NPC 전달도 같은 경로를 탄다. */
+    UInventoryComponent* ResolveReceiverInventory(AActor* TargetActor) const;
+
+
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteComfort(AActor* TargetActor);
     
@@ -466,13 +677,10 @@ public:
     void ExecutePickUp(FVector Location);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteDrop(const FString& ItemID);
+    void ExecuteDrop(const FString& ItemID, int32 Amount);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteCraft(const TArray<FString>& ItemIDs);
-    
-    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecuteRepair(const FString& ItemID);
 
     // ----------------------------------------------------------------------------
     // [5] Investigation Behaviors
@@ -493,5 +701,9 @@ public:
     // ----------------------------------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam);
+
+    /** 자세 해제(앉기/눕기 → 기립). 현재 자세 플래그가 몽타주를 결정하며, 서 있으면 무동작. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteStandUp();
 
 };

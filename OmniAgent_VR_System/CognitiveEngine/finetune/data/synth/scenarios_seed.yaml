@@ -1,0 +1,153 @@
+# =============================================================================
+# Stage1 (e4b) 파인튜닝 — 시나리오 시드 양식
+# =============================================================================
+# 사람이 채우는 유일한 파일. 시드 1개 → generate_stage1.py 가:
+#   1. utterance 를 teacher(12B)로 paraphrase 개수만큼 변주 (정답은 안 건드림)
+#   2. situation 으로 실제 서빙과 동일한 system/user 프롬프트 조립
+#   3. gold 를 DialogueResponse JSON 으로 직렬화 → rules.py 검증 통과분만 채택
+#   → 학습 jsonl 자동 확장 (시드 1개 ≈ 샘플 8~12개)
+#
+# ── 필드 설명 ────────────────────────────────────────────────────────────────
+# id:          고유 슬러그 (카테고리_내용_번호)
+# category:    Common | Combat | Social | Task | Investigation | Lifestyle
+#              | Talk(순수대화) | Reject(무효타겟 거절) — 균형 리포트용
+# npc:         Elara | James | Skadi | Moca | Guard  (생략 시 전 페르소나 순회)
+# paraphrase:  발화 변주 개수 (기본 8)
+# situation:
+#   valid_targets:    이 턴에 존재하는 타겟 ID 목록 (Player/Self/Enemy + NPC + 가구)
+#   nearby_furniture: 가구 목록 — id/type/occupied/dist(m). 없으면 생략
+#   danger:           0.0~1.0 (생략 시 0)
+#   extra:            자유 텍스트 상황 (natural_context 에 붙음, 생략 가능)
+# utterance:   플레이어 발화 원본 1개 (한국어)
+# gold:        정답 라벨 — 이 부분은 변주 안 됨 (결정론)
+#   mode:      Combat|Social|Task|Investigation|Lifestyle|Common
+#   facial:    Neutral|Happy|Sad|Angry|Fear|Surprised|Disgusted|Tired|Pain
+#   actions:   DialogueActionItem 목록 — type/target/item/loc/style (빈 필드 생략)
+#              type 은 EAction 34종만. 순수 대화면 actions: []
+#   speech_hint: (선택) NPC 대사 방향 — speech 자체는 teacher 가 페르소나 말투로 생성
+#
+# ⚠️ 필수 파라미터 (actions.py ACTION_REQUIRED_PARAMS — 누락 시 Rules 가 액션 제거):
+#   Attack/Follow/Track/Comfort → target 필수
+#   GiveItem/Trade → target + item 필수
+#   PickUp/Investigate → loc 필수 ("X,Y,Z" 좌표, WORLD_BOUNDS ±10000 이내)
+#   Sit/Sleep/Read/Pray → target = 가구 ID (valid_targets 에 있어야 함)
+# =============================================================================
+
+# ── Lifestyle: 가구 상호작용 ──────────────────────────────────────────────────
+- id: lifestyle_sit_01
+  category: Lifestyle
+  npc: Elara
+  situation:
+    valid_targets: [Player, Self, Chair_01, Bed_01]
+    nearby_furniture:
+      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
+      - { id: Bed_01, type: Bed, occupied: false, dist: 5 }
+  utterance: "피곤해 보이는데 의자에 좀 앉아"
+  gold:
+    mode: Lifestyle
+    facial: Tired
+    actions:
+      - { type: Sit, target: Chair_01 }
+
+- id: lifestyle_sleep_01
+  category: Lifestyle
+  npc: James
+  situation:
+    valid_targets: [Player, Self, Bed_02]
+    nearby_furniture:
+      - { id: Bed_02, type: Bed, occupied: false, dist: 4 }
+  utterance: "늦었으니 침대에서 자"
+  gold:
+    mode: Lifestyle
+    facial: Tired
+    actions:
+      - { type: Sleep, target: Bed_02 }
+
+# ── Combat ───────────────────────────────────────────────────────────────────
+- id: combat_attack_01
+  category: Combat
+  npc: Guard
+  situation:
+    valid_targets: [Player, Self, Enemy]
+    danger: 0.8
+    extra: "적대적인 침입자가 무기를 들고 접근 중"
+  utterance: "저놈이 마을을 습격하려 한다, 막아!"
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+      - { type: Attack, target: Enemy }
+
+# ── Social: 아이템 전달 ───────────────────────────────────────────────────────
+- id: social_giveitem_01
+  category: Social
+  npc: Moca
+  situation:
+    valid_targets: [Player, Self]
+    extra: "인벤토리에 빵이 있음"
+  utterance: "배고픈데 먹을 것 좀 줄래"
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+      - { type: GiveItem, target: Player, item: Bread }
+
+# ── Common: 이동/추종 ────────────────────────────────────────────────────────
+- id: common_follow_01
+  category: Common
+  npc: Skadi
+  situation:
+    valid_targets: [Player, Self]
+  utterance: "나 따라와"
+  gold:
+    mode: Common
+    facial: Neutral
+    actions:
+      - { type: Follow, target: Player }
+
+# ── Investigation: 좌표 조사 ─────────────────────────────────────────────────
+- id: invest_noise_01
+  category: Investigation
+  npc: Guard
+  situation:
+    valid_targets: [Player, Self]
+    extra: "북쪽 (1200, 300, 0) 방향에서 이상한 소리"
+  utterance: "저쪽에서 소리 났어, 확인해봐"
+  gold:
+    mode: Investigation
+    facial: Surprised
+    actions:
+      - { type: Investigate, loc: "1200,300,0" }
+
+# ── Talk: 순수 대화 (negative — 액션 남발 편향 차단) ─────────────────────────
+- id: talk_smalltalk_01
+  category: Talk
+  npc: Elara
+  situation:
+    valid_targets: [Player, Self, Chair_01]
+    nearby_furniture:
+      - { id: Chair_01, type: Chair, occupied: false, dist: 3 }
+  utterance: "오늘 날씨 참 좋다"
+  gold:
+    mode: Social
+    facial: Happy
+    actions: []          # 가구가 보여도 대화만 — 액션 없음이 정답
+
+# ── Reject: 무효 타겟 거절 (negative — 환각 ID 차단) ─────────────────────────
+- id: reject_no_furniture_01
+  category: Reject
+  npc: James
+  situation:
+    valid_targets: [Player, Self]   # 가구 없음
+  utterance: "의자에 앉아봐"
+  gold:
+    mode: Social
+    facial: Neutral
+    actions: []
+    speech_hint: "주변에 앉을 곳이 없다고 답함"
+
+# =============================================================================
+# ▼ 여기부터 추가 — 카테고리별 목표 시드 수 (시드 ×10 ≈ 최종 샘플):
+#   Lifestyle 80 · Combat 60 · Social 60 · Common 50 · Task 40
+#   Investigation 40 · Talk 40 · Reject 30  (합계 ~400 시드 → ~4000 샘플)
+# =============================================================================

@@ -4,7 +4,7 @@
 #include "Dom/JsonValue.h"
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
-#include "../NPC/Struct/NPCActionKeys.h"
+#include "NPC/Struct/NPCActionKeys.h"
 
 namespace
 {
@@ -51,24 +51,16 @@ namespace
         return false;
     }
 
-    bool TryParseBehaviorMode(const TSharedPtr<FJsonObject>& JsonObj, const FString& FieldName, ENPCBehaviorMode& OutMode)
-    {
-        return TryParseEnumFromJson(JsonObj, FieldName, OutMode);
-    }
-
     void ExtractActionParameters(TSharedPtr<FJsonObject> ActionObj, TMap<FString, FString>& OutParameters)
     {
         const TSharedPtr<FJsonObject>* ParamsObj;
-        if (ActionObj->TryGetObjectField(TEXT("Parameters"), ParamsObj))
+        if (ActionObj->TryGetObjectField(NPCActionKeys::Proto_Parameters, ParamsObj))
         {
             for (const auto& ParamPair : (*ParamsObj)->Values)
             {
                 if (ParamPair.Value->Type == EJson::Object)
                 {
-                    FString NestedString;
-                    TSharedRef<TJsonWriter<>> NestedWriter = TJsonWriterFactory<>::Create(&NestedString);
-                    FJsonSerializer::Serialize(ParamPair.Value->AsObject().ToSharedRef(), NestedWriter);
-                    OutParameters.Add(ParamPair.Key, NestedString);
+                    OutParameters.Add(ParamPair.Key, UMCPJsonUtils::ToString(ParamPair.Value->AsObject().ToSharedRef()));
                 }
                 else
                 {
@@ -84,9 +76,9 @@ namespace
     {
         if (!ActionObj.IsValid()) return false;
 
-        TryParseEnumFromJson(ActionObj, TEXT("ActionType"), OutAction.ActionType);
+        TryParseEnumFromJson(ActionObj, NPCActionKeys::Proto_ActionType, OutAction.ActionType);
 
-        TryParseEnumFromJson(ActionObj, TEXT("FacialState"), OutAction.FacialState);
+        TryParseEnumFromJson(ActionObj, NPCActionKeys::Proto_FacialState, OutAction.FacialState);
 
         ExtractActionParameters(ActionObj, OutAction.Parameters);
         return true;
@@ -98,10 +90,10 @@ namespace
 
         OutBatch.AgentID = AgentID;
         
-        TryParseBehaviorMode(BatchObj, TEXT("Mode"), OutBatch.Mode);
+        TryParseEnumFromJson(BatchObj, NPCActionKeys::Proto_Mode, OutBatch.Mode);
 
         const TArray<TSharedPtr<FJsonValue>>* ActionsArray;
-        if (BatchObj->TryGetArrayField(TEXT("Actions"), ActionsArray))
+        if (BatchObj->TryGetArrayField(NPCActionKeys::Proto_Actions, ActionsArray))
         {
             for (const TSharedPtr<FJsonValue>& Val : *ActionsArray)
             {
@@ -118,14 +110,15 @@ namespace
 
 bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest)
 {
-    if (!Root.IsValid() || !Root->HasField(TEXT("ActionBatches"))) return false;
+    if (!Root.IsValid() || !Root->HasField(NPCActionKeys::Proto_ActionBatches)) return false;
 
-    TryParseBehaviorMode(Root, TEXT("Mode"), OutRequest.Mode);
+    TryParseEnumFromJson(Root, NPCActionKeys::Proto_Mode, OutRequest.Mode);
 
-    TSharedPtr<FJsonObject> BatchesObj = Root->GetObjectField(TEXT("ActionBatches"));
-    if (BatchesObj.IsValid())
+    // TryGet 패턴 — ActionBatches 가 object 가 아닌 비정상 페이로드에서도 무음 통과(에러 로그 노이즈 방지)
+    const TSharedPtr<FJsonObject>* BatchesObjPtr = nullptr;
+    if (Root->TryGetObjectField(NPCActionKeys::Proto_ActionBatches, BatchesObjPtr) && BatchesObjPtr)
     {
-        for (const auto& Pair : BatchesObj->Values)
+        for (const auto& Pair : (*BatchesObjPtr)->Values)
         {
             FActionBatch NewBatch;
             if (TryExtractActionBatch(Pair.Key, Pair.Value->AsObject(), NewBatch))
@@ -137,19 +130,7 @@ bool UMCPJsonUtils::ParseModeActionRequestFromObject(const TSharedPtr<FJsonObjec
     return true;
 }
 
-bool UMCPJsonUtils::ParseModeActionRequest(FString Json, FModeActionRequest& OutRequest)
-{
-    TSharedPtr<FJsonObject> RootObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-
-    if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
-    {
-        return false;
-    }
-    return ParseModeActionRequestFromObject(RootObject, OutRequest);
-}
-
-FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents)
+TSharedRef<FJsonObject> UMCPJsonUtils::BuildPerceptionReport(const FString& AgentID, const TArray<FPerceptionData>& PerceptionEvents, const FString& ReportType, const FString& ReflexAction)
 {
     TArray<TSharedPtr<FJsonValue>> EventValues;
     EventValues.Reserve(PerceptionEvents.Num());
@@ -168,17 +149,46 @@ FString UMCPJsonUtils::SerializePerceptionReport(const FString& AgentID, const T
         EventValues.Add(MakeShared<FJsonValueObject>(EventObj));
     }
 
-    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("agent_id"), AgentID);
     Root->SetArrayField(TEXT("perceptions"), EventValues);
     Root->SetNumberField(TEXT("generated_at"),
         (FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalSeconds());
+    // 특수 보고(승리 등)만 명시 — 일반 perception 은 필드 생략(Python 기본값 "perception" 폴백).
+    if (!ReportType.IsEmpty())
+    {
+        Root->SetStringField(TEXT("report_type"), ReportType);
+    }
+    // 척수반사 실행 이력 — 미발동이면 필드 생략(Python 기본값 "" 폴백, 하위호환).
+    if (!ReflexAction.IsEmpty())
+    {
+        Root->SetStringField(TEXT("reflex_action"), ReflexAction);
+    }
 
-    FString Output;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
-    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+    return Root;
+}
 
-    return Output;
+TSharedPtr<FJsonObject> UMCPJsonUtils::ParseObject(const FString& Json)
+{
+    TSharedPtr<FJsonObject> Root;
+    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+    return (FJsonSerializer::Deserialize(Reader, Root) && Root.IsValid()) ? Root : nullptr;
+}
+
+FString UMCPJsonUtils::ToString(const TSharedRef<FJsonObject>& Obj)
+{
+    FString Out;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Obj, Writer);
+    return Out;
+}
+
+FString UMCPJsonUtils::ToString(const TArray<TSharedPtr<FJsonValue>>& Arr)
+{
+    FString Out;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Arr, Writer);
+    return Out;
 }
 
 bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
@@ -198,15 +208,6 @@ bool UMCPJsonUtils::ParseLocationDecisionResultFromObject(
     (*PayloadObj)->TryGetNumberField(TEXT("request_gen"), OutRequestGen); // optional — 미포함 시 0 유지(stale 검사 우회)
     return (*PayloadObj)->TryGetStringField(TEXT("agent_id"), OutAgentId)
         && (*PayloadObj)->TryGetStringField(TEXT("chosen_id"), OutChosenId);
-}
-
-bool UMCPJsonUtils::ParseLocationDecisionResult(
-    const FString& Json, FString& OutAgentId, FString& OutChosenId, FString& OutReason, int32& OutRequestGen)
-{
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
-    return ParseLocationDecisionResultFromObject(Root, OutAgentId, OutChosenId, OutReason, OutRequestGen);
 }
 
 bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
@@ -237,50 +238,21 @@ bool UMCPJsonUtils::ParseAffinityUpdateFromObject(
     return true;
 }
 
-bool UMCPJsonUtils::ParseAffinityUpdate(const FString& Json, FString& OutAgentId, TMap<FString, int32>& OutRelations)
-{
-    TSharedPtr<FJsonObject> Root;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-    if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
-    return ParseAffinityUpdateFromObject(Root, OutAgentId, OutRelations);
-}
-
-bool UMCPJsonUtils::ParseNpcAudioResponseFromObject(
+bool UMCPJsonUtils::ParseDebugPromptFromObject(
     const TSharedPtr<FJsonObject>& Root,
     FString& OutNpcId,
-    FString& OutWsUrl,
-    int32& OutSampleRate,
-    int32& OutChannels,
-    FString& OutDialogueText,
-    FString& OutEmotion)
+    FString& OutPlayerId,
+    FString& OutText)
 {
     if (!Root.IsValid()) return false;
 
     FString TypeStr;
-    if (!Root->TryGetStringField(NPCActionKeys::Audio_Type, TypeStr)) return false;
-    if (TypeStr != NPCActionKeys::Audio_TypeValue) return false;
+    if (!Root->TryGetStringField(NPCActionKeys::Msg_Type, TypeStr)) return false;
+    if (TypeStr != NPCActionKeys::Debug_TypeValue) return false;
 
-    Root->TryGetStringField(NPCActionKeys::Audio_NpcId, OutNpcId);
-    Root->TryGetStringField(NPCActionKeys::Audio_DialogueText, OutDialogueText);
+    Root->TryGetStringField(NPCActionKeys::Debug_NpcId, OutNpcId);
+    Root->TryGetStringField(NPCActionKeys::Debug_PlayerId, OutPlayerId);
+    Root->TryGetStringField(NPCActionKeys::Debug_Text, OutText);
 
-    OutSampleRate = 16000;
-    OutChannels = 1;
-    OutEmotion = TEXT("neutral");
-    OutWsUrl.Reset();
-
-    const TSharedPtr<FJsonObject>* StreamObj = nullptr;
-    if (Root->TryGetObjectField(NPCActionKeys::Audio_Stream, StreamObj) && StreamObj && StreamObj->IsValid())
-    {
-        (*StreamObj)->TryGetStringField(NPCActionKeys::Audio_StreamUrl, OutWsUrl);
-        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_SampleRate, OutSampleRate);
-        (*StreamObj)->TryGetNumberField(NPCActionKeys::Audio_Channels, OutChannels);
-    }
-
-    const TSharedPtr<FJsonObject>* AnimObj = nullptr;
-    if (Root->TryGetObjectField(NPCActionKeys::Audio_AnimMetadata, AnimObj) && AnimObj && AnimObj->IsValid())
-    {
-        (*AnimObj)->TryGetStringField(NPCActionKeys::Audio_Emotion, OutEmotion);
-    }
-
-    return !OutNpcId.IsEmpty();
+    return !OutNpcId.IsEmpty() && !OutText.IsEmpty();
 }

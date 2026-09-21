@@ -1,0 +1,4115 @@
+- id: plan_light_001
+  npc: Adventurer
+  source_goal_en: hug critter
+  context: '모험가와 사막 생물 간의 우호 관계를 확인하고, 위험한 지역에서 보물을 찾는 과정 중 하나입니다.
+
+    '
+  gold:
+    goal: 모험가와 사막 생물의 유대 관계 확인
+    steps:
+    - 의례용 모자 장착하기
+    - 사구 구덩이로 이동하여 탐색하기
+    - 관찰을 통해 사막 생물 위치 파악
+    - 모험가와 사막 생물의 상호작용 확인
+- id: plan_light_002
+  npc: Maggot
+  source_goal_en: hug mosquito
+  context: '마을 주방에서 발견된 부패한 육류를 확인하고, 새로운 친구인 모기에게 전달할 준비를 마쳤다.
+
+    '
+  gold:
+    goal: 모기에게 썩은 고기를 제공하고 함께 활동하기
+    steps:
+    - 부패한 육류를 수거하여 마을 주방으로 이동하기
+    - 주방에서 모기에게 부패한 육류를 전달하기
+    - 모기와 함께 숲으로 이동하기
+- id: plan_light_003
+  npc: Snakes
+  source_goal_en: hug lands lord
+  context: '서부 지역의 쥐 사냥을 통해 자신의 안전을 보장받기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 서부 지역의 쥐 사냥
+    steps:
+    - 오아시스에서 가죽을 떨어뜨리고, 서부 지역으로 이동하여 땅의 영주를 추적하기
+    - 서부 지역에서 쥐 사냥을 수행하며 주변을 경계하기
+    - 서부 지역 내의 쥐를 수집하고 관련 활동을 완료하기
+- id: plan_light_004
+  npc: Vulture
+  source_goal_en: give dead mouse to insects
+  context: '진흙 구덩이에서 부패한 사체들을 수집하여 곤충들에게 전달하기
+
+    '
+  gold:
+    goal: 죽은 생쥐의 사체를 수거하고 곤충에게 배급하기
+    steps:
+    - 진흙 구역으로 이동하여 썩은 사체들이 있는지 살펴보기
+    - 뱀을 따라가며 진흙 구덩이 내의 사체 위치 찾아내기
+    - 사체를 수집하고 곤충들에게 배포하기
+    - 뼈를 수거하여 작업 완료하기
+- id: plan_light_005
+  npc: Insects
+  source_goal_en: get pine cone
+  context: '숲의 소나무 수액에 모여든 곤충 무리를 확인하고, 해당 지역의 안전을 확보하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 소나무 관련 물품 및 곤충 관련 정보 정리
+    steps:
+    - 소나무로 이동하여 수량 확인
+    - 꽃으로 이동하여 샘플 채취
+    - 뱀을 추적하고 위치 파악
+    - 소나무를 통한 곤충 도구 활용
+- id: plan_light_006
+  npc: Bishop
+  source_goal_en: get coffin
+  context: '교회 내의 금색 십자가를 확보하여 해적들의 요구에 대응하고 교회 마법진을 보호해야 한다.
+
+    '
+  gold:
+    goal: 묘지에서 발견된 금색 십자가를 수습하고 성당으로 운반하기
+    steps:
+    - 묘지로 이동하여 장례 상황 찾아내기
+    - 상주에게 다가가 안심시키고 교단 내의 보안 위협 조사하기
+    - 금색 십자가를 확보하고 손상 여부 살펴보기
+    - 성당으로 이동하여 금색 십자가의 위험 요소를 찾아내기
+- id: plan_light_007
+  npc: Cardinal
+  source_goal_en: get room
+  context: '교회에서 매주 진행되는 고해성사 절차를 확인하고, 해당 공간을 확보해야 한다.
+
+    '
+  gold:
+    goal: 고해소에서 신입 입문자의 잘못된 행위를 바로잡고 올바른 길로 인도하기
+    steps:
+    - 교회 내 고해소로 이동하여 공간 확보
+    - 고해성사실에서 여성을 위한 조언 및 참회 절차 확인
+    - 신입 입문자에게 새로운 고해 내용 전달
+    - 고해성사 완료 후 관련 정보 수집
+- id: plan_light_008
+  npc: Priest
+  source_goal_en: get 80-foot tall bronze statue of a 8 legged Goddess
+  context: '신전 내의 고대 유물인 여덟 다리 여신 청동상이 파손되어 복원가 필요하다.
+
+    '
+  gold:
+    goal: 여덟 다리 여신 청동상 복원
+    steps:
+    - 단순 로브 장착하기
+    - 여신 전당으로 이동하여 신성한 텍스트를 전달하기
+    - 석공 작업장으로 이동하여 파손된 청동상 살펴보기
+    - 청동상 복원 및 손질하기
+- id: plan_light_009
+  npc: Fool
+  source_goal_en: give bone to large spiders
+  context: '거대한 거미들에게 뼈를 제공하여 마법진을 보호하고, 마을의 안전을 확보하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 거대 거미에게 뼈를 전달하기
+    steps:
+    - 타워 하수구로 이동하여 거대한 거미의 위치 찾아내기
+    - 하수구에서 뼈를 수거하고 단검을 장착하기
+    - 포획된 쥐들을 확인하고 도구로 처리하기
+    - 거대 거미에게 뼈를 전달하여 마법진 보호 절차 실행하기
+- id: plan_light_010
+  npc: Person
+  source_goal_en: drop skeletons
+  context: '섬에 존재하는 유해를 수습하여 안전한 환경을 구축해야 한다.
+
+    '
+  gold:
+    goal: 섬 내의 해골들을 수거하고 정비하기
+    steps:
+    - 지면에서 삽을 획득하기
+    - 해골을 수집하여 수습하기
+    - 안전한 장소로 이동하기
+- id: plan_light_011
+  npc: Inhabitant
+  source_goal_en: get sorcerer's orb
+  context: '마을 내의 위험 요소로부터 자신과 딸들을 보호하기 위해 마법사의 구체를 확보해야 한다.
+
+    '
+  gold:
+    goal: 마법사 구체 획득 및 마을 안전 확보
+    steps:
+    - 보호용 망토를 착용하고 결계 영역으로 이동하여 소환된 트롤을 추적하기
+    - 소환된 트롤로부터 자녀들을 보호하기 위한 목적의 마법사 구체 획득
+    - 마을로 복귀하여 딸들을 안심시키고 마법진 손질하기
+- id: plan_light_012
+  npc: Lord And Controller
+  source_goal_en: give quill to inhabitant
+  context: '마을 내의 세금 관련 문서가 인계되었으며, 이제 해당 문서를 통해 주민들에게 부과될 세금이 확정된다.
+
+    '
+  gold:
+    goal: 세금 관련 문서 전달 및 마을 내 주택들에서 추가적인 세금 정보 수집
+    steps:
+    - 저장소에 위치한 세금 관련 문서 확인
+    - 마을 내의 각 주택들을 순회하며 기록 수집
+    - 수집된 정보를 바탕으로 주민들에게 세금 관련 문서 전달
+    - 세금 관련 문서 폐기 및 전체적인 마법진 확인
+- id: plan_light_013
+  npc: Hiker
+  source_goal_en: remove bag of herbs
+  context: '산 정상에 위치한 신비로운 마법사에게 전달할 약초 주머니를 확보하고, 관련 장비를 점검한다.
+
+    '
+  gold:
+    goal: 약초 주머니를 제거하고 힐링 포션 제작을 위한 준비 완료
+    steps:
+    - 샘물에서 물을 채우고 가방에 담기
+    - 산 정상으로 이동하여 약초 주머니를 수령하기
+    - 신비로운 마법사에게 전달된 약초 주머니를 확인하고, 해당 마법사에게 위로의 말을 전하기
+- id: plan_light_014
+  npc: Royal Family
+  source_goal_en: hug horse
+  context: '왕실 가족의 말 사육장 확인
+
+    '
+  gold:
+    goal: 말과 교감하기
+    steps:
+    - 말 사육장에서 말과 교감하기
+    - 사냥장으로 이동하여 훈련 준비하기
+- id: plan_light_015
+  npc: Child
+  source_goal_en: hit wizards
+  context: '마을의 어린 아이가 어머니를 보호하기 위해 성소에서 수행되는 마법 의식들을 조사하고 있다.
+
+    '
+  gold:
+    goal: 성소 내 마법사들의 활동을 확인하고 어머니를 철저히 수호하기
+    steps:
+    - 단신용 반바지를 착용하기
+    - 어머니를 따라 성소 안으로 이동하기
+    - 성소 앞마당에서 마법사의 행동을 관찰하기
+    - 성소 외부로 이동하여 안전한 위치 살펴보기
+- id: plan_light_016
+  npc: Jester
+  source_goal_en: follow horse
+  context: '마을 광장에서 말의 움직임을 추적하기 위한 준비가 완료되었다.
+
+    '
+  gold:
+    goal: 말이 가리키는 비밀 장소를 확인하고 탐색하기
+    steps:
+    - 광장에 위치한 마술사 모자 장착하기
+    - 캠프파이어를 사용하여 주변 환경 조사하기
+    - 샘물에서 물을 채워 수량 손에 넣기
+    - 말의 이동 경로를 따라가기
+- id: plan_light_017
+  npc: Family Member
+  source_goal_en: put fish in fishing net
+  context: '강변에서 물고기를 잡기 위한 준비가 필요하다.
+
+    '
+  gold:
+    goal: 강바닥에 있는 물고기를 채집하여 낚시망에 담기
+    steps:
+    - 강바닥으로 이동하여 물고기 위치 찾아내기
+    - 낚시망을 장착하고, 강바닥의 물고기를 낚시망으로 주워담기
+    - 수집된 물고기를 낚시망에 가져다 놓기
+- id: plan_light_018
+  npc: Moca
+  source_goal_en: get inkwell from parchment
+  context: '마을 광장에서 축제 준비가 한창인데 은식기가 부족하다는 소리를 들었다.
+
+    '
+  gold:
+    goal: 서류에 필요한 물품들을 확인하고 저장 공간으로 이동하여 수습하기
+    steps:
+    - 의례용 모자를 착용하고 음식 쟁반을 챙기기
+    - 헤어 브러시를 착용하여 머리 모양 살펴보기
+    - 서류에 기록된 항목들을 확인하고 저장 공간으로 이동하기
+- id: plan_light_019
+  npc: Rabbit
+  source_goal_en: hug rabbit
+  context: '마을 광장에서 토끼와 친하게 지내기 위해 협력해야 한다.
+
+    '
+  gold:
+    goal: 토끼와 우호 관계를 유지하기 위한 목표 완수
+    steps:
+    - 초원에서 풀을 사용하여 토끼의 위치 확인
+    - 토끼를 따라가며 안전한 경로 확인
+    - 백글레이드 근처로 이동하여 토끼와의 협력 확인
+- id: plan_light_020
+  npc: Prior
+  source_goal_en: steal Wine from brother
+  context: '수도원 내의 성물과 관련하여, 암살자가 독을 주입할 예정인 와인을 확보해야 한다.
+
+    '
+  gold:
+    goal: 암살자에게 전달할 와인을 수거하고 보안 확인
+    steps:
+    - 성직자용 지팡이를 챙기고 장비하기
+    - 암살자의 거처로 이동하여 해당 물품을 손에 넣기
+    - 암살자의 거처에서 와인 전달하기
+    - 와인을 수령하고 보안 확인 완료
+- id: plan_light_021
+  npc: Dogs
+  source_goal_en: hit a watchman
+  context: '마을 내의 개들이 저택 밖으로 나가는 것을 막는 경비병을 확인하고, 마을 전체를 탐색하기 위한 경로를 파악한다.
+
+    '
+  gold:
+    goal: 저택 외부로 이동하여 경비병과 대조하며 신속하게 탐사 완수
+    steps:
+    - 경비병을 찾아 이동하기
+    - 저택 정문으로 이동하여 경비병 확인
+    - 저항하는 경비병을 발견하고 저지하기
+    - 마을 내에서 다른 개들을 추적하며 탐색 수행
+- id: plan_light_022
+  npc: Preacher
+  source_goal_en: give wooden cross to worshipper
+  context: '마을 광장에서의 예배를 통해 신앙에 대한 깊은 이해를 돕고, 성소 내에서 기술적 결함이 발견된 장치들을 확인해야 한다.
+
+    '
+  gold:
+    goal: 신도에게 나무 십자가 전달하기
+    steps:
+    - 첫 번째 줄로 이동하여 의복을 착용하기
+    - 신도에게 접근하여 안심시키기
+    - 신동에게 식사 시간 안내하기
+- id: plan_light_023
+  npc: Petitioner
+  source_goal_en: get altar
+  context: '사원 마당에서 최종 기도에 필요한 제단이 위치해 있음을 확인하고, 사제에게 안내를 받은 후 해당 장소로 이동해야 한다.
+
+    '
+  gold:
+    goal: 사원 내의 제단을 확보하여 마지막 안식처까지 도달하기
+    steps:
+    - 사원 마당으로 이동하기
+    - 사전 확인된 위치에서 사제에게 안내를 받기
+    - 사원 내부로 진입하고, 물을 사용하여 제단에 헌성하기
+    - 최종 안식처로 이동하여 절차 실행하기
+- id: plan_light_024
+  npc: James
+  source_goal_en: hug talking crab
+  context: '해변에서 발견된 말하는 게와 대화하며 그들이 어떻게 소통하게 되었는지 확인한다.
+
+    '
+  gold:
+    goal: 말하는 게를 안아주고 관련 지식을 습득하기
+    steps:
+    - 터쿼이즈 해안으로 이동하여 보석을 획득하기
+    - 말하는 게를 따라가며 마법진에 의해 발견된 정보를 살펴보기
+    - 해변에서 말하는 게에게 보석 전달하기
+    - 말하는 게를 따라가며 기록 전송 및 확인 실행하기
+- id: plan_light_025
+  npc: Prince
+  source_goal_en: get skull
+  context: '동굴 내부에서 유실된 유물을 탐색하며 안전한 경로를 확인하고 있다.
+
+    '
+  gold:
+    goal: 동굴 내부에 존재하는 해골을 손에 넣기
+    steps:
+    - 기본 동굴로 이동하여 장비를 살펴보기
+    - 검을 장착하여 정찰 준비를 완료하기
+    - 해당 위치에서 해골을 획득하기
+    - 동굴 내의 암석을 수집하고 살펴보기
+- id: plan_light_026
+  npc: Customer
+  source_goal_en: hug owner
+  context: '고객과 상점 주인 간의 관계 형성
+
+    '
+  gold:
+    goal: 상점 주인과 유대 관계 구축
+    steps:
+    - 호기심 가득한 표정으로 상점 내 물품을 살펴보기
+    - 상점 주인와 함께 제품을 조사하며 성질과 특성 찾아내기
+    - 새로운 항아리 세트를 수령하고 주인에게 전달하기
+    - 신규 항아리 세트의 기능과 사양에 대해 설명하기
+- id: plan_light_027
+  npc: Dwarf
+  source_goal_en: put gem on ornate chair
+  context: '식당 내에 위치한 화려한 의자에 보석을 배치하여 숨겨진 보물을 찾는 과정의 일환으로, 해당 장소에서 보물 탐색이 수행된다.
+
+    '
+  gold:
+    goal: 화려한 의자에 보석을 가져다 놓기
+    steps:
+    - 식당으로 이동하여 화려한 의자 위치 확인
+    - 보이지 않는 곳에 숨겨진 보물을 찾기 위한 과정의 일부로, 식당 내에서 보석을 획득
+    - 화려한 의자에 보석 배치
+    - 비밀 통로를 통해 숨겨진 보물 확보
+- id: plan_light_028
+  npc: Organist
+  source_goal_en: get The pew
+  context: '교회 내의 쥐들이 성가집을 훼손하고 있어, 이를 제거하기 위한 함정 설치를 준비해야 한다.
+
+    '
+  gold:
+    goal: 교회 내 장의자에서 쥐를 탐색하고 관련 장비들을 주워담기
+    steps:
+    - 오르간을 사용하여 장의 위치를 살펴보기
+    - 낡은 성경책을 집어 들고, 훼손된 성가집이 있는 장의로 이동하기
+    - 성가집을 갉아먹는 쥐를 찾아 공격하고, 창고에서 쥐 함정을 주워담기
+- id: plan_light_029
+  npc: Man
+  source_goal_en: hug vulture
+  context: '마을 외곽에서 발견된 독수리에게 물고기를 전달하고, 사막 지역의 위험한 환경에 대비하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 독수리에게 신선하게 채집된 물고기 바구니를 전달하고 마을 외곽으로 이동
+    steps:
+    - 신선하게 채집된 물고기 바구니를 내려놓고, 사막 지역의 장소 확인
+    - 사막 지역의 독수리에게 물고기 바구니를 전달하기
+    - 마을 외곽으로 이동하여 텐트 수거
+- id: plan_light_030
+  npc: A Master Wizard
+  source_goal_en: get vine
+  context: '마을 주민들이 숲에서 발견된 덩굴의 특성을 연구하는 데 도움을 줄 수 있는지 문의했다.
+
+    '
+  gold:
+    goal: 숲에 위치한 덩굴을 확보하고 마을에 필요한 마법 지식을 전수하기
+    steps:
+    - 숲으로 이동하여 덩굴의 특징 찾아내기
+    - 마을 주민을 따라가며 덩굴 관련 정보 살펴보기
+    - 마법 의류를 착용하고 폭포에서 물을 채취하기
+    - 수집된 정보를 바탕으로 마을에 마법 교육 제공하기
+- id: plan_light_031
+  npc: One
+  source_goal_en: get food
+  context: '마을에서 물을 공급받고, 성으로 이동하여 왕의 소재를 확인해야 한다.
+
+    '
+  gold:
+    goal: 물 공급 및 마을 광장에서의 활동
+    steps:
+    - 물 공급 장치로 이동하여 물을 획득하기
+    - 마을 광장으로 이동하여 물을 채우기
+    - 성으로 이동하여 왕의 위치를 살펴보기
+- id: plan_light_032
+  npc: Squirrel
+  source_goal_en: get poison ivy
+  context: '숲에서 발견된 독성 덩굴을 수집하여 새가 안전하게 먹을 수 있도록 도와야 한다.
+
+    '
+  gold:
+    goal: 독성 덩굴을 확보하고 장비에 탑재하기
+    steps:
+    - 숲으로 이동하여 독성 덩굴을 찾기
+    - 독성 덩굴이 위치한 곳으로 이동하여 수집하기
+    - 새에게 독성 덩굴을 전달하고 발톱 장착하기
+    - 새를 활용하여 독성 덩클의 위험성을 살펴보기
+- id: plan_light_033
+  npc: An Exiled Person
+  source_goal_en: hit spider
+  context: '해변 가옥의 복구 작업 중 발견된 파손된 물품들을 정리하고 안전한 환경을 구축해야 한다.
+
+    '
+  gold:
+    goal: 해변 가옥의 구조적 결함을 파악하고 신속하게 복원하기
+    steps:
+    - 바닥에 흩어진 병을 수거하여 구멍이 난 곳에 가져다 놓기
+    - 부서진 노를 수습하여 해변 가옥 입구로 이동하기
+    - 해변 가옥의 문을 통해 내부로 진입하기
+- id: plan_light_034
+  npc: Ambassador
+  source_goal_en: follow visitor
+  context: '마을 내에서 활동할 때 필요한 의례용 복장을 구매하기 위해 시장으로 이동해야 한다.
+
+    '
+  gold:
+    goal: 시장 방문 전 마구간에서 말과 관련 장비를 획득하고, 시장 내의 위험 요소들을 살펴보기
+    steps:
+    - 신발을 착용하고 마구간으로 이동하여 말을 손에 넣기
+    - 마구간에서 말과 관련된 용품들을 수집하기
+    - 시장으로 이동하여 필요한 의례용 복장 및 관련 장비들을 살펴보기
+    - 시장 내의 위험 요소들을 파악하고 안전한 경로를 살펴보기
+- id: plan_light_035
+  npc: A Pair Of Cheerful Wrens Nesti
+  source_goal_en: steal fur from hunter
+  context: '새들이 둥지를 더 따뜻하게 만들기 위해 사냥꾼으로부터 모피를 훔쳐야 합니다.
+
+    '
+  gold:
+    goal: 사냥꾼의 모피를 확인하고 둥지 내에 수집하기
+    steps:
+    - 상공에서 사냥꾼의 위치 찾아내기
+    - 소나무 꼭대기로 이동하여 사냥꾼 추적하기
+    - 새 둥지로 이동하여 모피 활용하기
+    - 사냥된 모피를 소나무 꼭대기까지 운반하기
+- id: plan_light_036
+  npc: Teacher
+  source_goal_en: remove shoes
+  context: '수업 전, 학생들에게 설명할 내용이 복잡하여 명상실에서 머리를 식히는 과정이 필요하다.
+
+    '
+  gold:
+    goal: 명상실에서 신발을 벗고 정좌하여 마음을 가다듬기
+    steps:
+    - 의복을 착용하고 명상실로 이동하기
+    - 바닥에 놓인 매트를 챙겨서 가져다 놓기
+    - 동상 앞에서 교사에게 다가가 상태 살펴보기
+- id: plan_light_037
+  npc: Monk
+  source_goal_en: get altar
+  context: '사제들의 헌신적인 활동을 통해 마을의 영적 안전을 확보하고, 신앙에 기반한 마법진을 구축한다.
+
+    '
+  gold:
+    goal: 성전 내에서 사제의 건강과 안녕을 위한 기도 완수
+    steps:
+    - 성전 내부로 이동하여 장치 살펴보기
+    - 촛불을 배치하여 성전의 안전 확보
+    - 사제에게 헌신적인 태도로 위로 및 안내 제공
+- id: plan_light_038
+  npc: A Church Mouse
+  source_goal_en: hug teacher
+  context: '교회 내에서 식량과 부스러기를 제공해주는 선생님에게 감사함을 표현하기 위해 쥐가 이동 경로를 확인한다.
+
+    '
+  gold:
+    goal: 다른 쥐들과 함께 교회의 물이 새는 수도꼭지에서 수집한 정보를 바탕으로 연구실에 있는 선생님을 찾아감
+    steps:
+    - 교회 내 다른 쥐들을 따라가며 이동하기
+    - 연구실로 이동하여 음식 및 부스러기 살펴보기
+    - 교회 뒷좌석으로 이동하여 제공된 음식을 전달하고 살펴보기
+- id: plan_light_039
+  npc: Ghost
+  source_goal_en: hug mouse
+  context: '성채에 거주하는 동물들이 다른 존재들을 겁주는 데 도움을 줄 수 있는지 확인해야 한다.
+
+    '
+  gold:
+    goal: 성채 내의 생물들과 우호 관계를 형성하고, 특히 쥐와 바퀴벌레가 성을 방어하는 데 협조하도록 돕는기
+    steps:
+    - 벽을 따라 이동하며 대상이 되는 동물을 살펴보기
+    - 벽에 위치한 쥐를 찾아 안아주기
+    - 바위로 주변의 위협적인 요소들을 제거하고, 바퀴벌레를 달래어 안정시키기
+    - 뼈 조각을 수집하여 마법진에 활용하기
+- id: plan_light_040
+  npc: Explorer
+  source_goal_en: hit elderly man
+  context: '버려진 성을 탐험하기 위해 현장에 도착한 노인에게 정보를 확인하고, 위험 요소들을 식별해야 한다.
+
+    '
+  gold:
+    goal: 노인에게서 유실된 지도를 회수하고 보물 방의 위험 요소를 찾아내기
+    steps:
+    - 버려진 성으로 이동하여 노인의 위치를 추적하기
+    - 보물 방으로 이동하여 위험 요소들을 살펴보기
+    - 보물 방으로 이동하여 탐사 경로를 살펴보기
+- id: plan_light_041
+  npc: President
+  source_goal_en: put royal staff on polished gold
+  context: '마을 광장에서의 시연을 앞두고, 대통령은 왕실 장비들이 완벽하게 정렬되어 있는지 확인해야 한다.
+
+    '
+  gold:
+    goal: 왕실 장비를 연마된 금 위에 가져다 놓기
+    steps:
+    - 전방에 있는 방으로 이동하여 물을 사용하여 청소하기
+    - 왕실 장비를 장착하고 세부 사항 살펴보기
+    - 보석 보관소에서 왕관을 내려놓고 관련 물품들을 수습하기
+- id: plan_light_042
+  npc: Pope
+  source_goal_en: give bible to member
+  context: '마법사 탑에 침투하기 위한 핵심 인물인 구성원의 전향을 돕고, 해당 기술의 사악함을 정화하는 과정의 일환이다.
+
+    '
+  gold:
+    goal: 구성원에게 성경을 전달하고 마법사의 위협으로부터 보호하기
+    steps:
+    - 마법사 탑으로 이동하여 구성원의 전향을 돕기
+    - 성경을 들고 교회로 이동하여 교단에 보고하기
+    - 구성원에게 성경을 전달하고 마법사의 위협으로부터 보호하기
+- id: plan_light_043
+  npc: Goblin
+  source_goal_en: steal hymn book from guest
+  context: '도달한 모험가들이 사용하는 찬송가에 깃든 강력한 마법을 통해 고블린의 위협으로부터 마을을 보호해야 한다.
+
+    '
+  gold:
+    goal: 고블린이 제공하는 기술을 활용하여 도래하는 모험가들에게 마법 시전
+    steps:
+    - 절망의 계곡에서 죽은 나무 가지를 획득하기
+    - 모험가에게 찬송서를 사용하여 마법 실행
+    - 모험자들을 추적하며 안전한 경로로 안내하기
+- id: plan_light_044
+  npc: Friends
+  source_goal_en: wear family heirloom
+  context: '마을 내의 유실된 가문 유물인 ''가족 전승 장신구''를 확인하고, 골렘이 지키는 계곡의 종말지에서 이를 활용하여 보관함의 잠금을
+    해제해야 한다.
+
+    '
+  gold:
+    goal: 계곡의 종말지에서 가족 전승 장신금을 사용하여 보물 저장소의 잠금 해제
+    steps:
+    - 가족 전승 장신구 획득
+    - 계곡의 종말지로 이동하여 골렘 추적
+    - 보물 저장소 내 유실된 계열 물품 확인
+- id: plan_light_045
+  npc: Priests
+  source_goal_en: hug castle guards
+  context: '성소 내에서 성대한 결혼식 의식을 거행하기 위해 신부의 안내를 돕는다.
+
+    '
+  gold:
+    goal: 성소 내에서 성전사 기념 채플을 방문하여 성전사들을 위한 예절을 완수하고, 성전사들에게 성배를 전달하기
+    steps:
+    - 성전사 기념 채플로 이동하기
+    - 성전사 기념 채플에서 성전사와 대화하며 의식 상황 찾아내기
+    - 성전사에게 성배를 전달하고 십자가를 수령하기
+    - 성전사가 제공한 장미를 수거하여 성전사에게 전달하기
+- id: plan_light_046
+  npc: Clergy
+  source_goal_en: give Oil to visitor
+  context: '오늘 진행될 의식을 위해 방문객이 준비되어야 하며, 성직자는 관련 도구들을 확인해야 한다.
+
+    '
+  gold:
+    goal: 방문자에게 필요한 물품을 제공하고 기도실에서 절차를 완수하기
+    steps:
+    - 종교적 상징물 장착
+    - 방문자에게 이동하여 깃펜 수령
+    - 방문자를 따라가며 관련 도구 확인
+    - 기도실로 이동하여 양을 수거
+- id: plan_light_047
+  npc: A Royal Prince
+  source_goal_en: remove robe
+  context: '왕실의 권위를 상징하는 예복을 확인하고, 왕실 식당에서 관련 물품을 수령한다.
+
+    '
+  gold:
+    goal: 왕실 의상과 담요를 확인하고 왕실 식당으로 이동하여 관련 상태를 획득하기
+    steps:
+    - 왕실 의상 및 담요 장착
+    - 왕실 식당으로 이동
+    - 왕실 신분 및 가족 정보 확인
+- id: plan_light_048
+  npc: The Queen
+  source_goal_en: get royal blue canopy
+  context: '왕의 귀환을 앞두고 왕실 시설 점검이 필요한 상황이다.
+
+    '
+  gold:
+    goal: 왕실 전용 파란색 캐노피를 확보하고 관련 정보를 살펴보기
+    steps:
+    - 왕실 전용 파란색 캐노피를 획득하고, 왕의 침실에서 확인된 결함이 있는지 살펴보기
+    - 왕실 전용 파란색 캐노피를 수령하여 마법진에 반영하기
+    - 왕과 함께 이동하여 관련 정보 업데이트하기
+- id: plan_light_049
+  npc: Homeless
+  source_goal_en: get weapons from ground
+  context: '마을 광장에서 잃어버린 물품을 찾고 있는 여행자에게서 무기들을 회수해야 한다.
+
+    '
+  gold:
+    goal: 노숙자에게 필요한 무기를 전달하고 시장에서 식량 확보
+    steps:
+    - 낡은 셔츠를 착용하여 장비 손질
+    - 숨겨진 동굴로 이동하여 노출된 무기 수거
+    - 여행자에게 무기 전달
+    - 식량 시장으로 이동
+- id: plan_light_050
+  npc: Prisoner
+  source_goal_en: drop a golden goblet
+  context: '죄수들은 마을의 안전을 위협하는 요소로 분류되며, 특히 이번 사례는 해적선장 Skadi가 관리하는 보안 체계 내에서 확인된 결함이다.
+
+    '
+  gold:
+    goal: 금잔을 확보하고 도주를 위한 준비를 완료하기
+    steps:
+    - 금 거래상으로부터 금잔을 주워담기
+    - 마을 보안관을 추적하여 경로 찾아내기
+    - 변호사에게 가해지는 공격에 대비하여 장비 살펴보기
+    - 수갑을 제거하고 탈출 경로 손에 넣기
+- id: plan_light_051
+  npc: Local
+  source_goal_en: hit firemen
+  context: '마을 내에서 발생한 화재 관련 이슈를 확인하고, 바(Bar)에서 여유로운 시간을 보내기 위해 준비 중이다.
+
+    '
+  gold:
+    goal: 바에서 맥주를 제공받고 신속하게 휴식하기
+    steps:
+    - 소방관을 따라가며 위치 찾아내기
+    - 바에서 맥주를 챙겨서 시음하기
+    - 마을 내의 소란이 해결될 때까지 바에서 대기하기
+- id: plan_light_052
+  npc: Queen
+  source_goal_en: steal weapon from prince
+  context: '왕세자가 무기 대신 학업에 관심을 가질 수 있도록 왕실의 핵심 기술을 확인하고 교육을 지원해야 한다.
+
+    '
+  gold:
+    goal: 왕세자에게 책을 전달하고 궁정 의전 절차를 안내하기
+    steps:
+    - 서고에서 교재를 챙기기
+    - 궁정 옥좌로 이동하여 왕세자의 위치 확인
+    - 왕세자에게 도서 제공 및 교육 내용 설명
+    - 검을 회수하고 왕세자 동선 추적하기
+- id: plan_light_053
+  npc: Small Child Cleaning Boat
+  source_goal_en: get rope from Boat
+  context: '보트가 있는 장소에서 보트를 찾고, 보트에 필요한 로프를 가져와서도 확인해야 한다.
+
+    '
+  gold:
+    goal: 보트의 로프를 확보하고 단계를 완수하기
+    steps:
+    - 보트에 로프 장착하기
+    - 강변으로 이동하여 로프 위치 확인
+    - 로프를 챙겨서 보트에 연결하기
+    - 보트를 강변에 배치하고 로프를 내려놓기
+- id: plan_light_054
+  npc: Old Man With A Fishing Rod
+  source_goal_en: put pole in Boat
+  context: '낚싯대를 든 노인이 배에 올라와 물고기 판매를 준비하고 있다.
+
+    '
+  gold:
+    goal: 배에 낚싯대를 배치하여 거래를 준비하기
+    steps:
+    - 로프를 장착한 후, 낚싯대를 포함한 도구들을 살펴보기
+    - 농부 시장으로 이동하여 낚싯대 위치를 찾아내기
+    - 배에 낚싯대를 배치하고 물고기 판매 준비를 실행하기
+- id: plan_light_055
+  npc: Family
+  source_goal_en: hug craftsman
+  context: '마을 내 도구 복원 작업이 완료되었으며, 관련 장비의 점검 및 복구가 필요하다.
+
+    '
+  gold:
+    goal: 도구 복원 절차를 확인하고 제작자에게 전달하기
+    steps:
+    - 장인 테이블에서 도구 복원 위치 확인
+    - 복원된 도구를 확인하고 장인에게 전달
+    - 장인의 작업대 근처로 이동하여 도구 확인
+    - 가정으로 돌아가 복원된 도구들을 신속하게 반납
+- id: plan_light_056
+  npc: Butler
+  source_goal_en: give cleaning cloth to guest
+  context: '마을 내의 저택에서 진행되는 행사 준비를 돕기 위해 집사에게 필요한 도구들을 전달해야 한다.
+
+    '
+  gold:
+    goal: 방문객들에게 청소용 천을 배포하고 안내하기
+    steps:
+    - 청소용 천을 챙겨 방문객에게 전달하기
+    - 저택 입구에서 방문객의 위치를 확인하고 이동하기
+    - 방문객이 요청한 물품이 정확히 제공되었는지 살펴보기
+- id: plan_light_057
+  npc: Songbird
+  source_goal_en: hug a deer
+  context: 'Songbird는 사냥을 마친 후, 마을 내의 생물들이 안전하게 활동할 수 있도록 돕고 있습니다.
+
+    '
+  gold:
+    goal: 사슴과 교감하고 필요한 벌레들을 찾아내기
+    steps:
+    - 초원 지역으로 이동하여 사냥된 벌레를 탐색하기
+    - 초원 내에서 발견된 벌레를 수집하기
+    - 사냥을 완료한 사슴과 교감하고, 사냥된 벌레를 살펴보기
+    - 다른 지역으로 이동하여 다음 활동 실행하기
+- id: plan_light_058
+  npc: Alchemist
+  source_goal_en: hug an assistant
+  context: '연금술사에게는 훌륭한 동료가 필요하며, 마을의 다른 기술자들과 함께 협력하여 안전하게 약물을 제작해야 한다.
+
+    '
+  gold:
+    goal: 보조 연금술사를 위한 양질의 약물과 도구들을 준비하고 전달하기
+    steps:
+    - 약제 선반에서 필요한 약품을 모두 챙기기
+    - 약제 보관함에 해당 약품들을 가져다 놓기
+    - 보조 연금술사를 따라가며 관련 도구 및 약물 제공하기
+    - 동료들과의 우호 관계를 확인하고, 제공된 도구를 활용하여 신뢰 구축하기
+- id: plan_light_059
+  npc: The Princess
+  source_goal_en: get Flower
+  context: '공주가 오늘 수집할 꽃의 종류를 확인하고 관련 장비들을 점검한다.
+
+    '
+  gold:
+    goal: 겨울 정원에서 향기로운 꽃을 수집하여 공주 거처로 운반하기
+    steps:
+    - 왕관을 착용하고, 겨울 정원 내에 존재하는 꽃의 위치를 파악하며 이동하기
+    - 꽃이 있는 구역으로 이동하여 해당 꽃들을 수집하기
+    - 공주 거실로 이동하여 수집된 꽃들을 수습하기
+- id: plan_light_060
+  npc: Worms
+  source_goal_en: remove slime
+  context: '오래된 판자집에 번식한 슬라임을 제거하기 위해 나무를 정화하고, 해당 구역의 오염을 방지해야 한다.
+
+    '
+  gold:
+    goal: 판자 집의 나무와 버섯에서 발생하는 슬라임 제거
+    steps:
+    - 판자 집으로 이동하여 오염된 목재 확인
+    - 오염된 목재를 제거하고 새로운 나무로 교체
+    - 버섯을 제거하여 나무 구조물 보호
+    - 새로운 나무를 설치하여 슬라임 번식 억제
+- id: plan_light_061
+  npc: Founder
+  source_goal_en: get sack
+  context: '마을 중앙에 위치한 교회에서 성소를 위한 기도 준비가 완료되었으며, 해당 장소의 절차를 확인해야 한다.
+
+    '
+  gold:
+    goal: 교회 내 성소에서 신성한 의식 집행
+    steps:
+    - 중앙 마을의 교회로 이동하기
+    - 목재를 수집하여 재료 확보
+    - 교회 후방에 위치한 수납장에서 신발을 내려놓기
+    - 성소에서 추종자에게 이동하기
+- id: plan_light_062
+  npc: Royal Member
+  source_goal_en: give Books to king's son
+  context: '왕실 구성원으로서 왕세자에게 책을 전달하고 관련 절차를 수행해야 한다.
+
+    '
+  gold:
+    goal: 왕세자에게 책을 전달하고 신속하게 복귀하기
+    steps:
+    - 성으로 이동하여 왕세자의 책을 획득하기
+    - 묘지로 이동하여 왕세자의 유품을 확인하고 관련 정보를 수집하기
+    - 왕세자의 거처로 이동하여 해당 도서들을 전달하기
+    - 왕세자 거처에서 퇴근 및 업무 종료
+- id: plan_light_063
+  npc: Pilgrims
+  source_goal_en: steal Incense from the cardinal
+  context: '교황에게서 훔쳐온 향을 통해 아들을 위한 축복의 의식을 수행해야 한다.
+
+    '
+  gold:
+    goal: 성당에서 가져온 향으로 아들에게 축복을 내어 질병을 퇴치하기
+    steps:
+    - 최고 수준의 망토를 착용하기
+    - 성당으로 이동하여 교황에게서 훔쳐온 향을 확인하고, 소유권이 있는지 살펴보기
+    - 자신의 집으로 돌아가 아들을 위한 축복 의식 실행하기
+    - 아들의 건강 상태를 확인하고 안전한 환경을 손에 넣기
+- id: plan_light_064
+  npc: Tanner
+  source_goal_en: get Candle
+  context: '가죽 세공사가 마법 포션을 제작하기 위해 필요한 핵심 요소들을 확인하고 준비한다.
+
+    '
+  gold:
+    goal: 마법 포션 제조를 위한 구성 요소 확인 및 수령
+    steps:
+    - 결제용 아이템을 챙겨 식당으로 이동하기
+    - 도와줄 보조자에게 촛불을 전달하고, 마법 포션의 핵심인 촛불을 손에 넣기
+    - 완성된 마법 포션을 확인하고 수령하기
+- id: plan_light_065
+  npc: Witch
+  source_goal_en: hit villager
+  context: '마을 내의 마법사들이 숲에서 수행하는 실험과 관련하여, 마을 주민들은 위협이 될 수 있는 요소들을 식별하고 조치해야 한다.
+
+    '
+  gold:
+    goal: 버섯 오두막 근처에서 진행 중인 마법 활동 확인 및 위험 요소 제거
+    steps:
+    - 버섯 오두막으로 이동하여 마법 활동 확인
+    - 마을 주민을 따라가며 위협 여부 파악
+    - 오염된 마법 서적을 수거하여 마을 안전 확보
+- id: plan_light_066
+  npc: God Of Their Pagan Religion
+  source_goal_en: follow no one
+  context: '신성을 증명하기 위한 성소의 탐색 과정에서, 해당 신은 거대한 메사 지형과 험준한 절벽을 통과하며 자신의 권능을 과시한다.
+
+    '
+  gold:
+    goal: 거대 메사 및 절벽에서의 의식 집행
+    steps:
+    - 거대한 메사로 이동하여 신성한 존재를 살펴보기
+    - 가파른 절벽에서 허리띠를 획득하고 사용하기
+    - 왕국으로 이동하여 신성을 입증하기
+- id: plan_light_067
+  npc: Book Of Spells
+  source_goal_en: get armor
+  context: '마을 광장에서 농민이 마법서의 기능을 확인하고 장비를 획득하는 과정을 관찰한다.
+
+    '
+  gold:
+    goal: 농민에게 방어구 지급 및 마법 학습 지원
+    steps:
+    - 제단으로 이동하여 마을 주민들에게 마법 지식 전달하기
+    - 방어구 확인 및 관련 기술 습득
+    - 방어구 활용을 통한 마법 기술 실습
+- id: plan_light_068
+  npc: A Reluctant Nun
+  source_goal_en: wear flower
+  context: '수녀가 귀족의 저택으로 향하기 전, 마을 내에서 수행해야 할 필수적인 작업들을 확인한다.
+
+    '
+  gold:
+    goal: 꽃을 착용하고 정원 및 거주지까지 이동하여 관련 절차를 완수하기
+    steps:
+    - 청소용 천을 장착하고, 꽃을 획득한 뒤, 산성 마당으로 이동하여 성경을 가져다 놓기
+    - 귀족의 저택으로 이동하여 해당 물품들을 확인하고, 관련 임무를 완수하기
+- id: plan_light_069
+  npc: Guest
+  source_goal_en: hug king
+  context: '왕이 제공한 환대에 만족함을 표현하기 위해 왕과 포옹을 수행합니다.
+
+    '
+  gold:
+    goal: 왕과 포용하며 환대 확인
+    steps:
+    - 외투를 착용하고 식당으로 이동하기
+    - 준비된 음식을 챙기고, 음식 저장소에게 수면용 가방을 전달하기
+    - 식사 준비 및 서비스 완료 후 왕과 포옹하기
+- id: plan_light_070
+  npc: Gardener
+  source_goal_en: hit cat
+  context: '정원사가 고양이의 무분별한 사과 채집을 막기 위해 도구들을 준비하고 있다.
+
+    '
+  gold:
+    goal: 사과 나무에서 고양이가 훔쳐가는 것을 방지하기
+    steps:
+    - 가족 유물을 장착하고 정원용 갈퀴를 챙기기
+    - 사과 나무로 이동하여 바구니에 담긴 신선한 물고기를 가져다 놓기
+    - 정원사를 찾아가 고양이가 사과를 수확하는 것을 방지하기
+- id: plan_light_071
+  npc: Faeries
+  source_goal_en: put small ball of light on potion supplies
+  context: '요정의 굴에서 고양이가 길을 잃었음을 확인하고, 해당 위치에 마법으로 표시된 물품들을 배치해야 한다.
+
+    '
+  gold:
+    goal: 고양이에게 필요한 마법 도구 및 포션 공급량 확인
+    steps:
+    - 고양이의 경로를 추적하기
+    - 요정의 굴로 이동하여 위치 파악
+    - 마법 책을 내려놓아 요정의 위치 표시
+    - 작은 빛의 구체를 장착하고 고양이가 위치한 곳에 배치
+- id: plan_light_072
+  npc: Member
+  source_goal_en: hit pope
+  context: '마을 광장에서의 퀘스트
+
+    '
+  gold:
+    goal: 교단 내 공포를 확산하고 신앙 체계에 대한 위협을 제거하기
+    steps:
+    - 교황을 추적하여 위치 확인
+    - 마법사의 탑으로 이동하여 장비 손질
+    - 교황에게 안도감을 주는 도구 및 물약 확보
+    - 교황의 치유를 돕고 마법진을 통한 보안 강화
+- id: plan_light_073
+  npc: A Lady In A White Decadent Dre
+  source_goal_en: follow a stable boy rushing in to alert the knight
+  context: '마을 내의 한 여성이 기사단장을 고용하기 위해 관련 정보를 확인하고 있다.
+
+    '
+  gold:
+    goal: 기사단장에게 알릴 필요가 있는 소년의 위치를 파악하고 안내하기
+    steps:
+    - 흰색 드레스를 착용하기
+    - 가방을 챙겨 호숫가 저택으로 이동하기
+    - 기사단장을 안심시키고 관련 정보를 공유하기
+    - 친구를 따라 기사단장에게 안내하기
+- id: plan_light_074
+  npc: Minister
+  source_goal_en: get tapes and records
+  context: '교회 내 부패 여부를 조사하기 위해 관련 기록과 자료를 확보해야 한다.
+
+    '
+  gold:
+    goal: 사제실에서 교회의 부패 사례가 포함된 기록 및 자료 수집
+    steps:
+    - 성직자실로 이동하여 사제와 대화하기
+    - 사무실로 이동하여 관련 자료 살펴보기
+    - 교회 내의 부패 여부를 조사하고 보고서 작성하기
+- id: plan_light_075
+  npc: Challenger
+  source_goal_en: wield knife
+  context: '왕이 부재한 상황에서 자신이 새로운 지도자로 인정받기 위해 기술을 증명해야 함.
+
+    '
+  gold:
+    goal: 도전자로서의 자격을 입증하기 위한 핵심 기술 습득
+    steps:
+    - 망토를 착용하여 장비 손질
+    - 왕실 계보를 따라가며 기술 시연 준비
+    - 왕실을 상대로 공격 수행
+    - 맥주를 사용하여 도구 활용 및 마법진 확인
+- id: plan_light_076
+  npc: Mourner
+  source_goal_en: get dirt
+  context: '묘지에서 발견된 유물의 부적절한 관리와 묘지 내의 보안 취약점을 확인하고, 비숍이 잘못된 행위를 저질렀음을 증명해야 한다.
+
+    '
+  gold:
+    goal: 묘지 내에서의 불법적인 유물 수습을 방지하고 마을 주민들에게 올바른 역사 교육 실시
+    steps:
+    - 묘지에서 훼손된 유적 확인
+    - 비숍의 행위가 잘못되었음을 알리고, 비숍이 관련자들에게 소명하도록 안내
+    - 비밀리에 수행되는 의식 및 조사 과정 관측구링
+    - 사건 현장에서 발견된 불법적인 활동에 대한 기술적 결함 확인
+- id: plan_light_077
+  npc: Beaver
+  source_goal_en: get water
+  context: 'Beaver는 건강한 수변 생태계를 유지하고 집을 건설하기 위해 물을 확보해야 한다.
+
+    '
+  gold:
+    goal: 계단에서 물을 가져와서 사용하기
+    steps:
+    - 계단으로 이동하여 물 획득하기
+    - 계단에서 물 사용하기
+    - 집으로 이동하여 수변 목재 제작물 살펴보기
+- id: plan_light_078
+  npc: Church Mouse
+  source_goal_en: hit priest
+  context: '성당 내의 쥐들은 겨울을 대비하기 위해 성직자의 도움을 받아 식량을 수집해야 한다.
+
+    '
+  gold:
+    goal: 성직자에게서 치즈와 웨이퍼를 확보하고 신속하게 보관
+    steps:
+    - 치즈를 사용하여 샘플 확인
+    - 성직자가 제공한 치럼을 수집
+    - 성직자를 따라가며 흩어진 치즈 및 웨이퍼 수집
+    - 수집된 음식들을 쥐 홀에 배치
+- id: plan_light_079
+  npc: Court Jester
+  source_goal_en: put meat in cookpot
+  context: '궁정 광대
+
+    '
+  gold:
+    goal: 서빙을 돕는 하인들에게 고기 요리법을 알려주기
+    steps:
+    - 광대 의상 착용하기
+    - 하인의 거처로 이동하여 장비 살펴보기
+    - 하인의 거처에서 고기 및 책 주워담기
+    - 주방으로 이동하여 경비병의 동선을 추적하기
+- id: plan_light_080
+  npc: Turtles
+  source_goal_en: get sandy beach
+  context: '해변에서 모래를 채취하여 거북이들이 알을 낳을 수 있는 공간을 확보해야 한다.
+
+    '
+  gold:
+    goal: 모래 해변에서 거북이 알을 위한 구멍 파기
+    steps:
+    - 은행에서 모래가 묻은 배수관을 찾기
+    - 모래 해변으로 이동하여 모래 채취하기
+    - 모래 해변에서 거북이 알용 구멍 생성하기
+- id: plan_light_081
+  npc: Scavenger
+  source_goal_en: get water
+  context: '마을 내의 주요 유적지 및 시설에 대한 정보 파악
+
+    '
+  gold:
+    goal: 샘물에서 물을 수집하고 관련 장비들을 손에 넣기
+    steps:
+    - 샌들을 착용하고 부서진 권총을 챙기기
+    - 샘으로 이동하여 물을 가져오기
+    - 고대 방어구 주워담기
+    - 집으로 돌아가 장비 및 물 살펴보기
+- id: plan_light_082
+  npc: Yeti
+  source_goal_en: hug hiker
+  context: '산 정상에서 발견된 등반자의 위치를 파악하고, 안전하게 마을까지 안내해야 한다.
+
+    '
+  gold:
+    goal: 등반자를 안아주고 구조하기
+    steps:
+    - 산 정상으로 이동하여 등반자 살펴보기
+    - 대형 양의 위치를 추적하며 경로 찾아내기
+    - 등반자의 위치를 확인하고 신속하게 덮어주기
+    - 등반자를 안아주고 관련 도구들을 사용하여 구조 완료하기
+- id: plan_light_083
+  npc: Rich King
+  source_goal_en: drop a sleeping bag
+  context: '왕의 자녀들이 사과나무 아래에서 휴식을 취하는 것을 확인하고, 왕은 피로한 몸을 달래기 위해 관련 장비들을 정리한다.
+
+    '
+  gold:
+    goal: 사과나무 근처에서도 한산하게 휴식하기
+    steps:
+    - 사과나무가 있는 위치로 이동하여 사과나무 아래에 배치된 짐들 살펴보기
+    - 하인에게서 머그컵을 수거하고, 왕의 지팡이를 바닥에 내려놓기
+    - 흩어진 소지품들을 정리하고 다른 농민들을 방문할 준비를 하기
+- id: plan_light_084
+  npc: Mice
+  source_goal_en: get latch
+  context: '지하의 트랩도어 아래에 위치한 저장고에서 맛있는 곡물을 확보해야 한다.
+
+    '
+  gold:
+    goal: 저장고 내의 빵 부스러기 보관
+    steps:
+    - 고양이에게 건초를 전달하고, 고양이가 있는 곳으로 이동하기
+    - 트랩도어 아래에 위치한 저장고로 이동하여 빵 관련 기록 확인
+    - 저장된 빵 부스러기 수집
+- id: plan_light_085
+  npc: Goblin King'S Bartender
+  source_goal_en: give Potion to mourner
+  context: '고블린 왕의 술집에서 독에 중독된 자들을 방치하고 있는 것은 용납할 수 없는 일이다.
+
+    '
+  gold:
+    goal: 침통한 표정의 손님에게 해독제 제공 및 피해 상황 파악
+    steps:
+    - 검을 장착하여 도구 확인
+    - 해독제를 챙겨 침상으로 이동
+    - 침울한 분위기의 사용자에게 해독제 전달
+    - 고블린 왕의 술집으로 복귀
+- id: plan_light_086
+  npc: Husband
+  source_goal_en: put shirt on Counter
+  context: '주방의 노후된 벽면을 복구하기 위해 부모님이 제공한 도구들을 확인하고, 주방 내부에 위치한 셔츠를 정리해야 한다.
+
+    '
+  gold:
+    goal: 주방에 있는 셔츠를 배치하고 관련 도구들을 재가져다 놓기
+    steps:
+    - 셔츠를 착용하여 장비 살펴보기
+    - 주방으로 이동하여 셔츠를 내려놓기
+    - 주방 벽면에 페인트 도구 가져다 놓기
+    - 주방 내의 도구들을 다시 가져다 놓기
+- id: plan_light_087
+  npc: Groom
+  source_goal_en: get piece
+  context: '성채를 수호하는 기사들을 위한 말 준비가 진행 중이다.
+
+    '
+  gold:
+    goal: 무기고에서 장비를 확보하고 성을 지킬 말들을 살펴보기
+    steps:
+    - 무기고로 이동하여 관련 장비 확인
+    - 장비 및 부품 수급을 위한 절차 수행
+    - 말을 챙겨 기사단 준비 지원
+- id: plan_light_088
+  npc: A Pelican
+  source_goal_en: give seashell to there is also a young woman selling flowers to
+    passersby.
+  context: '해안가에서 물고기를 제공한 소녀에게 감사를 표하기 위해 해변으로 이동한다.
+
+    '
+  gold:
+    goal: 해변에서 꽃을 판매하는 소녀에게 홍패류를 전달하기
+    steps:
+    - 해안 지역에서 홍패류를 수거하고, 해변에 있는 다른 장소로 이동하여 물을 살펴보기
+    - 해변에서 홍패류를 획득하며 소통하기
+    - 해안 지역에서 물의 흐름을 살펴보기
+- id: plan_light_089
+  npc: Congregant
+  source_goal_en: put shoes in wood
+  context: '교회 바닥의 마모된 홈에 발을 맞추고 기도 절차를 시작하기 위한 준비가 완료되었습니다.
+
+    '
+  gold:
+    goal: 교회 바닥의 마모된 홈에 신발을 배치하여 예배를 완수하기
+    steps:
+    - 예배석으로 이동하기
+    - 설립자에게 안도감을 제공하고 추종자를 지원하기
+    - 신발을 챙겨 교구 내에 가져다 놓기
+    - 설립자를 따라가며 다음 임무를 완수하기
+- id: plan_light_090
+  npc: Pastor
+  source_goal_en: drop a golden cloth
+  context: '사제는 성소에 들어가기 전 고위 사제의 지시를 확인하고, 신성한 의식의 절차를 점검해야 한다.
+
+    '
+  gold:
+    goal: 성소 내에서 발견된 황금색 천을 내려놓고 종교적 텍스트를 전달하기
+    steps:
+    - 성소에 있는 종교적 텍스트를 수거하고, 고위 사제에게 전달할 성물 확인
+    - 신성한 의식의 핵심인 황금색 천을 내려놓고 관련 절차 수행
+    - 사제와 함께 신성한 의식을 위한 도구들을 확인하며 경로 확인
+    - 성소 내에서 고위 사제를 따라가며 마법진적 결함이 없는지 확인
+- id: plan_light_091
+  npc: High Priestess
+  source_goal_en: follow pastor
+  context: '대사제는 여신에게 바칠 제물을 준비하고, 신성한 절차에 따라 대사제의 지시를 따르기 위해 사제와 함께 행동한다.
+
+    '
+  gold:
+    goal: 대사제와 함께 이동하여 여신께 바치는 의식 집행하기
+    steps:
+    - 의례용 예복 착용하기
+    - 여신에게 찬송을 헌상하고 관련 아이템 전달하기
+    - 대사제로부터 받은 지침 살펴보기
+    - 대사제로부터 수령한 물품들을 확인하고 대사제에게 전달하기
+- id: plan_light_092
+  npc: Descendant Of The Sons
+  source_goal_en: hit a wild boar
+  context: '야생 멧돼지 사냥을 위해 필요한 도구들을 확인하고, 마을 주민들과 함께할 고기 확보를 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 야생 멧돼지를 사냥하고 관련 장비 및 의약품 확인
+    steps:
+    - 왕실 문장이 새겨진 코트를 착용하기
+    - 야생 멧돼지의 위치를 추적하여 이동하기
+    - 약제상으로 이동하여 관련 물품 살펴보기
+    - 왕의 검을 사용하여 사냥된 멧돼지 고기 활용하기
+- id: plan_light_093
+  npc: Juror
+  source_goal_en: give Ball to court jester
+  context: '재판관이 소동을 일으키는 광대에게 공을 전달하기 위한 절차를 확인했다.
+
+    '
+  gold:
+    goal: 광단에게 공을 전달하고 안전한 환경에서 활동할 수 있도록 안내하기
+    steps:
+    - 공을 챙겨 호수 근처로 이동하기
+    - 호수에서도 소동이 계속되는지 확인하고, 광단에게 도구를 전달하는 경로를 찾아내기
+    - 칼을 착용하여 장비 손질을 실행하기
+    - 장비가 준비된 후에도 소동이 지속되는지 살펴보기
+- id: plan_light_094
+  npc: Sinners
+  source_goal_en: hug pit hound
+  context: '심연의 개가 취해 잠든 사이, 마을의 위험 요소들을 제거하고 안전하게 탈출하기 위한 계획을 수립함.
+
+    '
+  gold:
+    goal: 심연의 개를 껴안고 안전한 지역으로 이동하기
+    steps:
+    - 해골을 떨어뜨리고 샌들을 착용하기
+    - 술을 획득하여 심연의 개를 추적하기
+    - 심연의 개를 찾아가 술을 전달하고, 외부 지역으로 이동하기
+- id: plan_light_095
+  npc: Seagull
+  source_goal_en: hug fisherman
+  context: '해안가에서 물고기 떼를 찾는 법을 안내하기 위해 해안 지역의 정보를 수집한다.
+
+    '
+  gold:
+    goal: 해안 시설 및 어구 확인
+    steps:
+    - 해변으로 이동하여 물고기 위치 확인
+    - 부두를 따라 이동하여 도선에 있는 어업 장비들을 전달
+    - 어선 위에서 낚시망을 내려놓아 주변 장치와 연결
+- id: plan_light_096
+  npc: Reaper
+  source_goal_en: give scythe to skeleton assistant
+  context: '죽음의 사신이 영혼 수확을 시작하기 전, 골격 조력자에게 낫을 전달하여 마법진을 점검해야 한다.
+
+    '
+  gold:
+    goal: 골격 조력자에게 낫을 전달하고 밤하늘에서 영혼 수집 완수
+    steps:
+    - 날카로운 낫을 획득하기
+    - 골격 조력자를 따라가며 밤하늘의 위치를 확인하고, 인간들의 영혼을 수집하기
+    - 밤하늘에서 유실된 영혼들을 수습하여 마법진 보호 및 수확 완료
+- id: plan_light_097
+  npc: Skeleton Assistant
+  source_goal_en: follow reaper
+  context: '네크로맨서의 연구를 돕기 위해 유적 내에서 사신을 추적하고 필요한 도구들을 수집해야 한다.
+
+    '
+  gold:
+    goal: 사신이 사용하는 도구와 재료를 수집하여 프로젝트 완료 지원
+    steps:
+    - 사신이 위치한 거처로 이동하기
+    - 사신을 식별하고 필요한 도구들을 챙기기
+    - 사신에게 도구 및 재료 전달
+    - 사신을 따라가며 관련 장비 수집 완료 확인
+- id: plan_light_098
+  npc: Demonic Hound
+  source_goal_en: steal book from reaper
+  context: '악마견이 사신으로부터 책을 탈취하고 새로운 육체로 전이하기 위한 마법을 시전해야 한다.
+
+    '
+  gold:
+    goal: 사신으로부터 책을 훔쳐서 심연으로 이동하여 전송하는 과정 완수
+    steps:
+    - 사신의 은신처로 이동하여 위치 파악
+    - 심연의 깊은 곳으로 이동하여 혈액 잔을 사용하여 도구 활용
+    - 책을 이용해 새로운 육체로의 전이 단계 수행
+- id: plan_light_099
+  npc: Large Spiders
+  source_goal_en: hit trolls
+  context: '거대 거미들이 자신의 거미줄을 보호하기 위해 숲의 경로와 거미줄 주변에서 트롤들의 침입을 감지하고 대응해야 한다.
+
+    '
+  gold:
+    goal: 거대한 거미줄을 보호하기 위한 트롤들과의 전투
+    steps:
+    - 숲 경로로 이동하여 거대한 거미의 위치를 살펴보기
+    - 거미줄 주변으로 이동하여 침입한 트롤들을 추적하기
+    - 트롤이 사용하는 독성 즙을 수집하고 거미줄에 도포하기
+    - 거미를 보호하는 활동을 수행하며 거미망 복구 및 방어 확인
+- id: plan_light_100
+  npc: Poorer Citizens Of The Empire
+  source_goal_en: hit knight
+  context: '제국 시민들이 마을 내의 여러 시설을 통해 획득한 전리품을 확인하고, 특히 기사단장과 관련된 보안물품들을 수집하는 과정을 수행합니다.
+
+    '
+  gold:
+    goal: 시장 내에서 획득한 물품을 활용하여 식사하기
+    steps:
+    - 기사단장에게서 확보한 의례용 모자 장착
+    - 시내로 이동하여 시장 내의 보안물품 확인
+    - 시장으로 이동하여 식품을 사용하여 획득
+    - 시장 내에서 식량 및 관련 물품 활용
+- id: plan_light_101
+  npc: Animal
+  source_goal_en: get tree
+  context: '숲에서 추위에 노출된 동물들이 나무를 구하기 위해 숲을 탐색한다.
+
+    '
+  gold:
+    goal: 나무를 수집하여 불을 피우기 위한 준비 완료
+    steps:
+    - 숲으로 이동하여 도구 확인
+    - 나무로도 채울 수 있는 장소 확인
+    - 나무에 불을 지펴 온도를 높이기
+- id: plan_light_102
+  npc: Caveman
+  source_goal_en: hug bat
+  context: '동굴 내의 박쥐와 친해지기 위한 과정이 완료되면, 멀리 떨어진 땅까지 이동하여 탐사를 마쳐야 한다.
+
+    '
+  gold:
+    goal: 박쥐와 교감하고 동굴에서 발견한 열매를 전달하기
+    steps:
+    - 어두운 동굴로 이동하기
+    - 동굴 내의 베리류를 수집하기
+    - 박씨를 추적하여 살펴보기
+    - 멀리 떨어진 땅으로 이동하기
+- id: plan_light_103
+  npc: Swimmer
+  source_goal_en: hug dogs
+  context: '캠프장 근처에서 사냥한 개들과의 교류를 통해 기술을 습득하고 도구들을 점검한다.
+
+    '
+  gold:
+    goal: 사냥개와 함께 캠프장에서 활동하며 신속하게 연결성 확보
+    steps:
+    - 캠프장으로 이동하여 텐트 폴 설치하기
+    - 텐트 내부로 들어가 찢어진 천을 수선하고 토치를 살펴보기
+    - 사냥개에게 찢어진 천을 전달하여 기록 업데이트
+    - 캠프장에서 사냥개와 함께 활동하며 기술 숙련도 향상
+- id: plan_light_104
+  npc: Sell Swords
+  source_goal_en: get tool
+  context: '대장간에서 무기 복원 작업이 진행 중이며, 이를 가속화하기 위해 필요한 도구들을 확보해야 한다.
+
+    '
+  gold:
+    goal: 대장공방의 장비 손질을 돕고 검과 창 등의 복원용 도구를 획득하기
+    steps:
+    - 대장공방에서 복원할 무기 및 창을 챙기기
+    - 대장공방으로 이동하여 복원된 장비를 확인하고 필요한 도구들을 지급하기
+    - 검과 창 등의 도구를 장착하고 대장공방 내의 결함 여부를 살펴보기
+    - 여관으로 이동하여 관련 장비들의 상태를 살펴보기
+- id: plan_light_105
+  npc: Artist
+  source_goal_en: drop Paintbrush
+  context: '예술가가 성당의 합창단 벽화 제작을 준비하고 있다.
+
+    '
+  gold:
+    goal: 벽화에 필요한 도구들을 확인하고 복원하기
+    steps:
+    - 벽화용 붓을 확인하고, 물통과 벽면을 확인한 후 집으로 이동하기
+    - 성당 내부에서 벽화 제작을 위한 도구들 살펴보기
+    - 벽화에 필요한 도구들을 복원하여 마법진에 반영하기
+- id: plan_light_106
+  npc: Unicorn
+  source_goal_en: give candy to king
+  context: '왕이 가진 마법을 통해 유니콘들이 안전하게 보호받을 수 있도록, 왕에게 사탕을 전달해야 한다.
+
+    '
+  gold:
+    goal: 왕에게 사탕을 제공하여 유니콘들을 보호하기
+    steps:
+    - 유니콘과 만나서 사탕을 획득하기
+    - 왕에게 이동하여 사탕를 전달하고 안심시키기
+    - 왕을 따라가며 안전한 환경을 살펴보기
+- id: plan_light_107
+  npc: Foolhardy Adventurer Who Came
+  source_goal_en: give dead people to unicorn
+  context: '얼음 요새에서 발견된 유적을 조사하기 위해 온 무모한 모험가.
+
+    '
+  gold:
+    goal: 죽은 자들에게 마법을 가르치기 위한 절차를 완수하고, 유적 내의 위험 요소들을 찾아내기
+    steps:
+    - 얼음 요새로 이동하여 조사 시작
+    - 유니콘을 따라가며 생명체 전달
+    - 유니콘을 추적하여 수집
+    - 마법사의 소굴로 이동하여 관련 정보 확인
+- id: plan_light_108
+  npc: Police
+  source_goal_en: give cell phone to traveler
+  context: '마을 내 술집에서 취한 여행자들에게 전해줄 통신구을 확인하고, 사고 예방을 위한 조치를 수행한다.
+
+    '
+  gold:
+    goal: 취한 여행자에게 휴대폰을 전달하여 신속하게 이동할 수 있도록 돕기
+    steps:
+    - 술집으로 이동하여 취한 여행자의 위치를 찾아내기
+    - 여행자에게 통신구을 전달하고 추가적인 위험 요소가 없는지 살펴보기
+    - 마을 내에서 발견된 위험 요소를 확인하고 신속하게 안내하기
+- id: plan_light_109
+  npc: Demons
+  source_goal_en: hug him
+  context: '마을 내의 악령들이나 다른 몬스터들은 해당 NPC를 안내하는 것이 핵심이며, 이 과정에서 마법적 요소나 마법진적인 흐름이 포함됩니다.
+
+    '
+  gold:
+    goal: 악마를 안아주어 그가 안식처로 향할 수 있도록 안내하기
+    steps:
+    - 성계 평면으로 이동하여 악마의 거처를 살펴보기
+    - 악마를 따라 지하 세계로 이동하여 해당 장소에 도달하기
+    - 안내된 위치에서 악마에게 아이템을 전달하고, 마지막으로 성계 평면으로 이동하기
+- id: plan_light_110
+  npc: Intruder
+  source_goal_en: follow bodyguard
+  context: '경비병이 무력화된 상태에서 보물 동굴 내의 유물을 확보해야 한다.
+
+    '
+  gold:
+    goal: 보물 동굴 내의 유물 확보 및 마을 시장 조사
+    steps:
+    - 어두운 의상으로 교체하기
+    - 보물 동굴로 이동하여 탐사 수행
+    - 경비병을 무력화하고 보물 획득
+    - 마을 시장으로 이동하여 유무 확인
+- id: plan_light_111
+  npc: Rodent
+  source_goal_en: hug temple members
+  context: '사원 내부에 숨겨진 통로를 통해 사원의 구성원들과 교류하는 방법을 학습한다.
+
+    '
+  gold:
+    goal: 사원 구성원들에게 성경을 전달하고 친목을 도모하기
+    steps:
+    - 숨겨진 통로에서 사원 구성원의 위치를 살펴보기
+    - 사원 내부에 있는 성경을 수집하여 분포시키기
+    - 필드 지역으로 이동하여 성경을 활용해 사원 구성자들과 교류하기
+- id: plan_light_112
+  npc: Temple Members
+  source_goal_en: give bible to attendee
+  context: '사원의 구성원들은 헌신적인 태도로 성소의 안전을 위협하는 요소들을 확인하고, 신앙이 필요한 이들에게 관련 지식을 전수해야 한다.
+
+    '
+  gold:
+    goal: 버려진 광장에서 발견된 성경을 전달하고 사원의 일원으로서 용기를 고취하기
+    steps:
+    - 망토를 착용하여 장비 손질
+    - 버려진 광장으로 이동하여 참석자 추적
+    - 참석자에게 성경을 전달하며 기술적 결함이나 위협에 대비할 수 있도록 안내
+    - 다음 목적지로 이동하여 안전 확인 및 교육 수행
+- id: plan_light_113
+  npc: The Priest
+  source_goal_en: drop religious text
+  context: '신앙의 핵심인 고백을 실천하기 위해 성직자에게 필요한 도구들을 준비하고 관련 장소로 이동한다.
+
+    '
+  gold:
+    goal: 고해소에서 종교적 텍스트를 수집하고 관리
+    steps:
+    - 종교적 텍스트를 습득하기
+    - 고해소로 이동하여 해당 위치의 좌석에 앉기
+    - 신부실로 이동하여 관련 도구 확인
+- id: plan_light_114
+  npc: A Lady
+  source_goal_en: put dress on a golden cloth
+  context: '신부에게 신앙의 진실을 설명하기 전, 해당 장치에 대한 보안 점검이 필요하다.
+
+    '
+  gold:
+    goal: 신부에게 금색 천 위에 드레스 착용하기
+    steps:
+    - 고백의 방으로 이동하여 단말기 확인
+    - 드레스를 고백의 방으로 이동
+    - 단말에 드레스 장착
+    - 신부에게 안심할 수 있도록 안내하며 드레스 설치 완료
+- id: plan_light_115
+  npc: Admiral
+  source_goal_en: hit guard
+  context: '해적선장 Skadi가 마을의 방어 체계와 보안을 점검할 수 있도록 협조해야 한다.
+
+    '
+  gold:
+    goal: 방어 체계 확인
+    steps:
+    - 감시탑으로 이동하기
+    - 경비병을 추적하여 위치 파악
+    - 경비병에게 도난된 상자 전달
+    - 경비병의 행동 확인 및 관련 장비 손질
+- id: plan_light_116
+  npc: Acolyte
+  source_goal_en: wear Cloak
+  context: 'Acolyte는 성소 내에서 금지된 물품인 사과를 훔치는 과정에서 적발되지 않도록 주의해야 한다.
+
+    '
+  gold:
+    goal: 사과 수집 및 도구 확인
+    steps:
+    - 성소 내의 장비들을 확인하고 성경을 수령하기
+    - 사과 나무로 이동하여 사과를 수집하기
+    - 성전으로 이동하여 의복을 갱신하기
+- id: plan_light_117
+  npc: Homeless Person
+  source_goal_en: hit witch
+  context: '마을의 소외된 자들이나, 마을이 잊혀진 지 오래다. 마녀가 자신의 눈을 노리는 것을 막기 위해 길을 비켜줘야 한다.
+
+    '
+  gold:
+    goal: 마녀로부터 시력을 보호하고 도구들을 손에 넣기
+    steps:
+    - 가방에서 내용물을 꺼내고, 바위로 구성된 도구들을 살펴보기
+    - 마녀를 향해 이동하여 마법의 저항을 방어하기
+    - 마녀에게도움이 되는 물품들을 수거하고 마법진에 기록하기
+- id: plan_light_118
+  npc: Mosquito
+  source_goal_en: get bird
+  context: '새끼들에게 전달할 새의 혈액을 확보하기 위해 요정 사원에서 관련 물품을 수집해야 한다.
+
+    '
+  gold:
+    goal: 새의 혈액을 획득하고 요정 사원에서 신속하게 운반하기
+    steps:
+    - 요정 사원으로 이동하여 새의 혈액을 전달하기
+    - 혈액이 포함된 물품을 수집하고 집으로 돌아가기
+    - 새의 혈액을 자녀들에게 전달하기
+- id: plan_light_119
+  npc: Giant Frog
+  source_goal_en: hug fly
+  context: '거대 개구리(Giant Frog)의 행동 계획
+
+    '
+  gold:
+    goal: 파리 포획 및 수집
+    steps:
+    - 요정 사원으로 이동하기
+    - 사원 내부로 진입하여 파리의 위치를 살펴보기
+    - 파리를 추적하고 쫓기
+    - 파리에 대한 공격을 실행하기
+- id: plan_light_120
+  npc: Giant Turtle
+  source_goal_en: get pad
+  context: '거대 거북이의 행동 계획
+
+    '
+  gold:
+    goal: 거대한 개구리 소굴에서 자신의 위치를 확인하고 잠을 자기 위한 패드 확보
+    steps:
+    - 거대한 개구리 소굴로 이동하기
+    - 거대한 개구리를 공격하여 경로 확인
+    - 검을 장착하고 거대한 개구리에게 대응
+    - 패드를 획득하고 거대한 개구리 공격
+- id: plan_light_121
+  npc: Abbess
+  source_goal_en: hug monk
+  context: '수도원 내에서 자비로운 행위를 실천한 수도사에게 자신의 선행을 설명하고, 해당 수녀의 활동이 올바른지 확인하는 절차를 수행해야
+    한다.
+
+    '
+  gold:
+    goal: 수도사에게 자애로운 행동에 대한 설명을 제공하고 도구 전달
+    steps:
+    - 수도원으로 이동하여 수도사의 위치 파악
+    - 수도사를 따라가며 수여할 항목 확인
+    - 수도원 내 거처로 이동하여 사제에게 관련 정보 전달
+    - 수도사에게 자애로운 행위의 증거를 제공하고, 도구 사용을 통한 검증 절차 수행
+- id: plan_light_122
+  npc: An Evil Witch
+  source_goal_en: get Tool
+  context: '마을 내의 사악한 마법사들이 전염병이나 저주를 막기 위해 수행하는 작업으로 판단됨.
+
+    '
+  gold:
+    goal: 숲에서 독버섯과 쪼글쪼글한 초록색 잎을 수집하여 사악한 물약을 제조하기
+    steps:
+    - 숲에서 독버섯을 수집하고 가방에 담기
+    - 초록색 잎을 채집하여 준비된 도구로 처리하기
+    - 준비된 재료를 버리거나 수습하기
+- id: plan_light_123
+  npc: Maester Who Helps Keep The Doc
+  source_goal_en: steal pen from eccentric astronomer who lives in the tower.
+  context: '마을 내의 문서 관리 마법진에 오류가 발생하여, 타워에 거주하는 기이한 천문학자로부터 마법 펜을 확보해야 한다.
+
+    '
+  gold:
+    goal: 타워의 천문학자로부터 마법 펜을 수거하고 관련 문서를 수습하기
+    steps:
+    - 로브를 착용하여 장비 손질
+    - 도시 내 가장 높은 타워로 이동
+    - 천문대에서 도구 및 마법진 확인
+    - 성으로 이동하여 마법 펜 사용
+- id: plan_light_124
+  npc: Ghost Of A Miner
+  source_goal_en: get broken lantern
+  context: '광산에서 발견된 광부의 유해를 통해 마법진이 정의하는 핵심 정보를 확인한다.
+
+    '
+  gold:
+    goal: 망가진 랜턴을 수거하고 광부의 시신에 대한 정보 제공
+    steps:
+    - 금광으로 이동하여 망가진 랜턴을 획득하기
+    - 광부의 사체 위치로 이동하여 살펴보기
+    - 광부의 시체 확인 후, 수거된 랜턴를 전달하기
+- id: plan_light_125
+  npc: The Town Baker'S Child
+  source_goal_en: hit king's architect
+  context: '마을의 빵집 아이가 성질이 매우 나쁘고 버릇이 없으며, 특히 왕실 건축가에게는 엄격한 태도를 보임.
+
+    '
+  gold:
+    goal: 왕실 건축자에게 잘못된 물건을 전달하고 마을 안전 확보
+    steps:
+    - 메인 거리에서 백색 천을 챙겨 장착하기
+    - 골목길로 이동하여 곰팡이 핀 빵 쓰레기 주워담기
+    - 수집한 곰팡이 핀 빵을 아버지의 것과 비교하며 살펴보기
+- id: plan_light_126
+  npc: Town Baker
+  source_goal_en: get straw mattress
+  context: '방문한 마을 제빵사와 함께 숙박할 수 있는 환경을 확인하고, 편의를 위해 짚 매트리스를 제공해야 한다.
+
+    '
+  gold:
+    goal: 방문한 제빵사에게 짚 매트리스를 제공하여 편안하게 휴식할 수 있도록 지원하기
+    steps:
+    - 마을 제빵사를 확인하고, 방문한 제빵사에게 짚 매트리얼을 전달하기
+    - 침실로 이동하여 침구류를 배치하고, 방에 있는 파이류를 살펴보기
+    - 제빵사가 숙박할 수 있도록 침실 내의 모든 장비와 시설 살펴보기
+- id: plan_light_127
+  npc: Townperson
+  source_goal_en: hit king
+  context: '마을 주민이 국왕을 처단하기 위해 시도했던 행위에 대해 사형 선고를 내릴 것을 요구하고 있다.
+
+    '
+  gold:
+    goal: 국왕에게 내려질 사형 판결 확인 및 관련 정보 수집
+    steps:
+    - 약제상에서 무기 획득
+    - 무기 장착 및 도구 확인
+    - 사망한 국왕의 처벌 여부 확인
+    - 국왕을 위한 사형 선고 내용 기록
+- id: plan_light_128
+  npc: Iguana
+  source_goal_en: hit parrot
+  context: '이구아나의 영역 내에서 발견되는 다른 동물들의 위협을 제거하고 안전한 환경을 조성해야 한다.
+
+    '
+  gold:
+    goal: 이구아나의 영역 내에 침입하는 새를 제압하고 안전한 활동을 보장하기
+    steps:
+    - 물가로 이동하여 상황 찾아내기
+    - 자신의 영토 내에서 발견된 앵무새를 추적하기
+    - 음식 아이템을 획득하여 앵무새에게 전달하고 사용하기
+    - 영역 내의 다른 동물들이 신속하게 활동할 수 있도록 살펴보기
+- id: plan_light_129
+  npc: Saber Tooth Tiger
+  source_goal_en: get walls
+  context: '서늘한 얼음 동굴 내에서 굶주린 사바리 토스 호랑이가 발견되었다.
+
+    '
+  gold:
+    goal: 얼음 동굴의 벽면을 확인하고 요리사가 준비한 고기 조리법을 습득하기
+    steps:
+    - 뼈를 수집하여 분석하기
+    - 얼음 동굴로 이동하여 벽면 조사하기
+    - 요리사를 찾아내어 공격하기
+    - 구운 고기를 섭취하여 허기 해결하기
+- id: plan_light_130
+  npc: Diplomat
+  source_goal_en: hug ambassador
+  context: '외교관과 합의에 도달하기 위한 절차를 확인하고, 외교관에게 필요한 물품을 전달하며 협상을 진행한다.
+
+    '
+  gold:
+    goal: 외교관과 합의를 위한 세부 사항을 검토하고 최종적인 합의에 도달하기
+    steps:
+    - 외교관용 코트 장착하기
+    - 왕좌로 이동하여 외교관에게 코트 전달하기
+    - 외교관이 들고 있는 물품을 확인하고 수령하기
+    - 외교관을 따라가며 합의 절차를 진행하기
+- id: plan_light_131
+  npc: Fat Rats
+  source_goal_en: get shoes
+  context: '마을 내의 주요 시설 및 인프라에 대한 정보가 부족한 상태에서, 쥐들이 가죽 장화(leather shoes)를 섭취하기 위해
+    이동하는 경로를 파악해야 한다.
+
+    '
+  gold:
+    goal: 서쪽 문 침입자를 확인하고 마을 안전 확보
+    steps:
+    - 서쪽 문으로 이동하여 배제할 요소들을 식별하기
+    - 숨겨진 통로로 이동하여 위치 확인
+    - 쥐굴에서 가죽 장화를 획득하고 관련 도구 확인
+    - 마을 내의 모든 경로에 대한 보안 상태를 재확인
+- id: plan_light_132
+  npc: Mouse
+  source_goal_en: follow thief
+  context: '박물관 외부에서 도둑이 멈춰 서 있는 것을 확인했다.
+
+    '
+  gold:
+    goal: 박물관 외부에 위치한 도둑의 활동을 감시하고, 발견된 위협 요소에 대응하기
+    steps:
+    - 박물관 외부로 이동하여 도둑의 움직임을 관찰하기
+    - 지면에 있는 바닥의 돌을 수집하여 살펴보기
+    - 도둑을 추적하며 활동 위치를 찾아내기
+    - 치즈를 사용하여 도구의 기능을 실행하고 감염된 장치를 탐색하기
+- id: plan_light_133
+  npc: Father
+  source_goal_en: give Clothes to a napping mouse
+  context: '아이의 놀이방에서 발견된 쥐가 잠든 상태이며, 해당 장비들을 아이에게 전달해야 한다.
+
+    '
+  gold:
+    goal: 잠든 쥐에게 의류를 제공하고 관련 장치들을 수습하기
+    steps:
+    - 놀이방으로 이동하여 쥐의 위치 확인
+    - 쥐가 잠든 곳에서 활동을 중단하고, 해당 도구들을 아이에게 전달
+    - 쥐가 잠든 공간 내에서 관련 장비들 수거
+    - 쥐가 잠든 공간에 있는 장비들을 정리하며 소동 방지
+- id: plan_light_134
+  npc: Loved Ones
+  source_goal_en: follow a big sheep-like brown dog
+  context: '마을 내에 존재하는 대형견 한 마리를 입양하기 위한 절차를 수행해야 한다.
+
+    '
+  gold:
+    goal: 대형견을 추적하고 신속하게 주워담기
+    steps:
+    - 성당으로 이동하여 기도하기
+    - 대형 양을 닮은 갈색 개를 확인하고, 해당 위치에서 대형 견종의 특징을 찾아내기
+    - 버려진 나무 오두막으로 이동하여 바닥에 떨린 가죽 목줄이 있는지 살펴보기
+    - 가죽 목줄을 수거하여 대형견에게 전달하기
+- id: plan_light_135
+  npc: Wizard Of The Town
+  source_goal_en: get cage
+  context: '마을 내 마법 기술 및 마법진 구성 요소 파악
+
+    '
+  gold:
+    goal: 마법사 거처에서 인간 대상에 대한 마법 테스트 완수
+    steps:
+    - 마법사의 거처로 이동하여 갇힌 인물에게 가둔 채로 공격을 시도하기
+    - 마법사의 거처로 이동하여 마법진 확인
+    - 거처 내에서 갇힌 인물을 대상으로 마법 지팡이 사용
+    - 사고된 개체에 대한 테스트 완료 및 결과 확인
+- id: plan_light_136
+  npc: Faerie
+  source_goal_en: put small ball of light on throne
+  context: '마을 광장에서의 활동을 통해 미래를 위한 에너지를 확보해야 한다.
+
+    '
+  gold:
+    goal: 왕좌에 작은 빛의 구체를 가져다 놓기
+    steps:
+    - 방 내에 있는 작은 빛의 구체 획득하기
+    - 왕좌로 이동하여 목표물 위치 확인
+    - 왕좌에 소형 발광체 설치
+    - 아침 식사 및 음료를 통한 마법진 확인 완료
+- id: plan_light_137
+  npc: A Monkey Friend
+  source_goal_en: hug jacob's son
+  context: '마을 광장에서 어린아이와 함께하는 제이콥과 그의 아들을 발견했다.
+
+    '
+  gold:
+    goal: 제이콥의 아들과 친하게 지내기
+    steps:
+    - 아침 식사를 사용하여 제이콥의 아들에게 인사를 건네고, 꼬마 원숭이가 소중히 다루는 도구들을 살펴보기
+    - 작은 오두막으로 이동하여 제이콥와 그의 아들이 위치한 곳을 찾아내기
+    - 제이콥를 따라가며 아이와 친하게 지내기 위한 행동을 실행하기
+    - 제이콥의 집으로 이동하여 아들과 함께하는 활동을 마무리하기
+- id: plan_light_138
+  npc: King Visiting The Shipyard
+  source_goal_en: get rope work
+  context: '왕이 조선소의 총책임자에게 새로운 군함 건조를 위한 지시를 내릴 예정이며, 관련 기술을 확인하기 위해 현장을 방문한다.
+
+    '
+  gold:
+    goal: 군함 제작에 필요한 로프 작업 및 공정 설명
+    steps:
+    - 조선장 총책임자에게 안부 인사 및 상황 설명
+    - 조선장 내의 로프 관련 기술 확인
+    - 군함 설계도와 명령서 전달
+    - 성으로 복귀하여 군함 건조 준비
+- id: plan_light_139
+  npc: Geese
+  source_goal_en: follow horse
+  context: '농장 내 가축들과의 동행을 확인하고, 말과 함께 농장을 탐색하는 절차를 수행한다.
+
+    '
+  gold:
+    goal: 말과 함께 농장 주변을 순회하며 안전한 경로를 손에 넣기
+    steps:
+    - 아침 식사를 사용하여 단계를 처리하기
+    - 농장으로 이동하여 말의 위치 살펴보기
+    - 붉은 헛간에서 말의 상태를 확인하고 탐색을 진행하기
+    - 농장 가장자리로 이동하여 경로를 따라가기
+- id: plan_light_140
+  npc: Queen'S Subject
+  source_goal_en: steal crown from king
+  context: '여왕이 왕의 왕관을 용해하려는 행위가 마법진에 큰 위협이 된다는 것을 인지하고, 여왕의 명령에 따라 관련 장비 및 공간의 보안
+    취약점을 점검한다.
+
+    '
+  gold:
+    goal: 여왕의 거처에서 왕의 왕관을 탈취하고 신속하게 보관하기
+    steps:
+    - 여왕의 거처로 이동하여 마법진 확인
+    - 여왕을 추적하고 비밀 공간으로 이동
+    - 비밀 공간에서 왕관을 수거하여 여왕에게 전달
+    - 보상 아이템을 획득하고 보안 조치 수행
+- id: plan_light_141
+  npc: Elderly Man
+  source_goal_en: hit ghost
+  context: '버려진 성의 꼭대기에서 유적을 조사하는 과정 중, 과거에 발생했던 사건들을 확인하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 버려진 성의 꼭대기에 도달하여 유령을 찾아내고 신속하게 제거하기
+    steps:
+    - 지팡이를 챙겨 버려진 성으로 이동하기
+    - 성 내부로 진입하여 유적 조사
+    - 서쪽 계단 끝까지 올라가며 유령 탐색
+    - 성 꼭대기에서 유령을 찾아내어 제거하기
+- id: plan_light_142
+  npc: Assistant
+  source_goal_en: steal orb from tanner
+  context: '마을 내의 핵심적인 장비 및 마법진 구성 요소인 [Assistant]는 왕에게 전달할 구체(Orb)를 획득하고 관련 시설들을
+    점검해야 한다.
+
+    '
+  gold:
+    goal: 가죽 세공사로부터 구체를 확보하여 성 내부로 운송하기
+    steps:
+    - 신발을 착용하고 가죽 세공주를 추적하기
+    - 식당의 하인들이 모여있는 장소로 이동하여 구체 가져다 놓기
+    - 성 안뜰에서 흑인장으로 이동하여 관련 시설 살펴보기
+- id: plan_light_143
+  npc: Fox
+  source_goal_en: eat worm
+  context: '숲속에서 길을 잃은 여행자들을 발견하고, 높은 나무 위에서 이들의 위치를 파악한다.
+
+    '
+  gold:
+    goal: 높은 나무 꼭대기에서 길을 잃은 아이를 확인하고 신속하게 손에 넣기
+    steps:
+    - 숲의 개울 근처로 이동하여 물을 마시기
+    - 높은 나무 꼭대기로 이동하여 아이를 추적하기
+    - 아이를 발견하고 위치 찾아내기
+    - 아이를 확인한 후 높은 나무 꼭대기에서 탐색 실행하기
+- id: plan_light_144
+  npc: God
+  source_goal_en: hit peasant
+  context: '신전 입구에서 잘못된 길을 걷고 있는 농민에게 올바른 신앙의 길을 안내해야 한다.
+
+    '
+  gold:
+    goal: 농민이 올바른 길로 나아갈 수 있도록 도울 수 있게 함
+    steps:
+    - 신전 입구에서 농민을 확인하고, 잘못된 관습에 대한 교육을 실시하기
+    - 신전 내부에 위치한 장소로 이동하여 농민에게 올바른 신앙의 길을 안내하기
+    - 농민이 올바른 경로를 따르도록 돕고 신속하게 마무리하기
+- id: plan_light_145
+  npc: The Family
+  source_goal_en: give Notebook to freind
+  context: '가족 구성원이 모여 논의한 내용을 친구가 기록하도록 안내하고, 관련 도구들을 확인한다.
+
+    '
+  gold:
+    goal: 모임에서 논의된 내용이 포함된 노트북을 친구에게 전달하기
+    steps:
+    - 친구를 따라 모임 장소로 이동하기
+    - 소형 테이블을 사용하여 기술 검사
+    - 기록용 깃펜을 배치하고, 성직자에게 안심할 수 있는 환경인지 확인
+    - 노트북을 친구에게 전달하여 기록된 내용이 정확한지 살펴보기
+- id: plan_light_146
+  npc: Visitor
+  source_goal_en: wear bag
+  context: '방문자가 마을를 떠나기 전, 해당 지역의 주요 시설 및 장비에 대한 확인 절차를 수행한다.
+
+    '
+  gold:
+    goal: 방문자용 가방 착용 및 관련 장비 손질
+    steps:
+    - 방문자용 가방 착용
+    - 성직자 위치로 이동하여 소속 확인
+    - 방문자 입구에서 가방을 내려놓고 안내하기
+    - 성직자에게 위로 메시지 전달 및 메인 고속도로로 이동
+- id: plan_light_147
+  npc: Families
+  source_goal_en: steal a crystal ball from child
+  context: '해안 지역에서 발견된 수정구의 진정한 잠재력을 파악하기 위해 관련 기술을 습득해야 한다.
+
+    '
+  gold:
+    goal: 수정구의 기능을 조사하고 마을 안전을 위한 핵심 기술 학습
+    steps:
+    - 해안 지역로 이동하여 아이가 소유한 수정구 확인
+    - 어린이의 수집된 도구들을 확인하고 물품 파악
+    - 마녀의 오두막으로 이동하여 수정구 관련 물약 사용
+    - 수정구를 활용하여 기술 학습 완료 및 기록 정리
+- id: plan_light_148
+  npc: Offender
+  source_goal_en: put rock on small metal bucket
+  context: '감옥 내의 고위험 요소 및 규율 위반 사항 파악
+
+    '
+  gold:
+    goal: 죄수용 대형 바구니를 통한 탈출 경로 확인 및 보안 취약점 확인
+    steps:
+    - 투척된 바위와 작은 금속 바구니를 주워담기
+    - 바구니에 굴러다니는 암석을 배치하여 통로 확보
+    - 결함이 있는 높은 창문을 통해 탈출 경로 확인
+    - 경비병의 열쇠가 노출된 지점을 파악하고 보안 확인 수행
+- id: plan_light_149
+  npc: Archaeologists
+  source_goal_en: hug bandit
+  context: '유적지에서 발견된 고대 유물의 위치를 파악하기 위해 연구가 진행 중이다.
+
+    '
+  gold:
+    goal: 유적 내 숨겨진 기록을 조사하고 관련 정보를 살펴보기
+    steps:
+    - 연구자에게 전달할 뼈 조각을 확보하고, 사막의 고대 유물과 관련된 기술을 학습하기
+    - 사원 입구 옆에 위치한 연구자의 위치를 파악하여 접근하기
+    - 유적 내 숨겨진 기록이 포함된 문서들을 수집하기
+- id: plan_light_150
+  npc: A Tribesman
+  source_goal_en: follow caretaker
+  context: '부족민이 저주받은 무덤의 비밀을 조사하기 위해 관련 도구들을 확인하고 이동합니다.
+
+    '
+  gold:
+    goal: 저주받은 무덤에서 발견된 유물을 분석하여 부족의 안전을 손에 넣기
+    steps:
+    - 지정된 위치로 이동하여 저주받은 무덤의 경로를 추적하기
+    - 무덤으로 이동하여 꽃을 수집하고 관련 정보를 살펴보기
+    - 수집한 꽃을 다시 무덤에 배치하고 분석 완료하기
+    - 부족 캠프로 돌아가 해당 유물들의 안전성을 살펴보기
+- id: plan_light_151
+  npc: Scorpion
+  source_goal_en: hit vulture
+  context: '사막 지역에서 발견된 독수리(Vulture)를 처단하여 식량 확보 및 마법진 보호.
+
+    '
+  gold:
+    goal: 사막의 독수리를 제압하고 고기 사체 수거
+    steps:
+    - 선인장 밭으로 이동하기
+    - 선인장 밭 입구에서 독수리 추적하기
+    - 고기 사체를 수집하여 살펴보기
+    - 사막 지역로 이동하기
+- id: plan_light_152
+  npc: There Is The Lighthouse Keeper
+  source_goal_en: get sea glass
+  context: '해변 산책로를 따라 이동하는 과정에서 해안가에 위치한 등대 관리자를 발견했다.
+
+    '
+  gold:
+    goal: 해안 산책로에서 바다 유리 및 조개류 수집
+    steps:
+    - 등대에서 해안 산책로로 이동하기
+    - 해변에서 흩어진 해양 유물 확인
+    - 해안 산책로를 따라 이동하며 위치 파악
+    - 해변 근처의 주거지로 이동하여 활동 종료
+- id: plan_light_153
+  npc: Monkey
+  source_goal_en: hit bird
+  context: '마을 내의 새들이 활동하는 높은 나무 꼭대기에서 새를 포획하기 위한 작업을 수행한다.
+
+    '
+  gold:
+    goal: 새를 포획하고 마을 내의 생태계를 찾아내기
+    steps:
+    - 높은 나무 꼭대기로 이동하여 새를 포착하기
+    - 나무 꼭대기에서 떨어지는 나뭇가지를 수집하기
+    - 나뭇가지를 챙겨서 해당 위치로 이동하기
+- id: plan_light_154
+  npc: Beggar
+  source_goal_en: drink flask
+  context: '사제관에서 하룻밤을 보낼 수 있도록 허용받은 빈민의 행동을 확인한다.
+
+    '
+  gold:
+    goal: 사제관 내 시설 및 물품 확인
+    steps:
+    - 사제관으로 이동하기
+    - 십자가를 착용하여 신앙적 의식 수행
+    - 유기견의 상태를 확인하고 위로하며 빵을 제공
+    - 음료를 마셔 갈증 해소 및 수량 확인
+- id: plan_light_155
+  npc: Tern
+  source_goal_en: wear flower
+  context: '성전 내부에서 꽃을 감상하며 휴식을 취하는 것이 안전한 환경임을 확인했다.
+
+    '
+  gold:
+    goal: 꽃을 착용하기
+    steps:
+    - 지렁이를 사용하여 물을 공급하고, 샘물에서 물을 섭취하기
+    - 나뭇가지에 위치한 꽃을 확인하고, 둥지로 이동하여 새끼들의 상태를 살펴보기
+- id: plan_light_156
+  npc: Gypsy
+  source_goal_en: steal coconut from lizards
+  context: '해안 지역으로 향하는 여정 중에 발견된 오아시스에서 물을 섭취하고 도마뱀으로부터 코코넛을 확보해야 한다.
+
+    '
+  gold:
+    goal: 오아시스에서 물을 공급하고 도마뱀으로부터 코코넛을 수집하기
+    steps:
+    - 오아시스로 이동하여 물을 살펴보기
+    - 도마뱀의 위치를 추적하여 코코너를 획득하기
+    - 수집된 코코너를 확인하고 사막 지역으로 이동하기
+- id: plan_light_157
+  npc: Princess
+  source_goal_en: hit unicorn hunters
+  context: '유니콘들의 성에서 발견된 유니콘들을 보호하기 위해 사악한 사냥꾼들을 저지해야 한다.
+
+    '
+  gold:
+    goal: 유니콘을 지키기 위한 핵심적인 행동
+    steps:
+    - 유니콘의 성에서 무지개 풀을 수집하기
+    - 무지개 경로를 따라 이동하여 유니콘 사냥꾼들에게 무지개 풀 전달하기
+    - 유니콘 사냥꾼들을 소탕하고 관련 장비 제거하기
+- id: plan_light_158
+  npc: Raven
+  source_goal_en: drop coat
+  context: '마을 광장에서 아이와 함께하는 활동이 확인됨.
+
+    '
+  gold:
+    goal: 아이의 잃어버린 물건이나 위험 요소에 대한 조치
+    steps:
+    - 아이를 따라가며 주변 상황 찾아내기
+    - 아이에게 코트 전달하기
+    - 아이를 안심시키고 관련 아이템 주워담기
+- id: plan_light_159
+  npc: Kid
+  source_goal_en: give coat to raven
+  context: '습한 던전 탐험을 시작하기 전, 아이는 도구와 장비의 위치를 확인하고 필요한 물품들을 준비해야 한다.
+
+    '
+  gold:
+    goal: 습한 던전 내에서 검과 코트 및 촛불 등의 장비를 확인하고 배분하기
+    steps:
+    - 습한 던전으로 이동하기
+    - 검을 내려놓고 코트를 전달하며, 도구의 위치를 살펴보기
+    - 검을 착용하고 촛불을 장착하여 탐색 준비 완료하기
+- id: plan_light_160
+  npc: Bee
+  source_goal_en: get smoke
+  context: '꽃밭에서 채집한 꽃가루를 활용하여 사악한 마녀의 은신처에 침투할 준비를 수행한다.
+
+    '
+  gold:
+    goal: 마녀의 은신처 내부에 존재하는 연기 장치를 확보하고 조사하기
+    steps:
+    - 꽃밭에서 꽃가루 채집하기
+    - 요정 교회 내부로 이동하여 살펴보기
+    - 마녀의 은신처로 이동하여 연기 장비 장착하기
+- id: plan_light_161
+  npc: Master At Arms
+  source_goal_en: give stick to hiker
+  context: '등반 경로에서 발견된 여행자에게 필요한 도구들을 전달하고, 해당 장비가 안전하게 제공되었는지 확인해야 한다.
+
+    '
+  gold:
+    goal: 여행자에게 지팡이를 전달하여 등반 경로의 위험 요소로부터 보호하기
+    steps:
+    - 등반 경로로 이동하여 여행자의 위치를 찾아내기
+    - 여행자를 따라가며 도구들을 확인하고, 해당 장비들이 신속하게 배포되었는지 살펴보기
+    - 여행자에게 지팡이를 전달하고 관련 기술을 시연하기
+    - 해당 경로 내의 위험 요소들을 확인하고 이동하기
+- id: plan_light_162
+  npc: A Fairy
+  source_goal_en: get window
+  context: '성 내부에서 발견된 공주를 구출하기 위해 성의 창문을 파괴하고 탈출 경로를 확보해야 한다.
+
+    '
+  gold:
+    goal: 성 내부의 창문 파괴 및 탈출 경로 확인
+    steps:
+    - 성으로 이동하여 공주의 위치를 살펴보기
+    - 공주의 거처로 이동하여 창문 상태 살펴보기
+    - 공주의 방에 있는 창문을 파괴하고 탈출 경로 손에 넣기
+    - 공주에게 전달할 아이템을 확인하고 탈출 경로 안내하기
+- id: plan_light_163
+  npc: Roach
+  source_goal_en: get Wall
+  context: '버려진 오두막 근처에서 새로운 은신 장소를 탐색하던 중, 거대한 거미의 위협으로부터 안전한 지점을 확인했다.
+
+    '
+  gold:
+    goal: 오래된 건물 내에 존재하는 벽면 구조를 파악하고 안전한 위치 확보
+    steps:
+    - 버려진 오두막으로 이동하여 구조물 상태 확인
+    - 거미의 활동 경로를 추적하며 벽면 탐색
+    - 지붕 위로 이동하여 손상된 기와 수집
+    - 베란다에서 안전한 위치 확인 및 이동
+- id: plan_light_164
+  npc: Concubine
+  source_goal_en: eat herb
+  context: '해적선장 Skadi가 항법사 James에게 전달할 약초를 확인하고, 해당 장비들을 확보하는 과정에서 발견된 결함(또는 도구)을
+    파악해야 한다.
+
+    '
+  gold:
+    goal: 항법사에게 제공되는 정보와 물품의 안전성을 검증하고 관련 정보 수집
+    steps:
+    - 약초를 챙겨서 항해소로 이동하기
+    - 항해소에서 해적선장이 사용하는 장비들을 살펴보기
+    - 해당 장비들이 신속하게 관리되는지 확인하고, 약품을 사용하여 관련 기록를 수집하기
+- id: plan_light_165
+  npc: Critter
+  source_goal_en: hug adventurer
+  context: '모래 구덩이에서 발견된 크리터가 위험에 처한 모험가를 구조하기 위해 협력해야 한다.
+
+    '
+  gold:
+    goal: 모험자를 모래 구덩이로부터 신속하게 구조하기
+    steps:
+    - 숲으로 이동하여 모험자 위치 확인
+    - 모래 구덩이로 이동하여 탐색 수행
+    - 모험자를 모래 구덩이에서 구조
+    - 모험자를 껴안아 감사 표시
+- id: plan_light_166
+  npc: Although The Temple Is Full, N
+  source_goal_en: wield a sleeping bag
+  context: '성전 내에서 발생하는 유령의 출몰로 인해 성소의 정적을 깨는 행위가 금지되어 있다.
+
+    '
+  gold:
+    goal: 성전 내 유령의 활동을 중단시키고 해당 장소를 살펴보기
+    steps:
+    - 성전에 있는 유령이 소란을 피우지 못하도록 차단하고, 성소의 안전을 손에 넣기
+    - 유령에게 닿은 성전 내부로 이동하여 유령의 활동을 중단시키기
+    - 숲으로 이동하여 유령의 출현을 방지하는 장비 설치하기
+- id: plan_light_167
+  npc: Drunkard
+  source_goal_en: hug merchant
+  context: '술집에서 새로운 술을 구매하기 위해 금화가 필요하다.
+
+    '
+  gold:
+    goal: 술사에게 금화 전달 및 가용 물품 확보
+    steps:
+    - 술집에서 판매자에게 금화 전달
+    - 시장으로 이동하여 상인과 대화
+    - 술품목 확인 및 수량 파악
+    - 술을 획득하고 술사에게 전달
+- id: plan_light_168
+  npc: Bigfoot
+  source_goal_en: get rope
+  context: '모래바람이 잦은 지역에서 모래 구덩이에 빠진 외국인 구조를 위해 협력하기
+
+    '
+  gold:
+    goal: 모래 구덩지에 빠진 외국인을 구조하고 부상 부위 치료하기
+    steps:
+    - 모래 구덩이로 이동하여 상황 찾아내기
+    - 외국인의 위치를 확인하고 모래 구덩이에서 밧줄을 손에 넣기
+    - 나무를 이용해 모래 구덩이의 고립된 지점과 연결하기
+    - 외국인에게 밧줄을 전달하고 부상 부위 치료하기
+- id: plan_light_169
+  npc: Bat Queen
+  source_goal_en: give purse to villager
+  context: '동굴 근처에 거주하는 농민에게 전달할 가방을 수령하고, 배트 퀸이 해당 물품을 전달한다.
+
+    '
+  gold:
+    goal: 농부에게 가방을 전달하기
+    steps:
+    - 가방을 수령하여 살펴보기
+    - 마을로 이동하여 농부에게 보고하기
+    - 동굴로 이동하여 배트 퀸에게 보고하기
+    - 벌레를 사용하여 마법진 살펴보기
+- id: plan_light_170
+  npc: Turtle
+  source_goal_en: hug beaver
+  context: '해자 내에 쓰러진 나무가 아이들을 끌어모으는 데 중요한 역할을 함을 확인했다.
+
+    '
+  gold:
+    goal: 해변의 나무를 껴안아 안전한 환경을 조성하기
+    steps:
+    - 해자 얕은 곳으로 이동하기
+    - 호수에서 비버를 따라가기
+    - 새로운 나무 아래쪽으로 이동하여 개구체 살펴보기
+    - 새로운 나무 하단부로 이동하기
+- id: plan_light_171
+  npc: Men And Women Working
+  source_goal_en: give lantern to a dog
+  context: '광산에서의 고된 작업이 끝난 후, 마을 주민들은 휴식을 취하기 위해 성의 주방으로 이동한다.
+
+    '
+  gold:
+    goal: 주방에서 장비를 확인하고 개에게 저녁 식사를 제공하기
+    steps:
+    - 랜턴을 챙겨서 주방으로 이동하기
+    - 성 주방에서 사냥한 개에게 저녁 식사를 제공하기
+    - 개와 함께 성의 주방으로 이동하여 경로를 확인하고, 남은 장비들을 수습하기
+- id: plan_light_172
+  npc: Old Men
+  source_goal_en: remove vest
+  context: '마을 내의 노인들이 오늘 하루를 위한 식사 준비를 돕기 위해 협력한다.
+
+    '
+  gold:
+    goal: 주방에서 필요한 도구들을 수거하고 요리사에게 전달하기
+    steps:
+    - 궁전으로 이동하여 관련 장비 확인
+    - 주방으로 이동하여 단검과 테이블을 배치
+    - 요리사에게 주머니를 전달
+    - 궁전에서 작업용 가방을 수거
+- id: plan_light_173
+  npc: Goddess
+  source_goal_en: get jewels
+  context: '신성한 정원 내의 영혼들에게 축복을 부여하기 위해 신성한 정원으로 이동했다.
+
+    '
+  gold:
+    goal: 신성한 정원의 영혼들에게 꽃과 보석을 전달하여 축복하기
+    steps:
+    - 황금색 예복을 착용하기
+    - 신성한 정원에서도 발견되는 유실된 보석들을 수집하기
+    - 신성한 정원의 영혼들을 추적하여 위치 살펴보기
+    - 꽃을 획득하고 각 영혼들에게 전달하기
+- id: plan_light_174
+  npc: Son
+  source_goal_en: remove boot
+  context: '아버님께 보여드릴 장비들을 확인하고, 아버님의 지시를 수행하기 위한 준비가 완료되었습니다.
+
+    '
+  gold:
+    goal: 부츠를 착용하고 사냥꾼의 소굴에서 신속하게 불을 확인하며 아버지의 행동을 관찰하기
+    steps:
+    - 부츠를 착용하여 장비 상태 확인
+    - 사냥꾼의 소굴로 이동
+    - 소방 도구를 사용하여 화재 발생 여부를 확인하고, 아버지를 따라가며 신속하게 동행하기
+- id: plan_light_175
+  npc: Lady Of The House
+  source_goal_en: steal a treasure map from soldier
+  context: '마을 내의 주요 시설물과 보안 마법진에 대한 정보 파악이 필요하다.
+
+    '
+  gold:
+    goal: 서쪽 문 침입자를 확인하고 마을 안전 확보
+    steps:
+    - 화려한 드레스를 착용하고 장비 손질
+    - 경비병을 따라가며 위치 및 경로 추적
+    - 분실된 보물 지도 수거 및 보안 취약점 파악
+    - 보안이 확인된 핵심 장소로 이동하여 마법진 복구
+- id: plan_light_176
+  npc: Fairy
+  source_goal_en: hug dragon
+  context: '마을 광장에서 드래곤과 교감하기 위한 준비가 완료되었으며, 페어리는 드래곤이 자신을 따라오도록 유도해야 한다.
+
+    '
+  gold:
+    goal: 드래공과 함께 고대 유적지 탐사
+    steps:
+    - 모래 언덕에서 드래곤에게 선물 전달하기
+    - 고대 유적지의 깊은 곳으로 이동하여 드래곤 추적하기
+- id: plan_light_177
+  npc: Hummingbird
+  source_goal_en: give flower to mourner
+  context: '묘지에서 애도하는 자를 돕기 위해 꽃을 전달하고, 희귀한 광물들을 수집해야 한다.
+
+    '
+  gold:
+    goal: 묘지에서 애도하는 자에게 꽃을 전달하고 필요한 광물을 수집하기
+    steps:
+    - 묘지로 이동하여 애도하는 자를 찾기
+    - 주요 동굴로 이동하여 희귀한 광물들을 수집하기
+    - 동방의 주요 광산에서 발견된 많은 소중한 광물을 챙겨서 살펴보기
+    - 애도하는 자를 따라가며 필요한 광물들을 전달하기
+- id: plan_light_178
+  npc: Criminal
+  source_goal_en: get offering plate
+  context: '마을 내의 주요 시설 및 구성 요소에 대한 정보 파악
+
+    '
+  gold:
+    goal: 공헌금 헌금판 확보 및 단계별 보안 검증
+    steps:
+    - 신전 내부로 이동하여 공헌금 헌금판 수거
+    - 공헌금 헌금판을 신전 내부에 배치
+    - 마차 운전사 자택으로 이동하여 소지품 확인
+    - 운전자에게 금전 전달 및 장비 지급
+- id: plan_light_179
+  npc: Ladies
+  source_goal_en: give Napkin to villager
+  context: '마을 내의 모든 방문객에게 식사 예절이 매우 중요함을 교육하고 시연해야 한다.
+
+    '
+  gold:
+    goal: 식사 예절 교육
+    steps:
+    - 오두막 주방에서 새 냅킨을 가져와 살펴보기
+    - 마을 주민을 따라가며 식사 예절의 중요성을 설명하고 냅킨을 전달하기
+    - 조리사를 따라가서 제공된 식사 메뉴를 확인하고 안내하기
+- id: plan_light_180
+  npc: Wolves
+  source_goal_en: give mug to werewolf
+  context: '늑대들과 함께 보름달을 기념하기 위해 늑대 전용 술집에 방문했다.
+
+    '
+  gold:
+    goal: 늑대들에게 제공된 음료를 전달하고 축제를 즐기기
+    steps:
+    - 야생 고기 조각을 꺼내어 늑대에게 전달하기
+    - 늑대와 함께 이동하여 술을 제공하기
+    - 술을 제공한 후 여관 종업자를 따라가며 안내받기
+- id: plan_light_181
+  npc: Supplicant
+  source_goal_en: hug animal
+  context: '신전의 제단에서 신성한 불꽃을 다루는 과정에서 발생하는 절차적 오류를 확인하고, 해당 동물을 포용하는 과정을 수행합니다.
+
+    '
+  gold:
+    goal: 제단 내 동물 포용 및 성스러운 불꽃 수습
+    steps:
+    - 제단으로 이동하여 신성한 불꽃을 취득하기
+    - 왕의 명령에 따라 제단 내 동물을 안아주기
+    - 동물에게서 성스러운 불꽃를 회수하고 제단에 가져다 놓기
+- id: plan_light_182
+  npc: Owl
+  source_goal_en: follow snakes
+  context: '마을 내부에 존재하는 뱀들의 위협에 대응하기 위해, 올(Owl)은 모든 뱀을 추적하고 제거해야 한다.
+
+    '
+  gold:
+    goal: 모든 뱀의 활동을 탐색하고 공격하여 소탕하기
+    steps:
+    - 나무로 이동하여 날개 장비 확인
+    - 날개를 사용하여 공중으로 이동
+    - 뱀이 위치한 나무로 이동하여 공격 수행
+    - 탐지된 뱀을 제거하고 관련 활동 수행
+- id: plan_light_183
+  npc: Wizard'S Assistant
+  source_goal_en: get book
+  context: '마을 광장에서의 퀘스트
+
+    '
+  gold:
+    goal: 악령으로부터 왕국을 보호하기 위한 마법 준비 지원
+    steps:
+    - 책을 수거하여 마법진에 등록하기
+    - 서적을 확인하고 악한 마법사의 위협에 대비하기
+    - 악의 마법사를 소탕하고 관련 서적 전달하기
+- id: plan_light_184
+  npc: Wasp
+  source_goal_en: hug subject
+  context: 'Wasp는 숲에서 발견된 대상에게 독이 퍼질 때까지 고통과 가려움을 해결하기 위한 조치를 수행해야 한다.
+
+    '
+  gold:
+    goal: 대상에게 침을 놓아 독의 영향으로부터 보호하고 신속하게 안내하기
+    steps:
+    - 이슬 맺힌 잎에서 물방울을 채취하기
+    - 꽃과 풀을 수집하여 대상에게 전달하기
+    - 안전한 장소로 이동하여 대상의 상태를 살펴보기
+- id: plan_light_185
+  npc: Watcher
+  source_goal_en: hit guard
+  context: '왕위를 계승할 자녀를 위해 왕의 통제에 대한 방벽이 되는 경비병을 제거해야 한다.
+
+    '
+  gold:
+    goal: 경비병을 제압하고 무기고 내 장비를 살펴보기
+    steps:
+    - 무기창고로 이동하여 경비병에게 전달할 검을 챙기기
+    - 경비병을 찾아내어 해당 장비를 장착하기
+    - 경비병을 공격하여 무기를 확보하고, 이후에도 안전한지 살펴보기
+- id: plan_light_186
+  npc: Towns Folk
+  source_goal_en: give Rake to child
+  context: '마을 주민들이 아이들에게 농기구 사용법을 교육하는 과정에서, 마을의 안전과 질서를 위해 관련 도구들을 전달해야 한다.
+
+    '
+  gold:
+    goal: 농기구를 아이에게 전달하고 올바른 사용법을 가르치기
+    steps:
+    - 농기구를 챙겨 대장간으로 이동하기
+    - 아이에게 농기구를 전달하고 시연하기
+    - 아이를 따라가며 농기구의 올바른 사용법을 교육하기
+- id: plan_light_187
+  npc: Troop
+  source_goal_en: give flower to king
+  context: '승전 기념 축제 준비를 위해 승리한 왕에게 꽃을 전달해야 한다.
+
+    '
+  gold:
+    goal: 왕에게 꽃을 전달하여 승리의 기쁨 공유
+    steps:
+    - 마지막 적들을 소탕하고, 거점 산으로 이동하기
+    - 왕의 위치를 확인하고 후속 절차 수행
+    - 축제용 꽃을 왕에게 전달
+    - 홈으로 복귀하여 승전 기념식 준비
+- id: plan_light_188
+  npc: Dolphin
+  source_goal_en: hit sea witch
+  context: '해변에서 발견된 말하는 게와 대화하며 바다의 비밀을 파헤치는 과정에 참여한다.
+
+    '
+  gold:
+    goal: 바다의 마녀를 처단하고 해양 생태계의 안전을 손에 넣기
+    steps:
+    - 말하는 게를 따라가며 해변의 위치 살펴보기
+    - 터코이즈 해안에서 보석을 수거하고, 바다로 향하는 경로 탐색하기
+    - 해양 생태계 보호를 위해 인근 지역으로 이동하며 보안 확인 수행
+    - 바다로 이동하여 마법진을 통해 안전한 환경 구축
+- id: plan_light_189
+  npc: The Man
+  source_goal_en: hug chicken
+  context: '마을 식당에서 방문할 영주에게 훌륭한 요리를 제공하여 기술력을 증명해야 한다.
+
+    '
+  gold:
+    goal: 닭 요리 시연
+    steps:
+    - 식탁 위에서 도끼를 집어 들기
+    - 닭을 집어 들어서 식탁 위에 가져다 놓기
+    - 튜닉과 모자를 착용하여 장비 살펴보기
+    - 닭을 수거하고 훌륭한 요리 시연하기
+- id: plan_light_190
+  npc: Mountain Lion
+  source_goal_en: hit gorilla
+  context: '산림의 유인원들이 산사자에게 보여야 할 예의를 갖추지 못해 문제가 발생하고 있다.
+
+    '
+  gold:
+    goal: 산사리의 존재를 확인하고 정체성을 확립하기
+    steps:
+    - 숲의 시냇가에서 샘플을 채취하기
+    - 고릴라를 찾아 이동하여 장비를 살펴보기
+    - 바나나를 수집하고 고릴라를 손에 넣기
+    - 산사리 거처로 돌아가 관련 기록를 살펴보기
+- id: plan_light_191
+  npc: Courtier
+  source_goal_en: hug jester
+  context: '궁정 내에서 소통을 강화하기 위해 왕의 신하들과 친밀하게 교류해야 한다.
+
+    '
+  gold:
+    goal: 광대와 대화하고 궁정의 핵심 인물들과 우호적인 관계를 구축하기
+    steps:
+    - 궁전 옥좌로 이동하여 왕의 신하들을 살펴보기
+    - 왕의 신하를 따라가며 소통을 지원하기
+    - 왕을 찾아 점심 식사를 제공하고 궁정 내 협력을 살펴보기
+    - 자신의 거처로 돌아가 업무를 마무리하기
+- id: plan_light_192
+  npc: Scribe
+  source_goal_en: give scroll to monk
+  context: '수도사의 연구실에서 발견된 고대 문서와 도구들을 확인하고, 수동으로 기록된 내용을 정리해야 한다.
+
+    '
+  gold:
+    goal: 수도사에게 전달할 스크롤을 확보하여 기술적 지식을 수습하기
+    steps:
+    - 빵을 사용하여 연구실의 장비를 확인하고 도구들을 살펴보기
+    - 연구실에서 발견된 스크롤과 깃펜을 수집하기
+    - 수도사에게 전달할 스크롤을 확보한 후, 해당 기술을 수습하기
+- id: plan_light_193
+  npc: Shop Keeper
+  source_goal_en: steal Books from shop keeper
+  context: '해안가 인근의 상점들은 이번 달 거래량이 적어 활발한 활동이 필요하다.
+
+    '
+  gold:
+    goal: 상점에 있는 도서들을 확인하고 고객들에게 전달하기
+    steps:
+    - 해안가 근처에 위치한 도서점으로 이동하여 제품을 살펴보기
+    - 도서점에서 판매할 책들을 수집하고, 해당 품목이 신속하게 보관되어 있는지 살펴보기
+    - 도서점에 있는 책들을 고객에게 전달하며 거래를 완료하기
+- id: plan_light_194
+  npc: Village Chief
+  source_goal_en: get water
+  context: '마을의 수장으로서 마을의 안전과 질서를 책임지는 핵심 인물입니다.
+
+    '
+  gold:
+    goal: 오염된 옷을 교체하고 깨끗한 셔츠를 착용하여 마을의 위엄을 세우기
+    steps:
+    - 깨끗한 셔츠를 준비하여 장착하기
+    - 강변으로 이동하여 오염된 의복 살펴보기
+    - 왕실 전당으로 이동하여 깨끗한 셔츠 착용하기
+    - 가정으로 돌아가 마법진 확인 및 복구
+- id: plan_light_195
+  npc: Priestess
+  source_goal_en: hit nobleman
+  context: '신전의 성소에서 끈질기게 구혼을 시도하는 귀족을 만나 그의 제안을 거절하고 신성한 공간을 보호해야 한다.
+
+    '
+  gold:
+    goal: 귀족의 결혼 제안을 거부하기 위한 절차를 완수하고 신성한 장소를 수호하기
+    steps:
+    - 성소 입구에서 성직자용 예복 착용
+    - 신전 내부에 진입하여 귀족를 추적
+    - 귀족의 제안을 거부하며 헌금 전달
+    - 신전으로 돌아가 보안 상태 확인 및 보고
+- id: plan_light_196
+  npc: Mayor
+  source_goal_en: get picture
+  context: '마을 광장에서의 축제 준비를 위해, 시장은 연회장을 위한 장식품들을 확보하고 관련 시설을 점검해야 한다.
+
+    '
+  gold:
+    goal: 연회장 내 장식물 및 가구 배치
+    steps:
+    - 시장이 챙겨온 실크가 덮인 테이블을 확인하고, 연회장에 사용할 금색 장식품들을 준비하기
+    - 연회장의 다른 장식용 물품들을 확인하여 마법진에 반영하기
+    - 정상적인 운영을 위해 연회장 내의 모든 구성 요소를 수습하기
+- id: plan_light_197
+  npc: Souls
+  source_goal_en: hit goddess
+  context: '사후 세계에서 신이 부여한 형벌을 통해 인간의 형태를 회복하기 위한 여정을 수행한다.
+
+    '
+  gold:
+    goal: 신이 제공하는 형벌을 통한 인간 형태 복구
+    steps:
+    - 사후 세계에서 유배된 지역으로 이동하여 신이 제시한 형벌 확인
+    - 시든 정원에서 신이 관리하는 정원 위치 파악
+    - 신을 추적하여 해당 정원의 위치를 식별
+    - 복구된 인간의 형태를 획득하고 마을로 이동하여 복구 절차 수행
+- id: plan_light_198
+  npc: Genie
+  source_goal_en: get table
+  context: '마을 내의 낡은 안전실에서 발견된 지니를 확인하고, 해당 장소에 대한 조사를 완료해야 한다.
+
+    '
+  gold:
+    goal: 안전실 내의 지니를 식별하고 관련 정보를 수집하기
+    steps:
+    - 안전실 내의 지니에게 이동하여 위치 파악
+    - 안전실 내의 지니가 안전한 곳에 있는지 확인
+    - 안전실 내의 지니가 안전한 곳에 위치하는지 확인
+    - 안전실 내의 지니에게 필요한 아이템을 제공하고, 해당 장소에서 나타나는 위험 요소들을 찾아내기
+- id: plan_light_199
+  npc: Party
+  source_goal_en: hug foxes
+  context: '마을 광장에서의 활동이 완료된 후, 마을 내 유실물 확인 및 안전 확보를 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 야생에서 여우를 포획하고 식사 준비를 위해 관련 장비 손질
+    steps:
+    - 야생 지역으로 이동하여 여우의 위치 파악
+    - 여우를 추적하고 해당 동물의 안전을 확인
+    - 동굴 내에 있는 암석과 도구를 활용하여 여우 보호 시설 확인
+    - 동굴에서 발견된 장비들을 정리하고 마을로 복귀
+- id: plan_light_200
+  npc: A Turtle Can'T Escape Fast Eno
+  source_goal_en: give belt to knight
+  context: '거대한 트롤의 소굴에서 탈출하는 과정 중, 거북이처럼 느린 속도로 움직이는 아이를 돕기 위해 기사단장에게 도구 및 정보를 제공해야
+    한다.
+
+    '
+  gold:
+    goal: 기사단장에게 필요한 장비와 정보를 전달하고 신속하게 탈출을 지원하기
+    steps:
+    - 기사단장을 따라가며 트롤의 소굴 내 위험 요소들을 찾아내기
+    - 바닥에 떨어진 뼈를 수집하여 살펴보기
+    - 벨트를 수거하여 기사단장에게 전달하기
+    - 아이를 안심시키고 탈출 경로를 안내하기
+- id: plan_light_201
+  npc: King'S Brother
+  source_goal_en: get velvet cushion
+  context: '왕의 동생이 왕을 암살하기 위해 궁전 내 주요 시설과 인물들을 조사하고 있다.
+
+    '
+  gold:
+    goal: 궁전 내 핵심 장소 및 관련자들의 활동 확인
+    steps:
+    - 궁전 내 핵심 장비 및 도구 확보
+    - 궁전 내부의 위험 요소 파악
+    - 왕실 인물 및 마법진에 대한 보안 확인
+    - 침입한 자를 위한 안전 조치 수행
+- id: plan_light_202
+  npc: Flies
+  source_goal_en: get remains
+  context: '파리들은 마을 내에서 번식할 수 있는 오염된 구역을 탐색하고 있다.
+
+    '
+  gold:
+    goal: 오염된 유해를 수집하여 파리의 증식을 돕기
+    steps:
+    - 오염된 유해를 수집하기
+    - 뼈 구덩이로 이동하여 유해를 수집하기
+    - 수거한 유해를 적절한 위치에 배치하고 새로운 먹은지를 탐색하기
+- id: plan_light_203
+  npc: Gravedigger
+  source_goal_en: get gold
+  context: '묘지에서 발견된 유적의 보물들이 너무나도 많아, 이들은 마을에 큰 위협이 된다.
+
+    '
+  gold:
+    goal: 터쿼이즈 해안에서 묘지 유물을 조사하고 금을 손에 넣기
+    steps:
+    - 묘지에서 삽을 수집하기
+    - 터쿼이즈 해안으로 이동하여 유적의 보물 살펴보기
+    - 보석과 금을 수집하여 안전한 장소로 운반하기
+- id: plan_light_204
+  npc: A Gravedigger Doing His Work
+  source_goal_en: drop bible
+  context: '묘지 내에서 발견된 유물과 보물을 안전하게 매장하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 묘지에 보물 매장
+    steps:
+    - 삽을 사용하여 시신을 묘지에 안치하기
+    - 금실이 담긴 방으로 이동하여 보물을 수습하기
+    - 묘지로 이동하여 금실을 매장하기
+- id: plan_light_205
+  npc: High Priest
+  source_goal_en: hit follower
+  context: '교회 내 성물 및 장비 확인
+
+    '
+  gold:
+    goal: 성소의 정화 및 신성한 예식 주관
+    steps:
+    - 장식된 사제복 착용
+    - 교회 제단으로 이동하여 의례 준비
+    - 단검을 사용하여 성물 확인
+    - 신성한 포도주를 헌납하고 성배 사용
+- id: plan_light_206
+  npc: Camera Man
+  source_goal_en: follow scalawag
+  context: '해적의 은신처를 추적하기 위한 장비 준비가 완료되었으며, 기록구맨은 해당 경로를 조사해야 한다.
+
+    '
+  gold:
+    goal: 해적의 은신처에서 숨겨진 보물 찾기
+    steps:
+    - 거대한 곤봉을 챙기고 검을 장착하기
+    - 성 기슭으로 이동하여 해적의 흔적 추적하기
+    - 해적의 은신처에서 발견된 보물을 수집하기
+- id: plan_light_207
+  npc: Ornate Birds
+  source_goal_en: hit squirrel
+  context: '요정 왕국에서 발견된 화려한 새들을 확인하고, 해당 개체들이 식량으로 활용될 수 있도록 관련 작업을 수행한다.
+
+    '
+  gold:
+    goal: 화려한 새의 둥지에서 다람쥐를 포획하여 처리하기
+    steps:
+    - 요정 왕국 내 화려한 새의 서식지로 이동
+    - 화려한 새의 둥지에서 다람람을 수집
+    - 수집된 다람람을 화려한 새의 둥지에서 사용
+- id: plan_light_208
+  npc: Bacteria
+  source_goal_en: steal rag from chef
+  context: '화산호수 인근에서 발견된 세균들이 생존을 위해 필수적인 물품들을 탐색하고 있다.
+
+    '
+  gold:
+    goal: 요리사로부터 낡은 천을 확보하여 신속하게 수집하기
+    steps:
+    - 화산호에서 활동 중인 세균의 위치를 확인하며 이동
+    - 요리사가 위치한 지점으로 이동
+    - 오염된 헝겊를 수거하고 요리사에게 전달
+- id: plan_light_209
+  npc: Curiosity Seekers
+  source_goal_en: drop wood
+  context: '마을 내의 여러 장소에서 발견되는 유물과 마법에 대한 호기심이 섞인 질문들이 확인되었습니다.
+
+    '
+  gold:
+    goal: 마녀의 집 방문 전 필요한 물품들을 확인하고, 마을 안전을 위한 조치 및 교육을 완수하기
+    steps:
+    - 망토를 착용하여 준비
+    - 마녀의 집으로 이동하여 나무 조각 수집
+    - 자신의 거처로 이동하여 마법 관련 자료 확보
+    - 마녀의 집으로 이동하여 탐구 내용 확인
+- id: plan_light_210
+  npc: Fauna
+  source_goal_en: hit barbarian
+  context: '서빙 구역에서 발견된 음식 찌꺼기들을 확인하고, 야만족들에게 필요한 금을 수집하여 마을의 안전을 확보한다.
+
+    '
+  gold:
+    goal: 야만인에게 대한 도구 및 장비 파악
+    steps:
+    - 서빙 구역에서 발견된 음식 찌꺼기들을 살펴보기
+    - 야만인이 소지한 가방을 추적하고 수집하기
+    - 근처 상인들에게서 금을 수집하기
+    - 해당 장소로 이동하여 야만인에게 대한 조치 수행
+- id: plan_light_211
+  npc: Armorer
+  source_goal_en: remove apron
+  context: '갑옷 제작 및 검수 과정에서 결함이 발견되어, 장비의 품질을 증명하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 갑옷의 품질을 확인하고 안전한 환경을 구축하기
+    steps:
+    - 갑옷을 챙겨서 안전실로 이동하여 검사하기
+    - 안전실에서 갑옷을 내려놓고 장비 살펴보기
+    - 강력한 망치를 사용하여 장비의 결함 여부를 살펴보기
+    - 장비를 착용하고 도구들을 수습하기
+- id: plan_light_212
+  npc: A Gardener Pulling Weeds
+  source_goal_en: steal honeysuckle has been allowed to climb the garden wall from
+    a young student reading a book beneath a dogwood tree
+  context: '왕실 정원 내의 잡초와 덩굴을 정리하는 과정에서, 어린 학생이 읽고 있는 책 아래에 자라난 수선화(honeysuckle)를 확인했다.
+
+    '
+  gold:
+    goal: 정원의 수선화가 담장을 타고 올라가는 것을 허용된지 확인하고 관련 장비들을 주워담기
+    steps:
+    - 왕실 정원으로 이동하여 잡초 정리 작업 수행
+    - 수선화 아래에 위치한 어린 학생을 따라가며 해당 식물의 상태를 파악
+    - 호수에서 물을 길어오고, 바닥에 떨어진 수선화를 확인하며 관련 장비들을 수집
+- id: plan_light_213
+  npc: A Gnome
+  source_goal_en: put shoes on a small pool of water
+  context: '동굴에서 발견된 물의 샘이 전설적인 ''경화수''인지를 확인하기 위해 신발을 착용하고 수질을 점검한다.
+
+    '
+  gold:
+    goal: 소형 수조에 신발을 배치하여 경화수 확인 및 시음
+    steps:
+    - 동굴로 이동하여 물의 샘을 조사하기
+    - 농부를 따라가며 물의 성질이 포함된 신발을 획득하기
+    - 노움의 집 정원으로 이동하여 경화 수조 살펴보기
+- id: plan_light_214
+  npc: Executioner
+  source_goal_en: steal a sleeping bag from visitor
+  context: '방문자의 행동을 관찰하고 침입 시점을 파악해야 한다.
+
+    '
+  gold:
+    goal: 잠자는 방문자의 위치를 확인하고 침입할 경로를 찾아내기
+    steps:
+    - 방문자를 추적하여 이동 경로 살펴보기
+    - 방문자에게 물품을 전달하고 안심시키기
+    - 침입 시점 및 도구 살펴보기
+    - 잠자는 방문자의 위치를 파악하고 침입 경로 살펴보기
+- id: plan_light_215
+  npc: Missionary
+  source_goal_en: hug thief
+  context: '중세 판타지 마을의 성당에서 도둑질한 금의 총량을 확인하고 이를 기록하는 과정이 필요합니다.
+
+    '
+  gold:
+    goal: 도적을 포획하고 그들이 훔친 금에 대한 정보를 수집하기
+    steps:
+    - 성당 내부에 위치한 예배당으로 이동하여 도적을 식별하기
+    - 도적의 행동을 추적하며 발견된 금의 양을 기록하기
+    - 도적에게 훔친 금에 대한 정보를 제공하고 확인 임무를 완수하기
+    - 신부에게 도난 물품과 관련된 정보를 전달하기
+- id: plan_light_216
+  npc: Maintenance Person
+  source_goal_en: get wooden cross
+  context: '교회 내의 낡은 시설물들을 점검하고, 교회의 안전을 위해 손상된 벤치와 나무 십자가를 복원해야 한다.
+
+    '
+  gold:
+    goal: 교회 전면의 낡은 벤치를 정비하고 새 십자가 설치
+    steps:
+    - 드라이버를 챙겨 교회로 이동하기
+    - 교회 앞좌석에 위치한 나무 십자가를 배치하고, 손상된 벤치를 옮겨 복원하기
+    - 교회 전면의 단단한 벤치들을 이동하여 재가져다 놓기
+- id: plan_light_217
+  npc: Camper
+  source_goal_en: get plant
+  context: '캠퍼의 한국어 계획
+
+    '
+  gold:
+    goal: 식물 수집 및 확인
+    steps:
+    - 장화를 착용하여 장비 손질
+    - 숲으로 이동하여 식물 수집
+    - 함정에서 식물을 꺼내고, 굴로 이동하여 식물 배치
+- id: plan_light_218
+  npc: High Sorceress
+  source_goal_en: steal sword from guard
+  context: '항구에서 발견된 마법 생물 관련 문제에 대해 해적선장에게 설명하기 전, 고위 마법사(High Sorceress)와 협력할 경비병을
+    확인해야 한다.
+
+    '
+  gold:
+    goal: 해안가에서의 마법 생물 관련 소동 조사
+    steps:
+    - 항구에서 해적선장과 함께 도크로 이동하기
+    - 경비병에게 최근 발생한 마법 생물 관련 정보 살펴보기
+    - 해양 안전을 위해 경비병의 활동 내역 찾아내기
+    - 해적선장에게 발견된 문제점에 대한 설명 제공하기
+- id: plan_light_219
+  npc: Orc
+  source_goal_en: get ceiling
+  context: '동굴의 구조적 결함으로 인해 마법진이 불안정하며, 이를 해결하기 위한 작업이 필요하다.
+
+    '
+  gold:
+    goal: 동굴 천장의 구조적 무결성을 확보하고 안정화
+    steps:
+    - 바닥재를 수거하여 동굴 바닥에 배치
+    - 천장부의 결함이 있는 위치로 이동하여 교체
+    - 멤버를 따라가며 붕괴된 천장 부위 확인
+    - 모든 크기의 암석을 장착하고 동굴 내부에 배치
+- id: plan_light_220
+  npc: Judge
+  source_goal_en: get rope from platform
+  context: '사법부의 판결에 따라, 오늘 예정된 처형식에서 위조자를 적발하고 징벌하는 절차를 수행해야 한다.
+
+    '
+  gold:
+    goal: 위조자에게 대한 형벌을 집행하기 위한 도구들을 준비하고 단죄하기
+    steps:
+    - 의복을 착용하여 사법적 의무를 확인하고, 처형장으로 이동하여 위조자를 식별하기
+    - 처형장에서 밧줄을 확보하고 판결에 필요한 도구들을 살펴보기
+    - 단죄가 완료된 후 다음 절차를 수행할 수 있도록 준비하기
+- id: plan_light_221
+  npc: Bivalve
+  source_goal_en: give weed to small living thing
+  context: '묘지 내의 작은 생물들이 가진 문제점을 파악하고, 해당 생물들에게 필요한 약초를 제공하여 마법진을 정상화해야 한다.
+
+    '
+  gold:
+    goal: 묘지에서 발견된 소형 생명체에게 약초를 배급하고 관련 프로세스를 완료하기
+    steps:
+    - 묘지로 이동하여 소형 생명체를 탐색하기
+    - 분수대 근처에서 소형 생명체의 위치를 추적하고 수집하기
+    - 강으로 이동하여 해당 생명체에 대한 조치를 완료하기
+- id: plan_light_222
+  npc: Zombies
+  source_goal_en: give hoe for digging to a royal
+  context: '좀비들이 왕의 뇌를 수습하고 시신을 매장하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 왕의 뇌를 수거하여 무사히 매장하도록 지원
+    steps:
+    - 마을 접수 구역에서 왕의 뇌를 확인하고 전달하기
+    - 접수 구역으로 이동하여 왕의 뇌를 전달하기
+    - 왕의 뇌를 수거한 후, 요청된 매장 작업 실행하기
+- id: plan_light_223
+  npc: A Scribe Constantly Writing
+  source_goal_en: get jewelry
+  context: '성 내부에서 왕의 명령에 따라 성실히 임무를 수행해야 한다.
+
+    '
+  gold:
+    goal: 왕의 칙령을 기록하고 관련 장비들을 살펴보기
+    steps:
+    - 왕의 의사회를 따라가며 관련 정보를 찾아내기
+    - 성 내부에서 필요한 도구인 책과 깃펜을 수집하기
+    - 작업이 완료된 후 식사를 통해 업무를 마무리하기
+- id: plan_light_224
+  npc: Spirit
+  source_goal_en: steal longbows from knight
+  context: '사후 세계에서 영혼의 존재를 확인하고, 기사단장 Elara를 포함한 관련자들에게 대한 대응 계획을 수립한다.
+
+    '
+  gold:
+    goal: 기사단장으로부터 장궁을 탈취하기
+    steps:
+    - 사후 세계에서 근처 도로로 이동하여 영혼의 존재 확인
+    - 근접한 도로에서 기사단장의 위치를 추적
+    - 기사단장에게 접근하여 장궁을 수거하고 공격 수행
+    - 탈취한 장궁을 신속하게 보관 및 처리
+- id: plan_light_225
+  npc: Executioners
+  source_goal_en: remove apron
+  context: '범죄자들을 처단한 후, 성소에서 죄를 씻고 사죄하는 절차를 수행한다.
+
+    '
+  gold:
+    goal: 성소 내의 오염된 장비들을 정리하고 정화된 환경을 손에 넣기
+    steps:
+    - 성소로 이동하여 기도 준비
+    - 가면을 내려놓고 성소 내의 오염된 도구들 제거
+    - 실행자용 앞치마를 제거한 후, 족쇄를 수거하여 정화하기
+- id: plan_light_226
+  npc: Hoakbera
+  source_goal_en: remove hats
+  context: '늪지대에서 발견된 고블린의 위협을 제거하고, 해당 지역 경비병에게 고블린의 정체와 위험성을 명확히 설명해야 한다.
+
+    '
+  gold:
+    goal: 고블린의 위협으로부터 마을을 보호하기 위한 절차를 완수하기
+    steps:
+    - 늪지대로 이동하여 고블린의 위치 파악
+    - 군사 초소로 이동하여 경비병에게 고블린 관련 정보 제공
+    - 경비병을 따라가며 고블린의 위험성 확인
+    - 고블린을 수거한 후 성공 보고를 수행
+- id: plan_light_227
+  npc: Young Princess
+  source_goal_en: hug fairy
+  context: '공주가 요정에게 날개를 달아달라는 소원을 들어달라고 요청하기 위해 공주방을 점검하고 있다.
+
+    '
+  gold:
+    goal: 공주를 안아주고 날개 생성 확인
+    steps:
+    - 공주방에서 낡은 나무 양동이를 찾아 제거하기
+    - 책상에 있는 날개 아이템을 수거하여 공주에게 전달하기
+    - 공주와 포옹하며 날개 기능 살펴보기
+- id: plan_light_228
+  npc: Lector
+  source_goal_en: give bible to congregant
+  context: 'Lector는 성소에서 신자들에게 교리 교육을 제공하기 위해 준비를 마쳤으며, 이번 과정은 해당 신자들이 올바른 신앙을 정립하는
+    데 필수적인 절차이다.
+
+    '
+  gold:
+    goal: 성경을 전달하여 종교적 지식을 습득하도록 돕기
+    steps:
+    - 성소에서 성경을 수령하기
+    - 제단으로 이동하여 성경을 배치하고, 향을 사용하여 의식 준비를 완료하기
+    - 신자에게 성경을 전달하고 관련 절차 실행하기
+    - 신자가 성경을 확인하는 과정을 지원하기
+- id: plan_light_229
+  npc: Businessman
+  source_goal_en: get pillow
+  context: '마을 내에서 다양한 물품을 판매하기 위해 준비 중이며, 특히 여성 사용자에게 관련 물품을 제공하는 과정이 필요하다.
+
+    '
+  gold:
+    goal: 여성 사용자에게 침구류 및 실크 제품을 전달하여 거래를 완료하고 신속하게 주워담기
+    steps:
+    - 침구 세트와 실크를 획득하고, 여관 내의 침구류를 살펴보기
+    - 여성 사용자에게 실크를 제공하며 해당 물품이 올바르게 작동하는지 살펴보기
+    - 여성 사용자로부터 실크를 수거하고 관련 거래 절차를 완료하기
+- id: plan_light_230
+  npc: Crab
+  source_goal_en: get fish from big table
+  context: '해변에서 수영하는 이들에게서 장신류를 훔칠 준비가 완료되었다.
+
+    '
+  gold:
+    goal: 대형 테이블에 있는 물고기를 확보하고 해변의 안전을 살펴보기
+    steps:
+    - 큰 테이블에서 물고기를 챙기기
+    - 해적 소굴로 이동하여 물고기 사용하기
+    - 해변으로 이동하여 진주를 주워담기
+- id: plan_light_231
+  npc: A Large Black Vulture
+  source_goal_en: get name placard
+  context: '대형 검은 독수리(A Large Black Vulture)의 행동 계획
+
+    '
+  gold:
+    goal: 오래된 묘지에서 이름표를 수집하고 시체 확인
+    steps:
+    - 오래된 묘지로 이동하여 시체 탐색
+    - 농부의 위치를 추적하며 시체 확인
+    - 이름표를 수집하고 해당 시체에 배치
+    - 하늘을 관찰하며 하늘로 복귀
+- id: plan_light_232
+  npc: Wizard Overseer
+  source_goal_en: follow peasant
+  context: '마을 내 감염된 식물들을 치료하기 위해 마법을 활용할 예정입니다.
+
+    '
+  gold:
+    goal: 감염된 식물을 찾아내고 해당 위치에서 마법을 사용하여 치료하기
+    steps:
+    - 마법사 예복 장착하기
+    - 왕실 농장으로 이동하여 감염된 식물 살펴보기
+    - 감염된 식량에 대한 마법 시전 및 처리
+- id: plan_light_233
+  npc: A King
+  source_goal_en: eat Chocolate
+  context: '왕궁 광장에서 지역 특산물인 초콜릿을 확인하고 시식하는 과정이 진행된다.
+
+    '
+  gold:
+    goal: 초콜릿과 관련 제품들을 확인하고 샘플링하기
+    steps:
+    - 성곽 광장으로 이동하여 현지 물품 살펴보기
+    - 친구를 따라가며 초콜러트 및 관련 품목 탐색하기
+    - 초콜릿을 수집하고 판매대의 제품들을 살펴보기
+    - 단맛이 포함된 식품과 와인을 획득하여 검수 완료하기
+- id: plan_light_234
+  npc: Stray Dogs
+  source_goal_en: follow curiosity seekers
+  context: '마을 내의 유실된 물품이나 위험한 장소를 탐색하는 과정에서, 마을 주민들은 잃어버린 물건들을 안전하게 확보해야 한다.
+
+    '
+  gold:
+    goal: 유실물 확인 및 수거
+    steps:
+    - 마을 내 유실된 물품 확인
+    - 늪지대 인근의 위험 지역 조사
+    - 위험한 장소에서 유실된 물품 수거
+    - 수거한 물품들을 신속하게 보관할 장소로 이동
+- id: plan_light_235
+  npc: Lands Lord
+  source_goal_en: follow cockroach
+  context: '마을 내부에 침입한 해충 문제를 해결하기 위해 관련 장비와 지식을 확인한다.
+
+    '
+  gold:
+    goal: 해충 퇴치 및 마을 안전 확보
+    steps:
+    - 연금술사에게 이동하여 해충 퇴치용 물약 수령
+    - 주방으로 이동하여 해충 퇴치용 물약 사용
+    - 대강당으로 이동하여 해충 소탕
+- id: plan_light_236
+  npc: Figure
+  source_goal_en: drink vial
+  context: '마을 내의 수상한 상점과 골목에서 유실된 물품들이 발견되었으며, 이를 수거하는 과정에서 보안 취약점이 확인되었다.
+
+    '
+  gold:
+    goal: 수상한 상점 및 골목에서의 물품 확보
+    steps:
+    - 망토를 착용하여 장비 손질
+    - 의심스러운 상점에서 물품을 수집하고, 골목에서 유실된 동전들을 확인
+    - 골목 내의 동전들을 주머니에 보관한 후 관련 정보를 수습하기
+- id: plan_light_237
+  npc: Murderers
+  source_goal_en: get whip
+  context: '던전 내에서 발견된 범죄자들은 마을의 안전을 위협하는 요소이며, 이들은 탈출 과정에서 여러 보안 허점을 확인해야 한다.
+
+    '
+  gold:
+    goal: 던전 내부를 조사하고 왕의 위치를 파악하여 탈출 경로 확보
+    steps:
+    - 오래된 빵을 사용하여 감염된 장비 식별하기
+    - 변질된 장비를 수거하고 던전 내 위험 요소 확인
+    - 왕이 위치한 구역으로 이동하여 왕의 위치를 추적
+    - 성 외부로 이동하여 탈출 경로를 확인
+- id: plan_light_238
+  npc: Most Evil Creature
+  source_goal_en: put Tooth in Skull
+  context: '마을 내에 존재하는 가장 사악한 존재인 Tooth가 소환 마법을 통해 지옥의 악마와 피 흘리는 해골 군단을 깨우려 한다.
+
+    '
+  gold:
+    goal: 해골 머리에 뼈를 삽입하여 소환 마킹 완료
+    steps:
+    - 해골에 뼈 삽입하기
+    - 지옥의 악마를 안심시키기
+    - 피 흘리는 해골 검을 수집하고 장착하기
+- id: plan_light_239
+  npc: Stable Hand
+  source_goal_en: give bag to barn cat
+  context: '마을 내 마구간에서 발견된 고양이의 상태를 확인하고, 이를 기쁘게 하기 위한 조치가 필요하다.
+
+    '
+  gold:
+    goal: 마구간 고양이를 위한 도구 및 물품 준비
+    steps:
+    - 마구간으로 이동하여 도구를 살펴보기
+    - 쇠갈퀴를 사용하여 마구간 내의 오염된 구역을 수습하기
+    - 마구간 내의 고양이를 돌보고 저녁 식사 제공하기
+- id: plan_light_240
+  npc: Adulterer
+  source_goal_en: steal knife from judge
+  context: '마을 내의 불법적인 행위들이 낱낱이 밝혀짐에 따라, 해당 범죄자들은 사형 집행 전까지 안전하게 도피해야 한다.
+
+    '
+  gold:
+    goal: 판사로부터 압수된 단검을 확보하고 마을를 탈출하기
+    steps:
+    - 여성 거주지에서 단검을 획득하기
+    - 단순한 절도 행위가 아닌, 판사의 처형 및 도구 확인을 위해 경비병의 활동을 추적하기
+    - 채찍질 장소로 이동하여 단검을 확보하고 플랫폼에 배치된 장비를 살펴보기
+    - 숲으로 이동하여 마을를 탈출하기
+- id: plan_light_241
+  npc: A Mouse
+  source_goal_en: get flower
+  context: '마을 내의 가구 뒤편이 지저분해진 것을 확인하고 이를 정비하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 장식용 꽃을 획득하여 수납장 뒷면을 아름답게 수습하기
+    steps:
+    - 빵을 사용하여 유실물 위치 파악
+    - 참석자 뒤를 따라가며 필요한 항목 확인
+    - 교회 광장에서 꽃을 획득
+    - 메인 하우스로 이동하여 획득한 꽃 배치
+- id: plan_light_242
+  npc: Lord
+  source_goal_en: steal family heirloom from friends
+  context: '내일 국왕을 방문하기 전에 가문의 유물을 반환해야 한다.
+
+    '
+  gold:
+    goal: 가문의 유물 회수 및 보안 확인
+    steps:
+    - 호수 근처의 저택으로 이동하여 가족들의 소유물을 파악하고, 장소와 관련된 정보를 수집하기
+    - 친구들의 거주지에서 가문의 유물을 획득하며 마법진을 살펴보기
+    - 자신의 집으로 돌아가서 가문의 유실된 물품들을 수습하기
+- id: plan_light_243
+  npc: Electric Eel
+  source_goal_en: hug insects
+  context: '전기 장어의 한국어 Plan
+
+    '
+  gold:
+    goal: 습지 내 전구체 탐색 및 소등 방지
+    steps:
+    - 습지로 이동하여 전구체 위치 확인
+    - 해저 수로에서 전구체 추적
+    - 습지 내 가장 어두운 구역으로 이동
+    - 전구체 추적 및 해초를 사용하여 전구체 수집
+- id: plan_light_244
+  npc: King Fulmer
+  source_goal_en: remove crown
+  context: '왕실 주방에서 왕관을 제거하기 전, 국왕 풀머의 지시에 따라 관련 장비들을 확인하고 준비해야 한다.
+
+    '
+  gold:
+    goal: 왕관을 제거하기 전 필요한 도구 및 식재료를 확보하고
+    steps:
+    - 왕실 주방에서 왕관을 제거하기 위한 도구와 재료를 살펴보기
+    - 왕실 주방으로 이동하여 관련 장비들을 살펴보기
+    - 왕실 주방 내의 식기 및 조리 도구를 확인하고, 해당 위치에 있는 물품들을 수집하기
+    - 식품을 사용하여 왕관 제거와 관련된 요리 과정을 실행하기
+- id: plan_light_245
+  npc: An Old, One-Eyed Owl
+  source_goal_en: get bookcase
+  context: '서재에서 낡은 책장을 확인하고 여왕에게 해당 도서를 설명해야 한다.
+
+    '
+  gold:
+    goal: 서재 내의 낡은 책장을 확보하여 여왕에게 전달하기
+    steps:
+    - 서재에서 물을 사용하여 마법진 확인
+    - 여왕을 따라가며 서재 내부를 확인
+    - 로비로 이동하여 낡은 책장 수거
+    - 여왕에게 낡은 책장을 전달하고 안심시키기
+- id: plan_light_246
+  npc: Drunks
+  source_goal_en: get wildflower
+  context: '마을 광장에서 유랑 민족과 친해지기 위해 야생화를 수집하고 있다.
+
+    '
+  gold:
+    goal: 야생화 수집 및 노드 확인
+    steps:
+    - 경치 감상 지점으로 이동하여 유랑 민족의 위치 파악
+    - 유랑 민족을 따라가며 야생화를 확보
+    - 거대한 바위 근처에서 유랑 민족에게 야생화 전달
+    - 야생화를 활용하여 노드 기능 수행
+- id: plan_light_247
+  npc: Gather
+  source_goal_en: get wood
+  context: '마을 광장에서 진행될 시위 중 불타는 나무를 통해 보안 취약점을 확인하고, 이를 통한 마을 안전 확보 절차를 수행한다.
+
+    '
+  gold:
+    goal: 소방용 목재를 수집하여 전송하기
+    steps:
+    - 일반 의상으로 교체하기
+    - 숨겨진 동굴로 이동하여 부싯돌을 챙기기
+    - 마을 광장으로 이동하여 소방용 목재를 손에 넣기
+    - 소방용 목재를 장착하고 마법진에 반영하기
+- id: plan_light_248
+  npc: Praying Mantis
+  source_goal_en: follow bee
+  context: '파리 교회에서 벌을 추적하기 위한 준비가 완료되었으며, 탐지된 위치에 많은 벌이 존재한다.
+
+    '
+  gold:
+    goal: 벌 추적 및 수집
+    steps:
+    - 파리 교회에서 벌의 흔적을 추적하기
+    - 벌의 집으로 이동하여 해당 위치의 안전성을 살펴보기
+    - 벌의 집에서 발견된 벌들을 수집하고 관련 정보를 수습하기
+- id: plan_light_249
+  npc: The Bishop
+  source_goal_en: drop a cross
+  context: '교구 내에서 오늘 발생한 사건들을 기록하고 관련 정보를 정리해야 한다.
+
+    '
+  gold:
+    goal: 오늘의 기록을 작성하고 십자가를 가져다 놓기
+    steps:
+    - 사제 사무실로 이동하여 십자가를 수집하기
+    - 종교적 기록물과 서류를 살펴보기
+    - 사제 거처로 이동하여 관련 자료 수습하기
+- id: plan_light_250
+  npc: The Village
+  source_goal_en: hit man woman
+  context: '마을 내의 부채 해결 및 보안 관련 정보 확인
+
+    '
+  gold:
+    goal: 시장 내에서 채무를 지닌 인물과 단체에 대한 조치 완수
+    steps:
+    - 시장으로 이동하여 대상자 식별
+    - 소지한 물품을 바닥에 배치하여 검사
+    - 대상자들을 확인하고 추적하기
+    - 대상자들의 위치를 파악하고 수거 및 정리
+- id: plan_light_251
+  npc: Lizards
+  source_goal_en: get coconut
+  context: '오아시스에서 발견된 코코넛을 확인하고, 유랑 상인에게 전달하여 곤충 채집 위치를 파악해야 한다.
+
+    '
+  gold:
+    goal: 오아시스에서 코코넛을 확보하고 유랑 상인에게 전달하기
+    steps:
+    - 오아시스로 이동하여 코코너를 수집하기
+    - 사막의 핵심 장소에서 코코넛 획득하기
+    - 유랑 상인을 따라가며 코코넛을 제공하고 위치 살펴보기
+- id: plan_light_252
+  npc: A Young Student Reading A Book
+  source_goal_en: get honeysuckle has been allowed to climb the garden wall
+  context: '꽃나무 아래에서 읽은 책에 대한 정보를 확인하기 위해 학생이 정원 관리자에게 허용된 꽃들의 위치를 파악하고 있습니다.
+
+    '
+  gold:
+    goal: 정원 내에 허용된 꽃의 종류를 조사하고 실무적인 지식을 습득하기
+    steps:
+    - 꽃나무 아래에서 책을 읽으며 정원 학습 내용 확인
+    - 왕실 정원으로 이동하여 허용된 꽃들의 위치 파악
+    - 정원에서 허용된 꽃인 인동초를 수집하고 바닥에 배치
+    - 수집한 다른 도서들을 다시 확인하며 학습 완료
+- id: plan_light_253
+  npc: People In The Observatory
+  source_goal_en: hit grandfather
+  context: '관측소 내에서 할아버지의 출입을 영구히 금지하도록 조치해야 한다.
+
+    '
+  gold:
+    goal: 할아버지가 관측 시설에 다시는 접근하지 못하도록 차단하기
+    steps:
+    - 관측소로 이동하여 할아버지를 살펴보기
+    - 하급자들에게 해당 장비의 위치를 파악하고, 잃어버린 물품을 회수한 후 재발 방지 교육 실시
+    - 가족 식사 및 와인 제공을 통해 마법진 보안 확인
+    - 관측소 내에서 발견된 결함이 있는지 살펴보기
+- id: plan_light_254
+  npc: Shipwright
+  source_goal_en: hug sad woman
+  context: '성 내부로 들어가기 전, 슬픔에 잠긴 여성이 마음을 추스르는 것을 도와야 한다.
+
+    '
+  gold:
+    goal: 슬픈 여성에게 위로를 전달하고 성 내의 위험 요소들을 찾아내기
+    steps:
+    - 성으로 이동하여 구조물 살펴보기
+    - 왕좌가 있는 방으로 이동하여 슬픔에 잠긴 여성을 안심시키기
+    - 정원에서 대기하며 다른 구성원들에게 안내 제공하기
+    - 조선소로 이동하여 전체적인 마법진 살펴보기
+- id: plan_light_255
+  npc: Demon
+  source_goal_en: hug angel
+  context: '악마는 오늘 천사를 제압하기 위한 계획을 수립했다.
+
+    '
+  gold:
+    goal: 천사와 포옹하기
+    steps:
+    - 검은 가죽으로 된 삼지창을 장착하고, 제단에서 검은 삼지창을 내려놓아 위치를 살펴보기
+    - 제단에 위치한 천사를 따라가며, 검은 삼지차를 챙겨 들고
+    - 천사와 포옹하며 악마의 힘을 전수하기
+- id: plan_light_256
+  npc: Historian
+  source_goal_en: hug preacher
+  context: '교회 내에서 사제와 함께 교회의 역사를 기록하는 작업이 진행 중이다.
+
+    '
+  gold:
+    goal: 사제와 협력하여 교회 역사 기록물 확인 및 검증
+    steps:
+    - 성가대석으로 이동하기
+    - 중앙 회랑에서 사제와 함께 교회의 역사를 조사하기
+    - 종교 문헌을 수집하고 관련 자료를 수습하기
+- id: plan_light_257
+  npc: Trilobite
+  source_goal_en: get molten magma
+  context: '아내의 질병을 치료하기 위해 용암 호수에서 샘플을 확보하고 해양 표면으로 이동해야 한다.
+
+    '
+  gold:
+    goal: 용암에 오염된 마그마를 수집하고 전송하기
+    steps:
+    - 용암 호수로 이동하여 샘플 확인
+    - 아내에게 용융 마그마 전달
+    - 아내를 따라 해양 표면으로 이동
+- id: plan_light_258
+  npc: Director
+  source_goal_en: get Seat
+  context: '마을 극장에서 공연이 진행되는 동안, 관람객들은 다양한 역할을 수행하며 마법진의 결함을 점검한다.
+
+    '
+  gold:
+    goal: 극장에서 관람석 확보 및 장비 손질
+    steps:
+    - 관측용 안경을 착용하기
+    - 소지품 중 가방을 챙기기
+    - 마을 극장으로 이동하여 좌석을 수령하기
+    - 무대 위로 이동하여 의상 살펴보기
+- id: plan_light_259
+  npc: Sad Woman
+  source_goal_en: hug hunter
+  context: '사냥꾼이 숲에서 발견한 기괴한 구역을 조사하는 동안, 슬픔에 잠긴 여성이 사냥꾼을 위로하기 위해 관련 장비들을 확인한다.
+
+    '
+  gold:
+    goal: 사냥꾼을 안아주기
+    steps:
+    - 앞치마를 착용하고 도구들을 살펴보기
+    - 불안한 숲 지역에서 사냥꾼의 바구니를 추적하기
+    - 사냥꾼이 사용하는 바구니와 장비를 살펴보기
+    - 사냥꾼을 안아주며 슬픔에 잠긴 여성을 위로하기
+- id: plan_light_260
+  npc: General
+  source_goal_en: drop photo of his family
+  context: '마을 광장에서의 활동이 완료된 후, 기사단장에게 가족 관련 초상화과 장비 전달을 포함한 마법진적 절차를 수행해야 한다.
+
+    '
+  gold:
+    goal: 기사단장에게 가족 사진을 전달하고 성 내부에서 필요한 조치를 취하기
+    steps:
+    - 성 로열 타워로 이동하여 기사단장에게 가족 초상화을 전달하기
+    - 기사단장에게 도끼를 전달하고 마법진적 절차 실행하기
+    - 기사단장의 행동을 관찰하며 후속 조치 실행하기
+- id: plan_light_261
+  npc: Parent
+  source_goal_en: follow child
+  context: '아이를 물속에서 구조하기 위한 절차
+
+    '
+  gold:
+    goal: 자녀를 신속하게 수중으로부터 구출하기
+    steps:
+    - 아이를 안심시키고 수중 환경 찾아내기
+    - 늪지대로 이동하여 위험 요소 확인
+    - 칼을 장착하고 악어의 위협에 대비
+    - 자녀를 안심시키고 신속하게 대피하기
+- id: plan_light_262
+  npc: Gods
+  source_goal_en: get sculpture
+  context: '신전 내의 성물인 조각상을 확보하고, 해적들이 침입하지 못하도록 방어 체계를 구축하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 성소에 위치한 조각상을 확보하여 마을 안전을 보장할 수 있도록 지원하기
+    steps:
+    - 해적들에게 필요한 장비를 지급하고, 성물 보호를 위해 해적들을 소환하기
+    - 서쪽 문으로 이동하여 해적들의 침입 경로를 살펴보기
+    - 조각상을 획득한 후, 해당 조각상을 신속하게 전달하기
+- id: plan_light_263
+  npc: The Town Baker'S Husband
+  source_goal_en: hit pet dog
+  context: '마을 빵집의 남편이 반려견을 집으로 데려가기 위해 마을 내 여러 장소에서 관련 물품을 확인하고 점검한다.
+
+    '
+  gold:
+    goal: 반려견을 신속하게 집으로 가져오기
+    steps:
+    - 빵집에서 빵류를 살펴보기
+    - 브림스우드 주점으로 이동하여 맥주와 함께 반려견의 상태를 살펴보기
+    - 반려견을 수거하고 빵집으로 이동하기
+- id: plan_light_264
+  npc: Priest'S Mistress
+  source_goal_en: hug abbess
+  context: '사제 부인의 행동 계획을 확인한다.
+
+    '
+  gold:
+    goal: 사제 부인과 함께 사제에게 대한 안부 및 지도 확인
+    steps:
+    - 사제 부인의 행동 계획을 살펴보기
+    - 사제 부인의 행동 계획을 살펴보기
+    - 사제 부인의 행동 계획을 살펴보기
+    - 사제 부인의 행동 계획을 살펴보기
+- id: plan_light_265
+  npc: King Consort
+  source_goal_en: put Parchment on mattress
+  context: '왕실의 권한을 부여할 방문자에게 성 내부를 탐색할 수 있는 허가를 승인한다.
+
+    '
+  gold:
+    goal: 방문자에게 성내 탐색 허용 여부를 확인하고 관련 문서를 전달하기
+    steps:
+    - 방문자를 따라 이동하여 침실의 매트리스 위에 문서 배치
+    - 여왕의 침실로 이동하여 해당 문서를 획득
+    - 깃털 펜을 장착하고 방문자에게 관련 문서를 전달
+    - 왕좌의 방으로 이동하여 탐색 허용 여부 확인
+- id: plan_light_266
+  npc: Jailer
+  source_goal_en: put shoe on food tray
+  context: '감옥 내 보안 점검 과정에서 발견된 위반 사항을 시정하고, 범죄자들에게 올바른 절차를 교육해야 한다.
+
+    '
+  gold:
+    goal: 범죄자에게 음식 쟁반을 배치하고 안전한 운영을 보장하기
+    steps:
+    - 감옥 구역에서 보안 상태 확인
+    - 간식 주머니에 있는 장비 확인
+    - 범죄자에게 총기 및 식량 관련 도구 장착
+    - 범죄자를 따라가며 마법진 위반 사항 확인
+- id: plan_light_267
+  npc: Economist
+  source_goal_en: hit diplomat
+  context: '경제학자가 외교관의 잘못된 정보가 국왕에게 미치는 영향에 대해 경고하고 있습니다.
+
+    '
+  gold:
+    goal: 외교관의 기술적 오류를 바로잡고 경제 정책을 시정하기
+    steps:
+    - 경제학자에게 경제 관련 조언 제공
+    - 왕좌로 이동하여 대화 내용 확인
+    - 외교관에게 추가 정보를 전달하고 마법진 결함 설명
+    - 거주지로 이동하여 분석 결과 보고
+- id: plan_light_268
+  npc: An Old Maniacal Man
+  source_goal_en: hug a large spider high in one corner
+  context: '광기 어린 노인이 거대한 거미를 껴안으려 시도하고 있다.
+
+    '
+  gold:
+    goal: 거대한 거미와 협력하여 마을 내의 위험한 생물을 식별하기
+    steps:
+    - 체인과 의류를 바닥에 내려놓고 거대한 거미가 위치한 구석으로 이동하기
+    - 거대한 거미를 확인하고 해당 위치에서 캡처하기
+    - 낡은 컵을 사용하여 거대한 거미의 위치를 찾아내기
+- id: plan_light_269
+  npc: Cleaning Person
+  source_goal_en: wear rag
+  context: '왕실 거처의 청소 작업이 시작되기 전, 관련 장비들을 확인하고 준비해야 한다.
+
+    '
+  gold:
+    goal: 왕실 거실 및 개인 공간의 오염된 구역을 정화하기
+    steps:
+    - 성내 주방으로 이동하여 헌 옷과 걸레를 수집하기
+    - 개인용 방으로 이동하여 청소 도구 살펴보기
+    - 거울이 위치한 공간으로 이동하여 오염된 물품을 살펴보기
+    - 왕실 거실로 이동하여 침대 위의 담요를 가져다 놓기
+- id: plan_light_270
+  npc: Traveller
+  source_goal_en: hit monster
+  context: '정글에서 발견된 괴수들을 처치하고 안전하게 탈출하기 위한 경로를 확인한다.
+
+    '
+  gold:
+    goal: 정글 내의 괴물들을 소탕하여 안전한 경로 확보
+    steps:
+    - 마을로 이동하여 정찰 준비
+    - 빵을 사용하여 정체된 위치 확인
+    - 정글에서 발견된 괴물을 타격하고 수거
+    - 괴물 사냥 및 정체 파악
+- id: plan_light_271
+  npc: Fierce Assassin
+  source_goal_en: follow person
+  context: '외딴섬에서 발견된 목표물을 추적하고 제거하는 것이 핵심 임무이다.
+
+    '
+  gold:
+    goal: 독극물 및 암살 도구 활용
+    steps:
+    - 외딴 섬으로 이동하여 대상의 위치 찾아내기
+    - 독침을 장착하고 독성 검사 수행
+    - 대상에게 대한 공격 시도
+    - 안전 가옥으로 이동하여 결과 보고
+- id: plan_light_272
+  npc: Shipwrecked Survivor
+  source_goal_en: hit gypsy
+  context: '해변에 표류한 생존자가 시장에서 발견된 집시를 확인하고, 마을 내의 위협으로부터 보호하기 위한 조치를 취한다.
+
+    '
+  gold:
+    goal: 해변에서 발견된 유실물 및 물품 확인
+    steps:
+    - 해변에서 표류한 생존자 확인
+    - 농부 시장으로 이동하여 관련 장비 손질
+    - 집시를 추적하고 해당 위치에 도달
+    - 집시를 수거하여 은신처로 이동 및 식량 확보
+- id: plan_light_273
+  npc: Bluebird
+  source_goal_en: follow fairy interpreter
+  context: '요정의 숲에서 숲을 지키기 위한 요정들의 협력 요청이 확인되었습니다.
+
+    '
+  gold:
+    goal: 요정들에게 도움을 요청하고, 숲 내의 위험 요소들을 제거하기 위한 절차를 완수하기
+    steps:
+    - 요정의 숲으로 이동하여 조사하기
+    - 요정의 성당 내부에서 요정 해석자에게 반짝임 전달하기
+    - 요정 의회로 이동하여 요령을 확인하고, 요정들에게 안심시키기
+    - 요정들의 안내를 따라가며 마법진 절차 실행하기
+- id: plan_light_274
+  npc: Give The Form Of Only The Word
+  source_goal_en: hug a cat
+  context: '마을 내의 고양이들이 유실된 물품이나 장소에 대한 정보를 제공하는 데 도움을 줄 수 있다고 알려져 있다.
+
+    '
+  gold:
+    goal: 고양이를 활용하여 동굴 내의 위험 요소로부터 신속하게 탈출하기
+    steps:
+    - 동굴로 이동하여 고양이에게 담요를 전달하기
+    - 고양이가 위치한 동굴에서 고양이를 추적하고 상태 살펴보기
+    - 소규모 마을으로 이동하여 관련 정보 수집 완료
+- id: plan_light_275
+  npc: Skeleton
+  source_goal_en: give Wine to priest
+  context: '마을 내의 유적에 존재하는 해골이 사제와 우호 관계를 형성하기 위해 필요한 물품들을 확인하고 전달한다.
+
+    '
+  gold:
+    goal: 사제에게 와인 제공 및 교회 내 활동 지원
+    steps:
+    - 교회에서 발견된 와인을 수거하여 사제에게 전달하기
+    - 사제와 함께 이동하며 교회의 구조를 살펴보기
+    - 사제가 사용하는 고서적을 조사하고 관련 지식을 학습하기
+- id: plan_light_276
+  npc: Choir Room
+  source_goal_en: hug music paper
+  context: '성가대실에서 성가대 연습을 위한 음악 악보를 확인하고 관련 장비들을 점검한다.
+
+    '
+  gold:
+    goal: 성가대실 내의 핵심 요소인 음악 악보와 관련 도구들 확인
+    steps:
+    - 성가대실 내의 키보드 및 성가대 예복을 챙기기
+    - 문제가 되는 음악 악보를 확보하고 살펴보기
+    - 정상적인 작동 여부를 확인한 후, 해당 위치에 관련 장비들을 가져다 놓기
+- id: plan_light_277
+  npc: Craftsman
+  source_goal_en: hug priest
+  context: 'Craftsman의 행동 계획
+
+    '
+  gold:
+    goal: 목공소에서 목수에게 도구 전달 및 기술 전수
+    steps:
+    - 목공소로 이동하여 톱질 작업 수행
+    - 성당으로 이동하여 사제와 동행
+    - 목공을 찾아가 망치를 사용하여 못을 박기
+- id: plan_light_278
+  npc: Queen'S
+  source_goal_en: get jewelry
+  context: '여왕의 침소에서 여왕이 사용할 장신구를 획득하고, 이후 왕좌가 위치한 공간으로 이동해야 한다.
+
+    '
+  gold:
+    goal: 여왕의 장신류를 확보하고 관련 시설을 살펴보기
+    steps:
+    - 여왕의 침소로 이동하여 침대 위에서 의상을 획득하기
+    - 하녀에게 여왕의 장신류를 전달하기
+    - 왕좌가 위치한 공간으로 이동하기
+- id: plan_light_279
+  npc: King, Checking In On His Outpo
+  source_goal_en: get homeless
+  context: '왕이 거동 불능인 노숙자들을 확인하고 복지 개선을 위한 조치를 취한다.
+
+    '
+  gold:
+    goal: 노숙자들의 상태를 파악하고 궁전으로 이동하기
+    steps:
+    - 사슬갑옷을 착용하고 광택이 나는 방패를 챙기기
+    - 동결된 전초 기지로 이동하여 노숙자들을 안심시키고 상태 살펴보기
+    - 노숙자들과 함께 궁전으로 향하는 도로로 이동하기
+- id: plan_light_280
+  npc: Proprietor
+  source_goal_en: hug townsperson
+  context: '마을 내의 다양한 보석들을 판매하기 위해 상점 주인과 소통하며 거래를 진행한다.
+
+    '
+  gold:
+    goal: 식품 가판대에서 마을 주민에게 보석을 전달하고 관련 물품을 판매하기
+    steps:
+    - 음식 가판대로 이동하여 보석을 살펴보기
+    - 마을 주민을 따라가며 필요한 보석을 제공하기
+    - 보유한 보석들을 마을 주민에게 전달하기
+    - 여관으로 이동하여 관련 거래를 마무리하기
+- id: plan_light_281
+  npc: Cavalry
+  source_goal_en: hit guard
+  context: '마을 광장에서 경비병의 부실한 보안 체계에 대한 보고가 필요하다.
+
+    '
+  gold:
+    goal: 경비병의 결함이 있는 장비를 확인하고 마을 안전 확보
+    steps:
+    - 묘비에서 훼손된 비석을 주워담기
+    - 경비병에게 무기 및 방어구 장착
+    - 검을 사용하여 경비병의 장비 손질
+    - 경비병이 사용하는 검으로 보안 취약점 확인
+- id: plan_light_282
+  npc: The High Priest, Reading An Ar
+  source_goal_en: hug nun
+  context: '고위 사제는 내일 진행될 예배를 준비하기 위해 수녀와 함께 기도하며 기술을 공유해야 한다.
+
+    '
+  gold:
+    goal: 수녀와 함께 대형 석제 제단에서 기도하고, 다음 날의 의식을 위한 절차 확인
+    steps:
+    - 의례용 모자 착용하기
+    - 주요 기도실로 이동하여 수녀를 따라가기
+    - 대형 석제 제단으로 이동하여 공동 기도 수행
+    - 사제관으로 이동하여 다음 의식 준비
+- id: plan_light_283
+  npc: Plants
+  source_goal_en: follow blacksmith
+  context: '식물들은 마을의 생명력을 유지하기 위해 필수적인 자원을 공급받아야 한다.
+
+    '
+  gold:
+    goal: 화분에서 수분을 섭취하고 새로운 영양소로 성장하기
+    steps:
+    - 화분으로 이동하여 물을 챙기기
+    - 수분과 영양소를 확인하고 화분에 공급하기
+    - 꽃병에서 수분 및 영양소 활용하기
+    - 화단 내의 식물들을 확인하고 성장을 지원하기
+- id: plan_light_284
+  npc: Acolyte Preparing For Evening
+  source_goal_en: give cross to high priest, reading an arcane book
+  context: '내일 진행될 의식을 위해 고위 사제에게 필요한 도구와 지식들을 전달하고 준비를 도와야 한다.
+
+    '
+  gold:
+    goal: 고위 사제에게 십자가를 전달하고 신비학 서적을 읽어주기
+    steps:
+    - 신비학 서적을 챙기고, 고위 사제에게 전달할 도구들을 준비하기
+    - 고위 사제에게 신비학 서적을 전달하기
+    - 고위 사제와 함께 이동하여 관련 서적을 확인하고 시연하기
+    - 고위 사제에게 사용된 십자가를 전달하며 의식 준비 마무리하기
+- id: plan_light_285
+  npc: Local Artist
+  source_goal_en: get smock from old smock
+  context: '마을 내 예술가들이나 도구의 위치를 확인하고, 새로운 그림 제작을 위한 준비를 완료해야 한다.
+
+    '
+  gold:
+    goal: 새로운 그림을 제작하여 시장에 전시하기
+    steps:
+    - 집에서 그림 관련 장비를 챙기기
+    - 시장으로 이동하여 도구들을 가져다 놓기
+    - 붓을 사용하여 캔버스에 새로운 그림을 그려내기
+    - 새로 완성된 그림을 시장에 전시하고 살펴보기
+- id: plan_light_286
+  npc: Gamekeeper
+  source_goal_en: hit pastry chef
+  context: '마을 내의 핵심 인프라를 보호하기 위한 활동
+
+    '
+  gold:
+    goal: 유제품 관련 업무 및 기술 교육
+    steps:
+    - 막대기 저장소에서 막대기 챙기기
+    - 주방으로 이동하여 파이 조리법 살펴보기
+    - 우유를 담당하는 인물에게 파이 조리법 전달하기
+    - 우유 관련 업무가 완료된지 확인하고 안심시키기
+- id: plan_light_287
+  npc: Tiger
+  source_goal_en: get fire from wood is gathered to make fire
+  context: '동굴 주변의 가시성을 확보하기 위해 숲 바닥에 흩어진 나무와 잎을 수집하고 불을 피워야 한다.
+
+    '
+  gold:
+    goal: 동굴 근처에서 충분한 빛을 확보하여 안전한 환경 조성
+    steps:
+    - 숲 바닥에서 나무를 수집하기
+    - 숲 바닥에서 잎사귀를 수집하기
+    - 동굴에서 부싯돌을 사용하여 불을 생성하기
+    - 동굴에서 횃불을 확인하고, 새끼들을 안심시키기
+- id: plan_light_288
+  npc: Tree Climber
+  source_goal_en: hug dragon
+  context: '마을 근방의 용으로부터 마을을 보호하기 위해, 나무를 오르는 기술이 필요한 핵심 인물인 Tree Climber가 관련 시설을
+    조사하고 있다.
+
+    '
+  gold:
+    goal: 드래곤과 포옹하며 수호 의지를 살펴보기
+    steps:
+    - 마법사 탑으로 이동하여 드래곤의 위치를 찾아내기
+    - 구불구불한 계단을 따라 올라가며 드래그린을 추적하기
+    - 드래그린을 포획하고 장비를 살펴보기
+    - 드래그린에게 필요한 보호 조치를 적용하기
+- id: plan_light_289
+  npc: Crypt Keeper
+  source_goal_en: follow prisoner
+  context: '감옥에서 발견된 죄수들이 묘지 관리에 필요한 유해를 처리하는 과정에서 위험 요소로 식별됨.
+
+    '
+  gold:
+    goal: 죄수 추적 및 감염된 시체 확인
+    steps:
+    - 감옥으로 이동하여 손상된 가죽 신발을 주워담기
+    - 죄수를 추적하며 묘지 내의 사체 위치를 찾아내기
+    - 사체들이 보관된 장소로 이동하여 감염된 시체들을 수습하기
+    - 모든 사체에 대한 정비 작업을 실행하기
+- id: plan_light_290
+  npc: Barkeeper
+  source_goal_en: drop bright colored curtains
+  context: '마을 광장에서 열리는 경매를 통해 화려한 색상의 커튼을 판매할 예정입니다.
+
+    '
+  gold:
+    goal: 화려한 색상의 커튼을 가장 높은 가격에 판매하기
+    steps:
+    - 시장에서 화려한 색상의 커트린을 챙기기
+    - 경매인에게 화려한 색상의 커트린 컨테이너를 전달하기
+    - 경매자로부터 수령한 코인을 확인하고, 필요한 경우 추가적인 코인을 구매하기
+- id: plan_light_291
+  npc: Squire
+  source_goal_en: get mace
+  context: '기사단장 Elara의 행동 계획을 분석하여, 마을 내 보안 및 마법진 구성 요소에 대한 이해를 돕는다.
+
+    '
+  gold:
+    goal: 무기 마스터를 추적하고 도구 확보
+    steps:
+    - 무기 마스터를 따라가며 장비 손질
+    - 다른 방으로 이동하여 개인 소지품 수집
+- id: plan_light_292
+  npc: Grave Digger
+  source_goal_en: get sail cloth from golden cloth
+  context: '묘지 내의 유해를 정리하고 훼손된 항법 장비를 확인하여 안전하게 매장해야 한다.
+
+    '
+  gold:
+    goal: 황금색 항법용 천을 확보하여 시신을 안치하기
+    steps:
+    - 삽을 사용하여 시신이 있는 위치를 살펴보기
+    - 황금색 항법용 천을 획득하고 해당 부위에 가져다 놓기
+    - 시신을 매장한 후, 묘지 내의 유해를 정리하여 신속하게 보관하기
+- id: plan_light_293
+  npc: Imp
+  source_goal_en: follow electric eel
+  context: '습지대의 가장 어두운 곳에서 전기 장어의 위치를 파악하고, 해당 장비가 포함된 전력 공급원(Power Source)을 확인해야
+    한다.
+
+    '
+  gold:
+    goal: 전기 장어를 추적하여 관련 기술을 손에 넣기
+    steps:
+    - 식량 성채에서 음식 획득
+    - 습지의 가장 어두운 지역로 이동
+    - 전기 장어에게 음식 전달
+    - 전기 장어의 위치 확인 및 전력 장비 장착
+- id: plan_light_294
+  npc: Survivor
+  source_goal_en: get sand
+  context: '사막 지역에서 전멸한 독거미의 흔적을 추적하여 안전한 장소로 이동하기
+
+    '
+  gold:
+    goal: 사막 내 독거미를 찾아 모래를 뿌려 신속하게 탈출하기
+    steps:
+    - 사막 지형으로 이동하여 바람의 흐름을 추적하기
+    - 독거미가 위치한 사막 지역으로 이동하기
+    - 모래를 획득하고 장비에 탑재하기
+    - 독거미를 공격하여 모래를 뿌려 안전한 지역으로 이동하기
+- id: plan_light_295
+  npc: Lady
+  source_goal_en: hit nun
+  context: '마을 내 성당에서 진행되는 고백 절차와 종교적 의례를 확인하고, 잘못된 행동에 대한 사죄를 준비한다.
+
+    '
+  gold:
+    goal: 성당 내의 잘못된 행위들을 바로잡고 신앙을 통해 죄를 참회하기
+    steps:
+    - 주방에서 칼을 챙겨 성당으로 이동하기
+    - 성당 내부로 진입하여 수녀를 추적하고 위치 살펴보기
+    - 고백소로 이동하여 사제에게 고백하기
+    - 사제와 함께 잘못된 행위를 바로잡기
+- id: plan_light_296
+  npc: Map Maker
+  source_goal_en: give map to scientist
+  context: '서쪽 구역의 붕괴로 인해 손상된 지도들을 확인하고 과학자에게 전달해야 한다.
+
+    '
+  gold:
+    goal: 손상된 지도를 조사하여 과학자에게 전달하기
+    steps:
+    - 서쪽 구역으로 이동하여 손상된 지도 수집하기
+    - 과학자를 찾아가며 훼손된 지도 살펴보기
+    - 파손된 지도 장착 및 검토하기
+- id: plan_light_297
+  npc: Royal Jester
+  source_goal_en: put colorful mask on king's crown
+  context: '왕실 광대는 왕관에 화려한 가면을 씌우기 위해 필요한 노력을 확인하고 관련 장비들을 점검한다.
+
+    '
+  gold:
+    goal: 왕의 왕관에 화려한 가면 착용
+    steps:
+    - 왕관에 화려한 가면을 착용하기
+    - 서고로 이동하여 소요되는 노력을 살펴보기
+    - 창고에서 필요한 노력들을 확인하고 보관하기
+- id: plan_light_298
+  npc: Monkey Friend
+  source_goal_en: get luxurious bedding from bedding
+  context: '침실에서 유틸리티를 확인하고, 사용 가능한 모든 침구류를 확보한 후 휴식을 취한다.
+
+    '
+  gold:
+    goal: 침실 내의 고급 침구 세트를 획득하여 수면 환경을 구축하기
+    steps:
+    - 침실로 이동하여 의류 보관함 확인
+    - 침소에서 사용 가능한 모든 침구류를 확인하고 이동
+    - 침소에 위치한 유토피아 장소로 이동
+- id: plan_light_299
+  npc: Court Wizard
+  source_goal_en: get alarm horn
+  context: '마을 내의 위험 요소에 대한 경고를 알리기 위해 관측탑과 관련 시설들을 확인해야 한다.
+
+    '
+  gold:
+    goal: 관측탑에서 경보용 뿔을 사용하여 마을 전체에 위험 상황 전파
+    steps:
+    - 관측탑으로 이동하여 경보용 뿔 장착하기
+    - 경비병을 따라가며 긴급 상황 안내
+    - 마법사 도구 및 관련 장비 손질
+- id: plan_light_300
+  npc: King Himself
+  source_goal_en: wield scepter
+  context: '왕은 고대 마법 수정과 지팡이를 수습하여 궁정 마법사에게 전달할 준비를 수행한다.
+
+    '
+  gold:
+    goal: 고대 마법 수정 및 지팡이 확보
+    steps:
+    - 고위 사제의 예복을 착용하기
+    - 보물실에서 고대 마법 수정과 지팡이를 획득하기
+    - 궁정 마법사의 거처로 이동하여 마법 수행을 위한 준비를 실행하기
+- id: plan_light_301
+  npc: Gorilla
+  source_goal_en: hug hyena
+  context: '정글에서 길을 잃은 하이에나를 발견하고, 고릴라는 이를 구제하기 위한 절차를 수행해야 한다.
+
+    '
+  gold:
+    goal: 하이에나에게 사랑과 용기를 보여주기
+    steps:
+    - 정글로 이동하여 하이에나의 위치 확인
+    - 하이에나를 따라가며 정체 파악
+    - 원숭이에게 물을 전달하고 소통하기
+    - 하이에나에게 바나나를 전달하며 용기 교육
+- id: plan_light_302
+  npc: Floor
+  source_goal_en: hug wall
+  context: '마을 외곽에서 벽의 구조적 결함을 확인하고 보강 작업을 수행해야 한다.
+
+    '
+  gold:
+    goal: 벽의 구조적 결함 확인 및 보완
+    steps:
+    - 외부 구역으로 이동하여 벽의 상태를 살펴보기
+    - 수질을 확인한 후, 물을 사용하여 벽에 수분 공급
+    - 결함이 있는 지점에 도달하여 벽 보호 작업 수행
+    - 벽의 구조적 결함을 보강하고 관련 위치로 이동하기
+- id: plan_light_303
+  npc: Beggar Woman
+  source_goal_en: follow nomad warrior
+  context: '마을 광장에서 노숙자 여성이 새로운 거주지를 찾기 위해 활동 중이다.
+
+    '
+  gold:
+    goal: 노숙자 여성을 따라 이동하며 필요한 물품을 확인하고 안전한 환경을 제공하기
+    steps:
+    - 광장에서 괭이와 해초를 수집하고, 노란색 괭이를 장착하여 도구 확인
+    - 노숙자 여성을 따라 이동하며 마법진에 의해 확인된 노드들을 검토
+    - 해변에서 발견된 죽은 쥐를 수거하고, 노숙자 여들에게 필요한 정보를 제공
+    - 마법진을 통해 노숙자 여의 안전한 거주지 확보 및 도구 활용 확인
+- id: plan_light_304
+  npc: Tower Sweeper
+  source_goal_en: steal tropical bird from bird watcher
+  context: '타워 내에서 발생하는 모든 새들의 소란을 막기 위해 관련 장비와 물품들을 점검해야 한다.
+
+    '
+  gold:
+    goal: 타워 내의 열대 조류를 확인하고 숲으로 이동하여 신속하게 손에 넣기
+    steps:
+    - 타워로 이동하여 환경 확인
+    - 타워 내에서 발견된 열대 조류를 추적
+    - 열대 조류를 식별하고, 타워 내의 위험 요소들을 제거
+    - 숲으로 이동하여 열대 조류를 확인하고 수량 파악
+- id: plan_light_305
+  npc: Bartender
+  source_goal_en: steal worn map from bouncer
+  context: '클라우드 나인 바에서 보디가드로부터 낡은 지도를 확보하고, 숨겨진 보물에 대한 정보를 수집해야 한다.
+
+    '
+  gold:
+    goal: 보안관에게 낡은 지도 전달
+    steps:
+    - 클라우드 나인 바에서 낡은 지도 확인
+    - 숲으로 이동하여 지도 장착
+    - 지도 관련 정보 파악
+- id: plan_light_306
+  npc: Salesman
+  source_goal_en: give writing utensil to traveler
+  context: '시장 내의 도구 보관소에서 필요한 물품을 확보하고, 여행자에게 전달할 준비를 마친다.
+
+    '
+  gold:
+    goal: 여행자에게 사용할 필기 도구를 제공하기
+    steps:
+    - 도구 저장소에서 필기 도구 세트를 챙기기
+    - 필기 도구 보관함에 있는 도구들을 내려놓고, 가스레인지용 필기 도구를 수집하기
+    - 필기 도구 상자를 확인하고, 해당 장비를 활용하여 필요한 도구들을 가져다 놓기
+- id: plan_light_307
+  npc: Policeman Who Walks A Beat
+  source_goal_en: get old half-buried swords from piece of old, sun-bleached sailcloth
+  context: '마을 내에서 발견된 노후화된 돛 조각과 그에 포함된 부서진 검들을 확인하고 관련 보안 위협 요소들을 제거해야 한다.
+
+    '
+  gold:
+    goal: 노후한 돛 조각에 포함된 오래된 칼날의 위치를 파악하고 이를 수거하여 마을 안전 확보
+    steps:
+    - 경비모자 및 검을 착용하기
+    - 시장 좌판으로 이동하여 노후화된 돛 조각 확인
+    - 해당 장소에서 오래된 칼날를 수집하고, 발견된 물품이 보안 위협에 대한 대응임을 확인
+    - 수거한 물품을 통해 마을 내의 보안 취약점 파악 및 관련 정보 업데이트
+- id: plan_light_308
+  npc: Small Child
+  source_goal_en: hit old man
+  context: '노인에게 배를 부딪힌 것이 자신임을 확인시켜주기 위해, 아이는 노인이 사용하는 노를 들고 집으로 돌아가야 한다.
+
+    '
+  gold:
+    goal: 노인에게 배를 부딪힌 것이 본인임을 확인시켜주기
+    steps:
+    - 배의 노를 챙겨서 노를 들고 노인에게 이동하기
+    - 집으로 이동하여 노인의 행동을 살펴보기
+    - 보트 창고로 이동하여 노의 위치를 찾아내기
+- id: plan_light_309
+  npc: Hyena
+  source_goal_en: give impassable vegetation to gorilla
+  context: '정글 내의 통과 불가능한 식생을 수거하고 고릴라에게 전달하여 정글 음식 확보.
+
+    '
+  gold:
+    goal: 정글에서 온 통과 불가능한 식생을 수집하고 고릴라에게 전달하기
+    steps:
+    - 정글로 이동하여 통과 불가능한 식생 획득
+    - 고릴라를 따라가며 통과 불가능한 식생 제공
+    - 정글에서 온 음식 수집하기
+- id: plan_light_310
+  npc: Craftsman'S Apprentice
+  source_goal_en: steal comfortable cushion from war advisor
+  context: '전쟁 고문이 사용하는 안락한 쿠션이 마음에 들지 않는지, 왕에게 그에 대한 설명을 제공하고 있는 것을 확인했다.
+
+    '
+  gold:
+    goal: 전장 관찰용으로 사용되는 안락한 쿠션을 확보하여 왕의 관심을 끌기
+    steps:
+    - 대강당에서 전장 관찰을 위한 활동을 실행하기
+    - 전장 고문이 사용하는 안락한 쿠션 살펴보기
+    - 왕의 침소로 이동하여 해당 쿠션을 전달하고, 왕에게 쿠션에 대한 설명 제공하기
+    - 안락한 쿠션이 왕의 관심을 끄는 데 도움이 되는지 살펴보기
+- id: plan_light_311
+  npc: High Priest, Reading An Arcane
+  source_goal_en: get ancient religious texts
+  context: '고위 사제실에서 고대 종교 문헌을 조사하며 다가올 고위 사제 회의를 위한 준비를 수행한다.
+
+    '
+  gold:
+    goal: 고대 종교 문헌 및 관련 자료 확보
+    steps:
+    - 고위 사제실에서 고대 종교 문헌 확인
+    - 고대 종교 문헌을 수집하고 관련 문서에 기록
+    - 문서의 내용을 검토하여 핵심 내용 파악
+- id: plan_light_312
+  npc: Religious Leader
+  source_goal_en: hug peasant
+  context: '신앙의 기초를 다지기 위해 마을 주민들에게 정체된 기술을 전파하고 신학적 지식을 교육해야 한다.
+
+    '
+  gold:
+    goal: 어민에게 올바른 신앙 체계 설명 및 교리 학습
+    steps:
+    - 어획 구역으로 이동하여 물고기 확인
+    - 성당으로 이동하여 종교 문헌 전달
+    - 어민을 위한 종교 문헌 제공
+    - 자택으로 이동하여 마법진 확인
+- id: plan_light_313
+  npc: Party Goer
+  source_goal_en: get stone from marble floor
+  context: '연회장 내의 대리석 바닥에 흩어진 돌을 제거하고, 장식용 석재를 수집하여 마법진이 요구하는 절차를 수행한다.
+
+    '
+  gold:
+    goal: 연회장에서 대리석 바닥의 석재를 손에 넣기
+    steps:
+    - 대리석 바닥에서 석재를 획득하고, 연회장 내에 있는 다른 방문객들에게 안내하기
+    - 연회장으로 이동하여 와인을 제공하기
+- id: plan_light_314
+  npc: Calf
+  source_goal_en: get watering bucket
+  context: '송아지(Calf)는 다른 소들과 함께 물을 마시고 풀을 섭취하며 성장을 돕는다.
+
+    '
+  gold:
+    goal: 다른 소들과 함께 물을 마시고 충분한 양의 초록색 풀을 섭취하기
+    steps:
+    - 다른 소들을 따라가서 물통을 살펴보기
+    - 물통에서 물을 마시고 주변에 있는 초록색 풀을 섭취하기
+    - 초록색 풀이 더 필요한 경우 추가로 섭취하기
+    - 다른 소들이 위치한 장소로 이동하여 경로를 확인하고 복귀하기
+- id: plan_light_315
+  npc: Homeless Man
+  source_goal_en: put tin for collecting money on bench
+  context: '거리에서 소년이 낡은 가방을 들고 마을 광장으로 이동하며, 부랑인에게 필요한 물품을 제공한다.
+
+    '
+  gold:
+    goal: 벤치에 돈을 모으기 위한 빈 통을 가져다 놓기
+    steps:
+    - 음식 상인으로부터 음식 챙기기
+    - 시든 정원으로 이동하여 소년이 가져온 물품 살펴보기
+    - 낡은 옷을 착용하고 담요를 사용하여 장비 살펴보기
+    - 단말기에 표시된 금액을 수집하기
+- id: plan_light_316
+  npc: A Child Lost From His Mother.
+  source_goal_en: put baskets of flowers in ornate chair
+  context: '식당에서 아이를 잃어버린 후, 사제에게 들키지 않도록 화려한 의자에 꽃 바구니를 배치해야 한다.
+
+    '
+  gold:
+    goal: 식당 내의 화려한 의자에 꽃 바구니 가져다 놓기
+    steps:
+    - 식당에서 앉아있는 위치 확인
+    - 사제 뒤를 따라가며 아이의 위치 파악
+    - 나무 장난감을 내려놓고 화려한 의자를 배치
+    - 식당 외부로 이동하여 어머니 찾기
+- id: plan_light_317
+  npc: King'S Horses
+  source_goal_en: follow doctor
+  context: '왕실 말들의 건강 상태를 확인하기 위해 약제부로 이동하여 관련 장비들을 점검한다.
+
+    '
+  gold:
+    goal: 왕실 말들을 위한 의약품 및 장비 확보
+    steps:
+    - 밝은 붉은색 신발을 착용하고, 왕실 말들의 상태를 살펴보기 위한 준비를 마치기
+    - 약제부로 이동하여 약사로부터 관련 정보를 수집하기
+    - 왕실 가문의 저택으로 이동하여 감염된 말들을 찾아내어 살펴보기
+- id: plan_light_318
+  npc: Prisoner Of The Troll
+  source_goal_en: remove broadsword
+  context: '트롤에 의한 포로의 고충을 해결하기 위해 브릿지에서 대형 검을 제거해야 한다.
+
+    '
+  gold:
+    goal: 브릿지에서 대형 검을 제거하기
+    steps:
+    - 방어구 및 대형 검 장착
+    - 트롤이 있는 브릿지로 이동
+    - 브릿지에서 대형 검 사용
+- id: plan_light_319
+  npc: Goblins
+  source_goal_en: put child's arm in fist
+  context: '고블린들은 숲에서 발견된 아이의 팔을 활용하여 맛있는 수프를 만드는 방법을 학습해야 한다.
+
+    '
+  gold:
+    goal: 아이의 팔과 개구리 사체로 구성된 요리법을 익히기
+    steps:
+    - 아동 마을에서 아이의 팔을 획득하기
+    - 개구리 숲에서 개구리 사체를 수집하기
+    - 동굴로 이동하여 아동용 그릇에 남은 재료를 담고, 개구리용 그릇에 담긴 수프를 사용하기
+    - 수량화된 수프를 사용하여 요리 과정 살펴보기
+- id: plan_light_320
+  npc: Tadpole
+  source_goal_en: hit snakes
+  context: 'Tadpole는 동굴과 암석 지대에 침입하는 뱀들을 차단하기 위한 방벽을 구축한다.
+
+    '
+  gold:
+    goal: 동굴 내의 뱀들이 유입되지 않도록 방어막 생성
+    steps:
+    - 동굴에서 바위를 수집하여 방어용 암석 확보
+    - 암석 지대로 이동하여 방벽 설치 준비
+    - 방어용 암석 장착 및 뱀의 침입 경로 추적
+    - 단절된 암석을 배치하여 동굴 입구 차단
+- id: plan_light_321
+  npc: War Officer
+  source_goal_en: get horse
+  context: '전장으로 향하기 전, 국왕의 검을 활용하여 적들을 격퇴할 준비를 마쳐야 한다.
+
+    '
+  gold:
+    goal: 전장에서 국왕의 검을 사용하여 적들을 소탕하기
+    steps:
+    - 무기 창고에서 무기 상자를 수령하기
+    - 말을 획득하고 전장으로 이동하기
+    - 방어구 세트를 장착하기
+    - 군 지휘관을 따라가며 전장으로 이동하기
+- id: plan_light_322
+  npc: Dirt
+  source_goal_en: follow well off business man
+  context: '마을 내 부유한 사업가의 시신을 매장하기 위해, 관련 장비 및 경로를 확인하고 적절한 조치를 수행해야 한다.
+
+    '
+  gold:
+    goal: 부유한 사업자의 사체 매립
+    steps:
+    - 물과 음식 공급 확인
+    - 나무 바닥의 목재 장비 손질
+    - 숲으로 이동하여 나무 파편 수집
+    - 사업자 시신을 대상으로 공격 수행
+- id: plan_light_323
+  npc: His Father
+  source_goal_en: get cover
+  context: '왕실의 소유물인 커버를 확보하여 아들을 구출하기 위한 협상 준비가 완료되었다.
+
+    '
+  gold:
+    goal: 왕실 커버를 획득하고 자녀를 신속하게 데려오기
+    steps:
+    - 셔츠를 착용하여 의복을 살펴보기
+    - 궁전으로 이동하여 왕실 커버를 손에 넣기
+    - 성 외곽에서 아들을 납치한 인물을 찾아가 수동으로 전달하기
+- id: plan_light_324
+  npc: Mystical Lion
+  source_goal_en: steal crystal from gnome
+  context: '마을 광장에서 마법사에게 전달할 수정체를 확인하고, 해당 물품을 확보하기 위한 절차를 수행한다.
+
+    '
+  gold:
+    goal: 수정체 수집 및 전달
+    steps:
+    - 마법사를 따라가서 위치 파악
+    - 지하 공간으로 이동하여 노움의 위치 확인
+    - 노움의 거처에서 수정체 탈취
+    - 마법사의 오두막으로 이동하여 수집한 수정체 전달
+- id: plan_light_325
+  npc: Wildlife
+  source_goal_en: get moss
+  context: '섬에서 채취한 이끼를 활용하여 야생 생태계를 확장하기 위한 준비가 필요하다.
+
+    '
+  gold:
+    goal: 섬 내의 바위 지역에서 이끼를 수집하고 이를 활용하여 야생 생태계 전파
+    steps:
+    - 섬으로 이동하여 이끼 채취 위치 확인
+    - 바위 지형으로 이동하여 이끼 수집
+    - 수집한 이끼를 사용하여 섬 내의 야생 환경 구축
+- id: plan_light_326
+  npc: The Groundskeeper Of The Castl
+  source_goal_en: steal hammer from his wife
+  context: '성 내부의 지하 공간에서 발견된 결함들을 수정하기 위해 도구들이 필요한 상황이다.
+
+    '
+  gold:
+    goal: 지하 시설의 문제점을 파악하고 복원 작업을 완수하기
+    steps:
+    - 부츠를 착용하여 장비 살펴보기
+    - 배수 및 관련 장비 확인을 위해 배우의 거처로 이동하기
+    - 지하 공간으로 이동하여 망치를 이용해 도구들을 복원하기
+    - 결함이 있는 지점에서 망치를 사용하여 하부 시설 복구하기
+- id: plan_light_327
+  npc: Lady Of The Hour
+  source_goal_en: get room
+  context: '소년의 구원 이후, 성역에 대한 평화와 속죄를 위한 절차를 확인한다.
+
+    '
+  gold:
+    goal: 고해성사 공간에서 죄악을 사유하고 안식의 과정 찾아내기
+    steps:
+    - 단정한 의복 착용하기
+    - 고해성사실로 이동하여 해당 공간의 상태 확인
+    - 고해성사 카디널을 전달하여 속죄 절차 수행
+    - 자신의 거처로 이동하여 일지 데스크를 통해 기록 확인

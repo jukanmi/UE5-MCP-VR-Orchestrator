@@ -1,11 +1,13 @@
-#include "SmartNPCAIController.h"
-#include "NPCActionComponent.h"
-#include "../NPCStateComponent.h"
-#include "../SmartNPC.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Components/NPCStateComponent.h"
+#include "NPC/BP/SmartNPC.h"
+#include "Core/Types/PlayerGameplayTags.h"   // TAG_State_Condition_Dead (플레이어 사망 판정)
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
-#include "MCPStateTreeAIComponent.h"
+#include "NPC/Action/MCPStateTreeAIComponent.h"
 #include "StateTree.h"
+#include "GameplayTagAssetInterface.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 
@@ -127,7 +129,6 @@ void ASmartNPCAIController::OnPossess(APawn* InPawn)
         // --- Bind ActionComponent Delegates ---
         if (UNPCActionComponent* ActionComp = NPC->ActionComponent)
         {
-            ActionComp->OnActionStarted.AddDynamic(this, &ASmartNPCAIController::HandleActionStarted);
             ActionComp->OnActionStoppedAll.AddDynamic(this, &ASmartNPCAIController::HandleAllActionsStopped);
         }
 	}
@@ -143,8 +144,124 @@ void ASmartNPCAIController::OnUnPossess()
     Super::OnUnPossess();
 }
 
-void ASmartNPCAIController::HandleActionStarted(const FGameAction& /*Action*/)
+void ASmartNPCAIController::UpdateEQSBlackboardParams(float SearchRadius, float CoverWeight,
+    float DistanceWeight, float AggressionWeight, float SafeDistance)
 {
+    UBlackboardComponent* BB = GetBlackboardComponent();
+    if (!BB) return;
+
+    BB->SetValueAsFloat(FName("EQS_SearchRadius"),     SearchRadius);
+    BB->SetValueAsFloat(FName("EQS_CoverWeight"),      CoverWeight);
+    BB->SetValueAsFloat(FName("EQS_DistanceWeight"),   DistanceWeight);
+    BB->SetValueAsFloat(FName("EQS_AggressionWeight"), AggressionWeight);
+    BB->SetValueAsFloat(FName("EQS_SafeDistance"),     SafeDistance);
+}
+
+void ASmartNPCAIController::PauseAI()
+{
+    // StateTree 정지 — 진행 task 의 ExitState 호출. 넉다운 동안 새 액션 주입 차단.
+    if (StateTreeAI)
+    {
+        StateTreeAI->StopLogic(TEXT("Knockdown"));
+    }
+    // 진행 중 MoveTo 등 이동 즉시 중단(래그돌과 위치 다툼 방지).
+    StopMovement();
+}
+
+void ASmartNPCAIController::ResumeAI()
+{
+    // 에셋·Blackboard 는 OnPossess 에서 주입된 채 유지 → StartLogic 만으로 루트부터 재가동.
+    if (StateTreeAI && GetPawn())
+    {
+        StateTreeAI->StartLogic();
+    }
+}
+
+bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
+{
+    // 전투 캐릭터(SmartNPC·EnemyCharacter)는 bIsDead, 플레이어는 사망 태그 — 판정은 베이스 한 곳.
+    return ACombatCharacter::IsActorDead(Target);
+}
+
+void ASmartNPCAIController::ExitCombat(AActor* DeadTarget)
+{
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    if (!NPC) return;
+
+    if (DeadTarget)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] %s: 전투 타겟 '%s' 사망 — 전투 해제, Common 복귀"),
+            *NPC->AgentID, *DeadTarget->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SmartNPCAIController] %s: 전투 타겟 장기 소실(%.1f초) — 전투 해제, Common 복귀"),
+            *NPC->AgentID, CombatTargetLostTimeout);
+    }
+
+    // 진행 중 스윙·이동 즉시 중단(몽타주 포함) 후 잔여 큐 폐기.
+    // StopAllActions 의 OnActionStoppedAll → HandleAllActionsStopped 가 BB.TargetActor 를 클리어한다.
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent())
+    {
+        ActionComp->AbortCurrentAction();
+        ActionComp->StopAllActions();
+        // 전투 종료로 진행 중 전술 쿼리는 무의미 — Idle 복귀(WaitingLLM 잔존 시 후속 보고 지연 방지).
+        ActionComp->AbortTacticalQuery();
+    }
+
+    if (UNPCStateComponent* StateComp = NPC->StateComponent)
+    {
+        StateComp->SetBehaviorMode(ENPCBehaviorMode::Common);
+        // replan 플래그 — 다음 상호작용 prompt 에서 강제 재계획(재조우 시 'Combat 첫 진입' 경로 복원).
+        StateComp->FlagDangerReplan();
+        // Phase 2 통보: 승리 사실을 Python 에 즉시 보고(메모리 기록용, 무행동 응답). 소실은 승리가 아니다.
+        // 스토리 boss_killed 는 AgentID 와 exact match — 액터 이름(BP_..._C_0)이 아니라 AgentID 를 보낸다.
+        if (DeadTarget) StateComp->ReportCombatVictory(ASmartNPC::PerceptionIdFor(DeadTarget));
+    }
+
+    // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유).
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        BB->ClearValue(Key_TargetActor);
+    }
+
+    // 사망 대상 주기 감시 해제 — 시체 대상 perception 재보고 방지.
+    if (DeadTarget && CurrentSightTarget.Get() == DeadTarget)
+    {
+        StopSightTracking();
+    }
+
+    // 전투가 이미 해제됨 — 대기 중이던 소실 타임아웃 취소.
+    if (UWorld* W = GetWorld())
+    {
+        W->GetTimerManager().ClearTimer(CombatTargetLostTimer);
+    }
+}
+
+void ASmartNPCAIController::StopSightTracking()
+{
+    if (UWorld* W = GetWorld())
+    {
+        W->GetTimerManager().ClearTimer(PerceptionTickTimer);
+    }
+    CurrentSightTarget.Reset();
+}
+
+void ASmartNPCAIController::HandleCombatTargetLostTimeout()
+{
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    if (!NPC) return;
+
+    UNPCStateComponent* StateComp = NPC->StateComponent;
+    if (!StateComp || StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat) return;
+
+    // 타이머 취소 누락 대비 이중 가드 — 그 사이 재발견(BB 타겟 유효)이면 전투 유지.
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        if (BB->GetValueAsObject(Key_TargetActor)) return;
+    }
+
+    ExitCombat(nullptr);
 }
 
 void ASmartNPCAIController::HandleAllActionsStopped()
@@ -169,12 +286,18 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
 
         if (Stimulus.Type == SightID)
         {
-            const FString TargetID = Actor->GetName();
+            const FString TargetID = ASmartNPC::PerceptionIdFor(Actor);
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *TargetID);
 
             // 1. Blackboard 업데이트 (BehaviorTree용 즉각 반응)
             Blackboard->SetValueAsObject(Key_TargetActor, Actor);
             Blackboard->SetValueAsVector(Key_TargetLocation, Actor->GetActorLocation());
+
+            // 시야 재획득 — 진행 중이던 전투 소실 타임아웃 취소(짧은 엄폐는 전투 유지)
+            if (UWorld* W = GetWorld())
+            {
+                W->GetTimerManager().ClearTimer(CombatTargetLostTimer);
+            }
 
             // 2. FPerceptionData 조립 후 EventCognition으로 넘김
             if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetPawn()))
@@ -185,12 +308,17 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     // 호감도 기반 최종 위협도 1회 계산 — RequestEventCognition + EQS 게이트 공유.
                     const float FinalDanger = StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID);
 
-                    FPerceptionData Perception;
-                    Perception.TargetID = TargetID;
-                    Perception.SenseType = ESenseType::Sight;
-                    Perception.Location = Actor->GetActorLocation(); // 정확한 위치
-                    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Actor->GetActorLocation());
-                    Perception.DangerScore = FinalDanger;
+                    const FPerceptionData Perception(TargetID, ESenseType::Sight, Actor->GetActorLocation(),
+                                                     OwnerNPC->GetActorLocation(), FinalDanger);
+
+                    // 척수반사 — Python 왕복 없이 즉시 반응(SPEC_reflex_table).
+                    // danger 게이트 **밖**에서 부른다: 친화 인사처럼 게이트를 못 넘는 자극이
+                    // 반사의 주 대상이기 때문. 관계·거리 판정은 룰이 직접 한다.
+                    if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                    {
+                        ActionComp->TryReflexReact(ESenseType::Sight, FString(), TargetID,
+                            SightBaseDanger, Perception.Distance, Actor->GetActorLocation());
+                    }
 
                     // 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 emergency report·EQS.
                     // 중립/친화(배율로 danger 하락) 감지 시 SLM 반사·전투 포지셔닝 모두 생략.
@@ -198,6 +326,12 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     if (FinalDanger >= CombatDangerThreshold)
                     {
                         StateComp->RequestEventCognition(Perception);
+
+                        // Combat 첫 진입 시만 재계획 표시 — 이미 Combat 중이면 기존 plan 유지.
+                        if (StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat)
+                        {
+                            StateComp->FlagDangerReplan();
+                        }
 
                         if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                         {
@@ -246,7 +380,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                 EventType = TagStr; // Tag가 없으면 원본 그대로 EventType으로 사용
             }
 
-            FString SourceName = Actor ? Actor->GetName() : TEXT("Unknown");
+            FString SourceName = ASmartNPC::PerceptionIdFor(Actor);
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] HEARING: Detected %s Noise from %s at %s"),
                 *EventType, *SourceName, *Stimulus.StimulusLocation.ToString());
             
@@ -262,14 +396,9 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     // 호감도 기반 위협도 (Friend: 0.0, Neutral: 0.5×, Enemy: 1.0×)
                     const float FinalDanger = StateComp->ComputePerceptionDanger(BaseDanger, SourceName);
 
-                    // 3. FPerceptionData 조립 후 EventCognition으로 넘김
-                    FPerceptionData Perception;
-                    Perception.TargetID = SourceName;
-                    Perception.SenseType = ESenseType::Hearing;
-                    Perception.Location = Stimulus.StimulusLocation; // [FIX] 소음 발생 위치 추가
-                    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Stimulus.StimulusLocation);
-                    Perception.DangerScore = FinalDanger;
-
+                    // 3. FPerceptionData 조립 후 EventCognition으로 넘김 — 위치는 소음 발생 지점.
+                    const FPerceptionData Perception(SourceName, ESenseType::Hearing, Stimulus.StimulusLocation,
+                                                     OwnerNPC->GetActorLocation(), FinalDanger);
                     StateComp->RequestEventCognition(Perception);
 
                     // 전투 관련 EventType(Attack/Damage/Hit) 또는 높은 원본 위험도면 EQS 전술 쿼리 트리거.
@@ -280,13 +409,20 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                         EventType.Contains(TEXT("Hit")) ||
                         BaseDanger >= 0.5f;
 
-                    if (bIsCombatNoise)
+                    if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                     {
-                        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+                        if (bIsCombatNoise)
                         {
                             TArray<FVector> EnemyLocs;
                             EnemyLocs.Add(Stimulus.StimulusLocation);
                             ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                        }
+                        else
+                        {
+                            // 전투 소음은 위 EQS 엄폐가 전담한다. 반사까지 끼면 즉시형 Scan 이
+                            // 큐 앞을 막아 엄폐 이동이 밀리므로, 반사는 비전투 소음만 받는다.
+                            ActionComp->TryReflexReact(ESenseType::Hearing, EventType, SourceName,
+                                BaseDanger, Perception.Distance, Stimulus.StimulusLocation);
                         }
                     }
                 }
@@ -301,14 +437,25 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
         {
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] Lost target: %s"), *Actor->GetName());
             Blackboard->ClearValue(Key_TargetActor);
+
+            // Combat 중 타겟 소실 — 타임아웃까지 재발견 없으면 전투 해제(잔존 Combat 조각상화 방지).
+            if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
+            {
+                if (NPC->StateComponent && NPC->StateComponent->GetBehaviorMode() == ENPCBehaviorMode::Combat)
+                {
+                    if (UWorld* W = GetWorld())
+                    {
+                        W->GetTimerManager().SetTimer(CombatTargetLostTimer, this,
+                            &ASmartNPCAIController::HandleCombatTargetLostTimeout, CombatTargetLostTimeout, false);
+                    }
+                }
+            }
         }
 
         // 소실된 대상이 주기적 감시 대상이면 타이머 해제
         if (CurrentSightTarget == Actor)
         {
-            if (UWorld* W = GetWorld())
-                W->GetTimerManager().ClearTimer(PerceptionTickTimer);
-            CurrentSightTarget.Reset();
+            StopSightTracking();
         }
     }
 }
@@ -318,7 +465,7 @@ void ASmartNPCAIController::OnPerceptionTick()
     AActor* Target = CurrentSightTarget.Get();
     if (!Target)
     {
-        if (UWorld* W = GetWorld()) W->GetTimerManager().ClearTimer(PerceptionTickTimer);
+        StopSightTracking();
         return;
     }
 
@@ -328,14 +475,10 @@ void ASmartNPCAIController::OnPerceptionTick()
     UNPCStateComponent* StateComp = OwnerNPC->StateComponent;
     if (!StateComp) return;
 
-    const FString TargetID = Target->GetName();
+    const FString TargetID = ASmartNPC::PerceptionIdFor(Target);
 
-    FPerceptionData Perception;
-    Perception.TargetID = TargetID;
-    Perception.SenseType = ESenseType::Sight;
-    Perception.Location = Target->GetActorLocation();
-    Perception.Distance = FVector::Dist(OwnerNPC->GetActorLocation(), Target->GetActorLocation());
-    Perception.DangerScore = StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID);
+    const FPerceptionData Perception(TargetID, ESenseType::Sight, Target->GetActorLocation(),
+                                     OwnerNPC->GetActorLocation(), StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID));
 
     UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] PerceptionTick: %s dist=%.0f danger=%.2f"),
         *TargetID, Perception.Distance, Perception.DangerScore);
@@ -345,5 +488,10 @@ void ASmartNPCAIController::OnPerceptionTick()
     if (Perception.DangerScore >= CombatDangerThreshold)
     {
         StateComp->RequestEventCognition(Perception);
+        // Combat 첫 진입 시만 재계획 — 이미 Combat 중 지속 tick 은 무시(plan 폭주 방지).
+        if (StateComp->GetBehaviorMode() != ENPCBehaviorMode::Combat)
+        {
+            StateComp->FlagDangerReplan();
+        }
     }
 }

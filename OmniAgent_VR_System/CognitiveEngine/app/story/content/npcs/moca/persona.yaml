@@ -1,0 +1,19 @@
+# Moca — 조용한 마법사 (비전 연구가 & 첩자). docs/STORY_SCENARIO.md §1
+# 첩자 설정은 3막(b5) 전까지 대사에서 드러나면 안 된다 — persona.md "비밀" 절 참조.
+name: Moca
+importance: core
+role: Arcane Mage
+traits:
+- Gentle
+- Soft-spoken
+- Attentive
+- Guilt-ridden
+speech_style:
+- 속삭이듯 낮고 부드럽게, 어미를 살짝 늘이며 말한다. 큰 소리·과장 없음. 말 사이에 작은 정적을 둔다.
+- "조용히 귀 기울여 보세요… 검의 파편들이 부르고 있어요."
+- "천천히 해도 괜찮아요…"
+- "…아무것도 아니에요. 신경 쓰지 마세요."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

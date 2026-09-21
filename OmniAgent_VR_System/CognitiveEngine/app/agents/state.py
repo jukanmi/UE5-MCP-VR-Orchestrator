@@ -10,7 +10,7 @@
 ║ STATE LIFECYCLE (Section 8 Orchestra):                                      ║
 ║   1. UE5 sends vr_context (GesPrompt) via Envelope                         ║
 ║   2. Interface Input adds natural_context                                   ║
-║   3. Dialogue adds raw_response                                             ║
+║   3. Dialogue adds structured_responses                                     ║
 ║   4. Interface Output adds action_batch                                     ║
 ║   5. Rules validates action_batch                                           ║
 ║   6. UE5 receives final action_batch                                        ║
@@ -18,8 +18,7 @@
 ║ FIELD CATEGORIES:                                                            ║
 ║   • Input:     vr_context (UE5에서 수신)                                   ║
 ║   • Cache:     cached_world_state (state_update 수신 시만 갱신, LLM 미호출) ║
-║   • History:   failed_action_history (action_failed 이력 누적)              ║
-║   • Pipeline:  natural_context, raw_response, target_npc                    ║
+║   • Pipeline:  natural_context, structured_responses, target_npc            ║
 ║   • Routing:   next, current_speaker                                        ║
 ║   • Output:    action_batch (UE5로 전송)                                   ║
 ║   • Safety:   has_error, error_msg (보안 차단), target_npcs (라우팅 가드) ║
@@ -29,10 +28,10 @@
 ║   never REMOVE or RENAME existing fields without migration plan.            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
-from typing import TypedDict, Annotated, List, Optional, Dict, Any
-from langgraph.graph.message import add_messages
+
+from typing import TypedDict, List, Optional, Dict, Any
 from ..schemas.vr_context import GesPrompt
-from ..schemas.actions import ActionBatch
+from ..schemas.actions import ActionBatch, DialogueResponse
 
 
 class AgentState(TypedDict):
@@ -45,43 +44,53 @@ class AgentState(TypedDict):
     # 플레이어의 음성/제스처 명령. prompt 타입 Envelope의 payload에서 파싱됨.
     vr_context: Optional[GesPrompt]
 
+    # ── 계획 캐싱 (Multi-NPC Cached Planning) ──────────────────────
+    # requires_replan: C++ 이 perception/턴카운터로 판정. True=풀 파이프라인, False=e4b 단독.
+    requires_replan: bool
+    # current_plan: UE5 보관본 (replan=False 시 interface_input 이 컨텍스트로 주입). npc_id → plan.
+    current_plan: Optional[Dict[str, Any]]
+    # npc_plans: Stage2 산출 plan (replan=True 시만). main.py 가 ModeActionRequest.NpcPlans 로 회신.
+    npc_plans: Optional[Dict[str, Any]]
+    # plan_achieved: e4b Stage1 이 plan 달성 감지 시 per-NPC true. main.py 가 PlanAchieved 로 회신.
+    plan_achieved: Optional[Dict[str, bool]]
+    # story_directive: 스토리 디렉터 캐시 npc_id → {goal, hint}. replan 턴에만 실려 Stage2 sections 에 주입.
+    story_directive: Optional[Dict[str, Any]]
+
     # [신규] state_update 수신 시 캐시되는 최신 월드 상태
     # WHY: LLM 파이프라인 없이 상태만 저장하여, 다음 prompt 처리 시
     #      "현재 환경 컨텍스트"로 활용한다. 매 요청마다 덮어씌운다.
     cached_world_state: Optional[Dict[str, Any]]
 
-    # [신규] action_failed 실패 이력 누적 목록
-    # WHY: Python이 내린 명령이 UE5에서 실패할 경우, 그 이유를
-    #      다음 추론 컨텍스트에 포함시켜 동일 실수를 반복하지 않게 한다.
-    #      리스트에 append하는 방식으로 누적. 최대 N개 유지는 Interface Input 에이전트가 담당.
-    failed_action_history: List[Dict[str, Any]]
-
     # ── 파이프라인 중간 상태 ─────────────────────────────────────────
     # Interface Input → Dialogue: 자연어로 변환된 플레이어 컨텍스트
     natural_context: Optional[str]
 
-    # Dialogue → Interface Output: LLM이 생성한 NPC 원본 응답
-    raw_response: Optional[str]
+    # [멀티 NPC] Dialogue Stage1 출력 텍스트 직렬화: npc_id → 태그 텍스트.
+    # 유일 소비처 = Stage2 plan 입력 — replan 턴에만 채워짐(경량 루프는 빈 dict).
+    # 구 raw_response(단수)는 소비처 소멸로 삭제됨 (2026-07-09).
+    raw_responses: Optional[Dict[str, str]]
+
+    # [멀티 NPC] Dialogue Stage1 구조화 출력: npc_id → DialogueResponse.
+    # Stage3(interface_output)가 정규식 없이 직접 ActionBatch 로 변환 (텍스트 왕복 제거).
+    structured_responses: Optional[Dict[str, DialogueResponse]]
 
     # 대상 NPC ID (Supervisor가 결정)
     target_npc: Optional[str]
-
-    # Dialogue 에이전트가 결정하는 행동 모드 / 표정
-    behavior_mode: Optional[str]
-    facial_state: Optional[str]
 
     # ── 내부 라우팅 상태 ─────────────────────────────────────────────
     next: str
     current_speaker: str
 
     # ── 최종 출력 (Python → UE5) ─────────────────────────────────────
-    # Rules 검증 후 UE5로 전송할 ActionBatch
+    # Rules 검증 후 UE5로 전송할 ActionBatch (단일 NPC 호환)
     action_batch: Optional[ActionBatch]
 
-    # ── LangGraph 메시지 히스토리 ────────────────────────────────────
-    messages: Annotated[List[Any], add_messages]
+    # [멀티 NPC] Interface_Output Stage3 출력: npc_id → ActionBatch
+    action_batches: Optional[Dict[str, ActionBatch]]
 
     # ── 보안 및 라우팅 가드레일 ────────────────────────────────────
+    # Rules 거부 시 Dialogue 재시도 횟수. 최대 1회 — 초과 시 폴백 배치로 종료(무한루프 차단).
+    rules_retry_count: int
     target_npcs: List[str]
     msg_id: str
     timestamp: float

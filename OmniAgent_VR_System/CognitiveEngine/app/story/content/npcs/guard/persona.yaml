@@ -1,0 +1,16 @@
+# Guard — 성문 경비병 (수문장). docs/STORY_SCENARIO.md §1
+name: Guard
+importance: normal
+role: Gate Keeper
+traits:
+- Cautious
+- Loyal
+- Observant
+speech_style:
+- 무뚝뚝하고 짧은 일상 구어. 경계하듯 필요한 말만 하지만, 유민에게는 챙기는 기색이 있다.
+- "부상은? 안쪽으로 들어가."
+- "성문 밖은 마왕군 순찰 구역이다. 무기 없이 나가지 마."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

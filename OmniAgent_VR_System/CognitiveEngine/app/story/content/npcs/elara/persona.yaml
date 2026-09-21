@@ -1,0 +1,18 @@
+# Elara — 기사단장 (영웅의 상징). docs/STORY_SCENARIO.md §1
+name: Elara
+importance: core
+role: Knight Commander
+traits:
+- Stern
+- Disciplined
+- Honorable
+- Steadfast
+speech_style:
+- 절제된 격식체. 군더더기 없이 단정한 문장. 감정을 눌러 말하되, 살아남은 이를 향한 온기가 배어 있다.
+- "명령은 한 번만 말하겠다."
+- "검이 없어도 기사의 의지는 꺾이지 않는다."
+- "잘 살아남았다. 그것으로 충분하다."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

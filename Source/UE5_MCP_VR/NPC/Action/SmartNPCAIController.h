@@ -47,9 +47,6 @@ protected:
 
     /** Callback events for NPCActionComponent */
     UFUNCTION()
-    void HandleActionStarted(const FGameAction& Action);
-
-    UFUNCTION()
     void HandleAllActionsStopped();
 
     /** 시야 유지 중 주기적 Cognition 재보고 */
@@ -66,7 +63,38 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "AI|Perception")
     float PerceptionTickInterval = 9.0f;
 
+    /** Combat 중 시야 소실 시 전투 잔존 해제 타임아웃(초) — BB 타겟 null 이 이 시간 지속되면
+     *  Common 복귀. 이내 재발견 시 타이머 취소(짧은 엄폐·스쳐 지나감은 전투 유지). */
+    UPROPERTY(EditDefaultsOnly, Category = "AI|Perception", meta = (ClampMin = "1.0", ClampMax = "60.0"))
+    float CombatTargetLostTimeout = 8.0f;
+
+    FTimerHandle CombatTargetLostTimer;
+
+    /** 소실 타임아웃 만료 콜백 — 여전히 Combat + BB 타겟 null 이면 ExitCombat(nullptr). */
+    void HandleCombatTargetLostTimeout();
+
+    /** 주기 perception 재보고 중단 — 타이머 해제 + 시야 대상 리셋. 대상 소실·사망·틱 중 대상 무효 공통. */
+    void StopSightTracking();
+
 public:
+	/** 전투 타겟 사망 판정 — ACombatCharacter::IsActorDead 위임(bIsDead / State.Condition.Dead 태그). */
+	static bool IsTargetDead(const AActor* Target);
+
+	/** 전투 종료 시퀀스: 진행 액션 중단·잔여 큐 폐기 → BehaviorMode=Common → replan 플래그 → BB.TargetActor 클리어.
+	 *  DeadTarget 이 있으면(사망) 승리 보고 + 그 대상 시야 감시 해제, nullptr 이면(장기 소실) 보고만 생략.
+	 *  BB 쓰기 소유권에 따라 STTask 가 아닌 컨트롤러가 수행 — STTask_PrepareNextAction 종료 게이트가 호출. */
+	void ExitCombat(AActor* DeadTarget);
+
+	/** 넉다운 중 AI 일시정지 — StateTree 정지 + 이동 중단. UnPossess 금지(재빙의·BB 손실 회피). */
+	void PauseAI();
+
+	/** 기상 후 AI 재개 — StateTree 재시작(루트부터 위협 재평가). BB·소유는 유지됨. */
+	void ResumeAI();
+
+	/** EQS 전술 가중치를 Blackboard 에 반영한다. Blackboard 쓰기는 이 클래스에서만 한다. */
+	void UpdateEQSBlackboardParams(float SearchRadius, float CoverWeight, float DistanceWeight,
+		float AggressionWeight, float SafeDistance);
+
 	// --- Blackboard Keys ---
 	// Target Location Vector (e.g. for MoveTo)
 	static const FName Key_TargetLocation;

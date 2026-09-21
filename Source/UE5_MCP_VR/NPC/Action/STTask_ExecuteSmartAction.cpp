@@ -1,19 +1,22 @@
-#include "STTask_ExecuteSmartAction.h"
+#include "NPC/Action/STTask_ExecuteSmartAction.h"
 #include "StateTreeLinker.h"
 #include "StateTreeExecutionContext.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "SmartNPCAIController.h"
-#include "../SmartNPC.h"
-#include "NPCActionComponent.h"
-#include "../NPCManager.h"
-#include "../Struct/NPCActionKeys.h"
+#include "NPC/Action/SmartNPCAIController.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "Furniture/Subsystems/FurnitureManager.h"
+#include "Furniture/BP/FurnitureActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/GameInstance.h"
 
 namespace
 {
     // LLM target_id 의미키워드 → 실제 AActor*.
-    //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟 / 그 외 → NPCMap AgentID 조회.
+    //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟
+    //   / 그 외 → NPCMap AgentID 조회 → FurnitureManager 가구 ID 조회 순.
     // 해석 실패 시 BB 타겟으로 폴백(기존 동작 보존).
     AActor* ResolveActionTarget(ASmartNPC* Self, const FString& Keyword, AActor* BBTarget)
     {
@@ -30,17 +33,19 @@ namespace
             return BBTarget;
         }
         // <NpcName> — NPCMap 조회
-        if (UWorld* W = Self ? Self->GetWorld() : nullptr)
+        if (UNPCManager* Mgr = UNPCManager::Get(Self))
         {
-            if (UGameInstance* GI = W->GetGameInstance())
+            if (AActor* Found = Cast<AActor>(Mgr->GetNPCById(Keyword)))
             {
-                if (UNPCManager* Mgr = GI->GetSubsystem<UNPCManager>())
-                {
-                    if (AActor* Found = Cast<AActor>(Mgr->GetNPCById(Keyword)))
-                    {
-                        return Found;
-                    }
-                }
+                return Found;
+            }
+        }
+        // <FurnitureID> — 가구 등록소 조회 (NPC 이름과 충돌 시 NPC 우선 — 위 분기가 먼저).
+        if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(Self))
+        {
+            if (AFurnitureActor* Found = FurnMgr->GetFurnitureByID(Keyword))
+            {
+                return Found;
             }
         }
         return BBTarget; // 미해석 폴백

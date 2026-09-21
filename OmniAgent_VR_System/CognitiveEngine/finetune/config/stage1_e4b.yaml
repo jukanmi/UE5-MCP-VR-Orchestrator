@@ -1,0 +1,31 @@
+# Stage1 e4b LoRA 학습 설정 (SPEC_finetune §3.2)
+base_model: "google/gemma-4-E4B-it"   # HF safetensors (2026-07-17 확인). 미존재 시 실제 태그로 교체
+load_in_4bit: true
+max_seq_length: 1024   # Blackwell+WSL2: seq>1024 Triton "device not ready" 크래시(chatbot 실측). 1024만 완주
+
+# 데이터 (finetune/data/processed/ 상대 — WSL /mnt/c 경로는 run.sh 가 절대화)
+train_jsonl: "data/processed/stage1_e4b_train.jsonl"
+val_split: 0.1          # stratify 불가 시 랜덤 홀드아웃
+seed: 3407
+
+# LoRA
+lora_r: 32
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules: "all-linear"
+
+# 학습
+learning_rate: 2.0e-4
+num_train_epochs: 3
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 2
+optim: "adamw_8bit"
+lr_scheduler_type: "linear"
+warmup_ratio: 0.05
+weight_decay: 0.01
+logging_steps: 5
+gradient_checkpointing: "unsloth"
+
+# 산출 (finetune/ 하위, gitignore)
+output_dir: "train/outputs/stage1_e4b"
+merged_dir: "train/outputs/stage1_e4b_merged"

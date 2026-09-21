@@ -1,0 +1,220 @@
+- id: raw_npcinfo_0001
+  category: Social
+  persona: '[번역] NPC_0 (중세 인물)'
+  location: '[번역] The air hangs thick and heavy ...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_0라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: raw_npcinfo_0002
+  category: Combat
+  persona: '[번역] NPC_1 (중세 인물)'
+  location: '[번역] In the labyrinthine alleys of ...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_1라오.'
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+    - type: Attack
+      target: Enemy
+- id: raw_npcinfo_0003
+  category: Combat
+  persona: '[번역] NPC_2 (중세 인물)'
+  location: '[번역] The old Mystic Falls Cemetery,...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_2라오.'
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+    - type: Attack
+      target: Enemy
+- id: raw_npcinfo_0004
+  category: Social
+  persona: '[번역] NPC_3 (중세 인물)'
+  location: '[번역] Sunlight streams through the s...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_3라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: raw_npcinfo_0005
+  category: Social
+  persona: '[번역] NPC_4 (중세 인물)'
+  location: '[번역] The Beacon Hills Preserve at t...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_4라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: raw_npcinfo_0006
+  category: Social
+  persona: '[번역] NPC_5 (중세 인물)'
+  location: '[번역] The dimly lit back room of a C...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_5라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: raw_npcinfo_0007
+  category: Combat
+  persona: '[번역] NPC_6 (중세 인물)'
+  location: '[번역] Garrick Stonefist can be found...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_6라오.'
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+    - type: Attack
+      target: Enemy
+- id: raw_npcinfo_0008
+  category: Social
+  persona: '[번역] NPC_7 (중세 인물)'
+  location: '[번역] Dust motes dance in the single...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_7라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player
+- id: raw_npcinfo_0009
+  category: Combat
+  persona: '[번역] NPC_8 (중세 인물)'
+  location: '[번역] The Bifrost Bridge shimmers wi...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_8라오.'
+  gold:
+    mode: Combat
+    facial: Angry
+    actions:
+    - type: Attack
+      target: Enemy
+- id: raw_npcinfo_0010
+  category: Social
+  persona: '[번역] NPC_9 (중세 인물)'
+  location: '[번역] Sunlight streams through the t...'
+  situation:
+    valid_targets:
+    - Player
+    - Self
+    - Enemy
+    - Chair_01
+    nearby_furniture:
+    - id: Chair_01
+      type: Chair
+      occupied: false
+      dist: 2
+  utterance: '[번역] 환영하오, 나는 NPC_9라오.'
+  gold:
+    mode: Social
+    facial: Happy
+    actions:
+    - type: Comfort
+      target: Player

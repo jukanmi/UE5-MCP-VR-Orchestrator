@@ -20,9 +20,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
     void Initialize(FString ServerURL);
 
-    // 여러 Send 함수들을 하나로 통합
+    // 여러 Send 함수들을 하나로 통합. 미연결 시 메시지는 버려짐 — 경고 로그로 가시화.
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
-    void SendMessage(const FString& PayloadJson){if (IsConnected()) WebSocket->Send(PayloadJson);}
+    void SendMessage(const FString& PayloadJson)
+    {
+        if (IsConnected())
+        {
+            WebSocket->Send(PayloadJson);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[WebSocketClient] 미연결 상태 송신 시도 — 메시지 유실 (%d bytes)"), PayloadJson.Len());
+        }
+    }
 
     UFUNCTION(BlueprintCallable, Category = "MCP Network")
     bool IsConnected() const {return WebSocket.IsValid() && WebSocket->IsConnected();}
@@ -46,6 +56,9 @@ private:
     FTimerHandle ReconnectTimerHandle;
 
     void BindSocketEvents();
+
+    /** 구 소켓의 모든 이벤트 바인딩 해제 — 재연결 시 stale 콜백 발화 방지. */
+    void UnbindSocketEvents();
     void OnMessage(const FString& Message){OnMessageReceived.Broadcast(Message);}
     void OnConnected(){RetryCount = 0; OnConnectionChanged.Broadcast(true);}
     void OnConnectionError(const FString& Error){OnConnectionChanged.Broadcast(false); TryReconnect();}
@@ -55,58 +68,10 @@ private:
     
 };
 
-UCLASS(Abstract, BlueprintType)
-class UE5_MCP_VR_API UNetworkClientBase : public UObject
-{
-    GENERATED_BODY()
-
-public:
-    virtual void Initialize(const FString& InURL);
-
-    virtual void SendPrompt(const FString& JsonData)
-    {
-        if (Socket && bIsServerConnected)
-            Socket->SendMessage(JsonData);
-    }
-
-    void Disconnect()
-    {
-        if (Socket) Socket->Disconnect();
-        bIsServerConnected = false;
-    }
-
-    bool IsConnected() const { return bIsServerConnected; }
-
-    UPROPERTY(BlueprintAssignable)
-    FOnWebSocketMessage OnMessageReceived;
-
-    UPROPERTY(BlueprintAssignable)
-    FOnWebSocketConnectionChanged OnConnectionChanged;
-
-protected:
-    UPROPERTY()
-    class UWebSocketClient* Socket;
-
-    bool bIsServerConnected = false;
-    FString TargetURL;
-
-    UFUNCTION()
-    virtual void OnMessageReceivedHandler(const FString& Message)
-    {
-        OnMessageReceived.Broadcast(Message);
-    }
-
-    UFUNCTION()
-    virtual void OnConnectionChangedHandler(bool bIsConnected)
-    {
-        bIsServerConnected = bIsConnected;
-        OnConnectionChanged.Broadcast(bIsConnected);
-    }
-};
-
-// LLM 네트워크 관리
+// LLM 채널 클라이언트 — 소켓 그 자체다. 예전엔 소켓을 멤버로 든 Abstract 중간 클래스가 델리게이트를
+// 같은 이름으로 재브로드캐스트했는데, /ws/slm 채널이 사라진 뒤로는 자식이 하나뿐이라 한 겹 걷어냈다.
 UCLASS(BlueprintType)
-class UE5_MCP_VR_API ULLMNetworkClient : public UNetworkClientBase
+class UE5_MCP_VR_API ULLMNetworkClient : public UWebSocketClient
 {
     GENERATED_BODY()
 
@@ -114,10 +79,10 @@ public:
     void InitializeLLM()
     {
         // 서버 주소는 Config/DefaultGame.ini [OmniAgent] 에서 읽는다(하드코딩 금지).
-        Super::Initialize(FOmniAgentConfig::GetLLMWebSocketURL());
+        Initialize(FOmniAgentConfig::GetLLMWebSocketURL());
     }
 
-    // LLM 전용 추가 기능이 필요하다면 여기에 작성
+    /** state_update Envelope 조립·송신 — Python StateUpdatePayload 스키마(snake_case). */
     void SendStateUpdate(const struct FGameStateData& StateData);
 };
 

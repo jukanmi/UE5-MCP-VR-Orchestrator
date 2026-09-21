@@ -4,7 +4,7 @@
 #include "StateTreeTaskBase.h"
 #include "StateTreeEvaluatorBase.h"
 #include "StateTreeExecutionTypes.h"
-#include "../Struct/NPCActionTypes.h"
+#include "NPC/Struct/NPCActionTypes.h"
 #include "STTask_PrepareNextAction.generated.h"
 
 class ASmartNPCAIController;

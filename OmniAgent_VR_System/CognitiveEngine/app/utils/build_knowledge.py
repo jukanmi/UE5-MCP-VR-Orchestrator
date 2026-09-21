@@ -7,13 +7,14 @@ Role: NPC RAG 지식 벡터스토어 (재)빌드 CLI.
 편집 직후 즉시 반영하거나 일괄 재빌드할 때 사용한다.
 
 지식 구조:
-    app/agents/knowledge/<npc>/{lore,persona,history}/*.md   (PDF 설계서 §5)
+    app/agents/knowledge/<npc>/{lore,persona,history}/*.md
 
 사용 (CognitiveEngine 디렉터리에서):
     python -m app.utils.build_knowledge --all
     python -m app.utils.build_knowledge --agent skadi --force
     python -m app.utils.build_knowledge --list
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +32,8 @@ def discover_agents() -> List[str]:
     if not os.path.isdir(KNOWLEDGE_BASE_PATH):
         return []
     return sorted(
-        d for d in os.listdir(KNOWLEDGE_BASE_PATH)
+        d
+        for d in os.listdir(KNOWLEDGE_BASE_PATH)
         if os.path.isdir(os.path.join(KNOWLEDGE_BASE_PATH, d)) and d not in _EXCLUDE_DIRS
     )
 
@@ -49,7 +51,7 @@ def rebuild(agent: str, force: bool = True) -> bool:
     """단일 에이전트 벡터스토어 빌드. 성공 시 True."""
     md = _count_md(agent)
     if md == 0:
-        print(f"[Build] {agent}: .md 문서 없음 — 스킵 (knowledge/{agent}/{{lore,persona,history}}/*.md 작성 필요)")
+        print(f"[Build] {agent}: .md 문서 없음 - 스킵 (knowledge/{agent}/{{lore,persona,history}}/*.md 작성 필요)")
         return False
     vs = build_vectorstore(agent, force_rebuild=force)
     ok = vs is not None
@@ -63,14 +65,18 @@ def main() -> None:
     g.add_argument("--agent", help="특정 NPC id (예: skadi)")
     g.add_argument("--all", action="store_true", help="knowledge/ 의 모든 NPC 빌드")
     g.add_argument("--list", action="store_true", help="에이전트와 문서 수만 출력")
-    parser.add_argument("--use-cache", action="store_true", default=False,
-                        help="기존 벡터스토어 캐시가 있으면 재사용 (기본 False — CLI 실행 = 항상 재빌드)")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        default=False,
+        help="기존 벡터스토어 캐시가 있으면 재사용 (기본 False — CLI 실행 = 항상 재빌드)",
+    )
     args = parser.parse_args()
 
     agents = discover_agents()
     if args.list:
         if not agents:
-            print(f"[Build] 에이전트 없음 — {KNOWLEDGE_BASE_PATH} 확인")
+            print(f"[Build] 에이전트 없음 - {KNOWLEDGE_BASE_PATH} 확인")
             return
         for a in agents:
             print(f"  {a}: {_count_md(a)} md")
@@ -85,7 +91,7 @@ def main() -> None:
         print(f"[Build] 경고: '{args.agent}' 폴더가 knowledge/ 에 없음 (그래도 시도)")
 
     built = sum(1 for a in targets if rebuild(a, force=not args.use_cache))
-    print(f"[Build] 완료 — {built}/{len(targets)} 빌드 성공")
+    print(f"[Build] 완료 - {built}/{len(targets)} 빌드 성공")
 
 
 if __name__ == "__main__":

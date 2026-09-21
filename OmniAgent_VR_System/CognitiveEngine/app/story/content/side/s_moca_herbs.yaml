@@ -1,0 +1,11 @@
+# 서브퀘스트 — b2_james_order 전이 시 해금. 시나리오 문서(§3)가 참조만 하고 본문이 없어 여기서 정의.
+# 완료 신호: UE5 story_event {event: item_acquired, name: HerbBasket} → 플래그 "item_acquired:HerbBasket".
+# HerbBasket 은 Content/Data/Items/ItemRegistry.csv 의 실존 아이템 ID(약초 바구니).
+id: s_moca_herbs
+title: 조용한 마법사의 약초
+available_after: b2_james_order
+summary: Moca 는 성검 조각의 마력 반응을 읽는 진정 의식에 약초 바구니가 필요하다고 조용히 부탁한다. 마왕군 순찰이 잦은 숲 가장자리에서만 구할 수 있다.
+npc_goals:
+  Moca: 플레이어에게 약초 바구니가 왜 필요한지 나직하게 설명하고, 숲 가장자리의 위험을 미리 경고한다
+quest_log: Moca 를 위해 숲 가장자리에서 약초 바구니를 구해 오자
+complete_when: {type: flag, name: "item_acquired:HerbBasket"}
