@@ -10,6 +10,7 @@
 #include "Engine/StaticMesh.h"
 #include "Core/Physics/KineticDamage.h"
 #include "NPC/BP/SmartNPC.h"
+#include "Villager/MerchantStall.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "TimerManager.h"
@@ -129,6 +130,9 @@ bool ADroppedItemBase::TryPickupInto(UInventoryComponent* Inventory)
     UItemManager* ItemManager = UItemManager::Get(this);
     if (!Inventory || !ItemManager) return false;
 
+    // 진열품은 공짜 획득 경로(Interact 픽업·NPC Pickup 액션) 전부 차단 — 구매는 그랩(VRPawn) 만 탄다.
+    if (bIsDisplayed || bTradeLocked) return false;
+
     FItemData Data;
     if (!ItemManager->GetItemDataByID(ItemData.ItemTemplateID, Data))
     {
@@ -172,6 +176,29 @@ void ADroppedItemBase::SetPhysicsFrozen(bool bFrozen)
     if (InteractionSphere)
     {
         InteractionSphere->SetCollisionEnabled(bFrozen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+    }
+}
+
+void ADroppedItemBase::SetDisplayed(bool bDisplayed, AMerchantStall* Stall, int32 Price)
+{
+    bIsDisplayed = bDisplayed;
+    DisplayStall = bDisplayed ? Stall : nullptr;
+    DisplayPrice = bDisplayed ? Price : 0;
+
+    if (!bDisplayed)
+    {
+        SetPhysicsFrozen(false);
+        return;
+    }
+    if (ItemMesh)
+    {
+        // 물리만 끈다 — 오브젝트 타입(PhysicsBody)과 쿼리 응답은 남겨 손 반경 검색·이름표에 잡히게.
+        ItemMesh->SetSimulatePhysics(false);
+        ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    }
+    if (InteractionSphere)
+    {
+        InteractionSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
     }
 }
 

@@ -19,8 +19,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Base paths
-KNOWLEDGE_BASE_PATH = "app/agents/knowledge"
+# Base paths — 절대경로. cwd 상대("app/agents/knowledge")였을 땐 README 대로 repo 루트에서 uvicorn 을 띄우면
+# <repo>/app/agents/knowledge(빈 폴더 자동 생성)를 봐서 전 NPC 가 RAG 0건이었다(2026-09-18 전 루프 주행 실측 —
+# lore 에 "성이 불타올랐다" 가 있는데 Guard 가 "성벽에 불이 났나?" 라고 묻는 원인).
+KNOWLEDGE_BASE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents", "knowledge")
 VECTORSTORE_PATH = os.path.join(KNOWLEDGE_BASE_PATH, "vectorstores")
 
 # Cache for loaded vector stores

@@ -1,5 +1,5 @@
 #include "NPC/Notifies/AnimNotifyState_NPCAttackHit.h"
-#include "NPC/BP/SmartNPC.h"
+#include "Core/BP/CombatCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 
 void UAnimNotifyState_NPCAttackHit::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
@@ -9,8 +9,8 @@ void UAnimNotifyState_NPCAttackHit::NotifyBegin(USkeletalMeshComponent* MeshComp
     if (!MeshComp) return;
 
     // 스윙 시작 — 스윙당 1회 가드 리셋.
-    if (ASmartNPC* NPC = Cast<ASmartNPC>(MeshComp->GetOwner()))
-        NPC->BeginAttackHitWindow();
+    if (ACombatCharacter* C = Cast<ACombatCharacter>(MeshComp->GetOwner()))
+        C->BeginAttackHitWindow();
 }
 
 void UAnimNotifyState_NPCAttackHit::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
@@ -20,6 +20,6 @@ void UAnimNotifyState_NPCAttackHit::NotifyTick(USkeletalMeshComponent* MeshComp,
     if (!MeshComp) return;
 
     // 윈도우 동안 매 틱 타격 시도 — 타겟이 게이트 통과 시 1회만 적용(가드는 NPC 내부).
-    if (ASmartNPC* NPC = Cast<ASmartNPC>(MeshComp->GetOwner()))
-        NPC->PerformAttackHit();
+    if (ACombatCharacter* C = Cast<ACombatCharacter>(MeshComp->GetOwner()))
+        C->PerformAttackHit();
 }

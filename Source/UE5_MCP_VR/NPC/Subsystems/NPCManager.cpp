@@ -7,10 +7,13 @@
 #include "NPC/Action/NPCActionComponent.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
+#include "Story/StorySubsystem.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
 #include "Core/Utils/SubsystemUtils.h"
+#include "Inventory/Subsystems/ItemManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 
 
 UNPCManager* UNPCManager::Get(const UObject* WorldContext)
@@ -234,6 +237,12 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     {
         if (UNPCStateComponent* StateComp = TargetNPC->GetStateComponent())
         {
+            // [REVIEW FIX] NPC 체력(Stats) 인지
+            TSharedPtr<FJsonObject> StatsObj = MakeShared<FJsonObject>();
+            StatsObj->SetNumberField("hp", StateComp->GetAttributes().Resources.Health);
+            StatsObj->SetNumberField("max_hp", StateComp->GetAttributes().Resources.MaxHealth);
+            Payload->SetObjectField("stats", StatsObj);
+
             bRequiresReplan = StateComp->ShouldReplan();
             if (!bRequiresReplan)
             {
@@ -338,6 +347,37 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
             }
         }
 
+
+        // 주변 바닥에 떨어진 아이템 인지 (반경 5m)
+        if (UItemManager* ItemMgr = UItemManager::Get(this))
+        {
+            if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+            {
+                const FVector NpcLoc = TargetNPC->GetActorLocation();
+                TArray<ADroppedItemBase*> NearbyItems = ItemMgr->GetItemsInRange(NpcLoc, FurnitureContextRange);
+                
+                TArray<TSharedPtr<FJsonValue>> ItemsArr;
+                for (ADroppedItemBase* ItemActor : NearbyItems)
+                {
+                    if (!IsValid(ItemActor)) continue;
+                    
+                    const float Dist = FVector::Dist2D(ItemActor->GetActorLocation(), NpcLoc);
+                    
+                    TSharedPtr<FJsonObject> ItemObj = MakeShared<FJsonObject>();
+                    ItemObj->SetStringField(TEXT("id"), ItemActor->ItemData.ItemInstanceID);
+                    ItemObj->SetStringField(TEXT("template_id"), ItemActor->ItemData.ItemTemplateID);
+                    ItemObj->SetNumberField(TEXT("dist_m"), FMath::RoundToFloat(Dist) / 100.f);
+                    ItemsArr.Add(MakeShared<FJsonValueObject>(ItemObj));
+                    
+                    TargetsArr.Add(MakeShared<FJsonValueString>(ItemActor->ItemData.ItemInstanceID));
+                }
+                
+                if (ItemsArr.Num() > 0)
+                {
+                    Payload->SetArrayField(TEXT("nearby_items"), ItemsArr);
+                }
+            }
+        }
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
 
@@ -511,6 +551,20 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
         }
     }
 
+    // ── 스토리 디렉터 블록 ────────────────────────────────────────────
+    // Story(PascalCase) 는 비트 전이 직후 응답에만 실린다(평소 키 부재 = 변화 없음).
+    // 어떤 응답(prompt/emergency/story_event)에도 붙을 수 있어 ActionBatches 와 독립으로 본다.
+    {
+        const TSharedPtr<FJsonObject>* StoryObj = nullptr;
+        if (Root->TryGetObjectField(TEXT("Story"), StoryObj))
+        {
+            if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+            {
+                Story->ApplyStoryJson(*StoryObj);
+            }
+        }
+    }
+
     DeliverParsedActionBatches(Root);
 }
 
@@ -524,6 +578,25 @@ void UNPCManager::SendEventReport(const FString& AgentID, const TSharedRef<FJson
         LLMClient->SendMessage(Envelope);
         UE_LOG(LogTemp, Warning, TEXT("[NPCManager] Event Report Sent for Agent: %s"), *AgentID);
     }
+}
+
+void UNPCManager::SendStoryEvent(const FString& Event, const FString& Name, const FString& AgentID)
+{
+    if (!LLMClient || !LLMClient->IsConnected())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] story_event 미전송(서버 미연결): %s/%s"), *Event, *Name);
+        return;
+    }
+    // 키는 Python StoryEventPayload 와 1:1 (event/name/agent_id).
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("event"), Event);
+    Payload->SetStringField(TEXT("name"), Name);
+    if (!AgentID.IsEmpty())
+    {
+        Payload->SetStringField(TEXT("agent_id"), AgentID);
+    }
+    LLMClient->SendMessage(FEnvelopeBuilder::BuildStoryEvent(Payload));
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] story_event 전송: %s/%s"), *Event, *Name);
 }
 
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)

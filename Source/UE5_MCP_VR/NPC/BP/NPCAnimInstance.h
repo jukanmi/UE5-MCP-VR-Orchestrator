@@ -41,6 +41,11 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Posture")
     bool bIsLie = false;
 
+    // Ragdoll -> GetUp 시 자연스러운 블렌딩을 위한 스냅샷 가중치 (1.0 = 완전 래그돌 뼈대, 0.0 = 기상 애니메이션)
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Ragdoll")
+    float RagdollBlendWeight = 0.f;
+
+
 private:
     bool bWasInAir = false;
 

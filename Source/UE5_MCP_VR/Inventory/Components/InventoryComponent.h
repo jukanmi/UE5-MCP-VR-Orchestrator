@@ -31,6 +31,9 @@ struct FInventorySlot
 /** 인벤토리 내용 변경 알림 — 슬롯/장비/내구도 변동 시 브로드캐스트. HUD 등 UI가 바인딩. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
 
+/** 골드 변경 알림 — AddGold/RemoveGold 성공 시 새 잔액. HUD GoldText 가 바인딩. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGoldChanged, int32, NewGold);
+
 /**
  * 범용 인벤토리 컴포넌트 (Generic Inventory Component).
  * - 슬롯(Slot) 기반의 인벤토리 시스템.
@@ -130,6 +133,29 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
     FOnInventoryChanged OnInventoryChanged;
 
+    // --- 골드 (숫자 화폐) ---
+    // 아이템이 아니라 정수 하나다 — 상인 구매·매입만 만진다. 인벤토리 JSON 직렬화(SmartNPC 프롬프트)엔 넣지 않는다.
+    // 시작 150 은 초안 — 헤드셋 체감 후 BP_VRPawn 에서 덮어쓴다(골드 유입은 매입뿐). 상인 골드는 무한이라 이 값을 보지 않는다.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Gold", meta = (ClampMin = "0"))
+    int32 Gold = 150;
+
+    UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
+    FOnGoldChanged OnGoldChanged;
+
+    UFUNCTION(BlueprintPure, Category = "Inventory|Gold")
+    int32 GetGold() const { return Gold; }
+
+    UFUNCTION(BlueprintPure, Category = "Inventory|Gold")
+    bool CanAfford(int32 Price) const { return Price >= 0 && Gold >= Price; }
+
+    /** Amount ≤ 0 은 무시(브로드캐스트 없음). */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Gold")
+    void AddGold(int32 Amount);
+
+    /** 잔액 부족이면 차감 없이 false — 구매 판정은 CanAfford 로 먼저 보고 여기서 한 번 더 막는다. */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Gold")
+    bool RemoveGold(int32 Amount);
+
     /** UI 에서 지금 고른 슬롯 인덱스. 폰(스틱 조작)이 쓰고 HUD 위젯이 읽어 강조 표시한다.
      *  폰이 아니라 여기 있는 이유: HUD 위젯이 구체 폰 타입을 모르게 설계돼 있어(컴포넌트로만 접근)
      *  선택 상태를 폰에 두면 위젯이 읽을 길이 없다. */
@@ -158,6 +184,13 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Action")
     bool AddItem(const FItemData& Item, int32 Amount = 1, bool bCheckWeight = true);
+
+    /**
+     * AddItem 이 성공할지 미리 본다(무게 + 슬롯·스택 여유). 인벤토리는 건드리지 않는다.
+     * 구매처럼 "골드 차감 → 지급" 순서가 강제되는 경로에서, 차감 뒤 지급이 실패해 골드만 사라지는 것을 막는다.
+     */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Check")
+    bool CanAddItem(const FItemData& Item, int32 Amount = 1, bool bCheckWeight = true) const;
 
     /**
      * 아이템을 인벤토리에서 제거합니다. (소비, 버리기, 거래)

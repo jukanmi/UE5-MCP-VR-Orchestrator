@@ -14,6 +14,7 @@
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "NPC/BP/NPCAnimInstance.h"
 
 // 물리 애니메이션 PD — 방향만 애니 포즈로 복원. 위치/속도/최대힘은 0 으로 둬야
 // PD 가 위치까지 당겨 래그돌 낙하·충돌과 다투지 않는다(필드 누락 시 흔한 함정).
@@ -69,14 +70,14 @@ USkeletalMeshComponent* UNPCRagdollComponent::GetOwnerMesh() const
 
 bool UNPCRagdollComponent::IsOwnerDead() const
 {
-    const ASmartNPC* NPC = Cast<ASmartNPC>(GetOwner());
-    return NPC && NPC->bIsDead;
+    const ACombatCharacter* C = Cast<ACombatCharacter>(GetOwner());
+    return C && C->bIsDead;
 }
 
 FString UNPCRagdollComponent::GetOwnerAgentID() const
 {
-    const ASmartNPC* NPC = Cast<ASmartNPC>(GetOwner());
-    return NPC ? NPC->AgentID : GetNameSafe(GetOwner());
+    const ACombatCharacter* C = Cast<ACombatCharacter>(GetOwner());
+    return C ? C->GetCombatId() : GetNameSafe(GetOwner());
 }
 
 // --- 수명 ---
@@ -429,6 +430,15 @@ void UNPCRagdollComponent::BeginGetUp()
 
     // 3) 기상 몽타주 + 전신 블렌드 램프(시뮬→애니). 현재 블렌드 1 에서 Tick 이 0 으로.
     GetUpBlendWeight = 1.0f;
+    
+    // 래그돌 포즈 스냅샷 저장 후 즉시 물리 off — AnimBP 의 PoseSnapshot(RagdollSnapshot) 노드가 이 포즈에서 기상 애니로 블렌드.
+    if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+    {
+        Anim->SavePoseSnapshot(FName(TEXT("RagdollSnapshot")));
+        Anim->RagdollBlendWeight = GetUpBlendWeight;
+    }
+    StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+
     UAnimMontage* Montage = bFaceUp ? GetUpMontage_FaceUp : GetUpMontage_FaceDown;
     if (Montage)
     {
@@ -456,22 +466,23 @@ void UNPCRagdollComponent::BeginGetUp()
     RefreshTickEnabled();
 }
 
-// 기상 블렌드 램프 — 전신 PhysicsBlendWeight 1→0, 0 도달 시 시뮬 off.
+// 기상 블렌드 램프 — AnimBP 스냅샷 블렌드 가중치 1→0. 물리는 BeginGetUp 에서 이미 껐다.
 void UNPCRagdollComponent::TickGetUpBlend(float DeltaSeconds)
 {
     USkeletalMeshComponent* MeshComp = GetOwnerMesh();
     if (!MeshComp) return;
 
-    // weight 0 도달 후 몽타주 끝날 때까지 매 프레임 무거운 물리 설정 반복 방지 — 보간 중에만 처리.
+    // 0 도달 후에는 매 프레임 쓰기 생략 — 보간 중에만 처리.
     if (GetUpBlendWeight > 0.f)
     {
         GetUpBlendWeight = FMath::FInterpConstantTo(GetUpBlendWeight, 0.f, DeltaSeconds, FlinchRecoverSpeed);
-        MeshComp->SetAllBodiesPhysicsBlendWeight(GetUpBlendWeight);
-
         if (GetUpBlendWeight <= KINDA_SMALL_NUMBER)
         {
             GetUpBlendWeight = 0.f;
-            StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+        }
+        if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+        {
+            Anim->RagdollBlendWeight = GetUpBlendWeight;
         }
     }
 }
@@ -493,8 +504,10 @@ void UNPCRagdollComponent::FinishGetUp()
 
     if (USkeletalMeshComponent* MeshComp = GetOwnerMesh())
     {
-        MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
-        StopBodySimulation(MeshComp, DefaultMeshRelativeTransform);
+        if (UNPCAnimInstance* Anim = Cast<UNPCAnimInstance>(MeshComp->GetAnimInstance()))
+        {
+            Anim->RagdollBlendWeight = 0.f;
+        }
         // 원본 프로파일·활성화 상태 복원 — Ragdoll 프로파일/QueryAndPhysics 잔존 방지.
         MeshComp->SetCollisionProfileName(OriginalMeshProfile);
         MeshComp->SetCollisionEnabled(OriginalMeshCollision);

@@ -25,6 +25,8 @@
 #include "IMotionController.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Utils/DiceSystem.h"
+#include "Villager/VillagerCharacter.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
 #include "NPC/Struct/NPCActionKeys.h"
@@ -34,6 +36,7 @@
 #include "UI/BP/PlayerHUDWidget.h"
 #include "UI/BP/ItemTooltipWidget.h"
 #include "UI/Trade/TradeSessionActor.h"
+#include "Villager/MerchantStall.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
@@ -100,7 +103,7 @@ AVRPawn::AVRPawn()
     StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
     StimuliSource->RegisterWithPerceptionSystem();
 
-    // 인벤토리 컴포넌트
+    // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
     // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯.
@@ -668,7 +671,7 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     if (bDashActive || Now - LastDashTime < DashCooldownSec) return;
 
     FGameResources& Res = CurrentStats.Resources;
-    if (bStaminaExhausted || Res.Stamina < DashStaminaCost) return;
+    if (!bDebugDashFreeStamina && (bStaminaExhausted || Res.Stamina < DashStaminaCost)) return;
 
     // 방향 — 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면.
     // 이동과 같은 기준(HMD Yaw)으로 풀어야 스틱을 민 쪽과 튀어나가는 쪽이 일치한다.
@@ -679,13 +682,16 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     FVector Dir = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal2D();
     if (Dir.IsNearlyZero()) Dir = Forward;
 
-    Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
-    if (Res.Stamina <= 0.f)
+    if (!bDebugDashFreeStamina)
     {
-        bStaminaExhausted = true;
-        SetSprinting(false);
+        Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
+        if (Res.Stamina <= 0.f)
+        {
+            bStaminaExhausted = true;
+            SetSprinting(false);
+        }
+        TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
     }
-    TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 
     bDashActive = true;
     DashTimeRemaining = DashDuration;
@@ -924,7 +930,8 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 
 void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
 {
-    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→SmartNPC 공격 인지).
+    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→피격자 인지).
+    // 대상은 ACombatCharacter(SmartNPC·EnemyCharacter) — 적 클래스도 같은 스윙·투사체 규약으로 맞는다.
     // 가벼운 밀침(bPush~bStrike 사이)은 데미지 없음 = LLM 이 공격으로 안 봄.
     const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
     const bool  bPush   = SpeedMs >= MinImpactSpeed;
@@ -979,19 +986,41 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
 
     for (const FOverlapResult& O : Overlaps)
     {
-        ASmartNPC* NPC = Cast<ASmartNPC>(O.GetActor());
+        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
         if (!NPC) continue;
 
         // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
         if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
         NPC->LastMeleeHitTime = Now;
 
-        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를 발생시킴.
+        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
         // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
         if (bStrike)
         {
-            // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
-            KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
+            // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
+            // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
+            ASmartNPC* SmartTarget = Cast<ASmartNPC>(NPC);
+            FDiceResult ParryRoll;
+            const bool bParried = SmartTarget && SmartTarget->StateComponent
+                && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
+                                             SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
+            if (bParried)
+            {
+                // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
+                if (SmartTarget->ParrySound)
+                {
+                    UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
+                }
+                const FPerceptionData ParryPerc(
+                    ASmartNPC::PerceptionIdFor(this), ESenseType::Parried,
+                    GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
+                SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
+            }
+            else
+            {
+                // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
+                KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
+            }
         }
 
         // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
@@ -1041,7 +1070,7 @@ bool AVRPawn::TryPickupNearby()
     return Nearest && Nearest->TryPickupInto(Inventory);
 }
 
-ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) const
+ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, bool bIncludeDisplayed) const
 {
     UItemManager* ItemManager = UItemManager::Get(this);
     if (!ItemManager) return nullptr;
@@ -1053,6 +1082,8 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius) 
         // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
         // 손에 쥔 것이 겹쳐 복사가 된다.
         if (Dropped->bTradeLocked) continue;
+        // 진열품은 Interact 픽업 후보에서 뺀다 — 공짜 획득 경로. 그랩은 구매 판정을 타므로 포함.
+        if (Dropped->bIsDisplayed && !bIncludeDisplayed) continue;
 
         const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
         if (DistSq < NearestDistSq)
@@ -1288,13 +1319,18 @@ void AVRPawn::HandleGrabStart(bool bLeft)
     }
 
     ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius, bLeft);
-    if (Nearest)
+    if (!Nearest) return;
+
+    // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
+    // 거부되면 손에 붙이지 않는다(붙였다 뺏으면 복사 버그 — TradeSession 의 교훈).
+    if (Nearest->bIsDisplayed)
     {
-        Inventory->AttachItemToHand(Nearest, HandSlot);
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
-        return;
+        AMerchantStall* Stall = Nearest->DisplayStall.Get();
+        if (!Stall || !Stall->TryPurchase(Nearest, Inventory)) return;
     }
 
+    Inventory->AttachItemToHand(Nearest, HandSlot);
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
@@ -1303,7 +1339,7 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     if (!HandController) return nullptr;
 
     // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    return FindNearestItem(HandController->GetComponentLocation(), Radius);
+    return FindNearestItem(HandController->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
 }
 
 void AVRPawn::UpdateItemTooltip()
@@ -1336,7 +1372,7 @@ void AVRPawn::UpdateItemTooltip()
         {
             if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(ItemTooltipComp->GetUserWidgetObject()))
             {
-                Tooltip->SetItem(Data, Target->Amount);
+                Tooltip->SetItem(Data, Target->Amount, Target->bIsDisplayed ? Target->DisplayPrice : -1);
             }
         }
         else
@@ -1409,6 +1445,13 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
     ADroppedItemBase* Item = Inventory->ReleaseHeldItem(HandSlot);
     if (!Item) return;
 
+    // 상인 매입 상자 안에서 놓았으면 판매 판정. 거부품(퀘스트·BaseValue 0)은 물리가 이미 살아 있어 상자 안에 그대로 떨어진다.
+    if (AMerchantStall* Stall = AMerchantStall::FindStallContaining(this, Item->GetActorLocation()))
+    {
+        Stall->TrySell(Item, Inventory);
+        return;
+    }
+
     // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
     // 빨려 들어가면 수락/취소를 누를 대상이 사라진다.
     // 세션은 거래 중에만, 그것도 보통 하나만 존재한다. 상시 추적 대신 놓는 순간에만 훑는다.
@@ -1466,7 +1509,13 @@ void AVRPawn::Cheat_Unequip(bool bOffHand)
 
 void AVRPawn::DetectNearbyNPC()
 {
-    const FString FoundID = PlayerInteractionUtils::FindNearestNPCId(this, 500.f);
+    // 최근접이 주민(서버 미등록)이면 로컬 인사(바라보기+Wave+대사 1줄)로 끝. 타겟 NPC 는 건드리지 않는다.
+    FString FoundID;
+    if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(this, 500.f, FoundID))
+    {
+        V->Interact(this);
+        return;
+    }
 
     // 미발견 시 기존 타겟 유지 — 빈 값 덮어쓰기로 유효 대상이 소실되는 것 방지.
     if (!FoundID.IsEmpty())
@@ -1493,14 +1542,22 @@ void AVRPawn::OnChatKey()
 
 void AVRPawn::SayToNpc(const FString& Text)
 {
-    // 타겟 미지정이면 근접 탐지. player_id = actor 이름 — affinity DB 키와 일치.
+    // 타겟 미지정이면 근접 탐지. player_id 는 고정 "Player" — 서버 affinity·스토리 DB 키(PLAYER_KEY)와 일치.
+    // 액터 이름(BP_VRPawn_C_0)으로도 보내면 LLM 2회 호출 + 기록 2배 오염.
+    // 최근접이 주민이면 로컬 규칙 응답 — 서버 미전송(NPCManager 미등록). SmartNPC 가 더 가까우면 종전대로.
+    FString Nearest;
+    if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(this, 500.f, Nearest))
+    {
+        V->RespondToChat(Text);
+        return;
+    }
     if (CurrentTargetNPCID.IsEmpty()) DetectNearbyNPC();
     if (CurrentTargetNPCID.IsEmpty() || Text.IsEmpty())
     {
         UE_LOG(LogTemp, Warning, TEXT("[VRPawn] SayToNpc 폐기 — target/text 비어있음"));
         return;
     }
-    PlayerInteractionUtils::SendDialogueToNpc(this, GetName(), CurrentTargetNPCID, Text);
+    PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), CurrentTargetNPCID, Text);
 }
 
 void AVRPawn::LogIKMetrics()
@@ -1585,7 +1642,35 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
         return 0.f;
     }
 
-    float Actual = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    // EnemyCharacter 와 같은 공식: 원시 − 방어력 (최소 0).
+    float Actual = FMath::Max(0.f, Raw - CurrentStats.Combat.Defense);
+
+    // Block/Parry — 아이템을 쥔 손이 공격자 쪽(수평 내적 ≥ BlockDotThreshold)에 있으면 막은 것.
+    // 그 손이 ParryHandSpeed 이상으로 움직이는 중이면 패링(데미지 0), 아니면 단순 방어(BlockDamageScale).
+    // 수평 투영 이유: 손은 캡슐 중심보다 늘 위에 있어 3D 내적으론 높이 든 손이 방어로 안 잡힘.
+    if (Actual > 0.f && DamageCauser && Inventory)
+    {
+        const FVector PlayerLoc = GetActorLocation();
+        const FVector AttackDir = (DamageCauser->GetActorLocation() - PlayerLoc).GetSafeNormal2D();
+        for (const bool bRight : { true, false })
+        {
+            if (!Inventory->GetHeldItem(bRight ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand)) continue;
+            const FVector HandDir = (GetHandLocation(bRight) - PlayerLoc).GetSafeNormal2D();
+            if (FVector::DotProduct(HandDir, AttackDir) < BlockDotThreshold) continue;
+
+            const float HandSpeed = (bRight ? HandVelRight : HandVelLeft).Size();
+            const bool  bParry    = HandSpeed >= ParryHandSpeed;
+            Actual = bParry ? 0.f : Actual * BlockDamageScale;
+            const FString Msg = FString::Printf(TEXT("[VRPawn] %s (%s손 %.0f cm/s) 데미지 %.1f (raw %.1f, def %.1f)"),
+                bParry ? TEXT("Parried") : TEXT("Blocked"), bRight ? TEXT("오른") : TEXT("왼"),
+                HandSpeed, Actual, Raw, CurrentStats.Combat.Defense);
+            UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, bParry ? FColor::Cyan : FColor::Yellow, Msg);
+            break;
+        }
+    }
+
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 
     if (CurrentStats.Resources.Health <= 0.f)

@@ -6,14 +6,18 @@
 #include "GameFramework/PlayerController.h"
 #include "Components/ScrollBox.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Story/StorySubsystem.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
 #include "Core/Interfaces/Entity.h"               // IPlayerBase / UPlayerBase
 #include "Inventory/Components/InventoryComponent.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
+#include "Villager/VillagerCharacter.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
+#include "Kismet/GameplayStatics.h"
+#include "Haptics/HapticFeedbackEffect_Base.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {
@@ -44,6 +48,18 @@ void UPlayerHUDWidget::NativeConstruct()
             Manager->OnNPCResponseReceived.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
         }
     }
+    // 퀘스트 로그 — 위젯이 Story 블록보다 늦게 떠도 마지막 상태로 초기화(HasState).
+    if (QuestLogText)
+    {
+        if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+        {
+            Story->OnStoryUpdated.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleStoryUpdated);
+            if (Story->HasState())
+            {
+                RefreshQuestLogText(Story->GetCurrentState());
+            }
+        }
+    }
 }
 
 void UPlayerHUDWidget::NativeDestruct()
@@ -52,7 +68,40 @@ void UPlayerHUDWidget::NativeDestruct()
     {
         Manager->OnNPCResponseReceived.RemoveDynamic(this, &UPlayerHUDWidget::HandleNPCResponse);
     }
+    if (UStorySubsystem* Story = UStorySubsystem::Get(this))
+    {
+        Story->OnStoryUpdated.RemoveDynamic(this, &UPlayerHUDWidget::HandleStoryUpdated);
+    }
     Super::NativeDestruct();
+}
+
+void UPlayerHUDWidget::RefreshQuestLogText(const FStoryState& State)
+{
+    if (!QuestLogText) return;
+    QuestLogText->SetText(FText::FromString(QuestLogPrefix + State.QuestLog));
+}
+
+void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
+{
+    RefreshQuestLogText(State);
+
+    if (QuestUpdateSound)
+    {
+        UGameplayStatics::PlaySound2D(this, QuestUpdateSound);
+    }
+    if (QuestUpdateHaptic)
+    {
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            PC->PlayHapticEffect(QuestUpdateHaptic, EControllerHand::Left);
+        }
+    }
+}
+
+void UPlayerHUDWidget::HandleGoldChanged(int32 NewGold)
+{
+    if (!GoldText) return;
+    GoldText->SetText(FText::FromString(GoldPrefix + FString::FromInt(NewGold)));
 }
 
 void UPlayerHUDWidget::AppendChatLine(const FString& Speaker, const FString& Text)
@@ -98,14 +147,21 @@ void UPlayerHUDWidget::HandleChatCommitted(const FText& Text, ETextCommit::Type 
     const FString Msg = Text.ToString().TrimStartAndEnd();
     if (!Msg.IsEmpty() && OwnerPawn)
     {
-        const FString Target = PlayerInteractionUtils::FindNearestNPCId(OwnerPawn, ChatTargetRadius);
-        if (Target.IsEmpty())
+        // 최근접이 주민이면 로컬 규칙 응답(서버 미전송). SmartNPC 가 더 가까우면 서버로.
+        FString Target;
+        if (AVillagerCharacter* V = PlayerInteractionUtils::FindNearestTalkTarget(OwnerPawn, ChatTargetRadius, Target))
+        {
+            AppendChatLine(TEXT("나"), Msg);
+            const FString Reply = V->RespondToChat(Msg);
+            if (!Reply.IsEmpty()) AppendChatLine(V->VillagerID, Reply);
+        }
+        else if (Target.IsEmpty())
         {
             UE_LOG(LogTemp, Warning, TEXT("[HUD] 채팅 폐기 — 반경 %.0fcm 내 NPC 없음"), ChatTargetRadius);
         }
         else
         {
-            PlayerInteractionUtils::SendDialogueToNpc(this, OwnerPawn->GetName(), Target, Msg);
+            PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), Target, Msg);
             AppendChatLine(TEXT("나"), Msg);
         }
     }
@@ -136,6 +192,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
             if (UInventoryComponent* OldInv = OwnerPawn->FindComponentByClass<UInventoryComponent>())
             {
                 OldInv->OnInventoryChanged.RemoveDynamic(this, &UPlayerHUDWidget::RequestInventoryRefresh);
+                OldInv->OnGoldChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleGoldChanged);
             }
         }
         OwnerPawn = CurrentPawn;
@@ -319,8 +376,10 @@ void UPlayerHUDWidget::TryBindInventoryDelegate()
     if (UInventoryComponent* Inv = GetInventory())
     {
         Inv->OnInventoryChanged.AddDynamic(this, &UPlayerHUDWidget::RequestInventoryRefresh);
+        Inv->OnGoldChanged.AddDynamic(this, &UPlayerHUDWidget::HandleGoldChanged);
         bInventoryDelegateBound = true;
-        // 바인딩 전 변경분(초기 지급 아이템 등) 반영
+        // 바인딩 전 변경분(초기 지급 아이템·시작 골드) 반영
         RequestInventoryRefresh();
+        HandleGoldChanged(Inv->GetGold());
     }
 }

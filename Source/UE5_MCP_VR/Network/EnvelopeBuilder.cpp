@@ -17,6 +17,7 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
         case EEnvelopeType::Prompt:       return TEXT("prompt");
         case EEnvelopeType::EmergencyReport: return TEXT("emergency_report");
         case EEnvelopeType::LocationDecision: return TEXT("location_decision");
+        case EEnvelopeType::StoryEvent:   return TEXT("story_event");
         default:
             // 새 EEnvelopeType 추가 후 여기 미반영 시 도달(새 Envelope 타입을 양쪽에 동시 반영하지 않았다는 신호) — prompt 폴백은
             // Python 이 엉뚱한 핸들러로 라우팅하는 무음 장애가 되므로 Error 로 승격.
@@ -77,4 +78,9 @@ FString FEnvelopeBuilder::BuildLocationDecisionRequest(const TSharedRef<FJsonObj
 FString FEnvelopeBuilder::BuildStateUpdate(const TSharedRef<FJsonObject>& Payload)
 {
     return BuildEnvelope(EEnvelopeType::StateUpdate, Payload);
+}
+
+FString FEnvelopeBuilder::BuildStoryEvent(const TSharedRef<FJsonObject>& Payload)
+{
+    return BuildEnvelope(EEnvelopeType::StoryEvent, Payload);
 }

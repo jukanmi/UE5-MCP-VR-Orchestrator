@@ -26,6 +26,7 @@ enum class EEnvelopeType : uint8
     Prompt,         // "prompt"       - 플레이어 명령/대화
     EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
     LocationDecision,// "location_decision" - EQS 후보 → LLM 전술 위치 결정 요청
+    StoryEvent,     // "story_event" - 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거. 송신 코드는 Phase B
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder
@@ -65,6 +66,12 @@ public:
      * @param Payload - StateUpdatePayload FJsonObject
      */
     static FString BuildStateUpdate(const TSharedRef<FJsonObject>& Payload);
+
+    /**
+     * story_event Envelope 생성. 스토리 상태기계 트리거(npc_died·item_acquired·zone_enter·flag).
+     * @param Payload - {event, name, agent_id?} FJsonObject (Python StoryEventPayload 와 1:1)
+     */
+    static FString BuildStoryEvent(const TSharedRef<FJsonObject>& Payload);
 
 private:
     // ─────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "NPC/BP/SmartNPC.h"
+#include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
 
 AKineticProjectile::AKineticProjectile()
@@ -65,7 +65,7 @@ void AKineticProjectile::OnHit(UPrimitiveComponent* /*HitComp*/, AActor* OtherAc
 
     if (OtherActor && OtherActor != this)
     {
-        if (ASmartNPC* NPC = Cast<ASmartNPC>(OtherActor))
+        if (ACombatCharacter* NPC = Cast<ACombatCharacter>(OtherActor))
         {
             // MoveComp 가 유효할 때만 속도 기반 데미지 산출(생성 실패·지연 소멸 대비).
             if (MoveComp)

@@ -1,0 +1,15 @@
+# Commander_Vorg — 2막 전초기지 간부(보스). 대화용이 아니라 전투 대상. AgentID 는 main.yaml b4 boss_id 와 정확히 일치.
+name: Commander_Vorg
+importance: normal
+role: Demon Army Commander
+traits:
+- Brutal
+- Arrogant
+- Ruthless
+speech_style:
+- 위압적인 반말. 짧게 조롱하고 바로 공격한다. 협상 없음.
+- "성검 조각? 네 시체에서 마저 챙겨 주지."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

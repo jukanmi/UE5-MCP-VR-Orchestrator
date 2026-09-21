@@ -47,6 +47,7 @@ YOUR inventory (items you currently hold): {inventory}
 
 Recent memory: {memory}
 Current sentiment toward player: {sentiment}
+Story objective (what you want from this conversation right now): {story_goal}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 
@@ -66,6 +67,8 @@ For EACH === NPC: <id> === section in the input, produce one plan entry.
   번호 접두사 없이. 좋은 예: ["동쪽 다리로 이동", "아군에게 신호", "교전 개시"]
 
 Base the plan ONLY on facts already present in each NPC's section — do NOT invent new lore.
+If a === STORY DIRECTIVE === block is present, each listed NPC's goal must follow that direction,
+still using only facts from that NPC's own section.
 
 Output format example (structure only — never copy these values):
 {"npcs":[{"npc_id":"Elara","goal":"플레이어에게 약초 값을 받아내기","steps":["약초 가격 제시","플레이어 반응 확인","흥정 마무리"]}]}

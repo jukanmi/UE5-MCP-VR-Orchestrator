@@ -1,0 +1,15 @@
+# Orc_Vagron — 서브퀘스트(s_hunt_bridge_troll) 네임드 보스. 대화용이 아니라 전투 대상. AgentID 는 side yaml boss_id 와 정확히 일치.
+name: Orc_Vagron
+importance: normal
+role: Bridge Orc Warrior
+traits:
+- Savage
+- Territorial
+- Reckless
+speech_style:
+- 짐승 같은 포효 위주 짧은 말. 협상 없음.
+- "크르릉... 다리는 내 것이다!"
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0

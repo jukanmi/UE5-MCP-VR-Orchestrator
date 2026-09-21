@@ -5,6 +5,7 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Core/Interfaces/Entity.h"
+#include "NPC/Subsystems/NPCManager.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -105,6 +106,37 @@ bool UInventoryComponent::AddItem(const FItemData& ItemData, int32 Amount, bool 
     // 전체 추가 성공
     CurrentWeight += TotalWeightToAdd;
     OnInventoryChanged.Broadcast();
+
+    // 스토리 트리거 — 플레이어 획득만(NPC 인벤토리도 이 클래스를 상속). Python 이 "item_acquired:<ItemID>" 플래그로 기록.
+    if (AActor* Owner = GetOwner(); Owner && Owner->Implements<UPlayerBase>())
+    {
+        if (UNPCManager* Manager = UNPCManager::Get(this))
+        {
+            Manager->SendStoryEvent(TEXT("item_acquired"), ItemData.ItemID);
+        }
+    }
+    return true;
+}
+
+bool UInventoryComponent::CanAddItem(const FItemData& Item, int32 Amount, bool bCheckWeight) const
+{
+    if (!Item.IsValidItem() || Amount <= 0) return false;
+    if (bCheckWeight && CurrentWeight + Item.Weight * static_cast<float>(Amount) > MaximumWeightLimit) return false;
+    return GetRemainingCapacityFor(Item) >= Amount;
+}
+
+void UInventoryComponent::AddGold(int32 Amount)
+{
+    if (Amount <= 0) return;
+    Gold += Amount;
+    OnGoldChanged.Broadcast(Gold);
+}
+
+bool UInventoryComponent::RemoveGold(int32 Amount)
+{
+    if (Amount <= 0 || !CanAfford(Amount)) return false;
+    Gold -= Amount;
+    OnGoldChanged.Broadcast(Gold);
     return true;
 }
 

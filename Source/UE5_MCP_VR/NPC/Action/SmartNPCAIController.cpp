@@ -179,21 +179,8 @@ void ASmartNPCAIController::ResumeAI()
 
 bool ASmartNPCAIController::IsTargetDead(const AActor* Target)
 {
-    if (!Target) return false;
-
-    // NPC — HandleDeath 가 세우는 플래그. Destroy 지연(3초) 동안에도 즉시 사망 판정.
-    if (const ASmartNPC* TargetNPC = Cast<ASmartNPC>(Target))
-    {
-        return TargetNPC->bIsDead;
-    }
-
-    // 플레이어(VRPawn) — PawnDeathUtils::HandleDeath 가 부여하는 사망 태그.
-    if (const IGameplayTagAssetInterface* TagOwner = Cast<IGameplayTagAssetInterface>(Target))
-    {
-        return TagOwner->HasMatchingGameplayTag(TAG_State_Condition_Dead);
-    }
-
-    return false;
+    // 전투 캐릭터(SmartNPC·EnemyCharacter)는 bIsDead, 플레이어는 사망 태그 — 판정은 베이스 한 곳.
+    return ACombatCharacter::IsActorDead(Target);
 }
 
 void ASmartNPCAIController::ExitCombat(AActor* DeadTarget)
@@ -228,7 +215,8 @@ void ASmartNPCAIController::ExitCombat(AActor* DeadTarget)
         // replan 플래그 — 다음 상호작용 prompt 에서 강제 재계획(재조우 시 'Combat 첫 진입' 경로 복원).
         StateComp->FlagDangerReplan();
         // Phase 2 통보: 승리 사실을 Python 에 즉시 보고(메모리 기록용, 무행동 응답). 소실은 승리가 아니다.
-        if (DeadTarget) StateComp->ReportCombatVictory(DeadTarget->GetName());
+        // 스토리 boss_killed 는 AgentID 와 exact match — 액터 이름(BP_..._C_0)이 아니라 AgentID 를 보낸다.
+        if (DeadTarget) StateComp->ReportCombatVictory(ASmartNPC::PerceptionIdFor(DeadTarget));
     }
 
     // ActionComp 부재 등으로 브로드캐스트가 못 지웠을 경우 대비 보강 클리어(BB 쓰기는 컨트롤러 소유).
@@ -298,7 +286,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
 
         if (Stimulus.Type == SightID)
         {
-            const FString TargetID = Actor->GetName();
+            const FString TargetID = ASmartNPC::PerceptionIdFor(Actor);
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] SIGHT: Detected %s"), *TargetID);
 
             // 1. Blackboard 업데이트 (BehaviorTree용 즉각 반응)
@@ -392,7 +380,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                 EventType = TagStr; // Tag가 없으면 원본 그대로 EventType으로 사용
             }
 
-            FString SourceName = Actor ? Actor->GetName() : TEXT("Unknown");
+            FString SourceName = ASmartNPC::PerceptionIdFor(Actor);
             UE_LOG(LogTemp, Verbose, TEXT("[SmartNPCAIController] HEARING: Detected %s Noise from %s at %s"),
                 *EventType, *SourceName, *Stimulus.StimulusLocation.ToString());
             
@@ -487,7 +475,7 @@ void ASmartNPCAIController::OnPerceptionTick()
     UNPCStateComponent* StateComp = OwnerNPC->StateComponent;
     if (!StateComp) return;
 
-    const FString TargetID = Target->GetName();
+    const FString TargetID = ASmartNPC::PerceptionIdFor(Target);
 
     const FPerceptionData Perception(TargetID, ESenseType::Sight, Target->GetActorLocation(),
                                      OwnerNPC->GetActorLocation(), StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID));

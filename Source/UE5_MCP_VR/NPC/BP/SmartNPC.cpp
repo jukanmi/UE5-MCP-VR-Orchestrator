@@ -24,41 +24,6 @@
 #include "UI/Widgets/NPCDialogueWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/DamageEvents.h"
-#include "Core/Physics/KineticDamage.h"   // 공격 판정 — NPC 타겟 데미지 일괄(ApplyToNPC)
-
-// 본 이름 → 부위. 본 미식별(None/캡슐 히트)은 Torso 폴백.
-// Mixamo X_Bot(RightArm/RightUpLeg/Hips…)·UE Mannequin(upperarm_r/thigh_r/pelvis…) 양 네이밍 수용.
-// 좌우: Mixamo 는 Right/Left 접두, Mannequin 은 _r/_l 접미. 미식별 시 Left 폴백.
-static EBodyPartType BoneToBodyPart(FName Bone)
-{
-    const FString B = Bone.ToString().ToLower();
-    if (B.IsEmpty()) return EBodyPartType::Torso;
-    // 머리·목 (Head/Neck/HeadTop_End)
-    if (B.Contains(TEXT("head")) || B.Contains(TEXT("neck"))) return EBodyPartType::Head;
-    // 몸통 — 척추·골반·쇄골/어깨 (Mannequin: spine/pelvis/clavicle, Mixamo: spine/hips/shoulder)
-    if (B.Contains(TEXT("spine")) || B.Contains(TEXT("pelvis")) || B.Contains(TEXT("hip"))
-        || B.Contains(TEXT("clavicle")) || B.Contains(TEXT("shoulder")))
-        return EBodyPartType::Torso;
-    const bool bRight = B.Contains(TEXT("right")) || B.EndsWith(TEXT("_r"));
-    // 팔·손 (Mannequin: upperarm/lowerarm/hand, Mixamo: arm/forearm/hand)
-    if (B.Contains(TEXT("arm")) || B.Contains(TEXT("hand")))
-        return bRight ? EBodyPartType::ArmRight : EBodyPartType::ArmLeft;
-    // 다리·발 (Mannequin: thigh/calf/foot/ball, Mixamo: upleg/leg/foot/toe)
-    if (B.Contains(TEXT("leg")) || B.Contains(TEXT("thigh")) || B.Contains(TEXT("calf"))
-        || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")) || B.Contains(TEXT("toe")))
-        return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
-    return EBodyPartType::Torso;
-}
-
-static float BodyPartMultiplier(EBodyPartType P)
-{
-    switch (P)
-    {
-        case EBodyPartType::Head:  return 2.0f;
-        case EBodyPartType::Torso: return 1.0f;
-        default:                   return 0.75f;  // ArmLeft/ArmRight/LegLeft/LegRight
-    }
-}
 
 ASmartNPC::ASmartNPC()
 {
@@ -158,7 +123,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
         {
             const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
-            Multiplier = BodyPartMultiplier(BoneToBodyPart(Pt.HitInfo.BoneName));
+            Multiplier = BodyPartMultiplierForBone(Pt.HitInfo.BoneName);
             // 래그돌 임펄스용: 맞은 본 + 발사 방향(사망·넉다운·Flinch 가 소비).
             if (RagdollComponent) RagdollComponent->NoteHit(Pt.HitInfo.BoneName, Pt.ShotDirection);
         }
@@ -184,7 +149,7 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
         // [의도(Why)] 피격 정보를 인지 이벤트 배칭 시스템으로 전송하여 즉각적인 상황 인지 및 전략적 판단(도주, 반격 등)을 유도합니다.
         // 가해자 불명이면 자기 위치(거리 0).
         const FPerceptionData DamageEventPerc(
-            DamageCauser ? DamageCauser->GetName() : TEXT("Unknown"), ESenseType::Hit,
+            PerceptionIdFor(DamageCauser), ESenseType::Hit,
             DamageCauser ? DamageCauser->GetActorLocation() : GetActorLocation(), GetActorLocation(), 1.0f);
         StateComponent->RequestEventCognition(DamageEventPerc);
     }
@@ -192,62 +157,13 @@ float ASmartNPC::TakeDamage(float DamageAmount, struct FDamageEvent const& Damag
     return ActualDamage;
 }
 
-// ============================================================================
-// 공격 판정 (NPC→타겟) — AM_Attack 의 AnimNotifyState_NPCAttackHit 윈도우가 매 틱 호출.
-// LLM 지정 단일 타겟만 거리·arc 게이트로 확인 후 1회 데미지(친선사격 없음).
-// ============================================================================
-void ASmartNPC::PerformAttackHit()
+FString ASmartNPC::PerceptionIdFor(const AActor* Actor)
 {
-    if (bAttackHitConsumed || bIsDead) return;
-
-    AActor* Target = CurrentAttackTarget.Get();
-    // 자가 공격 방지 — 타겟팅 오작동으로 this 지정 시 자해 버그 차단.
-    if (!Target || Target == this) return;
-
-    // 거리 게이트 — 아직 안 닿았으면 다음 틱 재시도(윈도우 동안 타겟이 들어올 수 있음).
-    const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
-    const float Dist = ToTarget.Size();
-    if (Dist > AttackHitRange) return;
-
-    // 정면 arc 게이트 — 등 뒤·옆 타겟 무시.
-    const FVector Dir = ToTarget.GetSafeNormal();
-    if (FVector::DotProduct(GetActorForwardVector(), Dir) < AttackHitArcCos) return;
-
-    const float Damage = FMath::Max(0.f, NPCAttributes.Combat.AttackPower * AttackDamageScale);
-    const FVector Impact = Target->GetActorLocation();
-
-    if (ASmartNPC* TargetNPC = Cast<ASmartNPC>(Target))
-    {
-        if (TargetNPC->bIsDead) return;  // 이미 죽은 NPC 재타격 방지 — 가드 소비 안 함
-        // 부위 배율·래그돌·LLM 인지까지 일괄(플레이어→NPC 와 동일 규약).
-        KineticDamage::ApplyToNPC(TargetNPC, Damage, Impact, Dir, GetController(), this);
-    }
-    else
-    {
-        // 플레이어 — 단순 HP 감소. 방향 정보용 FPointDamageEvent.
-        FPointDamageEvent Ev;
-        Ev.Damage              = Damage;
-        Ev.ShotDirection       = Dir;
-        Ev.HitInfo.ImpactPoint = Impact;
-        Ev.HitInfo.Location    = Impact;
-        Target->TakeDamage(Damage, Ev, GetController(), this);
-
-        // 넉백.
-        if (ACharacter* TargetChar = Cast<ACharacter>(Target))
-        {
-            if (NPCKnockbackSpeed > 0.f)
-                TargetChar->LaunchCharacter(Dir * NPCKnockbackSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
-        }
-    }
-
-    bAttackHitConsumed = true;
-
-    if (bDebugAttackHit && GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red,
-            FString::Printf(TEXT("[NPCAttack] %s → %s dmg=%.1f dist=%.0f"),
-                *GetName(), *Target->GetName(), Damage, Dist));
-    }
+    if (!Actor) return TEXT("Unknown");
+    if (Actor->Implements<UPlayerBase>()) return PlayerIds::Player;
+    const ACombatCharacter* C = Cast<ACombatCharacter>(Actor);
+    const FString Id = C ? C->GetCombatId() : FString();
+    return Id.IsEmpty() ? Actor->GetName() : Id;
 }
 
 void ASmartNPC::HandleDeath()
@@ -267,9 +183,12 @@ void ASmartNPC::HandleDeath()
         ActionComponent->StopAllActions();
     }
 
-    // 3. NPCMap에서 즉시 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음
+    // 3. 스토리 트리거 + NPCMap 퇴출 — 이후 어떤 LLM 응답도 이 NPC로 전달되지 않음.
+    //    npc_died 는 boss_killed 판정용. 아군 NPC 의 combat_victory 는 그 NPC 가 이 대상과 교전 중일 때만
+    //    오므로, 플레이어가 단독으로 보스를 잡는 경로는 죽는 쪽이 직접 알린다.
     if (UNPCManager* Manager = UNPCManager::Get(this))
     {
+        Manager->SendStoryEvent(TEXT("npc_died"), AgentID, AgentID);
         Manager->UnregisterNPC(AgentID);
     }
 

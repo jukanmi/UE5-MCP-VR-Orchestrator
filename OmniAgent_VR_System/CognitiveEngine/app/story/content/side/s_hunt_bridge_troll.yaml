@@ -1,0 +1,12 @@
+# 서브퀘스트 — b2_james_order 전이 시 해금. 강 다리 아래 오크 네임드 처치.
+# 완료 신호: BP_Enemy_OrcVagron(총량 1기, 리스폰 없음) 사망 시 AEnemyCharacter::HandleDeath 가
+# UE5 story_event {event: npc_died, target_id: Orc_Vagron} 송신 → 디렉터가 boss_killed 로 라우팅.
+id: s_hunt_bridge_troll
+title: 다리의 도살자
+available_after: b2_james_order
+summary: James 는 강 다리 교각 밑에 자리 잡은 오크 전사 Vagron이 지나는 상단을 습격한다며 처치를 부탁한다.
+npc_goals:
+  James: 다리 밑 오크 전사 Vagron의 악명을 알려주고, 처치를 부탁한다
+  Guard: 오크 하나가 다리를 막고 있다며 정면 승부보다 방심한 틈을 노리라고 조언한다
+quest_log: 강 다리의 오크 전사 Vagron을 처치하자
+complete_when: {type: boss_killed, boss_id: "Orc_Vagron"}

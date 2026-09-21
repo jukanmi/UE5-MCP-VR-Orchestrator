@@ -29,6 +29,7 @@ class EEnvelopeType(str, Enum):
     PROMPT = "prompt"  # 플레이어 명령/대화
     EMERGENCY_REPORT = "emergency_report"  # 긴급 이벤트 배치 전송
     LOCATION_DECISION = "location_decision"  # EQS 후보 → LLM 전술 위치 결정 요청
+    STORY_EVENT = "story_event"  # 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,8 @@ class PromptPayload(BaseModel):
     # 대상 NPC 반경 내 가구 인지 컨텍스트 — [{id,type,occupied,dist_m}, ...]. UE5 NPCManager 동봉.
     # Sit/Sleep target 지정 근거(natural_context "Nearby furniture:" 조각 소스).
     nearby_furniture: Optional[List[Dict[str, Any]]] = None
+    # 대상 NPC 반경 내 바닥에 떨어진 아이템 컨텍스트 [{"id", "template_id", "dist_m"}, ...]
+    nearby_items: Optional[List[Dict[str, Any]]] = None
 
 
 class EmergencyReportPayload(BaseModel):
@@ -144,6 +147,19 @@ class LocationDecisionPayload(BaseModel):
     agent_id: str
     context_summary: str  # "HP:45% Enemies:2 Aggr:60 Fear:30" 등 경량 요약
     candidates: List[LocationCandidate]
+
+
+class StoryEventPayload(BaseModel):
+    """story_event 타입의 payload. 스토리 상태기계 플래그 세팅용(app/story).
+    event="flag" 면 name 이 그대로 플래그 이름, 그 외는 "<event>:<name>" 플래그로 기록."""
+
+    event: str  # "flag" | "zone_enter" | "item_acquired" | "npc_died"(name=AgentID → boss_killed 평가) | "quest_accept"(name=side id, flag_name 미사용)
+    name: str  # flag 이름 / 구역 id / 아이템 id
+    agent_id: Optional[str] = None
+
+    @property
+    def flag_name(self) -> str:
+        return self.name if self.event == "flag" else f"{self.event}:{self.name}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,3 +204,7 @@ class MessageEnvelope(BaseModel):
     def parse_location_decision_payload(self) -> LocationDecisionPayload:
         """payload를 LocationDecisionPayload로 파싱. type이 location_decision일 때만 호출할 것."""
         return LocationDecisionPayload(**self.payload)
+
+    def parse_story_event_payload(self) -> StoryEventPayload:
+        """payload를 StoryEventPayload로 파싱. type이 story_event일 때만 호출할 것."""
+        return StoryEventPayload(**self.payload)

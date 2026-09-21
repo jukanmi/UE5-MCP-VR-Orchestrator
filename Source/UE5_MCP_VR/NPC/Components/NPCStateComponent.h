@@ -131,6 +131,11 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Relations")
     TMap<FString, int32> AffinityCache;
 
+    // 배치 시 기본적으로 가질 호감도 (예: Enemy는 "Player"에 대해 -100). BeginPlay에서 AffinityCache에 병합됨.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
+    TMap<FString, int32> InitialAffinity;
+
+
     // 에디터에서 디자이너가 튜닝 가능한 호감도 임계값
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
     int32 AffinityFriendlyThreshold = 30;
@@ -140,6 +145,11 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
     float AffinityDefaultMultiplier = 0.5f;
+
+    // 플레이어 근접 공격을 쳐낼 확률 = Agility / ParryDifficulty (UDiceSystem::CheckReflex 공식).
+    // Agility 기본값 50 기준 2.f → 25% 성공률.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Combat")
+    float ParryDifficulty = 2.f;
 
     // NPCManager 등이 서버로부터 호감도 업데이트를 받을 때 호출
     UFUNCTION(BlueprintCallable, Category = "NPC|Relations")

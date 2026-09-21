@@ -306,6 +306,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash", meta = (ClampMin = "0.0"))
     float DashStaminaCost = 20.f;
 
+    /** 디버그 전용 — true 면 대쉬가 스태미나를 소모/요구하지 않는다(쿨다운은 그대로). 기본 false. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Dash|Debug")
+    bool bDebugDashFreeStamina = false;
+
     // ============================================================================
     // 전투
     // ============================================================================
@@ -347,6 +351,18 @@ public:
     /** 손 속도 EMA 스무딩(0~1, 1=무스무딩) — 트래킹 스파이크 억제. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
     float HandVelSmoothing = 0.5f;
+
+    /** 방어 판정 — 아이템 쥔 손 방향(수평)·공격자 방향 내적이 이 이상이면 Block. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+    float BlockDotThreshold = 0.6f;
+
+    /** 패링 임계(cm/s). Block 성립 + 그 손 속도가 이 이상이면 데미지 0. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block")
+    float ParryHandSpeed = 150.f;
+
+    /** 단순 Block 시 남는 데미지 배율(0.2 = 80% 경감). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BlockDamageScale = 0.2f;
 
     /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
@@ -473,7 +489,7 @@ public:
     // IPlayerBase / IEntity 구현
     // ============================================================================
 
-    virtual FString GetEntityID_Implementation() const override { return GetName(); }
+    virtual FString GetEntityID_Implementation() const override { return TEXT("Player"); }
     virtual EEntityType GetEntityType_Implementation() const override { return EEntityType::Player; }
     virtual FVector GetEntityLocation_Implementation() const override { return GetActorLocation(); }
     virtual FCharacterAttributesBase GetAttributes_Implementation() const override { return CurrentStats; }
@@ -481,7 +497,7 @@ public:
     virtual void ApplyResourceDelta_Implementation(float DeltaHealth, float DeltaMana, float DeltaStamina) override
     { CurrentStats.Resources.ApplyDelta(DeltaHealth, DeltaMana, DeltaStamina); }
     virtual bool IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const override { return false; }
-    virtual FString GetPlayerName_Implementation() const override { return GetName(); }
+    virtual FString GetPlayerName_Implementation() const override { return TEXT("Player"); }
     virtual FPlayerAttributes GetPlayerAttributes_Implementation() const override { return CurrentStats; }
 
     virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;
@@ -636,8 +652,8 @@ private:
     /** 반경 내 최근접 드랍 아이템을 인벤토리로 획득. 성공 시 true — OnInteract 가 착석·NPC 감지 생략. */
     bool TryPickupNearby();
 
-    /** 원점 반경 내 최근접 드랍 아이템(거래 접시에 잠긴 것 제외). 픽업·손 쥐기·이름표가 같은 판정을 쓴다. */
-    ADroppedItemBase* FindNearestItem(const FVector& Origin, float Radius) const;
+    /** 원점 반경 내 최근접 드랍 아이템. 거래 접시 잠금품은 항상 제외, 진열품은 bIncludeDisplayed 일 때만(그랩·이름표) — Interact 픽업은 공짜 획득이라 제외. */
+    ADroppedItemBase* FindNearestItem(const FVector& Origin, float Radius, bool bIncludeDisplayed = false) const;
 
     // --- 물리 손 쥐기 (Grip) ---
     // 쥔 아이템 자체와 손안 자세 보정은 InventoryComponent 가 들고 있다 — 장착 슬롯과 같은

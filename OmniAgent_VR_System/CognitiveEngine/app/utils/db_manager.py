@@ -65,6 +65,41 @@ async def init_db():
     except Exception as e:
         logger.error(f"[DBManager] 데이터베이스 초기화 실패: {e}")
         raise
+    await warm_cache()
+
+
+async def warm_cache() -> int:
+    """DB 전 행을 메모리 캐시에 적재. 적재 행 수 반환.
+
+    state_update 응답(get_relations_from_cache)은 캐시만 본다. 캐시는 get_affinity 가 짝 단위로
+    lazy 적재하므로, 시딩/디버그로 DB 에만 쓴 관계(보스↔아군 Hostile 등)는 그 짝을 누가 조회하기
+    전까지 C++ AffinityCache 에 영영 안 실렸다 — 2026-09-18 PIE 실측: 시드 후 45초 동안 전원 Neutral.
+    이미 캐시에 있는 짝(dirty 포함)은 덮지 않는다."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM npc_relations")
+            rows = await cursor.fetchall()
+    except Exception as e:
+        logger.error(f"[DBManager] 캐시 웜업 실패: {e}")
+        return 0
+    loaded = 0
+    with _cache_lock:
+        for row in rows:
+            key = (row["source_id"], row["target_id"])
+            if key in _affinity_cache:
+                continue
+            _affinity_cache[key] = NPCRelation(
+                source_id=row["source_id"],
+                target_id=row["target_id"],
+                affinity_score=row["affinity_score"],
+                reputation_tag=row["reputation_tag"],
+                last_interaction=row["last_interaction"],
+                is_dirty=False,
+            )
+            loaded += 1
+    logger.info(f"[DBManager] 호감도 캐시 웜업: {loaded}행")
+    return loaded
 
 
 async def start_background_sync():
@@ -88,7 +123,7 @@ async def stop_background_sync():
         try:
             await _sync_task
         except asyncio.CancelledError:
-            pass
+            pass  # nosec B110 — cancel() 직후 예상된 정상 종료 신호
         logger.info("[DBManager] 백그라운드 캐시 동기화 태스크 종료 및 플러시 완료.")
 
 

@@ -62,6 +62,11 @@ def _strip_markdown_json(content: str) -> str:
     return stripped
 
 
+# 컨텍스트 창. 2048 이었을 때 Stage1 프롬프트(persona+RAG 3청크+기록 5턴+지시문)가 2011 토큰을 먹어
+# 생성 여유 37 토큰 → JSON 이 문자열 중간에서 잘려 NPC 가 "..." 만 말했다(2026-09-18 Ollama 로그
+# `n_ctx_slot = 2048, task.n_tokens = 2011, truncated = 1` 실측). KV 캐시 비용은 e4b 기준 수백 MB.
+NUM_CTX = 4096
+
 # ==============================================================================
 # 사용 가능한 모델 정의 (ollama pull <model_id> 로 사전 다운로드 필요)
 # ==============================================================================
@@ -101,6 +106,7 @@ MODELS = {
     "cloud_kimi": "kimi-k3",  # 멀티모달+추론 (pull 필요)
     "cloud_gpt_large": "gpt-oss:120b-cloud",  # 설치됨, 동작 확인
     "cloud_gpt_small": "gpt-oss:20b-cloud",  # 미테스트
+    "cloud_gemma4": "gemma4:cloud",  # 31B, 무료 티어 가능(2026-09-17 실측), Stage2 후보
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
@@ -110,6 +116,8 @@ MODELS = {
 STAGE2_MODEL = "mid"
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
+# 스토리 디렉터(app/story) — 비트 전이 시만 호출. 31B 클라우드, 무료 티어 동시 1.
+STORY_MODEL = "cloud_gemma4"
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
@@ -153,7 +161,7 @@ def get_llm(model_name: str = None, temperature: float = 0.0, num_predict: int =
             model=model_id,
             temperature=temperature,
             base_url=OLLAMA_BASE_URL,
-            num_ctx=2048,
+            num_ctx=NUM_CTX,
             num_predict=num_predict,
             num_thread=8,
             request_timeout=30.0,
@@ -182,7 +190,7 @@ async def ollama_structured(
     model_name: str = "gemma4_slm",
     temperature: float = 0.7,
     num_predict: int = 300,
-    num_ctx: int = 2048,
+    num_ctx: int = NUM_CTX,
     timeout: float = 60.0,
     schema_override: Optional[dict] = None,
     log_extra: Optional[dict] = None,
@@ -237,14 +245,21 @@ async def ollama_structured(
         resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body, timeout=timeout)
         resp.raise_for_status()
         # 응답 구조 변경·에러 시 KeyError 대신 명시적 예외 — content 없으면 호출처 폴백 가능.
-        msg = resp.json().get("message") or {}
+        data = resp.json()
+        msg = data.get("message") or {}
         content = msg.get("content") or ""
+        # 잘림 진단 — length = num_predict 소진 또는 num_ctx 잔여 소진. 조용히 "..." 로 떨어지는 걸 막는 단서.
+        if data.get("done_reason") == "length":
+            logger.warning(
+                f"[LLM] {model_id} 출력 잘림(done_reason=length): prompt={data.get('prompt_eval_count')} "
+                f"gen={data.get('eval_count')} num_ctx={num_ctx} num_predict={num_predict}"
+            )
         if not content:
             # 클라우드 thinking 모델: think=False 무시 → thinking 토큰이 num_predict 소비 후
             # content 미출력. thinking 필드 마지막 JSON 블록 추출로 폴백.
             content = _extract_json_from_thinking(msg.get("thinking") or "")
         if not content:
-            raise ValueError(f"Ollama 구조화 응답에 content 없음: {resp.json()}")
+            raise ValueError(f"Ollama 구조화 응답에 content 없음: {data}")
         # 클라우드 모델은 format=schema grammar 미강제 → ```json ... ``` 마크다운 래핑.
         # 로컬 모델은 이미 순수 JSON이므로 strip 무해.
         content = _strip_markdown_json(content)

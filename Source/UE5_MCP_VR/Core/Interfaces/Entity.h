@@ -118,3 +118,12 @@ public:
             Category = "Character|Player")
   FPlayerAttributes GetPlayerAttributes() const;
 };
+
+/**
+ * 플레이어 식별자 단일 상수 — perception·호감도 DB 키·대화 player_id·LLM target 키워드 전부 이 값.
+ * Python seed.py PLAYER_KEY 와 철자 일치. 폰 액터 이름(BP_VRPawn_C_0)에 묶이지 않게 한다.
+ */
+namespace PlayerIds
+{
+  inline const FString Player = TEXT("Player");
+}

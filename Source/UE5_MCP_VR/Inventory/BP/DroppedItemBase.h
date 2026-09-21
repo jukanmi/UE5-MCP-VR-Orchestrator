@@ -6,6 +6,8 @@
 #include "Core/Interfaces/Entity.h"
 #include "DroppedItemBase.generated.h"
 
+class AMerchantStall;
+
 // [의도(Why)] 월드 상에 드랍되어 물리적으로 동작하고, ItemManager에 의해 글로벌하게 추적되는 기본 아이템 블루프린트용 부모 클래스입니다.
 UCLASS(Blueprintable, BlueprintType)
 class UE5_MCP_VR_API ADroppedItemBase : public AActor, public IItem
@@ -23,13 +25,14 @@ protected:
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
-    /** ItemTemplateID 로 DT_ItemRegistry 를 조회해 ItemMesh 를 갱신한다. 실패 시 메시를 건드리지 않는다. */
-    void SyncMeshFromItemData();
-    
     // 아이템 파괴나 레벨 전환 시 발생할 수 있는 참조 오류를 막으려면 소멸 직전에 제거해야 합니다.
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
+    /** ItemTemplateID 로 DT_ItemRegistry 를 조회해 ItemMesh 를 갱신한다. 실패 시 메시를 건드리지 않는다.
+     *  에디터 ID 변경·런타임 코드 스폰(적 드랍) 양쪽이 쓴다. */
+    void SyncMeshFromItemData();
+
     // 아이템의 시각적 형태 및 물리 연산(Simulate Physics)을 담당하는 코어 메시
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Component")
     class UStaticMeshComponent* ItemMesh;
@@ -80,6 +83,26 @@ public:
      *  잠금 없이 두면 올려둔 물건을 쥔 채 취소를 눌러 같은 아이템이 손과 인벤토리에 동시에 남는다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Trade")
     bool bTradeLocked = false;
+
+    // --- 상인 진열 상태 (AMerchantStall 이 SetDisplayed 로만 바꾼다) ---
+    /** 가판대에 진열된 상품 — 물리 정지·잠금. 그랩 시도는 구매 판정을 타고, Interact 픽업·NPC 픽업·매입 상자는 무시한다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Merchant")
+    bool bIsDisplayed = false;
+
+    /** 진열 가격(골드) — ItemRegistry BaseValue. 이름표에 표시. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Merchant")
+    int32 DisplayPrice = 0;
+
+    /** 이 상품을 진열한 가판대 — 구매 판정·재진열의 주인. */
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AMerchantStall> DisplayStall;
+
+    /**
+     * 진열 상태 전환. 진열 = 물리 끄기 + 쿼리 콜리전은 유지(SetPhysicsFrozen 과 다른 점) —
+     * 프로파일까지 끄면 ItemManager::GetItemsInRange 오버랩에 안 잡혀 손도 이름표도 닿지 않는다.
+     * 해제 = 일반 월드 물체로 복귀(SetPhysicsFrozen(false)).
+     */
+    void SetDisplayed(bool bDisplayed, AMerchantStall* Stall = nullptr, int32 Price = 0);
 
 protected:
     /** 던진 아이템이 무언가에 부딪혔을 때 — 창이 살아 있고 상대가 NPC 면 ½mv² 데미지. */

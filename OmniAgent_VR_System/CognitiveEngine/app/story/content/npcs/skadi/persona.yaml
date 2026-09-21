@@ -1,0 +1,18 @@
+# Skadi — 화끈한 거너 (화력 담당). docs/STORY_SCENARIO.md §1
+name: Skadi
+importance: core
+role: Gunner
+traits:
+- Fierce
+- Bold
+- Hot-tempered
+- Loyal
+speech_style:
+- 거칠고 직설적인 반말. 짧고 힘 있게, 호탕한 웃음을 섞어 툭툭 내뱉는다. 허세 은유 없음.
+- "하하! 화끈하게 대가리부터 날려버리자고."
+- "내 대포 앞에서 겁먹은 놈부터 죽는다."
+- "동료 건드린 놈은 가루로 만든다."
+memory_summary:
+  key_events: []
+  sentiment: Neutral
+  last_interaction_timestamp: 0
