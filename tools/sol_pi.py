@@ -19,7 +19,7 @@ if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
-        pass
+        pass  # nosec B110 — 콘솔이 reconfigure 미지원이면 기본 인코딩 그대로 진행
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_FILE = PROJECT_ROOT / "Saved" / "Logs" / "UE5_MCP_VR.log"
@@ -56,7 +56,7 @@ def archive_raw_log(raw_text: str):
         RAW_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         RAW_LOG_FILE.write_text(raw_text, encoding="utf-8", errors="replace")
     except Exception:
-        pass
+        pass  # nosec B110 — 아카이빙은 부가 기능, 실패해도 빌드 검증 자체는 계속
 
 
 def slice_build(timeout_sec: int = 300) -> int:

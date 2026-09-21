@@ -9,7 +9,6 @@ itch.io 배포분(Fantasy Props Megakit, Universal Animation Library, Bestiary D
 UE 임포트 전 `python tools/mesh_doctor.py diagnose RawAssets/<pack>/FBX` 로 점검.
 """
 
-import subprocess
 import sys
 import urllib.request
 import zipfile
@@ -19,14 +18,54 @@ ROOT = Path(__file__).resolve().parent.parent / "RawAssets"
 
 # (폴더명, 종류, URL, 용도)
 ASSETS = [
-    ("quaternius_easy_enemy", "gdrive", "https://drive.google.com/drive/folders/1VbJIslXPWK-1KybQN6yezZrfJcw608qe", "적: 애니 포함 적 5종 (오크·해골 등)"),
-    ("quaternius_rpg_characters", "gdrive", "https://drive.google.com/drive/folders/1MIRQXLfTd21HMI5rwOb6Xy0rv0xv1m8b", "적: 도적·기사 인간형 6종 (리깅+애니)"),
-    ("quaternius_ultimate_modular_characters", "gdrive", "https://drive.google.com/drive/folders/1USAAquX2JJWuA2m6zol0KUkFe3UkZ8zX", "캐릭터 11종 + 애니 24종 (모듈 조합)"),
-    ("quaternius_animated_zombie", "gdrive", "https://drive.google.com/drive/folders/1AfOPRgr5Gl8gll9KfGDEUSYq_Ag7yPJG", "적: 망령 대용 (리깅+애니)"),
-    ("quaternius_medieval_weapons", "gdrive", "https://drive.google.com/drive/folders/1Z6vYiQxY8W73FXuMWzaTQAg9rzbumnOr", "무기: 검·방패·도끼"),
-    ("quaternius_ultimate_rpg", "gdrive", "https://drive.google.com/drive/folders/1IhdL3W5XdJrjf_axqAnKvEybMaC3FwF-", "소품: 상자·포션·무기"),
-    ("kenney_impact-sounds", "zip", "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip", "사운드: 피격(펀치·금속·연질)·발소리"),
-    ("kenney_rpg-audio", "zip", "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip", "사운드: 칼·천·책·문·동전"),
+    (
+        "quaternius_easy_enemy",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1VbJIslXPWK-1KybQN6yezZrfJcw608qe",
+        "적: 애니 포함 적 5종 (오크·해골 등)",
+    ),
+    (
+        "quaternius_rpg_characters",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1MIRQXLfTd21HMI5rwOb6Xy0rv0xv1m8b",
+        "적: 도적·기사 인간형 6종 (리깅+애니)",
+    ),
+    (
+        "quaternius_ultimate_modular_characters",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1USAAquX2JJWuA2m6zol0KUkFe3UkZ8zX",
+        "캐릭터 11종 + 애니 24종 (모듈 조합)",
+    ),
+    (
+        "quaternius_animated_zombie",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1AfOPRgr5Gl8gll9KfGDEUSYq_Ag7yPJG",
+        "적: 망령 대용 (리깅+애니)",
+    ),
+    (
+        "quaternius_medieval_weapons",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1Z6vYiQxY8W73FXuMWzaTQAg9rzbumnOr",
+        "무기: 검·방패·도끼",
+    ),
+    (
+        "quaternius_ultimate_rpg",
+        "gdrive",
+        "https://drive.google.com/drive/folders/1IhdL3W5XdJrjf_axqAnKvEybMaC3FwF-",
+        "소품: 상자·포션·무기",
+    ),
+    (
+        "kenney_impact-sounds",
+        "zip",
+        "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+        "사운드: 피격(펀치·금속·연질)·발소리",
+    ),
+    (
+        "kenney_rpg-audio",
+        "zip",
+        "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+        "사운드: 칼·천·책·문·동전",
+    ),
 ]
 
 
@@ -63,7 +102,7 @@ def fetch_gdrive(name: str, url: str) -> None:
             headers={"User-Agent": "Mozilla/5.0"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=120) as r, open(dst, "wb") as w:
+            with urllib.request.urlopen(req, timeout=120) as r, open(dst, "wb") as w:  # nosec B310 — URL 스킴 https 고정
                 w.write(r.read())
             done += 1
         except Exception as e:
@@ -75,7 +114,7 @@ def fetch_zip(name: str, url: str) -> None:
     z = ROOT / f"{name}.zip"
     out = ROOT / name
     if not z.exists():
-        urllib.request.urlretrieve(url, z)
+        urllib.request.urlretrieve(url, z)  # nosec B310 — url 은 위 ASSETS 표의 하드코딩된 https 상수
     if not out.exists():
         with zipfile.ZipFile(z) as f:
             f.extractall(out)

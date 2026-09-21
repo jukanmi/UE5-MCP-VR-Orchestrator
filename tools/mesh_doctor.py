@@ -19,7 +19,7 @@ if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
-        pass
+        pass  # nosec B110 — 콘솔이 reconfigure 미지원이면 기본 인코딩 그대로 진행
 
 try:
     import numpy as np
@@ -33,9 +33,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MESH_DIR = PROJECT_ROOT / "Art" / "Meshes" / "Items_Textured"
 
 # VR 최적화 기준 예산 (단일 프랍/아이템 기준)
-VR_FACE_BUDGET_WARN = 10000    # 경고 (노란색)
+VR_FACE_BUDGET_WARN = 10000  # 경고 (노란색)
 VR_FACE_BUDGET_DANGER = 25000  # 위험 (빨간색)
-MIN_COMPONENT_FACES = 15       # 이 페이스 미만의 연결 컴포넌트는 부유 먼지/파편으로 간주
+MIN_COMPONENT_FACES = 15  # 이 페이스 미만의 연결 컴포넌트는 부유 먼지/파편으로 간주
 
 
 class MeshDiagnosis:
@@ -92,7 +92,7 @@ def diagnose_mesh(file_path: str) -> MeshDiagnosis:
                 diag.floater_ratio = debris_faces / max(1, diag.total_faces)
 
                 if diag.num_components > 20 or diag.floater_ratio > 0.05:
-                    diag.issues.append(f"FLOATERS({diag.num_components}조각, 파편{diag.floater_ratio*100:.1f}%)")
+                    diag.issues.append(f"FLOATERS({diag.num_components}조각, 파편{diag.floater_ratio * 100:.1f}%)")
 
         # 2. 노멀 및 방향성 불일치
         if not diag.is_winding_consistent:
@@ -114,7 +114,7 @@ def diagnose_mesh(file_path: str) -> MeshDiagnosis:
         if max_dim > 10.0:
             diag.issues.append(f"SCALE_TOO_LARGE({max_dim}m)")
         elif max_dim < 0.01 and max_dim > 0:
-            diag.issues.append(f"SCALE_TOO_SMALL({max_dim*100:.1f}cm)")
+            diag.issues.append(f"SCALE_TOO_SMALL({max_dim * 100:.1f}cm)")
 
         # 상태 판정
         if any("DANGER" in i or "BROKEN" in i for i in diag.issues):
@@ -179,7 +179,7 @@ def run_diagnose(target_path: str) -> int:
     print("=" * 70)
     print(f"📊 [요약] 전체: {len(files)} | 건강: {healthy_count} | 경고: {warn_count} | 위험/오류: {danger_count}")
     if problem_items:
-        print(f"💡 치료 명령: python tools/mesh_doctor.py heal \"{target_path}\"")
+        print(f'💡 치료 명령: python tools/mesh_doctor.py heal "{target_path}"')
     print()
     return 0 if danger_count == 0 else 1
 
@@ -195,6 +195,7 @@ def heal_mesh(file_path: str, backup: bool = False, max_faces: Optional[int] = N
             backup_path = file_path + ".bak"
             if not os.path.exists(backup_path):
                 import shutil
+
                 shutil.copy2(file_path, backup_path)
 
         modified = False
@@ -237,14 +238,14 @@ def heal_mesh(file_path: str, backup: bool = False, max_faces: Optional[int] = N
                 geom.update_faces(geom.nondegenerate_faces())
                 geom.remove_unreferenced_vertices()
             except Exception:
-                pass
+                pass  # nosec B110 — 정리 단계 실패해도 이후 치유 단계로 계속 진행
 
             # 3. 노멀 및 권선 방향 치유
             try:
                 trimesh.repair.fix_normals(geom)
                 trimesh.repair.fix_winding(geom)
             except Exception:
-                pass
+                pass  # nosec B110 — 치유 실패해도 다음 단계(감축)로 계속 진행
 
             # 4. 선택적 폴리곤 감축 (지정 시)
             if max_faces and len(geom.faces) > max_faces:
@@ -255,7 +256,7 @@ def heal_mesh(file_path: str, backup: bool = False, max_faces: Optional[int] = N
                     report_details.append(f"폴리감축({before_dec}->{len(geom.faces)})")
                     modified = True
                 except Exception:
-                    pass
+                    pass  # nosec B110 — 감축 실패 시 원본 지오메트리 그대로 유지
 
         if modified:
             # GLB 포맷으로 완벽 익스포트
@@ -302,7 +303,7 @@ def run_heal(target_path: str, backup: bool = True, max_faces: Optional[int] = N
 
 def get_ue_audit_script() -> str:
     """언리얼 엔진 에디터 내부(Python/MCP)에서 실행할 에셋 프로파일링 스크립트 반환"""
-    return '''# [UE5 In-Engine Asset Audit Script]
+    return """# [UE5 In-Engine Asset Audit Script]
 import unreal
 
 dest_path = "/Game/Core/Mesh/Items"
@@ -352,7 +353,7 @@ if high_poly_no_nanite:
     for m, tris in high_poly_no_nanite:
         print(f"  - {m} ({tris:,} tris)")
 print("=== [검사 종료] ===")
-'''
+"""
 
 
 def run_ue_audit() -> int:

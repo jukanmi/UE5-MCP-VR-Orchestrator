@@ -123,7 +123,7 @@ async def stop_background_sync():
         try:
             await _sync_task
         except asyncio.CancelledError:
-            pass
+            pass  # nosec B110 — cancel() 직후 예상된 정상 종료 신호
         logger.info("[DBManager] 백그라운드 캐시 동기화 태스크 종료 및 플러시 완료.")
 
 
