@@ -87,6 +87,7 @@ Desktop.ini
 # ==============================================================================
 *.docx
 *.txt
+!requirements.txt
 
 # ==============================================================================
 # Obsidian
@@ -106,6 +107,7 @@ Desktop.ini
 CLAUDE.md
 GEMINI.md
 .claude/
+.codex/
 .claude/skills/
 .code-review-graph/
 .gstack/
