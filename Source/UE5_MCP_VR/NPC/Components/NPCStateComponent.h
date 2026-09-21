@@ -146,6 +146,11 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Relations")
     float AffinityDefaultMultiplier = 0.5f;
 
+    // 플레이어 근접 공격을 쳐낼 확률 = Agility / ParryDifficulty (UDiceSystem::CheckReflex 공식).
+    // Agility 기본값 50 기준 2.f → 25% 성공률.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "NPC|Combat")
+    float ParryDifficulty = 2.f;
+
     // NPCManager 등이 서버로부터 호감도 업데이트를 받을 때 호출
     UFUNCTION(BlueprintCallable, Category = "NPC|Relations")
     void UpdateAffinity(const FString& TargetID, int32 NewScore);

@@ -19,6 +19,7 @@ class UWidgetComponent;
 class UNPCDialogueUIComponent;
 class UNPCRagdollComponent;
 class UAnimMontage;
+class USoundBase;
 struct FActionBatch;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNPCDied, ASmartNPC*, DeadNPC);
@@ -62,6 +63,10 @@ public:
     // 액티브 래그돌(Flinch/Knockdown/사망 래그돌) — 튜닝값·진행 상태 전부 컴포넌트 소유. PA_SmartNPC(Physics Asset) 필요.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Ragdoll")
     UNPCRagdollComponent* RagdollComponent;
+
+    // 플레이어 근접 공격을 쳐냈을 때(RNG 패링 성공) 재생할 3D 사운드 — 미배정이면 조용히 스킵.
+    UPROPERTY(EditDefaultsOnly, Category = "MCP|Combat")
+    USoundBase* ParrySound = nullptr;
 
     // === Identity ===
 

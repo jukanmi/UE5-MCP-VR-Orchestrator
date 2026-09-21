@@ -26,6 +26,8 @@ class UBorder;
 class UPanelWidget;
 class UWidget;
 class UInventoryComponent;
+class USoundBase;
+class UHapticFeedbackEffect_Base;
 
 UCLASS()
 class UE5_MCP_VR_API UPlayerHUDWidget : public UUserWidget
@@ -150,6 +152,14 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
     FString QuestLogPrefix = TEXT("퀘스트: ");
 
+    /** 퀘스트 갱신 시 재생할 2D UI 사운드 — 미배정이면 조용히 스킵. */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
+    USoundBase* QuestUpdateSound = nullptr;
+
+    /** 퀘스트 갱신 시 왼손 컨트롤러에 재생할 햅틱 — 미배정이면 조용히 스킵. */
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
+    UHapticFeedbackEffect_Base* QuestUpdateHaptic = nullptr;
+
     // --- Gold (상인) ---
 
     /** 골드 — WBP 에 "GoldText" 이름 UTextBlock 배치 시 자동 바인딩(선택). UInventoryComponent::OnGoldChanged 로 갱신. */
@@ -195,9 +205,14 @@ protected:
     UFUNCTION()
     void HandleNPCResponse(const FString& NPCName, const FString& Message);
 
-    /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신. */
+    /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신 + SFX/햅틱 피드백. */
     UFUNCTION()
     void HandleStoryUpdated(const FStoryState& State);
+
+    /** QuestLogText 텍스트만 갱신(피드백 없음) — NativeConstruct 초기 리플레이 전용.
+     *  HandleStoryUpdated 와 분리한 이유: 위젯이 늦게 떠서 마지막 상태를 보여줄 때마다
+     *  소리/진동이 울리면 레벨 로드 때마다 오작동하는 것처럼 느껴진다. */
+    void RefreshQuestLogText(const FStoryState& State);
 
     /** UInventoryComponent::OnGoldChanged → GoldText 갱신. */
     UFUNCTION()

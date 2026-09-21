@@ -25,6 +25,7 @@
 #include "IMotionController.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Utils/DiceSystem.h"
 #include "Villager/VillagerCharacter.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
@@ -996,8 +997,30 @@ void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool 
         // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
         if (bStrike)
         {
-            // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
-            KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
+            // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
+            // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
+            ASmartNPC* SmartTarget = Cast<ASmartNPC>(NPC);
+            FDiceResult ParryRoll;
+            const bool bParried = SmartTarget && SmartTarget->StateComponent
+                && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
+                                             SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
+            if (bParried)
+            {
+                // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
+                if (SmartTarget->ParrySound)
+                {
+                    UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
+                }
+                const FPerceptionData ParryPerc(
+                    ASmartNPC::PerceptionIdFor(this), ESenseType::Parried,
+                    GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
+                SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
+            }
+            else
+            {
+                // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
+                KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
+            }
         }
 
         // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.

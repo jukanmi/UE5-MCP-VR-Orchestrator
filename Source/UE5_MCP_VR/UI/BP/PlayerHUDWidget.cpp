@@ -16,6 +16,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
+#include "Kismet/GameplayStatics.h"
+#include "Haptics/HapticFeedbackEffect_Base.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {
@@ -54,7 +56,7 @@ void UPlayerHUDWidget::NativeConstruct()
             Story->OnStoryUpdated.AddUniqueDynamic(this, &UPlayerHUDWidget::HandleStoryUpdated);
             if (Story->HasState())
             {
-                HandleStoryUpdated(Story->GetCurrentState());
+                RefreshQuestLogText(Story->GetCurrentState());
             }
         }
     }
@@ -73,10 +75,27 @@ void UPlayerHUDWidget::NativeDestruct()
     Super::NativeDestruct();
 }
 
-void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
+void UPlayerHUDWidget::RefreshQuestLogText(const FStoryState& State)
 {
     if (!QuestLogText) return;
     QuestLogText->SetText(FText::FromString(QuestLogPrefix + State.QuestLog));
+}
+
+void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
+{
+    RefreshQuestLogText(State);
+
+    if (QuestUpdateSound)
+    {
+        UGameplayStatics::PlaySound2D(this, QuestUpdateSound);
+    }
+    if (QuestUpdateHaptic)
+    {
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            PC->PlayHapticEffect(QuestUpdateHaptic, EControllerHand::Left);
+        }
+    }
 }
 
 void UPlayerHUDWidget::HandleGoldChanged(int32 NewGold)
