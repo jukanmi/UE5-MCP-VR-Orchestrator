@@ -1,0 +1,15 @@
+importance: normal
+memory_summary:
+  key_events: []
+  last_interaction_timestamp: 0
+  sentiment: Neutral
+name: Guard
+role: Inhabitant
+traits:
+- Cautious
+- Reserved
+- Observant
+speech_style:
+- 무뚝뚝하고 짧은 일상 구어. 경계하듯 필요한 말만.
+- "무슨 일이지?"
+- "여긴 통행 금지다. 돌아가."

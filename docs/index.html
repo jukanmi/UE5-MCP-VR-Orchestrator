@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>UE5_MCP_VR — 문서 통합</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  window.__mermaid = mermaid;
+  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
+</script>
+<style>
+  :root {
+    --bg: #1e1e1e;
+    --bg-side: #252526;
+    --bg-code: #2d2d30;
+    --fg: #d4d4d4;
+    --fg-dim: #9a9a9a;
+    --accent: #4ec9b0;
+    --accent2: #569cd6;
+    --border: #3c3c3c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: "Segoe UI", "Malgun Gothic", "맑은 고딕", sans-serif; font-size: 14px; }
+  #layout { display: flex; height: 100vh; }
+  #sidebar {
+    width: 280px; background: var(--bg-side); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 16px 0; flex-shrink: 0;
+  }
+  #sidebar h1 { font-size: 14px; padding: 0 16px 12px; margin: 0; color: var(--accent);
+    border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  #sidebar .group { margin: 8px 0; }
+  #sidebar .group-title { padding: 6px 16px; font-size: 11px; text-transform: uppercase;
+    color: var(--fg-dim); letter-spacing: 0.5px; }
+  #sidebar a { display: block; padding: 6px 16px 6px 24px; color: var(--fg); text-decoration: none;
+    font-size: 13px; border-left: 3px solid transparent; }
+  #sidebar a:hover { background: #2a2d2e; }
+  #sidebar a.active { background: #094771; border-left-color: var(--accent2); color: #fff; }
+  #content { flex: 1; overflow-y: auto; padding: 32px 48px; max-width: 1100px; }
+  #content article { display: none; }
+  #content article.active { display: block; }
+  h1, h2, h3, h4 { color: var(--accent); }
+  h1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h2 { margin-top: 32px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  h3 { color: var(--accent2); margin-top: 24px; }
+  a { color: var(--accent2); }
+  code { background: var(--bg-code); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;
+    font-family: "Consolas", "D2Coding", monospace; }
+  pre { background: var(--bg-code); padding: 16px; border-radius: 4px; overflow-x: auto;
+    border: 1px solid var(--border); }
+  pre code { padding: 0; background: none; font-size: 13px; }
+  table { border-collapse: collapse; margin: 16px 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+  th { background: var(--bg-code); color: var(--accent); }
+  blockquote { border-left: 3px solid var(--accent2); padding-left: 16px; color: var(--fg-dim);
+    margin: 16px 0; }
+  .mermaid { background: #1a1a1a; padding: 16px; border-radius: 4px; text-align: center;
+    margin: 16px 0; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 4px 0; }
+  .doc-banner { background: #2d2d30; border-left: 3px solid var(--accent);
+    padding: 12px 16px; margin-bottom: 24px; color: var(--fg-dim); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="layout">
+  <nav id="sidebar">
+    <h1>UE5_MCP_VR 문서</h1>
+
+    <div class="group">
+      <div class="group-title">개요</div>
+      <a href="기술채택보고서.html" target="_blank" style="color: var(--accent); font-weight: 600;">📊 기술 채택 보고서 대시보드 ↗</a>
+      <a href="#ai-codebase-guide" data-doc="ai-codebase-guide">AI 코드베이스 가이드</a>
+      <a href="#handoff" data-doc="handoff">HANDOFF — 로컬 NPC 아키텍처</a>
+      <a href="#tts-plan" data-doc="tts-plan">TTS 통합 계획(폐기)</a>
+    </div>
+
+    <div class="group">
+      <div class="group-title">01 Architecture</div>
+      <a href="#sys-overview" data-doc="sys-overview">시스템 개요</a>
+      <a href="#net-topology" data-doc="net-topology">네트워크 토폴로지</a>
+    </div>
+
+    <div class="group">
+      <div class="group-title">02 UE5</div>
+      <a href="#npc-arch" data-doc="npc-arch">NPC 아키텍처</a>
+      <a href="#net-layer" data-doc="net-layer">네트워크 레이어 (C++)</a>
+      <a href="#action-pipeline" data-doc="action-pipeline">액션 파이프라인</a>
+    </div>
+
+    <div class="group">
+      <div class="group-title">03 Python</div>
+      <a href="#cognitive-engine" data-doc="cognitive-engine">Cognitive Engine</a>
+      <a href="#langgraph" data-doc="langgraph">LangGraph 워크플로</a>
+    </div>
+
+    <div class="group">
+      <div class="group-title">04 Integration</div>
+      <a href="#integration-guide" data-doc="integration-guide">시스템 통합 가이드</a>
+    </div>
+
+    <div class="group">
+      <div class="group-title">05 BehaviorTree</div>
+    </div>
+
+
+    <div class="group">
+      <div class="group-title">기타 (원본 MD 유지)</div>
+      <a href="Memo.md" target="_blank">Memo.md (세션 메모)</a>
+      <a href="주간기록/" target="_blank">주간기록/</a>
+    </div>
+  </nav>
+
+  <main id="content"></main>
+</div>
+
+<!-- Raw Markdown sources (script blocks not rendered as HTML) -->
+<script type="text/markdown" id="src-ai-codebase-guide">
+# UE5_MCP_VR — AI 코드베이스 빠른 이해 가이드
+
+> 이 문서는 AI(LLM)가 이 프로젝트를 처음 만났을 때 전체 구조를 한 번에 파악하도록 작성됐습니다.
+> 코드를 수정하기 전에 반드시 이 문서를 먼저 읽으십시오.
+
+---
+
+## 1. 시스템 한 줄 요약
+
+**UE5 VR 게임** ↔ **WebSocket (JSON Envelope)** ↔ **Python FastAPI (CognitiveEngine)**
+
+NPC가 LLM/SLM을 통해 자율 행동합니다. UE5는 게임 실행과 NPC 물리 행동을 담당하고, Python은 대화·전략·기억 등 인지 처리를 담당합니다.
+
+---
+
+## 2. 최상위 데이터 흐름
+
+```
+[플레이어 입력 / 지각(Perception)]
+        │
+        ▼
+UNPCManager (GameInstanceSubsystem)
+        │  WebSocket JSON (MessageEnvelope)
+        ▼
+Python CognitiveEngine (FastAPI + LangGraph)
+        │  ActionBatch JSON (MessageEnvelope)
+        ▼
+UNPCManager::OnLLMMessageReceived
+        │  parse-once → FJsonObject 공유
+        ├─► ParseAffinityUpdateFromObject  → NPCStateComponent::AffinityCache 갱신
+        ├─► ParseLocationDecisionResultFromObject → NPCActionComponent::NotifyLocationDecisionReady
+        └─► DeliverParsedActionBatches    → ASmartNPC::ExecuteActionBatch
+                                                    │
+                                                    ▼
+                                          NPCActionComponent::ExecuteActionBatch
+                                                    │  ActionQueue에 적재
+                                                    ▼
+                                          StateTree (SmartNPCAIController)
+                                           PrepareNextAction → ExecuteSmartAction
+                                                    │
+                                                    ▼
+                                          NPCActionComponent::ExecuteInteraction
+                                           (EQS / MoveToActor / BaseDialogue ...)
+```
+
+---
+
+## 3. 핵심 파일 맵
+
+### 3-1. NPC 레이어
+
+| 파일 | 역할 | 핵심 API |
+|------|------|----------|
+| `NPC/SmartNPC.h/.cpp` | NPC 액터 (Character). AgentID 보유, 컴포넌트 조립, ST 실행 | `ExecuteActionBatch()`, `OnActionCompleted()`, `TakeDamage()` |
+| `NPC/NPCManager.h/.cpp` | GameInstanceSubsystem. WebSocket 메시지 수신 → NPC 라우팅 | `OnLLMMessageReceived()`, `DeliverParsedActionBatches()` |
+| `NPC/NPCStateComponent.h/.cpp` | NPC 상태 (스탯, 표정, 호감도, 이벤트 인지) | `ApplyDamage()`, `RequestEventCognition()`, `GetAffinityMultiplier()` |
+| `NPC/Action/NPCActionComponent.h/.cpp` | 액션 큐 + 실행 라우터. 모든 행동의 진입점 | `ExecuteActionBatch()`, `ProcessNextAction()`, `ExecuteInteraction()` |
+| `NPC/Action/SmartNPCAIController.h/.cpp` | AI 컨트롤러. Perception 처리, StateTree 이벤트 송신 및 실행 | `HandleAllActionsStopped()`, `OnTargetPerceptionUpdated()` |
+
+### 3-2. StateTree 태스크
+
+```
+PrepareNextAction → ExecuteSmartAction
+```
+
+| 파일 | 역할 |
+|------|------|
+| `STTask_PrepareNextAction` | ActionQueue에서 다음 액션 Dequeue → `ProcessNextAction()` 호출 후 결과 출력 |
+| `STTask_ExecuteSmartAction` | `ExecuteInteraction()` 호출 → `NPC->OnActionCompleted()` 동기 완료 |
+| `MCPStateTreeAIComponent` | `UStateTreeAIComponent` 서브클래스. 런타임 ST 에셋 주입용 setter 노출 |
+
+### 3-3. 네트워크 레이어
+
+| 파일 | 역할 |
+|------|------|
+| `Network/WebSocketClient.h/.cpp` | 저수준 WebSocket. `ULLMNetworkClient`가 상속하여 사용 |
+| `Network/EnvelopeBuilder.h/.cpp` | UE5→Python 전송 JSON Envelope 생성 (BuildPrompt, BuildStateUpdate 등) |
+| `Network/MCPJsonUtils.h/.cpp` | Python→UE5 수신 JSON 파싱 유틸. `*FromObject` 오버로드로 재파싱 방지 |
+
+### 3-4. 데이터 구조
+
+| 파일 | 핵심 구조체 |
+|------|------------|
+| `NPC/Struct/NPCActionTypes.h` | `EAction`, `FGameAction`, `FActionBatch`, `FModeActionRequest`, `FLocationCandidate` |
+| `NPC/Struct/NPCActionKeys.h` | JSON Parameters 키 상수 (`Key_Text`, `Key_TargetLoc`, `Key_TargetID` 등) |
+| `Core/CharacterAttributes.h` | `FNPCAttributes`, `FBaseStats`, `FGameResources`, `FBehavioralTraits`, `FCombatStats` |
+| `Core/GameStateData.h` | `FGameStateData`, `FEntityState`, `FPerceptionData` |
+
+---
+
+## 4. MessageEnvelope 통신 규약
+
+**UE5 → Python 방향만** 다음 Envelope 형식으로 래핑됩니다(`app/schemas/envelope.py::MessageEnvelope`).
+
+```json
+{
+  "protocol_version": 1,
+  "msg_id": "uuid",
+  "auth_token": "...",
+  "timestamp": 1234567890.0,
+  "type": "prompt | state_update | emergency_report | location_decision",
+  "payload": { ... }
+}
+```
+
+**UE5 → Python 메시지 타입:**
+
+| type | 전송 시점 | 빌더 함수 |
+|------|-----------|-----------|
+| `state_update` | 3초 주기, 모든 NPC 상태 동기화 | `FEnvelopeBuilder::BuildStateUpdate()` |
+| `prompt` | 플레이어 명령 / VR 제스처. payload에 `npc_inventory` 포함 (NPC 보유 아이템 실시간 동봉) | `FEnvelopeBuilder::BuildPrompt()` |
+| `emergency_report` | NPC 피격·위협 감지 (0.3s 디바운스 후 배치) | `FEnvelopeBuilder::BuildEmergencyReport()` |
+| `location_decision` | EQS 후보 → LLM 전술 위치 선택 요청 | `FEnvelopeBuilder::BuildLocationDecisionRequest()` |
+
+**Python → UE5 방향은 Envelope 안 씀** — `type` 필드 없는 raw 모델 JSON(`ModeActionRequest(...).model_dump_json()` 등)을 그대로 보냅니다. UE5(`NPCManager.cpp::OnLLMMessageReceived`)는 JSON 을 **한 번만 파싱**한 뒤 어떤 키가 들어있는지로 판별(duck-typing) — 순서대로 시도:
+
+| 시도 순서 | 판별 함수 | 성공 조건 | 처리 |
+|------|-----------|-----------|------|
+| 1 | `UMCPJsonUtils::ParseAffinityUpdateFromObject()` | `Relations` 키 존재·비어있지 않음 | `NPCStateComponent::AffinityCache` 갱신 후 `return`(다른 파서 시도 안 함) |
+| 2 | `UMCPJsonUtils::ParseLocationDecisionResultFromObject()` | `chosen_id` 등 location_decision 응답 키 존재 | `NPCActionComponent::NotifyLocationDecisionReady()` |
+| 3(기본) | `UMCPJsonUtils::ParseModeActionRequestFromObject()` | 위 둘 다 실패 시 폴백 | `DeliverParsedActionBatches()` → `ExecuteActionBatch()` |
+
+`PlanAchieved` 는 별도 메시지가 아니라 `ModeActionRequest` 최상위 필드 중 하나(`NpcPlans`/`PlanAchieved`) — e4b 가 plan 목표 달성 감지 시 `true` 로 동봉되면 UE5 가 `NPCStateComponent::FlagPlanAchieved()` 호출.
+
+---
+
+## 5. JSON 키 규칙
+
+- **Envelope + ActionBatch 최상위 필드**: PascalCase (`ActionType`, `FacialState`, `Mode`, `Parameters`, `ActionBatches`)
+- **Parameters 딕셔너리 내부**: snake_case (`target_id`, `target_loc`, `text`, `direction`)
+- **상수 위치**: `NPC/Struct/NPCActionKeys.h`
+
+```cpp
+// 올바른 사용
+FString TargetID = Params.FindRef(NPCActionKeys::Key_TargetID);    // "target_id"
+FVector Loc      = ParseVectorParam(Params.FindRef(NPCActionKeys::Key_TargetLoc)); // "target_loc"
+FString Text     = Params.FindRef(NPCActionKeys::Key_Text);         // "text"
+```
+
+---
+
+## 6. EAction — 지원 액션 전체 목록
+
+```
+Common:      Idle, Move, Follow, Wait, Dialogue, TurnTo, Stop, Scan, UseItem, Equip, Unequip
+Combat:      Attack, Block, Dodge, Flee, SignalAllies
+Social:      Trade, Emote, GiveItem, Comfort, HandObject
+Task:        PickUp, Drop, Craft, Repair
+Investigation: Investigate, Track(*), Scout
+Lifestyle:   Sit, Sleep, Read, Pray, Dance, Sing
+```
+
+> `Track(*)`: 대상을 0.5초 주기로 `MoveToActor` 갱신하며 지속 추적. `StopAllActions()` 또는 `AbortCurrentAction()` 시 자동 해제.
+
+---
+
+## 7. NPC 이동 경로 (EQS)
+
+두 경로가 명시적으로 분리됩니다:
+
+| 경로 | 트리거 | EQS 에셋 | 모드 |
+|------|--------|----------|------|
+| **A — LLM 지시 이동** | `ExecuteInteraction(Move)` | `DefaultMoveQuery` | SingleResult |
+| **B — Perception 전술 재배치** | `TryStartTacticalQueryForCombat()` | `TacticalPositionsQuery` | AllMatching → C++ 스코어링 → LLM 선택 |
+
+경로 B 파이프라인:
+```
+Perception 이벤트
+    → TryStartTacticalQueryForCombat()
+    → StartTacticalQuery() [EQS AllMatching]
+    → OnTacticalCandidatesDone() [C++ 스코어링: Safe/Optimal/Aggressive]
+    → LLM location_decision 전송
+    → NotifyLocationDecisionReady() [Move 액션 ActionQueue 주입]
+```
+
+---
+
+## 8. Blackboard 및 StateTree 파라미터
+
+BT→ST 마이그레이션 완료 (2026-06-13). BB_NPC BT전용 키 4개 제거, ST_NPC Transition InstanceData 바인딩.
+데이터는 ST `InstanceData` 및 Blackboard(Perception Target 한정)로 관리됩니다.
+
+| 데이터 이름 | 타입 | 공급/갱신 시점 |
+|---------|------|-----------|
+| `HasAction` | bool | `STTask_PrepareNextAction` (ActionQueue 상태 확인) |
+| `SubAction` | Enum (EAction) | `STTask_PrepareNextAction` 의 Output |
+| `TargetLocation` | Vector | `STTask_PrepareNextAction` 의 Output, Perception |
+| `TargetActor` | Object | Perception (Sight) — BB 경유 |
+| `BehaviorMode` | Enum (ENPCBehaviorMode) | `NPCStateComponent::CurrentBehaviorMode` (`ExecuteActionBatch` 갱신) |
+| `FacialState` | Enum (EFacialState) | `NPCStateComponent::SetFacialExpression` |
+| EQS 파라미터들 | Float | `UpdateEQSParams()` (SearchRadius, CoverWeight 등) |
+
+---
+
+## 9. 자주 찾는 로직 위치
+
+| 궁금한 것 | 파일:함수 |
+|-----------|-----------|
+| Python 메시지 수신 후 NPC로 전달 | `NPCManager.cpp::OnLLMMessageReceived` |
+| JSON → EAction 라우팅 | `NPCActionComponent.cpp::ExecuteInteraction` |
+| StateTree가 다음 액션을 꺼내는 곳 | `NPCActionComponent.cpp::ProcessNextAction` |
+| 완료 신호를 Python에 보내는 곳 | `SmartNPC.cpp::OnActionCompleted` → `NPCManager::SendEventReport` |
+| 호감도(Affinity) 계산 | `NPCStateComponent.cpp::GetAffinityMultiplier` |
+| Perception → 전술 EQS 트리거 | `SmartNPCAIController.cpp::OnTargetPerceptionUpdated` |
+| EQS 가중치 계산 | `NPCActionComponent.cpp::ComputeEQSWeights` |
+| Dice 판정 (반사신경 등) | `Utils/DiceSystem.h` — `UDiceSystem::CheckReflex` |
+| Envelope 생성 | `Network/EnvelopeBuilder.h` — `FEnvelopeBuilder::Build*` |
+
+---
+
+## 10. 수정 전 체크리스트
+
+코드를 수정하기 전 다음을 확인하십시오.
+
+- [ ] **JSON 키**: Parameters 내부는 snake_case (`NPCActionKeys` 상수 사용), 최상위는 PascalCase
+- [ ] **BB 쓰기**: `NPCActionComponent`에서 직접 BB를 쓰지 말 것 → `SmartNPCAIController::HandleAllActionsStopped / OnTargetPerceptionUpdated`로 위임
+- [ ] **새 EAction 추가 시**: `NPCActionTypes.h` → `GetGameplayTagForAction` → `ExecuteInteraction switch` → `Execute*()`함수 4곳 모두 추가
+- [ ] **EQS 에셋**: `DefaultMoveQuery`(LLM 지시)와 `TacticalPositionsQuery`(Perception 전술) 2개만 사용. 추가 에셋은 이 2개의 Named Parameter로 해결
+- [ ] **Track 해제**: `StopAllActions()` / `AbortCurrentAction()` 양쪽에서 `TrackTimer` 클리어 확인
+- [ ] **Envelope 통신**: 새 메시지 타입은 `EnvelopeBuilder`에 `Build*` 추가 후 Python `EEnvelopeType`과 동기화
+
+---
+
+## 11. 디렉토리 구조 요약
+
+```
+Source/UE5_MCP_VR/
+├── Core/
+│   ├── CharacterAttributes.h   ← FNPCAttributes, FBaseStats, FBehavioralTraits
+│   ├── GameStateData.h         ← FGameStateData, FPerceptionData
+│   ├── Entity.h                ← IEntity, INPCEntity 인터페이스
+│   └── VRPawn.h/.cpp           ← 플레이어 폰 (VR, 유일)
+├── NPC/
+│   ├── SmartNPC.h/.cpp         ← NPC 액터 (EBodyPartType 부위 인지 포함)
+│   ├── NPCManager.h/.cpp       ← Subsystem, WebSocket 허브
+│   ├── NPCStateComponent.h/.cpp← 상태·스탯·호감도·계획 캐싱
+│   ├── NPCInventoryComponent.h ← NPC 인벤토리 (실시간 JSON 직렬화)
+│   ├── NPCRagdollComponent.h/.cpp ← 액티브 래그돌(Flinch/Knockdown/사망) — 튜닝값·틱 자체 소유
+│   ├── NPCActionDataAsset.h    ← 몽타주·사운드 에셋 매핑
+│   ├── NPCAnimInstance.h       ← Speed/Direction/InAir 단순 애니
+│   ├── Action/
+│   │   ├── NPCActionComponent.h/.cpp   ← 행동 큐 + 실행 라우터
+│   │   ├── SmartNPCAIController.h/.cpp ← AI 컨트롤러 + ST 이벤트 송신
+│   │   ├── MCPStateTreeAIComponent.h/.cpp ← 런타임 ST 에셋 주입용 서브클래스
+│   │   ├── STTask_PrepareNextAction.h/.cpp
+│   │   └── STTask_ExecuteSmartAction.h/.cpp
+│   └── Struct/
+│       ├── NPCActionTypes.h    ← EAction, FGameAction, FActionBatch
+│       └── NPCActionKeys.h     ← JSON 키 상수
+├── Network/
+│   ├── WebSocketClient.h/.cpp  ← 저수준 WS + ULLMNetworkClient
+│   ├── EnvelopeBuilder.h/.cpp  ← UE5→Python Envelope 생성
+│   └── MCPJsonUtils.h/.cpp     ← Python→UE5 JSON 파싱
+├── Inventory/
+│   ├── ItemManager.h/.cpp      ← 드랍 아이템 등록·범위 탐색
+│   ├── InventoryComponent.h/.cpp
+│   └── ItemDataAsset.h
+├── UI/
+│   ├── BP/PlayerHUDWidget.h/.cpp        ← 왼손 월드스페이스 HUD. "ChatInput" EditableTextBox 로 NPC 텍스트 채팅(음성 대체)
+│   └── Widgets/NPCDialogueWidget.h/.cpp ← NPC 머리 위 자막(출력 전용)
+└── Utils/
+    └── DiceSystem.h/.cpp       ← 주사위 판정 (Reflex, Panic 등)
+```
+
+---
+
+## 12. Python 서버 연동 포인트
+
+```
+OmniAgent_VR_System/CognitiveEngine/app/
+├── main.py              ← FastAPI 엔트리, /ws/llm 단일 엔드포인트
+├── debug_routes.py      ← /debug·/test_chat 대시보드 + /api/* 운영 REST
+├── server_state.py      ← 런타임 상태 STATE(월드 상태 캐시·활성 UE5 소켓·송신 락)
+├── graph.py             ← LangGraph 그래프 조립
+├── middleware.py        ← Stale 패킷 필터, 인증
+├── agents/
+│   ├── state.py         ← AgentState TypedDict (LangGraph 공유 상태)
+│   ├── supervisor.py    ← 감독 노드 (Stage2 12B 재계획 판단)
+│   ├── interface_input.py  ← 수신 Envelope → AgentState 변환
+│   ├── interface_output.py ← LangGraph 출력 → ActionBatch JSON 직렬화
+│   └── subgraphs/
+│       ├── dialogue.py  ← Stage1 e4b 대화 (Ollama structured output)
+│       └── rules.py     ← Rules 노드 (액션 검증·BehaviorMode 교정)
+├── schemas/
+│   ├── actions.py       ← ActionBatch, GameAction, ModeActionRequest
+│   ├── envelope.py      ← MessageEnvelope, EEnvelopeType
+│   ├── game_state.py    ← Vector3D
+│   └── vr_context.py    ← VR 컨텍스트 (PromptPayload 등)
+├── utils/
+│   ├── llm_factory.py   ← Ollama 클라이언트 팩토리 (e4b·12B 모델)
+│   ├── rag_utils.py     ← RAG 검색 유틸
+│   ├── memory_manager.py← NPC 기억 관리
+│   ├── db_manager.py    ← DB 접근
+│   └── build_knowledge.py ← 지식 벡터스토어 빌더
+└── static/
+    ├── test_chat.html   ← UE5 없이 파이프라인 검증용 브라우저 UI
+    └── debug.html       ← affinity/상태 디버그 UI
+```
+
+UE5에서 읽는 Python 출력 필드명:
+- 최상위: `Mode`, `ActionBatches`, `AgentID`, `Actions`, `ActionType`, `FacialState`, `Parameters`
+- Parameters 딕셔너리 값: `target_id`, `target_loc`, `text`, `direction`, `duration`, `style`
+
+---
+
+## 13. 가구 시스템 (Furniture, 2026-07-17)
+
+NPC/플레이어 공용 Sit·Sleep 대상. `AFurnitureActor`(부모, 이벤트 그래프 0노드 — BP 파생은 메시·SeatPoint 정렬만) + `UFurnitureManager`(GameInstanceSubsystem, 등록/조회).
+
+| 파일 | 역할 | 핵심 API |
+|------|------|----------|
+| `Furniture/FurnitureActor.h/.cpp` | 개별 가구 액터. `FurnitureID`·`FurnitureType`(Seat/Bed) | `TryOccupy(Actor)`, `Release(Actor)`, `IsOccupied()`, `GetSeatTransform()` |
+| `Furniture/FurnitureManager.h/.cpp` | GameInstanceSubsystem. BeginPlay/EndPlay 자기등록(DroppedItemBase 패턴) | `RegisterFurniture()`, `GetActiveFurniture()` |
+
+**흐름**: `NPCManager` 가 대상 NPC 반경 내 가구를 매 prompt 마다 `nearby_furniture`(전체, 점유 포함)로 동봉 + `valid_targets`(빈 가구만, enum 강제로 점유·원거리 가구 지정 원천 차단). LLM 이 `{"type":"Sit","target":"<furniture_id>"}` 내면 `NPCActionComponent::ExecuteLifestyleAction` 이 `AFurnitureActor` 캐스트 성공 시 `BaseMove`(가구 좌표)→`PlayActionMediaWithPosture`(도착 후 스냅+점유+몽타주). **자세(SitDown/LieDown)는 `FurnitureType` 이 결정** — LLM 이 Sit/Sleep 을 혼동해도 Seat=앉기·Bed=눕기로 교정(2026-07-27 파인튜닝 세션에서 추가된 방어, §15 참조).
+
+Read/Pray 는 가구 없는 제자리 액션(2026-07-18 제단·책상 제거 후 단순화) — `ExecuteLifestyleAction` 의 `bSitOrSleep` 분기 밖.
+
+플레이어 착석은 별도 경로: `VRPawn` 이 VR A버튼으로 150cm 내 빈 의자에 SeatPoint 스냅 + 이동·점프 입력 잠금(NPC 점유 중인 가구는 착석 불가 — `bOccupied` 게이트가 원 버그 "NPC 앉은 의자에 플레이어 겹쳐앉기"의 근본 수정).
+
+---
+
+## 14. 전투 행동 셀렉터 (Combat Selector, 2026-07-11)
+
+전투 진입 시 Attack 100% 자동주입(무한공격 버그의 원인)을 대체한 스탯 기반 가중치 셀렉터.
+
+| 파일 | 핵심 API |
+|------|----------|
+| `NPC/Action/NPCActionComponent.h/.cpp` | `SelectCombatAction(AActor* Target)`, `ResetCombatSelectorState()`, `CombatActionInterval`(기본 0.6s 페이싱) |
+| `NPC/Action/SmartNPCAIController.h/.cpp` | `ExitCombat(DeadTarget)`, `CombatTargetLostTimer`(시야 장기 소실 시 자동 Combat 해제, 기본 8초) |
+
+**가중치 산출**: 기본배율(`UPROPERTY MCP\|CombatSelector`) × 스탯 파생(Strength→Attack, Agility→Dodge/거리조절) × 상황(최근 피격 부스트·저HP 연속 스케일·근접한정 방어·이상거리 링 이탈) × 연속 동일행동 페널티. Attack 연속 상한(기본 3) 도달 시 강제 타행동. Flee = 저HP² × 겁성향, 선택 후 `UDiceSystem::CheckReflex(Bravery,1)` 성공 시 재선택(배짱 판정). SignalAllies 는 전투당 1회.
+
+**종료 게이트**: `STTask_PrepareNextAction::Tick` 최상단(bIsBusy 체크보다 먼저)에서 Combat+타겟 사망 판정 → `ExitCombat(DeadTarget)` 이 Abort+StopAllActions+AbortTacticalQuery+Common 복귀+승리 보고. 시야 장기 소실은 `CombatTargetLostTimer` → `ExitCombat(nullptr)`(승리 보고만 제외). 셀렉터 연속성 상태 리셋은 `ResetCombatSelectorState()` 일괄 호출 — 개별 리셋 흩뿌리기 금지(§6 결).
+
+---
+
+## 15. 파인튜닝 파이프라인 (Finetune, 2026-07-21~)
+
+`gemma4:e4b`(Stage1 대화·액션선택, 매 턴 실시간) 와 `gemma4-12b`(Stage2 plan, replan 턴만) 를 역할별로 각각 LoRA 파인튜닝. 상세 스펙은 `docs/SPEC_finetune.md`, 시드 작성 원칙은 `docs/finetune_data_guidelines.md`(카테고리·호감도 독립성·페르소나 분산 등 실사례 기반 규칙).
+
+| 디렉토리 | 역할 |
+|------|------|
+| `finetune/data/synth/generate_stage1.py` | 시드(`scenarios_seed_draft.yaml`) → 학습 jsonl. teacher(gemma4-12b)가 speech 생성, `rules.validate_and_clamp_action` 실통과분만 채택, 타입별 실빈도 기반 동적 오버샘플 |
+| `finetune/dataset_editor/` | 독립 웹앱(`:8010`, Ollama/UE5 무관) — 시드 CRUD·즉시 검증·타입 커버리지 대시보드 |
+| `finetune/train/train_stage1_e4b.py` · `train_stage2_12b.py` | unsloth QLoRA. **Blackwell(RTX 50 시리즈) 안정화 패치 필수**(seq≤1024, `TORCHDYNAMO_DISABLE=1`, grad/backward synchronize, `_save` pickle 우회) — 없으면 간헐 크래시 |
+| `app/utils/llm_factory.py::MODELS` | 배포 스위치. `gemma4_slm` 문자열 1줄 교체로 즉시 롤백 가능(기존 Ollama 태그 불변) |
+
+**환경**: `C:\github\chatbot\venv`(별도 프로젝트, torch cu128 sm_120 + unsloth 검증됨) 재사용 — WSL 불필요. GGUF 변환·Ollama 등록은 unsloth `save_pretrained_gguf(q4_k_m)` 한 번에 처리.
+
+**핵심 원칙(§finetune_data_guidelines.md 상세)**: 호감도(sentiment)는 카테고리와 독립(1:1:1 랜덤) — 안 그러면 "적대적이면 항상 Attack" 같은 스퓨리어스 상관관계 학습. NPC 는 특정 캐릭터 고정 안 함 — 희소 액션 시드는 코어 5명 중 무작위 강제 배정(범용 30:70 스위치 우회), 오버샘플 카피마다 페르소나 재굴림으로 실분산.
+</script>
+
+<script type="text/markdown" id="src-handoff">
+# HANDOFF — 로컬 VR NPC 아키텍처 (오픈소스/로컬)
+
+> 원본: `docs/HANDOFF.md`. 외부 의뢰자 요청에 대한 응답 형태의 설계 메모.
+
+요청하신 '오픈소스 및 로컬 환경 기반 VR NPC 시스템'의 전체 구현 방법과 API 스펙을 단일 마크다운(Markdown) 문서 형태로 통합하여 작성했습니다.
+
+이 구현 설계도는 모바일 칩셋 기반인 Quest 3 등에서 언리얼 엔진이 직접 무거운 통신을 처리할 때 발생하는 지연을 막기 위해 중계 서버(Relay Server)를 두는 웹소켓(WebSocket) 아키텍처를 채택했습니다. 또한, 별도의 ASR(음성 인식) 없이 오디오 스트림을 직접 이해하는 Gemma 4 E2B/E4B 모델이나, 0.5B 크기로 즉각적인 음성 복제가 가능한 NeuTTS Air와 같은 최신 로컬 모델들을 어떻게 오케스트레이션(통합)하는지 파이썬(Python) 기반의 단일 통합 코드로 명세했습니다.
+
+---
+
+# 🎮 언리얼 엔진 로컬 AI NPC 오케스트레이터 및 API 스펙 통합 문서
+
+이 문서는 인터넷 연결 없이 PC/VR 환경에서 독립적으로 구동되는 AI NPC 시스템의 전체 명세서입니다. 언리얼 엔진 5의 StateTree와 로컬 AI 백엔드를 연결하는 WebSocket 중계 서버의 단일 파이썬 스크립트와 메시지 스키마를 포함합니다.
+
+## 1. 런타임 시스템 구성 (Docker Compose 예시)
+
+실제 배포 시 각 오픈소스 AI 모델들은 컨테이너 형태로 독립 실행되며, 오케스트레이터가 이를 통합합니다.
+
+```yaml
+version: '3.8'
+services:
+  # 1. LLM / 추론 (Qwen 3.5 MoE 또는 Gemma 4 E4B)
+  llm-service:
+    image: vllm/vllm-openai:latest
+    command: --model unsloth/Qwen3.5-35B-A3B-GGUF --port 8000
+    ports: ["8000:8000"]
+    deploy:
+      resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } }
+
+  # 2. TTS (Hume TADA 또는 NeuTTS Air)
+  tts-service:
+    image: neutts-air:latest
+    ports: ["8001:8001"]
+
+  # 3. 오케스트레이터 (통합 파이썬 스크립트 실행)
+  orchestrator:
+    build: ./orchestrator
+    ports: ["8765:8765"]
+    depends_on: [llm-service, tts-service]
+```
+
+---
+
+## 2. API 메시지 스키마 설계 (JSON Spec)
+
+### 2.1 [UE5 → 오케스트레이터] 상태 스냅샷 + 오디오
+
+```json
+{
+  "type": "player_input",
+  "client_id": "quest3_player_01",
+  "world_context": {
+    "npc_id": "NPC_Guard_01",
+    "current_state": "Idle",
+    "nearby_smart_objects": []
+  },
+  "audio_payload": "<Base64_Encoded_PCM_Audio_Chunk>"
+}
+```
+
+### 2.2 [오케스트레이터 → UE5] NPC 행동/애니메이션 명령
+
+```json
+{
+  "type": "npc_action_response",
+  "dialogue_text": "여기 있는 무기들은 조심해서 다뤄야 해.",
+  "audio_stream_url": "ws://localhost:8001/stream/12345",
+  "animation_metadata": {
+    "emotion": "serious",
+    "gesture": "point_right"
+  },
+  "statetree_actions": []
+}
+```
+
+---
+
+## 3. 오케스트레이터 메인 스크립트 (`server.py` 개념)
+
+LLM(JSON 출력 강제) → TTS 호출 → UE5로 JSON 명령. 텍스트 LLM 사용 시 Whisper ASR을 앞단에 결합. NeuTTS Air 등 로컬 TTS 모델로 음성 스트림 반환.
+
+---
+
+## 4. UE5 측 수신/실행 로직 요약
+
+- **오디오/페이셜**: `audio_stream_url`로부터 청크 수신 → Runtime Audio Importer 재생 → Runtime MetaHuman Lip Sync에 입력. `emotion` 값으로 AnimBP 무드 주입.
+- **행동 제어**: `statetree_actions` 배열을 파싱하여 StateTree Blackboard 갱신 + 이벤트 발사. `target_id` 기반 Smart Object 상호작용 수행.
+</script>
+
+<script type="text/markdown" id="src-tts-plan">
+# TTS 통합 계획서 — 폐기 (2026-09-12)
+
+음성 파이프라인(TTSService·ASRService·`tts_client.py`·`npc_audio.py`·`VoiceInputComponent`·`NPCAudioStreamComponent`·`npc_audio_response` 메시지)은 **2026-09-12 전부 삭제**했다. 검증 경로만 늘리고 VR 에선 HUD 채팅(`ChatInput`, `bd057b8` 도입)이 더 낫다는 판단. 대사 자막은 `UNPCManager::HandleNPCDialogue` → `UNPCDialogueUIComponent::ShowSubtitle` 로 즉시 표시된다.
+
+복원이 필요하면 `bd057b8` 이전 이력(마지막 완전 구현: OpenVoice v2 + MeloTTS, WS 스트리밍 + HTTP 폴백)을 참조.
+</script>
+
+<script type="text/markdown" id="src-sys-overview">
+# 시스템 개요
+
+> [!info] 패턴
+> **Remote Cortex Pattern** — 복잡한 추론(Python)을 렌더링(UE5)으로부터 완전히 분리.
+
+---
+
+## 전체 컴포넌트 다이어그램
+
+```mermaid
+graph TD
+    subgraph UE5 ["UE5 Client (C++)"]
+        Player[VRPawn]
+        NM[UNPCManager]
+        NPC[ASmartNPC]
+        SC[UNPCStateComponent]
+        AC[UNPCActionComponent]
+        PC[UPolicyCacheComponent]
+        AI[SmartNPCAIController]
+        BT[BehaviorTree]
+        LLMC[ULLMNetworkClient]
+        SLMC[USLMNetworkClient]
+        EB[FEnvelopeBuilder]
+    end
+
+    subgraph Python ["Python CognitiveEngine"]
+        WS_LLM["/ws/llm"]
+        WS_SLM["/ws/slm"]
+        LG[LangGraph]
+        II[Interface_Input]
+        Sup[Supervisor]
+        Diag[Dialogue]
+        IO[Interface_Output]
+        Rules[Rules]
+        RAG[RAG/FAISS]
+        DB[SQLite]
+    end
+
+    Player --> NPC
+    NPC --> SC
+    NPC --> AC
+    NPC --> PC
+    AI --> SC
+    AI --> AC
+    AC --> BT
+    SC --> NM
+    NM --> LLMC
+    NM --> SLMC
+    LLMC --> EB
+    SLMC --> EB
+    LLMC --> WS_LLM
+    SLMC --> WS_SLM
+    WS_LLM --> LG
+    WS_SLM --> LG
+    LG --> II --> Sup
+    Sup --> Diag --> IO --> Rules
+    Rules --> WS_LLM
+    LG --> RAG
+    LG --> DB
+```
+
+---
+
+## 핵심 설계 원칙
+
+### 1. Remote Cortex Pattern
+UE5는 물리·렌더링·입력 처리에 집중, 전략적 추론은 Python 위임.
+
+### 2. 듀얼 채널 최적화
+
+| 채널 | 엔드포인트 | 용도 | 지연 목표 |
+|------|-----------|------|----------|
+| LLM | `/ws/llm` | 대화 생성, 전략 결정 | 제한 없음 |
+| SLM | `/ws/slm` | 위협 감지, 즉각 반응 | **500ms 이내** |
+
+### 3. Opportunistic Batching (0.3s)
+다수 인지 이벤트를 0.3초 큐잉 후 단일 패킷으로 전송 → 네트워크 오버헤드 절감.
+
+### 4. Delegate 기반 디커플링
+BT Task가 BB JSON을 파싱하지 않고, 컴포넌트 Delegate 구독.
+
+### 5. Policy Caching
+`UPolicyCacheComponent`가 LLM 응답 정책을 TTL과 함께 캐시 → BT 소비.
+
+### 6. Fallback Resilience
+서버 끊김 시 BT 로컬 서브트리 자동 인계.
+
+---
+
+## 소스 디렉토리 맵
+
+```
+Source/UE5_MCP_VR/
+├── Core/           VRPawn, CharacterAttributes, GameStateData, Entity
+├── NPC/            SmartNPC, NPCManager, NPCStateComponent, PolicyCacheComponent
+│   ├── Action/     NPCActionComponent, SmartNPCAIController, BTTask_*
+│   └── Struct/     BehaviorPolicy, NPCActionTypes, NPCActionKeys
+├── Network/        WebSocketClient, EnvelopeBuilder, MCPJsonUtils
+├── Inventory/      InventoryComponent, ItemManager, DroppedItemBase
+├── UI/             PlayerHUDWidget(ChatInput 채팅), NPCDialogueWidget(자막)
+└── Utils/          DiceSystem
+
+OmniAgent_VR_System/CognitiveEngine/app/
+├── main.py         FastAPI 엔트리포인트
+├── graph.py        LangGraph 워크플로
+├── middleware.py   인증, stale packet
+├── agents/         Interface_Input, Supervisor, Dialogue, Rules, Interface_Output
+├── schemas/        MessageEnvelope, ActionBatch, Intent, GesPrompt
+└── utils/          llm_factory, rag_utils, memory_manager, db_manager
+```
+</script>
+
+<script type="text/markdown" id="src-net-topology">
+# 네트워크 토폴로지
+
+> 원본: `Connect.md`
+
+---
+
+## 1. 듀얼 채널 토폴로지
+
+시스템은 목적에 따라 **전략적 추론(LLM)**과 **반사적 대응(SLM)**으로 채널을 분리합니다.
+
+```mermaid
+graph TD
+    subgraph UE5_Client [UE5 Client]
+        NM[NPCManager]
+        LLMC[LLMNetworkClient]
+        SLMC[SLMNetworkClient]
+        EB[EnvelopeBuilder]
+    end
+
+    subgraph Python_Backend [Cognitive Engine]
+        LLMA[LLM Agent - Strategic]
+        SLMA[SLM Agent - Reflexive]
+        Router[Message Router]
+    end
+
+    NM --> LLMC
+    NM --> SLMC
+    LLMC -- "ws://.../ws/llm" --> Router
+    SLMC -- "ws://.../ws/slm" --> Router
+    Router --> LLMA
+    Router --> SLMA
+    EB -. Payload .-> LLMC
+    EB -. Payload .-> SLMC
+```
+
+---
+
+## 2. 엔드포인트 역할 분담
+
+| 엔드포인트 | 클라이언트 | 주요 타입 | 설명 |
+|:-----------|:-----------|:----------|:-----|
+| **`/ws/llm`** | `ULLMNetworkClient` | `state_update`, `prompt` | 장기 전략, 복잡한 상황 판단, 대사 생성 |
+| **`/ws/slm`** | `USLMNetworkClient` | `emergency_report`, `reflex` | 즉각 반응, 도주/방어 결정 |
+
+---
+
+## 3. Envelope System
+
+```json
+{
+    "msg_id":     "GUID-String",
+    "type":       "state_update | prompt | emergency_report | location_decision",
+    "timestamp":  "ISO-8601-String",
+    "auth_token": "Secret-Key",
+    "payload": { "...": "타입별 실제 데이터" }
+}
+```
+
+| `type` 값 | C++ Enum | 방향 | 사용 시점 |
+|:----------|:---------|:-----|:----------|
+| `emergency_report` | `EmergencyReport` | UE5→Python | 피격, 위협 감지 배치 |
+| `prompt` | `Prompt` | UE5→Python | 플레이어 음성/제스처 |
+| `state_update` | `StateUpdate` | UE5→Python | 주기적 월드 상태 동기화 |
+| `location_decision` | `LocationDecision` | UE5→Python | EQS 후보 위치 선택 요청 |
+| `location_decision_result` | *(응답)* | Python→UE5 | 선택된 전술 위치 반환 |
+
+---
+
+## 4. 데이터 동기화 전략
+
+### Opportunistic Batching (0.3s)
+
+```
+인지 이벤트 발생 (Sight/Sound/Hit)
+    → NPCStateComponent.LocalEventQueue Push
+    → 0.3초 만료 시 Flush
+    → emergency_report 단일 패킷
+```
+
+### State Update Loop
+NPC가 주변 상황 스냅샷(`FGameStateData`)을 LLM 채널로 주기 전송.
+
+### Low-Latency Bypass
+SLM 채널은 LLM 추론을 거치지 않고 직접 `ActionBatch` 반환 → **500ms 이내**.
+
+---
+
+## 5. 다중 에이전트 라우팅
+
+페이로드 내 `agent_id`로 `NPCManager`가 해당 NPC에게 전달.
+
+```cpp
+void UNPCManager::OnLLMMessageReceived(JsonMessage) {
+    ParsedRequest = UMCPJsonUtils::Parse(JsonMessage);
+    for (auto& Batch : ParsedRequest.ActionBatches)
+        DeliverToNPC(Batch.Key, Batch.Value);
+}
+```
+
+---
+
+## 6. 재연결 전략
+
+| 상황 | 처리 |
+|------|------|
+| 연결 끊김 | 지수 백오프(최대 `MaxRetryCount`회) |
+| 재연결 실패 | `bIsServerConnected=false` → 오프라인 모드 |
+| Stale Packet (2초 초과) | Python에서 `"dropped"` 반환 |
+</script>
+
+<script type="text/markdown" id="src-npc-arch">
+# NPC 아키텍처
+
+> **Policy-Driven Hybrid Architecture** — UE5 + Python Cognitive Engine 연동 NPC 시스템.
+
+---
+
+## 1. 컴포넌트 구조
+
+```mermaid
+classDiagram
+    class ASmartNPC {
+        +AgentID: FString
+        +Attributes: FNPCAttributes
+        +GameplayTags: FGameplayTagContainer
+    }
+    class UNPCStateComponent {
+        +AffinityCache
+        +LocalEventQueue
+        +RequestEventCognition()
+        +FlushEventReport()
+    }
+    class UNPCActionComponent {
+        +ActionQueue
+        +OnActionStoppedAll
+        +ExecuteActionBatch()
+        +GetCurrentAction()
+    }
+    class UPolicyCacheComponent {
+        +CachedPolicy
+        +PolicyTTL
+        +UpdateFromLLMResponse()
+        +IsPolicyStale()
+    }
+    class SmartNPCAIController {
+        +AIPerceptionComponent
+        +OnTargetPerceptionUpdated()
+    }
+    class UNPCManager {
+        +LLMClient
+        +SLMClient
+        +ActiveNPCs
+        +SendEventReport()
+        +DeliverToNPC()
+    }
+
+    ASmartNPC *-- UNPCStateComponent
+    ASmartNPC *-- UNPCActionComponent
+    ASmartNPC *-- UPolicyCacheComponent
+    ASmartNPC o-- SmartNPCAIController
+    SmartNPCAIController ..> UNPCStateComponent
+    SmartNPCAIController ..> UNPCActionComponent
+    UNPCStateComponent ..> UNPCManager
+    UNPCManager ..> ASmartNPC
+```
+
+---
+
+## 2. 각 컴포넌트 역할
+
+### ASmartNPC
+
+월드 내 개별 NPC 엔터티. `AgentID`(서버 매핑), `Attributes`(HP/MP/전투력), `GameplayTags`(상태 태그).
+
+### UNPCStateComponent
+
+인지 이벤트 큐잉 및 0.3s 배칭 담당. `LocalEventQueue`, `AffinityCache` 보유. 만료 시 `UNPCManager.SendEventReport()` 호출.
+
+### UNPCActionComponent
+
+서버 `ActionBatch`를 큐잉/순차 실행. `ActionQueue (TQueue<FGameAction>)`, `OnActionStoppedAll` Delegate, `GetCurrentAction()`로 BT가 직접 참조.
+
+### UPolicyCacheComponent
+
+LLM 응답 정책을 TTL과 함께 캐시. `FBehaviorPolicy`(aggression/fear/vigilance/policy_flags), `IsPolicyStale()`.
+
+### SmartNPCAIController
+
+AIPerceptionComponent 소유 + BT 드라이버. `OnTargetPerceptionUpdated()`, `HandleAllActionsStopped()` 로 BB 갱신.
+
+---
+
+## 3. 인지-보고 파이프라인 (Perception-Push)
+
+```mermaid
+sequenceDiagram
+    participant PC as AIController
+    participant SC as StateComponent
+    participant NM as NPCManager
+    participant PY as Python
+    PC->>SC: RequestEventCognition(FPerceptionData)
+    Note over SC: 0.3s Batching
+    SC->>NM: SendEventReport(JSON)
+    NM->>PY: WebSocket (emergency_report)
+```
+
+`FPerceptionData`: `TargetID`, `SenseType`, `Location`, `DangerScore`, `EventName`.
+
+---
+
+## 4. 명령-실행 파이프라인 (Command-Pull)
+
+```mermaid
+sequenceDiagram
+    participant PY as Python
+    participant NM as NPCManager
+    participant AC as ActionComponent
+    participant AI as AIController
+    participant BT as BehaviorTree
+    PY->>NM: ActionBatch JSON
+    NM->>AC: ExecuteActionBatch
+    AC->>AC: ProcessNextAction
+    BT->>AC: GetCurrentAction()
+    AC->>BT: ExecuteInteraction
+```
+
+---
+
+## 5. 데이터 계약
+
+| 구조체 | 핵심 필드 |
+|--------|----------|
+| `FActionBatch` | `Mode`, `Actions[]`, `AgentID` |
+| `FGameAction` | `ActionType`, `FacialState`, `Parameters` |
+| `FPerceptionData` | `TargetID`, `SenseType`, `Location`, `DangerScore` |
+| `FNPCAttributes` | `Resources(HP/MP)`, `Combat`, `Traits` |
+| `FBehaviorPolicy` | `aggression`, `fear`, `vigilance`, `policy_flags` |
+
+---
+
+## 6. Fallback 전략
+
+| 상황 | 처리 |
+|------|------|
+| 서버 끊김 | BB `IsConnected=false` → 폴백 서브트리 |
+| PolicyCache Stale | 기존 정책 유지 or 기본 패턴 |
+| ActionQueue 빔 | BT Idle |
+</script>
+
+<script type="text/markdown" id="src-net-layer">
+# 네트워크 레이어 (C++)
+
+> `Source/UE5_MCP_VR/Network/` 파일들의 역할과 API.
+
+---
+
+## 파일 구조
+
+```
+Network/
+├── WebSocketClient.h/.cpp    UWebSocketClient + ULLMNetworkClient
+├── EnvelopeBuilder.h/.cpp    MessageEnvelope JSON 생성
+└── MCPJsonUtils.h/.cpp       JSON 파싱/역직렬화
+```
+
+---
+
+## 1. WebSocketClient
+
+### 클래스 계층
+
+```
+UWebSocketClient (소켓·재연결)
+    └── ULLMNetworkClient    /ws/llm — 직접 상속(중간 Abstract 클래스 UNetworkClientBase 는 2026-09-12 제거, USLMNetworkClient 는 W22 단일 채널화로 소멸)
+```
+
+### 주요 API
+
+```cpp
+class UWebSocketClient : public UObject {
+public:
+    void Connect(const FString& URL);
+    void Disconnect();
+    void SendMessage(const FString& EnvelopeJson);
+    bool IsConnected() const;
+    UPROPERTY() FOnMessageReceived OnMessageReceived;
+};
+```
+
+### 재연결 전략
+
+- 지수 백오프: `RetryDelay = BaseDelay * 2^RetryCount`
+- 최대 재시도: `MaxRetryCount` UPROPERTY
+- 실패 시 `UNPCManager.bIsServerConnected=false` → 오프라인
+
+---
+
+## 2. EnvelopeBuilder
+
+UE5 → Python 모든 메시지를 Envelope JSON으로 조립.
+
+```cpp
+class FEnvelopeBuilder {
+public:
+    // payload 는 FJsonObject 그대로 — 호출처가 만든 객체를 봉투에 넣고 마지막에 한 번만 직렬화(2026-09-12, 이전엔 문자열을 받아 재파싱).
+    static FString BuildPrompt(const TSharedRef<FJsonObject>& Payload);
+    static FString BuildEmergencyReport(const TSharedRef<FJsonObject>& Payload);
+    static FString BuildLocationDecisionRequest(const TSharedRef<FJsonObject>& Payload);
+    static FString BuildStateUpdate(const TSharedRef<FJsonObject>& Payload);
+};
+```
+
+자동 생성 필드: `msg_id`(`FGuid::NewGuid()`), `timestamp`(`FDateTime::UtcNow()`), `auth_token`(Config 로드).
+
+---
+
+## 3. MCPJsonUtils
+
+Python → UE5 수신 JSON을 C++ 구조체로 역직렬화.
+
+```cpp
+class UMCPJsonUtils {
+public:
+    static bool ParseModeActionRequestFromObject(const TSharedPtr<FJsonObject>& Root, FModeActionRequest& OutRequest);
+    static bool ParseEnvelope(const FString& JsonString, FMessageEnvelope& OutEnvelope);
+    static TSharedPtr<FJsonObject> ExtractPayload(const FMessageEnvelope& Envelope);
+};
+```
+
+```cpp
+struct FModeActionRequest {
+    TMap<FString, FActionBatch> ActionBatches; // Key = AgentID
+};
+struct FActionBatch {
+    EActionMode Mode;
+    TArray<FGameAction> Actions;
+    FString AgentID;
+};
+```
+
+---
+
+## 4. 데이터 흐름 요약
+
+```
+[송신]
+NPCStateComponent
+  → NPCManager.SendEventReport(AgentID, JSON)
+    → FEnvelopeBuilder.BuildEmergencyReport()
+      → ULLMNetworkClient.SendMessage(EnvelopeJson) → /ws/llm
+
+[수신]
+/ws/llm 응답
+  → ULLMNetworkClient.OnMessageReceived
+    → NPCManager.OnLLMMessageReceived
+      → UMCPJsonUtils.ParseModeActionRequestFromObject
+        → UNPCManager.DeliverToNPC(AgentID, ActionBatch)
+          → ASmartNPC.ExecuteActionBatch
+```
+</script>
+
+<script type="text/markdown" id="src-action-pipeline">
+# 액션 파이프라인
+
+> BehaviorTree Task 체인과 ActionQueue가 서버 응답을 NPC 물리 행동으로 변환하는 전체 흐름.
+
+---
+
+## 1. BT Task 체인
+
+```
+[Sequence]
+  ├─ BTTask_PrepareNextAction      큐 Dequeue 또는 EQS+LLM 전술 쿼리
+  ├─ BTTask_ExecuteSmartAction     실제 액션 실행
+  └─ BTTask_NotifyActionCompleted  완료 신호 → 다음 큐 처리 트리거
+```
+
+---
+
+## 2. 전체 흐름
+
+```mermaid
+sequenceDiagram
+    participant PY as Python
+    participant NM as UNPCManager
+    participant AC as UNPCActionComponent
+    participant AI as SmartNPCAIController
+    participant BT as BT Tasks
+    PY->>NM: ActionBatch JSON
+    NM->>AC: ExecuteActionBatch
+    Note over AC: FGameAction → TQueue Push
+    BT->>AC: BTTask_PrepareNextAction
+    AC->>AC: ProcessNextAction (Dequeue)
+    BT->>AC: BTTask_ExecuteSmartAction
+    AC->>AC: GetCurrentAction()
+    BT->>AC: BTTask_NotifyActionCompleted
+    AC->>AC: OnActionCompleted → 다음 큐
+```
+
+---
+
+## 3. FGameAction 구조
+
+```cpp
+struct FGameAction {
+    EActionMode  ActionMode;
+    FString      ActionType;
+    FString      TargetID;
+    TMap<FString, float> Parameters;
+    int32        FacialState;
+};
+```
+
+---
+
+## 4. EQS 전술 위치 결정
+
+```mermaid
+flowchart TD
+    A[PrepareNextAction] --> B{Queue 비었음?}
+    B -- No --> C[Queue Dequeue]
+    B -- Yes --> D[EQS 쿼리]
+    D --> E[후보 위치 스코어링]
+    E --> F[PrunedCandidates Top-3 per category]
+    F --> G[location_decision Envelope]
+    G --> H[LLMClient.Send]
+    H --> I[InProgress 대기]
+    I --> J{LLM 응답}
+    J --> K[ChosenLocation → BB.TargetLocation]
+    K --> L[FinishLatentTask Succeeded]
+    C --> L
+```
+
+### 스코어링 카테고리
+
+| 카테고리 | 선호 조건 | 페널티 조건 |
+|---------|---------|----------|
+| **SAFE** | 적과 거리↑, 커버 존재 | 적과 시야 노출 |
+| **AGGRESSIVE** | 적과 거리↓, 시야 확보 | 커버 거의 불필요 |
+| **OPTIMAL** | 중간 거리 600~1000, 커버+시야 균형 | - |
+
+---
+
+## 5. Delegate 기반 BB 갱신
+
+> [!important] 설계 원칙
+> BT Task가 BB JSON을 파싱하지 않음. `SmartNPCAIController`만 BB 직접 갱신.
+
+```cpp
+ActionComp->OnActionStoppedAll.AddDynamic(this, &ASmartNPCAIController::HandleAllActionsStopped);
+// HandleAllActionsStopped: BB->ClearValue(Key_TargetActor) — 자율 행동 주입 중단
+```
+
+---
+
+## 6. BTTask 반환 값
+
+| Task | 반환 | 조건 |
+|------|-----|------|
+| `PrepareNextAction` | Succeeded | 큐 획득 or LLM 위치 완료 |
+| `PrepareNextAction` | Failed | 큐 비고 EQS도 실패 |
+| `PrepareNextAction` | InProgress | LLM 응답 대기 |
+| `ExecuteSmartAction` | Succeeded | 액션 실행 완료 |
+| `ExecuteSmartAction` | Failed | 워치독 강제 완료 → 다음 큐 |
+| `NotifyActionCompleted` | Succeeded | 다음 큐 트리거 완료 |
+</script>
+
+<script type="text/markdown" id="src-cognitive-engine">
+# Cognitive Engine (Python)
+
+> NPC의 의사결정과 상황 판단을 담당하는 Python FastAPI + LangGraph 서버.
+
+---
+
+## 1. 시스템 개요
+
+```mermaid
+graph TD
+    subgraph FastAPI [FastAPI Server]
+        W_LLM["/ws/llm"]
+        W_SLM["/ws/slm"]
+        Health["GET / Health"]
+    end
+    subgraph Middleware
+        Auth[인증]
+        Stale[Stale Packet 2s]
+    end
+    subgraph LangGraph
+        II[Interface_Input]
+        Sup[Supervisor]
+        Diag[Dialogue]
+        IO[Interface_Output]
+        Rules[Rules]
+    end
+    W_LLM --> Auth --> Stale --> II
+    W_SLM --> Auth --> Stale --> II
+    II --> Sup
+    Sup -- dialogue --> Diag --> IO --> Sup
+    Sup -- final --> Rules
+    Rules --> W_LLM
+```
+
+---
+
+## 2. 디렉토리 구조
+
+```
+app/
+├── main.py                FastAPI 엔트리포인트
+├── graph.py               LangGraph 워크플로 조립
+├── middleware.py          인증, stale packet
+├── mcp_server.py          MCP 서버 (별도 프로세스)
+├── agents/
+│   ├── state.py           AgentState TypedDict
+│   ├── interface_input.py
+│   ├── interface_output.py
+│   ├── supervisor.py
+│   ├── subgraphs/
+│   │   ├── dialogue.py
+│   │   └── rules.py
+│   ├── personas/generic/
+│   │   └── james.yaml
+│   └── knowledge/
+│       ├── james/
+│       └── vectorstores/
+├── schemas/
+│   ├── envelope.py        MessageEnvelope, EEnvelopeType
+│   ├── actions.py         ActionBatch, GameAction, SpeakAction
+│   ├── intent.py
+│   ├── game_state.py
+│   └── vr_context.py
+├── utils/
+│   ├── llm_factory.py
+│   ├── rag_utils.py
+│   ├── memory_manager.py
+│   └── db_manager.py
+└── data/
+    └── affinity.db
+```
+
+---
+
+## 3. 에이전트 노드
+
+| 노드 | 파일 | 역할 |
+|------|------|------|
+| **Interface_Input** | `interface_input.py` | UE5 원시(GesPrompt) → 자연어 + Intent |
+| **Supervisor** | `supervisor.py` | 파이프라인 제어, Dialogue/Rules/End 라우팅 |
+| **Dialogue** | `subgraphs/dialogue.py` | 페르소나 대화/감정 (temp=0.7) |
+| **Interface_Output** | `interface_output.py` | 추론 → `ActionBatch` 변환 |
+| **Rules** | `subgraphs/rules.py` | 규칙 검증, 파라미터 클램핑 (temp=0.0) |
+
+---
+
+## 4. `/ws/llm` 처리 루프
+
+1. Envelope 수신 및 Middleware 검증
+2. 메시지 타입 분기
+
+| 타입 | 처리 | 결과 |
+|------|------|------|
+| `prompt` | `_handle_prompt()` | LangGraph → ActionBatch |
+| `state_update` | `_handle_state_update()` | `_cached_world_state` 갱신 |
+| `location_decision` | `handle_location_decision()` | EQS 후보 중 전술 위치 선택 |
+
+---
+
+## 5. AgentState
+
+```python
+class AgentState(TypedDict):
+    messages:              List[str]
+    vr_context:            Optional[GesPrompt]
+    game_state:            Optional[Dict]
+    next:                  str
+    current_speaker:       str
+    analysis:              Dict
+    action_batch:          Optional[ActionBatch]
+    cached_world_state:    Optional[Dict]
+```
+
+---
+
+## 6. 제어 규칙
+
+| 조건 | 처리 |
+|------|------|
+| `has_error=True` | LLM 호출 없이 즉시 종료 |
+| `target_npcs` 공백 | 즉시 종료 |
+| ActionBatch 미생성 | Supervisor가 Confused 강제 생성 |
+| Stale Packet (2s 초과) | `"dropped"` 반환 |
+| 인증 실패 | `"Unauthorized"` 반환 |
+
+---
+
+## 7. 인프라
+
+- **LLM Factory**: OpenAI/Gemini/Ollama 전환.
+- **RAG**: FAISS + `all-MiniLM-L6-v2`, NPC별 벡터스토어.
+- **Affinity DB**: SQLite `data/affinity.db`.
+- **World Constants**: `MAX_DAMAGE`, `MAX_SPEED`, `DETECTION_RANGE` 등.
+
+---
+
+## 8. 의존성
+
+```
+mcp, langgraph, langchain, fastapi, uvicorn, pydantic>=2.0, python-dotenv,
+websockets, PyYAML, langchain-openai, langchain-google-genai, langchain-ollama,
+langchain-community, faiss-cpu, sentence-transformers
+```
+
+---
+
+## 서버 시작
+
+```bash
+cd OmniAgent_VR_System/CognitiveEngine
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+또는 프로젝트 루트의 `Server.bat`.
+</script>
+
+<script type="text/markdown" id="src-langgraph">
+# LangGraph 워크플로
+
+> `app/graph.py` 4단계 파이프라인.
+
+---
+
+## 1. 파이프라인
+
+```mermaid
+flowchart LR
+    Start([Envelope]) --> II[Interface_Input]
+    II --> Sup[Supervisor]
+    Sup -- needs_dialogue --> Diag[Dialogue]
+    Diag --> IO[Interface_Output]
+    IO --> Sup
+    Sup -- needs_rules --> Rules[Rules]
+    Rules --> End([ActionBatch])
+    Sup -- end --> End
+```
+
+---
+
+## 2. 노드 상세
+
+### Interface_Input
+UE5 VR 원시 데이터 → 자연어 컨텍스트 + Intent.
+
+```python
+class GesPrompt(BaseModel):
+    player_id:        str
+    voice_transcript: str
+    gestures:         List[GestureData]
+    stats:            Dict[str, float]
+    last_event:       Optional[str]
+```
+
+Deictic Reference Resolution: "그 고블린" + Point 제스처 → `target_entity_id`.
+
+### Supervisor
+
+```python
+def supervisor(state):
+    if state["has_error"]:            return {"next": "end"}
+    if not state["target_npcs"]:      return {"next": "end"}
+    if needs_dialogue(state):         return {"next": "dialogue"}
+    if needs_rules_validation(state): return {"next": "rules"}
+    return {"next": "end"}
+```
+
+### Dialogue
+- Temperature 0.7, 페르소나 YAML 로드, RAG 검색, FacialState 출력.
+
+### Interface_Output
+
+```python
+class ActionBatch(BaseModel):
+    agent_id: str
+    mode:     EActionMode
+    actions:  List[GameAction]
+
+class GameAction(BaseModel):
+    action_type: str
+    target_id:   Optional[str]
+    parameters:  Dict[str, float]
+    facial_state: int
+```
+
+### Rules
+- Temperature 0.0, World Constants 주입, Pydantic validator로 자동 클램핑.
+
+```python
+@validator("parameters")
+def clamp_damage(cls, v):
+    if "damage" in v: v["damage"] = min(v["damage"], MAX_DAMAGE)
+    return v
+```
+
+---
+
+## 3. 그래프 조립
+
+```python
+workflow = StateGraph(AgentState)
+workflow.add_node("interface_input",  interface_input_node)
+workflow.add_node("supervisor",       supervisor_node)
+workflow.add_node("dialogue",         dialogue_node)
+workflow.add_node("interface_output", interface_output_node)
+workflow.add_node("rules",            rules_node)
+workflow.set_entry_point("interface_input")
+workflow.add_edge("interface_input", "supervisor")
+workflow.add_conditional_edges("supervisor", route_supervisor, {
+    "dialogue": "dialogue", "rules": "rules", "end": END,
+})
+workflow.add_edge("dialogue",         "interface_output")
+workflow.add_edge("interface_output", "supervisor")
+workflow.add_edge("rules",            END)
+app_graph = workflow.compile()
+```
+
+---
+
+## 4. Shortcut
+
+| 조건 | 동작 |
+|------|------|
+| `has_error=True` | 즉시 END |
+| `target_npcs` 빔 | 즉시 END |
+| ActionBatch 미생성 | Confused 강제 생성 |
+
+---
+
+## 5. 전술 위치 결정
+
+```python
+def handle_location_decision(request):
+    system_prompt = "..."
+    llm_output = call_chat_llm(system_prompt, build_user_message_from_request(request))
+    parsed = parse_json_safely(llm_output, fallback={
+        "chosen_id": fallback_candidate_id(request), "reason": "fallback"
+    })
+    return {
+        "type":      "location_decision_result",
+        "agent_id":  request.agent_id,
+        "chosen_id": parsed.chosen_id,
+        "reason":    parsed.reason,
+    }
+```
+</script>
+
+<script type="text/markdown" id="src-integration-guide">
+# UE5 ↔ Python 시스템 통합 가이드
+
+> UE5 클라이언트와 Python Cognitive Engine 사이의 전체 연결 흐름.
+
+---
+
+## 1. 시스템 구성
+
+| 구분 | 역할 | 기술 |
+|------|------|------|
+| **UE5 Client** | 게임 실행, NPC 제어, 데이터 수집/발송 | C++, UWebSocketClient |
+| **Python Server** | AI 추론, 행동 결정 | FastAPI, LangGraph, Ollama |
+
+---
+
+## 2. 전체 시퀀스
+
+```mermaid
+sequenceDiagram
+    participant NPC as ASmartNPC
+    participant NSC as NPCStateComponent
+    participant NM as UNPCManager
+    participant WS as UWebSocketClient
+    participant PY as FastAPI
+    participant LG as LangGraph
+
+    NPC->>NSC: 인지 이벤트
+    NSC->>NSC: 0.3s Batching
+    NSC->>NM:  SendEventReport
+    NM->>WS:   SendMessage
+    WS-->>PY:  /ws/llm
+
+    PY->>PY:   validate_auth_token
+    PY->>PY:   is_stale_packet 2s
+    PY->>LG:   ainvoke
+    LG->>LG:   II → Sup → Diag → IO → Rules
+    LG-->>PY:  ActionBatch
+
+    PY-->>WS:  ActionBatch JSON
+    WS->>NM:   OnLLMMessageReceived
+    NM->>NM:   ParseModeActionRequestFromObject
+    NM->>NPC:  DeliverToNPC
+    NPC->>NPC: ExecuteActionBatch
+```
+
+---
+
+## 3. UE → Python
+
+### Step 1. 인지 이벤트 수집
+LocalEventQueue Push → 0.3s 타이머 만료 → `SendEventReport()`.
+
+### Step 2. Envelope 포장
+
+```json
+{
+    "msg_id":     "550e8400-...",
+    "type":       "emergency_report",
+    "timestamp":  "2026-04-24T12:00:00.000Z",
+    "auth_token": "SecretKey123",
+    "payload": { "agent_id": "NPC_James", "events": [] }
+}
+```
+
+### Step 3. WebSocket 전송
+- 지수 백오프, 최대 `MaxRetryCount`회
+- 실패 시 오프라인 모드 진입
+
+---
+
+## 4. Python 처리
+
+### Step 4. 사전 검증
+
+```python
+if not validate_auth_token(envelope.auth_token): return "Unauthorized"
+if is_stale_packet(envelope.timestamp, 2.0):     return "dropped"
+```
+
+### Step 5. LangGraph 추론
+Interface_Input → Supervisor → Dialogue → Interface_Output → Rules → ActionBatch.
+
+---
+
+## 5. Python → UE
+
+### Step 6. 파싱
+
+```cpp
+void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage) {
+    // 타입별 분기 후 DeliverParsedActionBatches(Root)
+}
+
+FModeActionRequest ParsedRequest;
+UMCPJsonUtils::ParseModeActionRequestFromObject(Root, ParsedRequest);
+for (const auto& BatchPair : ParsedRequest.ActionBatches) {
+    DeliverToNPC(BatchPair.Key, BatchPair.Value);
+}
+```
+
+### Step 7. 행동 실행
+`UNPCManager::DeliverToNPC` → `AgentID`로 `ASmartNPC` 찾아 `ExecuteActionBatch()`.
+
+---
+
+## 6. 핵심 클래스
+
+| 클래스 | 소속 | 역할 |
+|--------|------|------|
+| `ASmartNPC` | UE5 | 개별 NPC 엔터티 |
+| `UNPCStateComponent` | UE5 | 인지 큐잉/배칭 |
+| `UNPCManager` | UE5 | LLM/SLM 관리, 응답 라우팅 |
+| `UWebSocketClient` | UE5 | WS 연결, 재접속 |
+| `ULLMNetworkClient` | UE5 | `/ws/llm` 래퍼 |
+| `USLMNetworkClient` | UE5 | `/ws/slm` 래퍼 |
+| `FEnvelopeBuilder` | UE5 | 송신 Envelope 빌드 |
+| `UMCPJsonUtils` | UE5 | 수신 JSON → C++ 역직렬화 |
+| `main.py` | Python | FastAPI 서버 |
+| `app_graph` | Python | LangGraph 파이프라인 |
+| `AgentState` | Python | 공유 상태 |
+
+---
+
+## 7. 예외 처리 / 폴백
+
+| 상황 | UE5 | Python |
+|------|-----|--------|
+| WS 연결 끊김 | 지수 백오프 → 실패 시 오프라인 | - |
+| 인증 실패 | - | `"Unauthorized"`, 연결 유지 |
+| Stale Packet | - | `"dropped"` |
+| JSON 파싱 실패 | `UE_LOG(Error)`, 사이클 스킵 | `"Invalid JSON format"` |
+| LangGraph 오류 | - | 빈 ActionBatch 반환 |
+| ActionBatch 미생성 | - | Supervisor Confused 생성 |
+</script>
+
+
+
+
+<script>
+  const DOCS = [
+    "ai-codebase-guide", "handoff", "tts-plan",
+    "sys-overview", "net-topology",
+    "npc-arch", "net-layer", "action-pipeline",
+    "cognitive-engine", "langgraph",
+    "integration-guide",
+  ];
+
+  const content = document.getElementById("content");
+
+  function stripFrontmatter(md) {
+    return md.replace(/^\s*---[\s\S]*?---\s*\n/, "");
+  }
+
+  // Custom renderer: mermaid code blocks → <div class="mermaid">
+  const renderer = new marked.Renderer();
+  const origCode = renderer.code.bind(renderer);
+  renderer.code = function(code, lang) {
+    if (lang === "mermaid") return `<div class="mermaid">${code}</div>`;
+    return origCode(code, lang);
+  };
+  marked.setOptions({ renderer, breaks: false, gfm: true });
+
+  // Build articles
+  for (const id of DOCS) {
+    const raw = document.getElementById(`src-${id}`).textContent;
+    const html = marked.parse(stripFrontmatter(raw));
+    const art = document.createElement("article");
+    art.id = id;
+    art.innerHTML = `<div class="doc-banner">문서 ID: <code>${id}</code></div>` + html;
+    content.appendChild(art);
+  }
+
+  function showDoc(id) {
+    document.querySelectorAll("#content article").forEach(a => a.classList.remove("active"));
+    document.querySelectorAll("#sidebar a[data-doc]").forEach(a => a.classList.remove("active"));
+    const art = document.getElementById(id);
+    const link = document.querySelector(`#sidebar a[data-doc="${id}"]`);
+    if (art) art.classList.add("active");
+    if (link) link.classList.add("active");
+    content.scrollTo(0, 0);
+    if (window.__mermaid) {
+      window.__mermaid.run({ querySelector: `#${id} .mermaid` }).catch(()=>{});
+    }
+  }
+
+  document.querySelectorAll("#sidebar a[data-doc]").forEach(a => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const id = a.getAttribute("data-doc");
+      history.replaceState(null, "", "#" + id);
+      showDoc(id);
+    });
+  });
+
+  const initial = (location.hash || "#ai-codebase-guide").slice(1);
+  showDoc(DOCS.includes(initial) ? initial : "ai-codebase-guide");
+</script>
+</body>
+</html>

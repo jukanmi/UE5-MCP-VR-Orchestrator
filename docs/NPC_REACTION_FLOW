@@ -1,0 +1,65 @@
+[플레이어 출현]
+      │
+      ▼
+ASmartNPCAIController::OnTargetPerceptionUpdated()   ← SmartNPCAIController.cpp:120
+│  └─ Blackboard에 TargetActor / TargetLocation 즉시 set (BT 즉각 반응용)
+│  └─ FPerceptionData 조립 → StateComp->RequestEventCognition() 호출
+│
+      ▼
+UNPCStateComponent::RequestEventCognition()          ← NPCStateComponent.cpp:129
+│  └─ LocalEventQueue에 적재
+│  └─ 0.3초 디바운스 타이머 시작
+│
+      ▼ (0.3초 후)
+UNPCStateComponent::FlushEventReport()               ← NPCStateComponent.cpp:151
+│  └─ 위험도 정렬 + 최대 4개 추출
+│  └─ SerializePerceptionReport() → JSON 직렬화
+│  └─ NPCManager->SendEventReport() 호출
+│
+      ▼
+UNPCManager::SendEventReport()                       ← NPCManager.cpp:162
+│  └─ BuildEmergencyReport() → Envelope 래핑
+│  └─ LLMClient->SendPrompt() → 서버 전송
+│
+      ▼ [Python 서버 → LLM 추론]
+서버 응답: {"ActionBatches": {...}, "Mode": "..."}
+│
+      ▼
+UNPCManager::OnLLMMessageReceived()                  ← NPCManager.cpp:150
+│  └─ NPCMap->OnWebSocketMessageReceived()
+│
+      ▼
+UNPCMap::OnWebSocketMessageReceived()                ← NPCManager.cpp:25
+│  └─ ActionBatches 유무 사전 필터링 (오늘 수정한 부분)
+│  └─ ParseModeActionRequest() → FModeActionRequest 파싱
+│  └─ DeliverToNPC(AgentID, ActionBatch) 루프
+│
+      ▼
+ASmartNPC::ExecuteActionBatch()                      ← SmartNPC.cpp:71
+│  └─ ActionComponent->ExecuteActionBatch()
+│
+      ▼
+UNPCActionComponent::ExecuteActionBatch()            ← NPCActionComponent.cpp:214
+│  └─ Blackboard BehaviorMode 업데이트 (BT 서브트리 분기)
+│  └─ DispatchActions() 호출
+│
+      ▼
+UNPCActionComponent::DispatchActions()               ← NPCActionComponent.cpp:246
+│  ├─ Dialogue → 즉시 실행 (큐 밖, 병렬 가능)
+│  └─ 나머지 → ActionQueue에 순차 적재 → ProcessNextAction()
+│
+      ▼
+UNPCActionComponent::ProcessNextAction()             ← NPCActionComponent.cpp:300
+│  └─ OnActionStarted 델리게이트 → AIController::HandleActionStarted()
+│       └─ Blackboard HasAction=true, SubAction=현재액션
+│  └─ Behavior Tree가 HasAction=true 감지 → BTTask_ExecuteSmartAction 실행
+│
+      ▼
+UBTTask_ExecuteSmartAction::ExecuteTask()            ← BTTask_ExecuteSmartAction.cpp:36
+│  └─ ActionComp->GetCurrentAction() 참조
+│  └─ ExecuteInteraction(ActionType, TargetActor, Params) → 실제 동작 수행
+│       ├─ Move → EQS 쿼리 or BaseMove()
+│       ├─ Attack → ExecuteAttackAction()
+│       ├─ Dialogue → ExecuteDialogue()
+│       └─ ... (EAction 전종류 대응)
+│  └─ NPC->OnActionCompleted() → 다음 큐 항목 처리

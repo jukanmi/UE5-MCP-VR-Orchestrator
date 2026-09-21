@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniAgent VR System — 핵심 13대 기술 채택 비교 매트릭스 (Core 13)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0e17;
+      --bg-surface: #111827;
+      --bg-card: #162032;
+      --bg-hover: #1c2a42;
+      --border-color: #27374f;
+      --border-light: #1f2d42;
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --color-primary: #38bdf8;
+      --color-emerald: #10b981;
+      --color-rose: #f43f5e;
+      --color-amber: #f59e0b;
+      --color-purple: #c084fc;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.55;
+      font-size: 14px;
+      padding: 30px 40px 80px;
+    }
+
+    code, pre {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1720px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header.header {
+      margin-bottom: 28px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .badge-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .badge-primary {
+      color: var(--color-primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .badge-emerald {
+      color: var(--color-emerald);
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    h1.title {
+      font-size: 26px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .search-box {
+      position: relative;
+      min-width: 320px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 9px 14px 9px 36px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 13.5px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--color-primary);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--bg-card);
+      color: #fff;
+      border-color: var(--color-primary);
+    }
+
+    /* Quick Summary Cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .summary-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px 18px;
+    }
+
+    .summary-card-label {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .summary-card-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Matrix Table Layout */
+    .table-wrapper {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow-x: auto;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+      margin-bottom: 40px;
+    }
+
+    table.matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13.5px;
+      min-width: 1380px;
+    }
+
+    table.matrix-table th {
+      background: #0d131f;
+      color: var(--text-muted);
+      padding: 13px 16px;
+      font-weight: 700;
+      font-size: 12.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-light);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    table.matrix-table th:last-child {
+      border-right: none;
+    }
+
+    table.matrix-table td {
+      padding: 15px 16px;
+      border-bottom: 1px solid var(--border-light);
+      border-right: 1px solid var(--border-light);
+      vertical-align: top;
+      line-height: 1.6;
+    }
+
+    table.matrix-table td:last-child {
+      border-right: none;
+    }
+
+    table.matrix-table tbody tr {
+      transition: background-color 0.12s ease;
+    }
+
+    table.matrix-table tbody tr:hover {
+      background-color: var(--bg-hover);
+    }
+
+    table.matrix-table tbody tr.section-divider-row td {
+      background: #0e1524;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--color-primary);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Table Column Sizing */
+    .col-id { width: 170px; }
+    .col-problem { width: 23%; }
+    .col-solution { width: 25%; }
+    .col-drawback { width: 18%; }
+    .col-alternative { width: 14%; }
+    .col-reason { width: 20%; }
+
+    /* Cell Content Styling */
+    .tech-title {
+      font-weight: 700;
+      color: #fff;
+      font-size: 14.5px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .tech-no {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--color-primary);
+      font-size: 13px;
+    }
+
+    .domain-tag {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .metric-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--color-primary);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+
+    .cell-problem {
+      color: #fca5a5;
+    }
+
+    .cell-solution {
+      color: #e2e8f0;
+    }
+
+    .cell-drawback {
+      color: #fdba74;
+    }
+
+    .cell-alternative {
+      color: var(--text-muted);
+    }
+
+    .cell-reason {
+      color: #7dd3fc;
+      background: rgba(56, 189, 248, 0.04);
+      font-weight: 500;
+    }
+
+    code {
+      background: #0f172a;
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: #38bdf8;
+      font-size: 12px;
+      border: 1px solid #1e293b;
+    }
+
+    /* Appendix Table */
+    .appendix-section {
+      margin-top: 48px;
+    }
+
+    .appendix-title {
+      font-size: 19px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .appendix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    .appendix-table th {
+      background: #0d131f;
+      color: var(--text-muted);
+      padding: 12px 14px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-light);
+      text-align: left;
+    }
+
+    .appendix-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-light);
+      border-right: 1px solid var(--border-light);
+      vertical-align: top;
+    }
+
+    .appendix-table tr:hover td {
+      background-color: var(--bg-hover);
+    }
+
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .status-dep { background: rgba(244, 63, 94, 0.15); color: var(--color-rose); }
+    .status-rep { background: rgba(245, 158, 11, 0.15); color: var(--color-amber); }
+
+    /* Print Optimization */
+    @media print {
+      body { background: #fff; color: #000; padding: 10px; }
+      .table-wrapper { box-shadow: none; border: 1px solid #ccc; }
+      table.matrix-table th { background: #eee; color: #000; }
+      table.matrix-table td { color: #111; border-color: #ddd; }
+      .controls, .badge-group { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <header class="header">
+    <div class="title-group">
+      <div class="badge-group">
+        <span class="badge badge-primary">OmniAgent VR System</span>
+        <span class="badge badge-emerald">Core 13 Selected</span>
+      </div>
+      <h1 class="title">핵심 기술 채택 비교 매트릭스 (표)</h1>
+      <p class="subtitle">
+        3계층 두뇌 모델, 인지 파이프라인, SLM 파인튜닝, AI 실행, VR 물리를 결정지은 <strong>13대 핵심 기술의 문제·해결·단점·대안·채택이유</strong>를 한눈에 볼 수 있는 일람표입니다.
+      </p>
+    </div>
+
+    <div class="controls">
+      <div class="search-box">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="filter-input" class="search-input" placeholder="실시간 검색 (기술명, 문제, 키워드)..." autocomplete="off">
+      </div>
+      <button class="btn" onclick="window.print()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 6 2 18 2 18 9"></polyline>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <rect x="6" y="14" width="12" height="8"></rect>
+        </svg>
+        인쇄 / PDF 저장
+      </button>
+    </div>
+  </header>
+
+  <!-- Summary Cards -->
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-card-label">선별 기술 항목</div>
+      <div class="summary-card-val">13개 핵심 항목</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-label">핵심 도메인 영역</div>
+      <div class="summary-card-val">5대 영역 (A·B·C·D·F)</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-label">하드웨어 VRAM 예산</div>
+      <div class="summary-card-val">16 GB (RTX 5070 Ti)</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-label">계층별 지연시간</div>
+      <div class="summary-card-val">0ms ~ 1.1s ~ 1.5s</div>
+    </div>
+  </div>
+
+  <!-- Main Comparison Matrix Table -->
+  <div class="table-wrapper">
+    <table class="matrix-table" id="tech-table">
+      <thead>
+        <tr>
+          <th class="col-id">구분 / 기술명</th>
+          <th class="col-problem">🔴 문제 (Problem)</th>
+          <th class="col-solution">🟢 해결 방식 (Solution)</th>
+          <th class="col-drawback">🟡 단점 및 제약 (Trade-offs)</th>
+          <th class="col-alternative">⚪ 고려한 대안 (Alternatives)</th>
+          <th class="col-reason">🔵 최종 채택 이유 & 실측 근거</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Section A -->
+        <tr class="section-divider-row">
+          <td colspan="6">A. 시스템 아키텍처 (2개 항목)</td>
+        </tr>
+
+        <!-- #01 -->
+        <tr class="tech-row" data-keywords="remote cortex ue5 python 분리 fastapi websocket 01 1">
+          <td>
+            <div class="tech-title"><span class="tech-no">#01</span> Remote Cortex</div>
+            <div class="domain-tag">UE5(Body) + Python(Brain)</div>
+            <span class="metric-pill">W03~현재 불변</span>
+          </td>
+          <td class="cell-problem">
+            LLM·RAG·TTS·ASR 연산을 언리얼 엔진 내부에서 돌리면 VR 90Hz 프레임이 깨지고, 방대한 Python ML 생태계를 C++에서 직접 활용 불가.
+          </td>
+          <td class="cell-solution">
+            UE5는 렌더링·물리·결정론 실행만 담당하고, Python 서버 3개(<code>:8000</code> 인지 / <code>:8001</code> TTS / <code>:8002</code> ASR)가 추론을 전담하는 Remote Cortex 패턴 정립.
+          </td>
+          <td class="cell-drawback">
+            프로세스 간 네트워크 왕복 지연 발생, 서버 3개+Ollama 운영 복잡도, 두 프로세스에 분산된 상태 동기화 관리 부담.
+          </td>
+          <td class="cell-alternative">
+            • UE5 내장 추론(NNE/ONNX)<br>
+            • 클라우드 API 직접 호출<br>
+            • gRPC / HTTP REST
+          </td>
+          <td class="cell-reason">
+            Python ML 스택을 그대로 쓰면서 엔진은 순수 실행만 남기는 유일한 경로. 지연 문제는 3계층 분담으로 흡수.
+          </td>
+        </tr>
+
+        <!-- #02 -->
+        <tr class="tech-row" data-keywords="3계층 두뇌 모델 대뇌 소뇌 척수 llm slm c++ 02 2 latency 지연">
+          <td>
+            <div class="tech-title"><span class="tech-no">#02</span> 3계층 두뇌 모델</div>
+            <div class="domain-tag">대뇌(LLM)·소뇌(SLM)·척수(C++)</div>
+            <span class="metric-pill">Warm 1.1s / 0ms</span>
+          </td>
+          <td class="cell-problem">
+            LLM 호출 1회가 초 단위인데 NPC는 피격·위협에 즉시 반응해야 함. 전부 LLM이면 '전투 턴에 금붕어'가 되고, 전부 C++면 자율성이 상실됨.
+          </td>
+          <td class="cell-solution">
+            역할 3분할:<br>
+            • <strong>대뇌</strong>: 플래너 <code>qwen3:8b</code> (전략, 초 단위)<br>
+            • <strong>소뇌</strong>: 파인튜닝 <code>e4b</code> (즉응 hot loop)<br>
+            • <strong>척수</strong>: C++ 반사 테이블·전투 셀렉터 (0ms)
+          </td>
+          <td class="cell-drawback">
+            층 간 정합성 유지 비용 발생, 소뇌 Reflex가 척수 테이블로 이동하는 등 경계 변동, 상태 소유권 충돌 위험.
+          </td>
+          <td class="cell-alternative">
+            • 단일 LLM 긴 컨텍스트<br>
+            • Utility AI / GOAP 순수 C++<br>
+            • 행동 정책 캐시
+          </td>
+          <td class="cell-reason">
+            "매 틱 AI를 부르면 컴퓨터가 터진다"는 현실적 출발점. 실측 <code>e4b warm 1.1s</code> vs <code>12B cold 11s</code>로 계층 분담 필요성 확정.
+          </td>
+        </tr>
+
+        <!-- Section B -->
+        <tr class="section-divider-row">
+          <td colspan="6">B. 인지 엔진 (Python) (4개 항목)</td>
+        </tr>
+
+        <!-- #04 -->
+        <tr class="tech-row" data-keywords="fastapi langgraph 멀티 에이전트 선형 파이프라인 04 4 supervisor dialogue rules">
+          <td>
+            <div class="tech-title"><span class="tech-no">#04</span> FastAPI + LangGraph</div>
+            <div class="domain-tag">선형 파이프라인 멀티 에이전트</div>
+            <span class="metric-pill">Linear Pipeline</span>
+          </td>
+          <td class="cell-problem">
+            발화 하나에 맥락 해석 → 대사 생성 → 구조화 액션 추출 → 규칙 검증이 순차 필요하고 검증 실패 시 재시도해야 함. 단일 프롬프트는 4B가 감당 불가.
+          </td>
+          <td class="cell-solution">
+            LangGraph 노드로 선형화:<br>
+            <code>Input → Supervisor → Dialogue → Output → Rules</code>.<br>
+            Rules 거부 시 Supervisor를 거쳐 대사만 1회 재시도.
+          </td>
+          <td class="cell-drawback">
+            노드 하나가 예외로 죽으면 전체 빈 배치 폴백(cp949 크래시 사례), LangChain 래퍼 오버헤드 존재, 노드 간 암묵적 상태 계약.
+          </td>
+          <td class="cell-alternative">
+            • 순수 asyncio 함수 체인<br>
+            • AutoGen / CrewAI<br>
+            • 단일 대형 프롬프트
+          </td>
+          <td class="cell-reason">
+            이론 청사진을 그래프로 직접 이식 가능. 노드별 모델 교체(Stage1=e4b, Stage2=8B)와 조건부 재시도가 프레임워크 수준에서 해결.
+          </td>
+        </tr>
+
+        <!-- #05 -->
+        <tr class="tech-row" data-keywords="pydantic v2 rules 규칙 검증 클램핑 zero-llm 05 5 valid_targets">
+          <td>
+            <div class="tech-title"><span class="tech-no">#05</span> Pydantic v2 Rules</div>
+            <div class="domain-tag">Zero-LLM 결정론적 규칙 검증</div>
+            <span class="metric-pill">0ms 무비용</span>
+          </td>
+          <td class="cell-problem">
+            LLM 출력이 자유분방하여 데미지 9999, NaN 좌표, 없는 타겟(Strategic Position), 죽은 적 오버킬 등이 발생.
+          </td>
+          <td class="cell-solution">
+            Rules 역할을 LLM에서 순수 Pydantic v2 코드로 강등.<br>
+            • 데미지/속도 수치 클램핑 (<code>MAX_DAMAGE=100</code>)<br>
+            • 런타임 <code>valid_targets</code> 화이트리스트 대조<br>
+            • target enum grammar 강제
+          </td>
+          <td class="cell-drawback">
+            새 액션마다 수작업 규칙 작성 필요, 정적 목록이 런타임과 어긋나면 실존 NPC 액션이 조용히 증발(Skadi/Moca 버그).
+          </td>
+          <td class="cell-alternative">
+            • LLM Rules 에이전트 (원안)<br>
+            • JSON Schema만 검증<br>
+            • UE5 C++ 단에서만 검증
+          </td>
+          <td class="cell-reason">
+            검증은 결정론적이어야 하고 지연시간이 0ms여야 함. Pydantic v2 strict 모드가 무비용으로 강력한 게임 무결성 제공.
+          </td>
+        </tr>
+
+        <!-- #06 -->
+        <tr class="tech-row" data-keywords="ollama 로컬 llm 2-stage 계획 캐싱 vram 16gb 06 6 qwen 8b gemma e4b">
+          <td>
+            <div class="tech-title"><span class="tech-no">#06</span> Ollama 2-Stage 라우팅</div>
+            <div class="domain-tag">로컬 LLM + 계획 캐싱</div>
+            <span class="metric-pill">Hot 1.1s / Cold 1.5s</span>
+          </td>
+          <td class="cell-problem">
+            NPC N개가 매 턴 LLM 호출. 클라우드는 비용/지연 누적, 로컬은 VRAM 16GB 한도 내 LLM+TTS+ASR+PIE를 감당해야 함. 큰 모델은 느리고 작은 모델은 액션 누락.
+          </td>
+          <td class="cell-solution">
+            로컬 Ollama 단일화.<br>
+            • <strong>Stage 1</strong>: 파인튜닝 <code>e4b</code> (hot loop, 매 턴 대사+액션)<br>
+            • <strong>Stage 2</strong>: 플래너 <code>qwen3:8b</code> (replan 시만)<br>
+            계획 캐싱("비싸게 1회, 싸게 N회") 및 선제 웜업(342ms).
+          </td>
+          <td class="cell-drawback">
+            VRAM 16GB가 모든 결정을 지배(CosyVoice2 롤백, ASR CPU 전환), 계획 캐싱 시 낡은 플랜 고집 위험, thinking 토큰 함정.
+          </td>
+          <td class="cell-alternative">
+            • 클라우드 API (제거됨)<br>
+            • vLLM 직접 서빙<br>
+            • 단일 대형 모델 (26B 17GB 초과)
+          </td>
+          <td class="cell-reason">
+            처음부터 로컬 고수. e4b warm 1.1s vs 12B 11s 실측이 2-Stage 및 계획 캐싱 절충안의 직접적 근거.
+          </td>
+        </tr>
+
+        <!-- #08 -->
+        <tr class="tech-row" data-keywords="faiss minilm rag 기억 지식 격리 lore persona 08 8">
+          <td>
+            <div class="tech-title"><span class="tech-no">#08</span> FAISS + MiniLM RAG</div>
+            <div class="domain-tag">NPC별 지식 격리 벡터 기억</div>
+            <span class="metric-pill">누출 0건 실측</span>
+          </td>
+          <td class="cell-problem">
+            NPC별 lore·페르소나·이력을 매 프롬프트에 넣으면 4B 컨텍스트(2048) 초과. NPC A만 아는 비밀을 B가 발화하는 지식 누출 방지 필요.
+          </td>
+          <td class="cell-solution">
+            NPC별 독립 FAISS 벡터스토어 구축(<code>lore/persona/history/*.md</code>). <code>all-MiniLM-L6-v2</code> CPU 임베딩. 실측 결과 타 NPC 지식 누출 0건 확인.
+          </td>
+          <td class="cell-drawback">
+            MiniLM 영어 중심성, 지식 마크다운 수작업 관리, 대화 요약 프롬프트 영어 오염 위험(한글화로 보정).
+          </td>
+          <td class="cell-alternative">
+            • Chroma / Qdrant 서버형 DB<br>
+            • YAML 직접 프롬프트 주입<br>
+            • 파인튜닝으로 지식 내재화
+          </td>
+          <td class="cell-reason">
+            faiss-cpu는 pip 한 줄에 단일 파일. NPC 4명 규모에 무거운 서버형 DB 불필요. 구조로 완벽한 지식 격리 달성.
+          </td>
+        </tr>
+
+        <!-- Section C -->
+        <tr class="section-divider-row">
+          <td colspan="6">C. SLM 파인튜닝 (1개 항목)</td>
+        </tr>
+
+        <!-- #10 -->
+        <tr class="tech-row" data-keywords="unsloth qlora llama.cpp gguf 파인튜닝 slm e4b 10">
+          <td>
+            <div class="tech-title"><span class="tech-no">#10</span> Unsloth QLoRA 파이프라인</div>
+            <div class="domain-tag">gemma-4-E4B GGUF 양자화</div>
+            <span class="metric-pill">Gold 3/8 → 8/8</span>
+          </td>
+          <td class="cell-problem">
+            프롬프트 엔지니어링만으로는 e4b가 정답 액션을 3/8만 재현. '누워'→Sleep 0회 발생, Move→Wait 오답 빈발, few-shot 증가 시 프롬프트만 비대화.
+          </td>
+          <td class="cell-solution">
+            <code>unsloth/gemma-4-E4B-it</code> QLoRA(4bit, r32, seq1024) → LoRA merge → llama.cpp GGUF <code>Q4_K_M</code> → Ollama 태그 배포. v1 gold 8/8 달성.
+          </td>
+          <td class="cell-drawback">
+            Stage2 12B는 unsloth 미지원으로 보류, 오버핏 및 아이템 전달 회귀(v2/v3 GiveItem→HandObject 변질로 v1 롤백).
+          </td>
+          <td class="cell-alternative">
+            • few-shot 프롬프팅 지속<br>
+            • HF 순정 PEFT<br>
+            • 풀 파인튜닝 (VRAM 불가)
+          </td>
+          <td class="cell-reason">
+            3/8→8/8은 프롬프트로 불가능했던 수치. 16GB VRAM 환경에서 4B 모델을 1시간 만에 학습하고 배포하는 최적 툴체인.
+          </td>
+        </tr>
+
+        <!-- Section D -->
+        <tr class="section-divider-row">
+          <td colspan="6">D. NPC AI (UE5 C++) (4개 항목)</td>
+        </tr>
+
+        <!-- #12 -->
+        <tr class="tech-row" data-keywords="statetree behaviortree 마이그레이션 ue5 c++ 12 action queue">
+          <td>
+            <div class="tech-title"><span class="tech-no">#12</span> StateTree 전환</div>
+            <div class="domain-tag">BT에서 StateTree 마이그레이션</div>
+            <span class="metric-pill">BT 완전 제거</span>
+          </td>
+          <td class="cell-problem">
+            LLM이 액션 큐를 채우는 구조에서 BehaviorTree는 사실상 '큐에 뭐 있나→실행' 2개 노드뿐인데 BTTask 클래스와 완료 경로만 난립함.
+          </td>
+          <td class="cell-solution">
+            <code>MCPStateTreeAIComponent</code> + <code>STTask_PrepareNextAction</code>(Dequeue) + <code>STTask_ExecuteSmartAction</code>(실행) 전면 교체. BB 전용 키 4개 제거.
+          </td>
+          <td class="cell-drawback">
+            에디터 수작업(Transition 바인딩) 필수, StateTree 신규 기능으로 참고 자료 부족, 마이그레이션 과도기 데드코드 관리.
+          </td>
+          <td class="cell-alternative">
+            • BehaviorTree 유지<br>
+            • 순수 C++ 상태머신<br>
+            • Utility AI 플러그인
+          </td>
+          <td class="cell-reason">
+            결정은 LLM 큐가 하고 UE5는 실행만 전담하는 모델에서, StateTree의 상태+태스크+InstanceData가 큐 소비에 가장 부합.
+          </td>
+        </tr>
+
+        <!-- #14 -->
+        <tr class="tech-row" data-keywords="eqs llm 전술 위치 결정 request_gen stale 차단 14">
+          <td>
+            <div class="tech-title"><span class="tech-no">#14</span> EQS + LLM 전술 위치</div>
+            <div class="domain-tag">request_gen 전술 위치 결정</div>
+            <span class="metric-pill">EQS 2에셋 고정</span>
+          </td>
+          <td class="cell-problem">
+            어디로 이동할지 LLM에게 3D 좌표 배열을 던지는 것은 극히 비효율적. 순수 EQS만 쓰면 성격(공격적/신중)이 위치 선택에 반영되지 않음.
+          </td>
+          <td class="cell-solution">
+            좌표 탐색은 UE5 EQS가 전담, LLM은 <code>SAFE / OPTIMAL / AGGRESSIVE</code> 3후보 중 택일만 수행. <code>request_gen</code> 카운터로 stale 응답 차단. EQS 에셋 2개 고정.
+          </td>
+          <td class="cell-drawback">
+            Named Parameter가 Test Score Factor에만 바인딩 가능, LLM 왕복으로 수백 ms 소요(raw 호출 400ms 단축), gen 규칙 위반 시 고착 위험.
+          </td>
+          <td class="cell-alternative">
+            • LLM에 좌표 직접 전달<br>
+            • 순수 EQS 스코어링<br>
+            • NavMesh 랜덤 이동
+          </td>
+          <td class="cell-reason">
+            "좌표 계산은 EQS, 선택은 LLM" 분담 확립. EQS 에셋 난립을 막고 파라미터로 대응하는 단일 표준 정립.
+          </td>
+        </tr>
+
+        <!-- #15 -->
+        <tr class="tech-row" data-keywords="aiperception emergencyreport 배치 전송 트래픽 15 시간창">
+          <td>
+            <div class="tech-title"><span class="tech-no">#15</span> AIPerception 배치 전송</div>
+            <div class="domain-tag">EmergencyReport 시간창 배치</div>
+            <span class="metric-pill">0.2~0.5s 배치</span>
+          </td>
+          <td class="cell-problem">
+            NPC 시야·청각·피격 이벤트를 발생할 때마다 매번 Python에 전송하면 네트워크 트래픽 폭주 및 LLM 큐 과부하 발생.
+          </td>
+          <td class="cell-solution">
+            <code>NPCStateComponent</code>가 0.2~0.5초 시간창 동안 이벤트를 모아 NPC별 1회 <code>emergency_report</code>로 배치 전송. 피격 LastHitTime 2초 가드, 시청각은 변화 시만 전송.
+          </td>
+          <td class="cell-drawback">
+            배치 시간창만큼 반응 지연(0.3s) 발생(척수반사가 0ms로 보완), C++ 기본값이 BP CDO에 덮여 튜닝 혼선 발생.
+          </td>
+          <td class="cell-alternative">
+            • 매 이벤트 즉시 전송<br>
+            • 5초 주기 전체 스냅샷<br>
+            • Python 측 주기적 폴링
+          </td>
+          <td class="cell-reason">
+            이벤트 주도 방식과 시간창 배치의 결합이 네트워크 트래픽 방어와 반응성 사이의 최적 절충점.
+          </td>
+        </tr>
+
+        <!-- #16 -->
+        <tr class="tech-row" data-keywords="c++ 척수반사 테이블 tryreflexreact slm reflex 대체 16 0ms">
+          <td>
+            <div class="tech-title"><span class="tech-no">#16</span> C++ 척수반사 테이블</div>
+            <div class="domain-tag">SLM Reflex 대체 C++ 반사</div>
+            <span class="metric-pill">0ms 결정론</span>
+          </td>
+          <td class="cell-problem">
+            피격·위협 시 330ms의 SLM Reflex(소뇌)조차 VR 피격 반응으로는 느리고, VRAM 점유 및 출력도 몇 가지로 고정 수렴함.
+          </td>
+          <td class="cell-solution">
+            C++ <code>FReflexRule</code> 테이블 + <code>TryReflexReact()</code>로 자극→액션 큐 주입을 0ms 결정론으로 처리. Python report는 단순 통보/기록 전용 전환.
+          </td>
+          <td class="cell-drawback">
+            반사 규칙이 C++ 코드 테이블이라 페르소나별 다양성은 스탯 가중치에 의존, LLM이 반사 발생을 즉시 모르면 재계획 지연.
+          </td>
+          <td class="cell-alternative">
+            • SLM Reflex 유지 (330ms)<br>
+            • e2b 초경량 모델<br>
+            • BT/ST 조건 노드
+          </td>
+          <td class="cell-reason">
+            반사 동작의 출력 공간은 한정적이므로 C++ 척수로 내리는 것이 자연스럽고 VRAM 1.8GB 절약. 0ms 반응 달성.
+          </td>
+        </tr>
+
+        <!-- Section F -->
+        <tr class="section-divider-row">
+          <td colspan="6">F. VR 물리 (2개 항목)</td>
+        </tr>
+
+        <!-- #20 -->
+        <tr class="tech-row" data-keywords="openxr vr 자세 시스템 fbik 아바타 슈미트 트리거 20">
+          <td>
+            <div class="tech-title"><span class="tech-no">#20</span> OpenXR + VR 자세</div>
+            <div class="domain-tag">슈미트 트리거 + FBIK 아바타</div>
+            <span class="metric-pill">슈미트 트리거</span>
+          </td>
+          <td class="cell-problem">
+            Meta Quest 3S에서 서기/앉기/엎드리기 시 HMD 높이 경계 떨림 현상 발생. 컨트롤러 추종 시 관절 꺾임 및 시야 왜곡.
+          </td>
+          <td class="cell-solution">
+            OpenXR 표준 채택. 2초 캘리브레이션 + 슈미트 트리거 히스테리시스 + 동적 캡슐/Rising Floor 역보정. FBIK 풀바디 그립축 및 팔꿈치 Preferred Angle 보정.
+          </td>
+          <td class="cell-drawback">
+            ABP/ControlRig 등 에디터 수작업 잔여, 스탠드얼론 APK 대신 PCVR(Quest Link) 전제, VR 실기 수동 검증 의존.
+          </td>
+          <td class="cell-alternative">
+            • OculusXR 플러그인 (Meta 종속)<br>
+            • 상반신만 IK (엎드리기 불가)<br>
+            • 키 스케일 아바타 (머리 늘어남)
+          </td>
+          <td class="cell-reason">
+            OpenXR은 범용 표준이며, 슈미트 트리거와 역보정은 실제 VR 플레이 시 떨림과 시야 왜곡을 해결한 실측 결과.
+          </td>
+        </tr>
+
+        <!-- #21 -->
+        <tr class="tech-row" data-keywords="물리 기반 전투 운동에너지 부위 인지 액티브 래그돌 21">
+          <td>
+            <div class="tech-title"><span class="tech-no">#21</span> 물리 기반 전투</div>
+            <div class="domain-tag">운동에너지 + 부위 + 액티브 래그돌</div>
+            <span class="metric-pill">½mv² 공식</span>
+          </td>
+          <td class="cell-problem">
+            히트스캔 즉발 공격은 VR 타격감이 전무. 손을 휘두르는 속도, 맞은 부위, 쓰러지는 물리 반응이 유기적으로 연결되어야 함.
+          </td>
+          <td class="cell-solution">
+            ½mv² 손 속도 델타 기반 운동에너지 데미지(밀치기/강타 2단 임계). <code>BoneToBodyPart</code> 부위별 배율(머리 2.0/사지 0.75). 약타 Flinch / 강타 넉다운 액티브 래그돌.
+          </td>
+          <td class="cell-drawback">
+            Physics Asset 및 기상 몽타주 에셋 필수, 손 속도 트래킹 튐 클램핑 필요, VR 실기 PIE 튜닝 난이도.
+          </td>
+          <td class="cell-alternative">
+            • 히트스캔 + 고정 피격 애니메이션<br>
+            • Chaos Physics 전면 래그돌<br>
+            • 마켓플레이스 플러그인
+          </td>
+          <td class="cell-reason">
+            기존 <code>TakeDamage</code> 경로에 <code>FPointDamageEvent</code>만 얹어 기존 시스템 파괴 없이 부위 피격과 물리 래그돌을 결합.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Appendix Section -->
+  <section class="appendix-section">
+    <h2 class="appendix-title">
+      <span>부록: 핵심 13대 기술과 직접 연관된 폐기/대체 기술 (10선)</span>
+    </h2>
+    <div class="table-wrapper" style="margin-bottom: 0;">
+      <table class="appendix-table">
+        <thead>
+          <tr>
+            <th style="width: 220px;">폐기 기술명</th>
+            <th style="width: 140px;">도입 시점</th>
+            <th style="width: 140px;">폐기/전환</th>
+            <th>구체적 폐기 사유</th>
+            <th style="width: 240px;">현재 대체 기술</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>OpenAI / Gemini 클라우드 API</strong></td>
+            <td>W03 (#01)</td>
+            <td><span class="status-badge status-dep">점진적 폐기</span></td>
+            <td>VR 90Hz 레이턴시 보장 불가, 네트워크 왕복 및 토큰 비용, 오프라인 로컬 정책 위반</td>
+            <td><span class="status-badge status-rep">Ollama 로컬 모델 (#06)</span></td>
+          </tr>
+          <tr>
+            <td><strong>LLM Rules Agent</strong></td>
+            <td>W03 청사진 (#05)</td>
+            <td><span class="status-badge status-dep">W04 전환</span></td>
+            <td>LLM이 스스로 규칙을 어김(데미지 9999 등), 게임 규칙은 0ms 결정론이어야 함</td>
+            <td><span class="status-badge status-rep">Pydantic v2 코드 검증 (#05)</span></td>
+          </tr>
+          <tr>
+            <td><strong>PolicyCacheComponent (원안)</strong></td>
+            <td>W05 (#02)</td>
+            <td><span class="status-badge status-dep">미구현 대체</span></td>
+            <td>SLM Reflex 및 계획 캐싱 체제로 진화하여 별도 컴포넌트 불필요 판정</td>
+            <td><span class="status-badge status-rep">C++ 반사 테이블 (#16) + 계획 캐시</span></td>
+          </tr>
+          <tr>
+            <td><strong>BehaviorTree / Blackboard</strong></td>
+            <td>W05 (#12)</td>
+            <td><span class="status-badge status-dep">W19 마이그레이션</span></td>
+            <td>LLM 액션 큐 소비 모델에서 BT의 트리 탐색은 과하고 BB 키 난립으로 유지보수 악화</td>
+            <td><span class="status-badge status-rep">StateTree 전환 (#12)</span></td>
+          </tr>
+          <tr>
+            <td><strong>SLM Reflex (Python)</strong></td>
+            <td>W14 (#16)</td>
+            <td><span class="status-badge status-dep">W34 강등</span></td>
+            <td>330ms 지연 및 VRAM 1.8GB 점유, 결과가 고정 패턴으로 수렴하여 SLM 불필요</td>
+            <td><span class="status-badge status-rep">C++ 척수반사 테이블 (#16, 0ms)</span></td>
+          </tr>
+          <tr>
+            <td><strong>gemma4:26b (Core NPC용)</strong></td>
+            <td>W18 (#06)</td>
+            <td><span class="status-badge status-dep">W24 제거</span></td>
+            <td>모델 가중치만 17GB로 로컬 16GB VRAM 예산 즉시 초과 (OOM 유발)</td>
+            <td><span class="status-badge status-rep">12B Q4 → 8B 양자화 (#06)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Stage2 12B 파인튜닝</strong></td>
+            <td>SPEC_finetune</td>
+            <td><span class="status-badge status-dep">W31 보류</span></td>
+            <td>Unsloth 상류에서 gemma4_unified 모델 아키텍처 미지원</td>
+            <td><span class="status-badge status-rep">Qwen 8B 프롬프트 모델 (#06)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Stage2 12B 정제 (rewrite)</strong></td>
+            <td>W24 (#06)</td>
+            <td><span class="status-badge status-dep">W27 제거</span></td>
+            <td>12B OBLITERATED 모델이 rewrite 계열 지시 8/8 거부</td>
+            <td><span class="status-badge status-rep">Plan(계획) 전용 호출 (#06)</span></td>
+          </tr>
+          <tr>
+            <td><strong>시간 기반 재계획 (ReplanTurnLimit)</strong></td>
+            <td>W24 (#06)</td>
+            <td><span class="status-badge status-dep">W26 제거</span></td>
+            <td>단순 N턴 경과마다 무조건 비싼 12B/8B를 불필요하게 재호출하여 렉 유발</td>
+            <td><span class="status-badge status-rep">이벤트 트리거 재계획 (#06)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Stage1 v2/v3 파인튜닝</strong></td>
+            <td>W31 / W34 (#10)</td>
+            <td><span class="status-badge status-dep">2026-09-05 롤백</span></td>
+            <td>v2/v3에서 '줘' 요청에 GiveItem 대신 HandObject를 출력하는 아이템 전달 회귀 발생</td>
+            <td><span class="status-badge status-rep">v1 체크포인트 롤백 (#10)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- Simple Instant Table Filter Script -->
+<script>
+  const filterInput = document.getElementById('filter-input');
+  const tableRows = document.querySelectorAll('#tech-table tbody tr.tech-row');
+
+  filterInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    
+    tableRows.forEach(row => {
+      const keywords = (row.getAttribute('data-keywords') || '') + ' ' + row.innerText.toLowerCase();
+      if (!query || keywords.includes(query)) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

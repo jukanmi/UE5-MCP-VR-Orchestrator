@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code 마스터 가이드 · 파워유저 대시보드</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#0a0d12; --panel:#161b22; --panel2:#1c232c;
+    --border:#2a313c; --border2:#39424f;
+    --txt:#e6edf3; --muted:#9aa7b4; --faint:#6b7682;
+    --accent:#d97757; --accent2:#e8916f; --blue:#5aa9ff; --green:#3fb950;
+    --yellow:#e3b341; --purple:#bc8cff; --red:#f85149;
+    --mono:'SF Mono',ui-monospace,'JetBrains Mono','Cascadia Code',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    --shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  [data-theme="light"]{
+    --bg:#f6f7f9; --bg2:#eef0f3; --panel:#ffffff; --panel2:#f1f3f6;
+    --border:#e2e6eb; --border2:#d2d8df;
+    --txt:#1c2128; --muted:#5a6571; --faint:#8a949e;
+    --shadow:0 8px 30px rgba(20,30,50,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);line-height:1.65;
+    -webkit-font-smoothing:antialiased;font-size:15px}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}claude-code-guide.html
+  code,kbd{font-family:var(--mono)}
+  kbd{background:var(--panel2);border:1px solid var(--border2);border-bottom-width:2px;
+    border-radius:5px;padding:1px 6px;font-size:.82em;color:var(--txt)}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  header.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--border);
+    background:radial-gradient(900px 380px at 78% -8%,rgba(217,119,87,.20),transparent 60%),
+               radial-gradient(700px 300px at 10% -20%,rgba(90,169,255,.12),transparent 55%),var(--bg2)}
+  .hero-inner{padding:46px 0 38px}
+  .eyebrow{display:inline-flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12.5px;
+    letter-spacing:.06em;color:var(--accent2);background:rgba(217,119,87,.10);
+    border:1px solid rgba(217,119,87,.30);padding:5px 12px;border-radius:100px;margin-bottom:18px}
+  h1{font-size:38px;line-height:1.15;letter-spacing:-.02em;font-weight:800}
+  h1 .grad{background:linear-gradient(92deg,var(--accent),var(--accent2) 40%,var(--blue));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--muted);font-size:16.5px;margin-top:14px;max-width:760px}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+  .pill{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:7px;padding:6px 11px}
+  .pill b{color:var(--accent2)}
+
+  .principle-banner{margin-top:26px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;
+    padding:18px 20px;display:flex;gap:16px;align-items:flex-start}
+  .principle-banner .big{font-size:26px;line-height:1}
+  .principle-banner p{color:var(--muted);font-size:14.5px}
+  .principle-banner b{color:var(--txt)}
+
+  nav.toc{position:sticky;top:0;z-index:40;background:rgba(13,17,23,.86);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  [data-theme="light"] nav.toc{background:rgba(246,247,249,.9)}
+  .toc-inner{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:9px 0;scrollbar-width:thin}
+  .toc-inner::-webkit-scrollbar{height:5px}
+  .toc-inner::-webkit-scrollbar-thumb{background:var(--border2);border-radius:9px}
+  .toc a{white-space:nowrap;font-size:13px;color:var(--muted);padding:6px 11px;border-radius:8px;
+    border:1px solid transparent}
+  .toc a:hover{color:var(--txt);background:var(--panel);text-decoration:none}
+  .toc a.active{color:var(--accent2);background:rgba(217,119,87,.12);border-color:rgba(217,119,87,.28)}
+  .toc .spacer{flex:1}
+  .toolbtn{flex:none;cursor:pointer;font-family:var(--sans);font-size:12.5px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px 11px}
+  .toolbtn:hover{color:var(--txt);border-color:var(--border2)}
+
+  .searchbar{position:sticky;top:53px;z-index:39;padding:14px 0 4px;background:var(--bg)}
+  .search-input{width:100%;background:var(--panel);border:1px solid var(--border);border-radius:11px;
+    padding:13px 16px 13px 44px;color:var(--txt);font-size:14.5px;font-family:var(--sans);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%239aa7b4' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:15px center}
+  .search-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(217,119,87,.15)}
+  .search-meta{font-size:12.5px;color:var(--faint);padding:7px 2px 0;font-family:var(--mono);height:22px}
+
+  section{padding:40px 0 8px;scroll-margin-top:108px}
+  .sec-head{display:flex;align-items:baseline;gap:13px;margin-bottom:6px}
+  .sec-num{font-family:var(--mono);font-size:13px;color:var(--accent);border:1px solid rgba(217,119,87,.35);
+    border-radius:7px;padding:2px 8px}
+  h2{font-size:24px;letter-spacing:-.01em;font-weight:750}
+  .sec-desc{color:var(--muted);font-size:15px;margin:4px 0 22px;max-width:820px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:18px 18px 16px;
+    transition:.18s;position:relative}
+  .card:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .card h3{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .card h3 .ic{font-size:17px}
+  .card p{color:var(--muted);font-size:13.8px;margin:7px 0}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 4px}
+  .badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;padding:2px 8px;border-radius:6px;
+    border:1px solid var(--border2);color:var(--muted)}
+  .b-top{color:#ffce8a;background:rgba(227,179,65,.12);border-color:rgba(227,179,65,.3)}
+  .b-high{color:#7ee29a;background:rgba(63,185,80,.10);border-color:rgba(63,185,80,.28)}
+  .b-mid{color:#8fc2ff;background:rgba(90,169,255,.10);border-color:rgba(90,169,255,.26)}
+  .b-lv{color:var(--purple);background:rgba(188,140,255,.10);border-color:rgba(188,140,255,.26)}
+  .b-save{color:#7ee29a;background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.32)}
+  .card ul{margin:8px 0 4px;padding-left:18px}
+  .card li{color:var(--muted);font-size:13.4px;margin:4px 0}
+  .card li b{color:var(--txt)}
+
+  .snip{position:relative;margin-top:11px;background:var(--bg2);border:1px solid var(--border);
+    border-radius:9px;padding:11px 40px 11px 13px;font-family:var(--mono);font-size:12.6px;
+    color:#cdd6e0;overflow-x:auto;white-space:pre}
+  [data-theme="light"] .snip{color:#243140}
+  .snip .cm{color:var(--faint)}
+  .snip .fl{color:var(--blue)}
+  .snip .cmd{color:var(--accent2)}
+  .copy{position:absolute;top:7px;right:7px;cursor:pointer;background:var(--panel2);
+    border:1px solid var(--border2);border-radius:6px;color:var(--muted);font-size:11px;
+    padding:3px 7px;font-family:var(--sans)}
+  .copy:hover{color:var(--txt);background:var(--panel)}
+  .copy.ok{color:var(--green);border-color:var(--green)}
+
+  .golden{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);
+    border-radius:16px;padding:8px 6px;overflow:hidden}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .step{padding:20px 18px;border-right:1px dashed var(--border2);position:relative}
+  .step:last-child{border-right:none}
+  .step .k{font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:8px}
+  .step h4{font-size:15.5px;margin-bottom:6px}
+  .step p{color:var(--muted);font-size:13.2px}
+  .step .cmds{margin-top:9px;font-family:var(--mono);font-size:11.6px;color:var(--blue)}
+
+  .callout{display:flex;gap:14px;background:rgba(227,179,65,.07);border:1px solid rgba(227,179,65,.28);
+    border-radius:12px;padding:15px 17px;margin:18px 0}
+  .callout .em{font-size:22px;line-height:1}
+  .callout p{font-size:14px;color:var(--txt)}
+  .callout.tip{background:rgba(63,185,80,.07);border-color:rgba(63,185,80,.28)}
+  .callout.warn{background:rgba(248,81,73,.06);border-color:rgba(248,81,73,.28)}
+
+  .anti .card{border-left:3px solid var(--red)}
+  .anti .card h3{color:#ff8a82}
+  .fix{margin-top:9px;font-size:13.4px;color:var(--txt);background:rgba(63,185,80,.08);
+    border:1px solid rgba(63,185,80,.25);border-radius:8px;padding:8px 11px}
+  .fix b{color:var(--green)}
+
+  .checklist{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px 22px}
+  .progress-wrap{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .progress-bar{flex:1;height:9px;background:var(--bg2);border-radius:100px;overflow:hidden;border:1px solid var(--border)}
+  .progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    transition:width .4s ease}
+  .progress-num{font-family:var(--mono);font-size:13px;color:var(--accent2);min-width:46px;text-align:right}
+  .ck-groups{display:grid;grid-template-columns:1fr 1fr;gap:6px 30px;margin-top:14px}
+  .ck{display:flex;gap:11px;align-items:flex-start;padding:8px 6px;border-radius:8px;cursor:pointer}
+  .ck:hover{background:var(--panel2)}
+  .ck input{appearance:none;width:19px;height:19px;border:1.5px solid var(--border2);border-radius:6px;
+    flex:none;margin-top:2px;cursor:pointer;position:relative;transition:.15s}
+  .ck input:checked{background:var(--accent);border-color:var(--accent)}
+  .ck input:checked::after{content:"\2713";position:absolute;color:#fff;font-size:13px;left:3px;top:-2px;font-weight:700}
+  .ck span{font-size:13.8px;color:var(--muted)}
+  .ck input:checked + span{color:var(--faint);text-decoration:line-through}
+  .ck-reset{margin-top:14px;cursor:pointer;font-size:12.5px;color:var(--faint);background:none;border:none;
+    text-decoration:underline;font-family:var(--sans)}
+
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;margin-bottom:16px}
+  table{border-collapse:collapse;width:100%;font-size:13.4px;min-width:560px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--border)}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;letter-spacing:.04em;
+    text-transform:uppercase;position:sticky;top:0}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-family:var(--mono);color:var(--accent2);white-space:nowrap;font-size:12.6px}
+  td code{background:var(--panel2);border-radius:5px;padding:1px 6px;color:var(--blue);font-size:12px}
+  tbody tr:hover{background:var(--panel)}
+
+  .mm{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:4px}
+  .mm .stage{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .mm .stage .n{font-family:var(--mono);color:var(--accent);font-size:12px}
+  .mm .stage h4{font-size:15px;margin:5px 0 6px}
+  .mm .stage p{font-size:13px;color:var(--muted)}
+
+  footer{margin-top:50px;border-top:1px solid var(--border);padding:30px 0 60px;color:var(--muted);font-size:13.5px}
+  .src-list{display:grid;grid-template-columns:1fr 1fr;gap:6px 26px;margin:14px 0 22px}
+  .src-list a{font-size:13.3px}
+  .foot-note{font-size:12.3px;color:var(--faint);font-family:var(--mono)}
+
+  .hidden{display:none!important}
+  .sec-hidden{display:none!important}
+
+  @media(max-width:900px){
+    .steps{grid-template-columns:1fr 1fr}
+    .step{border-right:none;border-bottom:1px dashed var(--border2)}
+    .mm{grid-template-columns:1fr}
+    .ck-groups{grid-template-columns:1fr}
+    .src-list{grid-template-columns:1fr}
+    h1{font-size:30px}
+  }
+  @media(max-width:560px){ .steps{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap hero-inner">
+    <span class="eyebrow">CLAUDE CODE · POWER-USER PLAYBOOK</span>
+    <h1>클로드 코드를 <span class="grad">가장 잘 쓰는 법</span></h1>
+    <p class="sub">공식 베스트 프랙티스 · Anthropic 클로드 코드 팀의 파워유저 팁 · 공식 비용/치트시트 문서 · 현업 실무자(월 수십억 토큰)의 실전 노하우를 한곳에 종합한 고급 사용자용 대시보드. 단순 기능 나열이 아니라 <b>"무엇이 결과를 좌우하는가"</b>를 기준으로 재배열했습니다.</p>
+    <div class="hero-meta">
+      <span class="pill">핵심 제약 <b>컨텍스트 윈도우</b></span>
+      <span class="pill">1순위 기법 <b>검증 루프</b></span>
+      <span class="pill">비용 <b>토큰 절약 9선</b></span>
+      <span class="pill">철학 <b>shoot &amp; forget</b></span>
+    </div>
+    <div class="principle-banner">
+      <span class="big">🧭</span>
+      <p><b>딱 하나만 기억한다면:</b> 모든 베스트 프랙티스는 하나의 제약에서 출발합니다 — <b>컨텍스트는 차오를수록 성능이 떨어지고 토큰을 더 먹는다.</b> 그래서 ① 컨텍스트를 아끼고(서브에이전트·/clear), ② 클로드가 스스로 결과를 <b>검증</b>하게 만들고(테스트·빌드·스크린샷), ③ 탐색 → 계획 → 구현을 분리합니다. 나머지는 전부 이 세 가지의 응용입니다.</p>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" id="toc">
+  <div class="wrap toc-inner">
+    <a href="#golden" class="active">골든 워크플로우</a>
+    <a href="#context">컨텍스트</a>
+    <a href="#token">토큰 절약 💰</a>
+    <a href="#verify">검증 ★</a>
+    <a href="#plan">계획·추론</a>
+    <a href="#prompt">프롬프트</a>
+    <a href="#claudemd">CLAUDE.md·메모리</a>
+    <a href="#agents">서브에이전트·병렬</a>
+    <a href="#hooks">훅</a>
+    <a href="#skills">스킬·MCP</a>
+    <a href="#perms">권한·안전</a>
+    <a href="#scale">자동화·스케일</a>
+    <a href="#gems">편의·단축키 ✨</a>
+    <a href="#env">환경</a>
+    <a href="#anti">안티패턴</a>
+    <a href="#checklist">체크리스트</a>
+    <a href="#cheat">치트시트</a>
+    <span class="spacer"></span>
+    <button class="toolbtn" id="themeBtn">라이트 모드</button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="searchbar">
+    <input class="search-input" id="search" placeholder="기법·명령어 검색 (예: 토큰, 캐시, 훅, worktree, clear, 스킬, 단축키…)" autocomplete="off">
+    <div class="search-meta" id="searchMeta"></div>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <section id="golden">
+    <div class="sec-head"><span class="sec-num">00</span><h2>골든 워크플로우 — 종합 결론</h2></div>
+    <p class="sec-desc">여러 출처를 관통하는 "가장 안정적으로 좋은 결과를 내는" 표준 루프. 작은 작업은 건너뛰고 바로 시키되, 멀티파일·고위험·생소한 코드일수록 이 4단계를 지킬수록 한 번에 끝납니다.</p>
+    <div class="golden">
+      <div class="steps">
+        <div class="step">
+          <div class="k">01 · EXPLORE</div>
+          <h4>탐색 (수정 금지)</h4>
+          <p><kbd>Shift</kbd>+<kbd>Tab</kbd>으로 플랜 모드 진입. 파일을 읽고 질문만 하며 코드는 건드리지 않게 합니다. 탐색이 길어질 땐 서브에이전트로 격리.</p>
+          <div class="cmds">plan mode · "use subagents to investigate X"</div>
+        </div>
+        <div class="step">
+          <div class="k">02 · PLAN</div>
+          <h4>계획에 공들이기</h4>
+          <p>구현 계획을 글로 받아 직접 다듬습니다. 큰 기능은 <code>SPEC.md</code>로 떨어뜨려 두면 새 세션에서 깨끗한 컨텍스트로 실행 가능.</p>
+          <div class="cmds">"create a plan" · /effort max · 2nd Claude 리뷰</div>
+        </div>
+        <div class="step">
+          <div class="k">03 · IMPLEMENT</div>
+          <h4>구현 + 자가검증</h4>
+          <p>플랜 모드 해제 후 계획대로 구현하게 하고, <b>같은 프롬프트 안에서 테스트·빌드를 돌려 통과할 때까지 반복</b>하도록 지시.</p>
+          <div class="cmds">auto-accept · "run tests &amp; fix until green"</div>
+        </div>
+        <div class="step">
+          <div class="k">04 · VERIFY → COMMIT</div>
+          <h4>독립 검증 후 커밋</h4>
+          <p>새 컨텍스트의 서브에이전트로 diff를 리뷰(/code-review)시키고, 증거를 확인한 뒤 설명형 메시지로 커밋·PR.</p>
+          <div class="cmds">/simplify · /code-review · "commit &amp; open a PR"</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout tip">
+      <span class="em">💡</span>
+      <p><b>오버헤드 판단 기준:</b> "diff를 한 문장으로 설명할 수 있다"면 계획을 건너뛰고 바로 시키세요. 계획은 <b>접근법이 불확실하거나 · 여러 파일을 건드리거나 · 익숙하지 않은 코드</b>일 때 가장 값집니다.</p>
+    </div>
+  </section>
+
+  <section id="context">
+    <div class="sec-head"><span class="sec-num">01</span><h2>컨텍스트 관리 — 가장 근본 자원</h2></div>
+    <p class="sec-desc">컨텍스트 윈도우는 디스크 공간처럼 차오릅니다. 차오를수록 클로드가 앞 지시를 "잊고" 실수가 늘어나며 토큰도 더 먹습니다. 토큰을 자산처럼 관리하는 것이 파워유저의 1번 습관입니다.</p>
+    <div class="grid">
+      <div class="card" data-k="context 컨텍스트 토큰 점검 점유 200k">
+        <h3><span class="ic">📊</span>/context 로 토큰 가시화</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>세션 중간에 한 번은 <code>/context</code>를 돌려 200k를 어떻게 쓰고 있는지 확인하세요. 모노레포 기준 새 세션이 베이스 ~20k(10%)를 먹기도 합니다. "남은 공간"을 알아야 언제 비울지 판단됩니다.</p>
+        <div class="snip"><span class="cmd">/context</span>  <span class="cm"># 메시지·파일·도구별 토큰 점유 확인</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="clear 리셋 catchup 세션 초기화">
+        <h3><span class="ic">🧹</span>/clear 를 과감하게, 자주</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">입문</span></div>
+        <p>무관한 작업 사이에는 <code>/clear</code>로 컨텍스트를 완전히 리셋. 실무자들은 <b>/compact를 신뢰하지 않습니다</b> — 자동 압축은 불투명하고 손실이 큽니다. 깨끗한 세션 + 더 좋은 프롬프트가 거의 항상 이깁니다.</p>
+        <div class="snip"><span class="cmd">/clear</span>            <span class="cm"># 리셋 후</span>
+<span class="cmd">/catchup</span>          <span class="cm"># 브랜치 변경 파일만 다시 읽힘(커스텀)</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="document clear 문서화 메모리 외부 spec 큰작업">
+        <h3><span class="ic">📝</span>"문서화 후 /clear" 패턴</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>긴 작업은 클로드에게 <b>현재 계획·진행 상황을 .md로 덤프</b>시키고 <code>/clear</code> 한 뒤, 새 세션에서 그 파일을 읽고 이어가게 합니다. 컨텍스트 밖에 "영속 메모리"를 만드는 기법.</p>
+        <ul><li>대형 리팩터·다세션 작업에 필수</li><li>SPEC.md / PROGRESS.md로 분리</li></ul>
+      </div>
+      <div class="card" data-k="btw 사이드질문 오버레이 컨텍스트오염방지">
+        <h3><span class="ic">💬</span>/btw — 컨텍스트 안 늘리는 질문</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>클로드가 일하는 도중 곁가지 질문은 <code>/btw</code>로. 단일 턴·도구호출 없음·전체 대화 맥락은 유지하면서 답은 대화 기록에 남지 않아 컨텍스트가 깨끗하게 유지됩니다.</p>
+        <div class="snip"><span class="cmd">/btw</span> 이 retry 로직이 정확히 뭘 하지?<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="rewind checkpoint 되돌리기 esc 복원 요약">
+        <h3><span class="ic">⏪</span>체크포인트로 되감기</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>모든 프롬프트가 체크포인트입니다. <kbd>Esc</kbd> <kbd>Esc</kbd> 또는 <code>/rewind</code>로 대화/코드/둘다를 이전 상태로 복원하거나 특정 지점부터 요약. "위험한 시도 → 실패하면 되감기"가 가능해집니다.</p>
+        <div class="callout warn" style="margin:9px 0 0"><span class="em" style="font-size:16px">⚠</span><p style="font-size:12.6px">클로드의 변경만 추적합니다 — git을 대체하지 않습니다.</p></div>
+      </div>
+      <div class="card" data-k="postcompact 압축 재주입 지시유지 focus">
+        <h3><span class="ic">♻️</span>압축은 통제해서</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p>꼭 압축해야 한다면 <code>/compact &lt;지시&gt;</code>로 초점을 주세요(예: "API 변경에 집중"). CLAUDE.md에 "압축 시 수정 파일 목록·테스트 명령은 반드시 보존"을 적어두면 핵심이 살아남습니다. <code>PostCompact</code> 훅으로 핵심 지시 재주입도 가능.</p>
+        <div class="snip"><span class="cmd">/compact</span> Focus on the API changes<button class="copy">복사</button></div>
+      </div>
+    </div>
+    <div class="callout"><span class="em">🧠</span><p><b>실무자 통찰:</b> "you're absolutely right!" 같은 아부가 자주 보인다면 버그가 아니라 <b>당신이 루프에 너무 깊이 들어가 있다는 신호</b>입니다. 목표는 위임하고 떠나는 것(shoot &amp; forget) — 과정이 아니라 최종 PR로 도구를 평가하세요.</p></div>
+  </section>
+
+  <section id="token">
+    <div class="sec-head"><span class="sec-num">02</span><h2>💰 토큰 절약 — 한 번 배워 오래 써먹기</h2></div>
+    <p class="sec-desc">토큰 비용은 컨텍스트 크기에 비례합니다. 공식 데이터 기준 평균 ~$13/개발자/활동일, 월 $150–250. 아래는 공식 "비용 관리" 문서 + 실무 노하우에서 추린, 한 번 세팅하면 계속 효과 보는 절약 기법입니다.</p>
+    <div class="grid">
+      <div class="card" data-k="usage cost 사용량 추적 비용 breakdown 스킬 서브에이전트 mcp 24h 7d">
+        <h3><span class="ic">📈</span>/usage · /cost 로 먼저 측정</h3>
+        <div class="badges"><span class="badge b-save">절약 기반</span><span class="badge b-lv">입문</span></div>
+        <p>아끼려면 먼저 어디서 새는지 봐야 합니다. <code>/cost</code>는 세션 토큰·비용, <code>/usage</code>는 플랜 한도와 <b>스킬·서브에이전트·플러그인·MCP별 사용 비중</b>까지 분해(<kbd>d</kbd>/<kbd>w</kbd>로 24시간/7일 전환). 상태줄로 상시 표시도 가능.</p>
+        <div class="snip"><span class="cmd">/cost</span>   <span class="cm"># 이 세션 토큰·비용</span>
+<span class="cmd">/usage</span>  <span class="cm"># 한도 + 주체별 사용 비중(d/w)</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="model 모델 선택 sonnet opus haiku 50 70 절감 효율">
+        <h3><span class="ic">🎚️</span>모델 분리 (가장 큰 절약)</h3>
+        <div class="badges"><span class="badge b-save">절약 최상</span><span class="badge b-lv">입문</span></div>
+        <p>대부분의 코딩은 <b>Sonnet</b>으로 충분하고 Opus보다 쌉니다. Opus는 복잡한 설계·다단계 추론에만. 단순 서브에이전트는 <code>model: haiku</code>. <code>/model</code>로 세션 중 전환. 커뮤니티 보고 기준 50–70% 절감.</p>
+        <div class="snip"><span class="cmd">/model</span> sonnet      <span class="cm"># 기본은 Sonnet</span>
+<span class="cm"># 서브에이전트 frontmatter:</span> model: haiku<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="hook 출력 필터 pretooluse grep error 로그 테스트 수만 수백 토큰">
+        <h3><span class="ic">🪝</span>출력 필터 훅 (압도적)</h3>
+        <div class="badges"><span class="badge b-save">절약 최상</span><span class="badge b-lv">고급</span></div>
+        <p>클로드가 1만 줄 로그를 통째로 읽는 대신, <code>PreToolUse</code> 훅이 <b>ERROR만 grep</b>해서 돌려주게 하면 수만 토큰 → 수백 토큰. 테스트 출력도 실패만 남기면 됩니다. 공식 문서가 직접 제시하는 패턴.</p>
+        <div class="snip"><span class="cm"># 테스트 실행 시 실패 라인만 통과</span>
+cmd =~ ^(npm test|pytest|go test) →
+  <span class="cmd">$cmd 2>&1 | grep -A5 -E 'FAIL|ERROR' | head</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="claudemd 200줄 스킬 이전 온디맨드 always loaded base context">
+        <h3><span class="ic">📜</span>CLAUDE.md → 스킬로 이전</h3>
+        <div class="badges"><span class="badge b-save">절약 높음</span><span class="badge b-lv">중급</span></div>
+        <p>CLAUDE.md는 <b>매 세션 통째로 로드</b>됩니다. PR 리뷰·DB 마이그레이션 같은 특정 워크플로우 지시는 무관한 작업에서도 토큰을 먹어요. 그런 건 온디맨드 <b>스킬</b>로 옮기고 CLAUDE.md는 <b>200줄 이하</b>로 유지.</p>
+      </div>
+      <div class="card" data-k="thinking 확장 사고 effort max thinking tokens output 끄기 budget">
+        <h3><span class="ic">🧠</span>확장 사고(thinking) 조절</h3>
+        <div class="badges"><span class="badge b-save">절약 높음</span><span class="badge b-lv">중급</span></div>
+        <p>thinking은 <b>output 토큰으로 과금</b>되고 기본 예산이 수만 토큰일 수 있습니다. 깊은 추론이 필요 없는 단순 작업은 <code>/effort</code>를 낮추거나 <code>/config</code>에서 끄거나 예산을 직접 낮추세요.</p>
+        <div class="snip"><span class="cmd">/effort low</span>                  <span class="cm"># 쉬운 작업</span>
+<span class="fl">MAX_THINKING_TOKENS</span>=8000        <span class="cm"># 예산 상한</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="cache 프롬프트 캐시 5분 ttl 자리비움 재처리 compact clear 휴식">
+        <h3><span class="ic">⏱️</span>프롬프트 캐시 5분 룰</h3>
+        <div class="badges"><span class="badge b-save">절약 중간</span><span class="badge b-lv">중급</span></div>
+        <p>반복 컨텍스트는 자동 캐싱되지만 캐시 TTL은 <b>약 5분</b>. 그보다 오래 자리를 비우면 다음 메시지가 <b>전체 컨텍스트를 처음부터 재처리</b>합니다. 잠깐 자리 뜨기 전 <code>/compact</code> 또는 <code>/clear</code>로 비용 스파이크 예방.</p>
+      </div>
+      <div class="card" data-k="mcp 오버헤드 deferred 도구 정의 비활성화 cli 우선 context">
+        <h3><span class="ic">🔌</span>MCP 오버헤드 줄이기</h3>
+        <div class="badges"><span class="badge b-save">절약 중간</span><span class="badge b-lv">중급</span></div>
+        <p>MCP 도구 정의는 기본 <b>deferred</b>(쓰기 전까진 이름만 로드)지만, 안 쓰는 서버는 <code>/mcp</code>로 비활성화하세요. 상태 없는 도구는 <b>CLI(gh·aws·gcloud)</b>가 per-tool 리스팅이 없어 더 효율적. <code>/context</code>로 점유 확인.</p>
+        <div class="snip"><span class="cmd">/mcp</span>      <span class="cm"># 안 쓰는 서버 비활성화</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="code intelligence lsp 플러그인 심볼 네비게이션 grep 대체 타입 언어">
+        <h3><span class="ic">🧭</span>코드 인텔리전스 플러그인</h3>
+        <div class="badges"><span class="badge b-save">절약 중간</span><span class="badge b-lv">입문</span></div>
+        <p>타입 언어라면 LSP 플러그인이 <b>"정의로 이동"</b> 한 번으로 grep + 여러 후보 파일 읽기를 대체합니다. 불필요한 파일 읽기를 줄여 토큰을 아끼고, 편집 후 타입 에러를 자동 보고해 컴파일 없이 실수도 잡아줍니다.</p>
+      </div>
+      <div class="card" data-k="subagent 위임 verbose 테스트 로그 문서 요약만 반환 격리 @ file reference">
+        <h3><span class="ic">🕵️</span>장황한 작업은 서브에이전트로</h3>
+        <div class="badges"><span class="badge b-save">절약 높음</span><span class="badge b-lv">중급</span></div>
+        <p>테스트 실행·문서 페치·로그 처리처럼 출력이 큰 작업은 서브에이전트에 위임하면 <b>장황한 출력은 거기 머물고 요약만</b> 메인으로 돌아옵니다. 또 정보는 붙여넣지 말고 <code>@파일</code> 참조 / 재사용 정보는 .md·.yaml로 쪼개 온디맨드 로드.</p>
+      </div>
+    </div>
+    <div class="callout warn"><span class="em">⚠️</span><p><b>에이전트 팀 주의:</b> Agent teams는 팀원마다 별도 컨텍스트를 유지해 플랜 모드에서 <b>표준 세션 대비 ~7배 토큰</b>을 씁니다. 쓸 거면 팀원은 Sonnet, 팀은 작게, 끝나면 정리. 기본 비활성(<code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code>).</p></div>
+  </section>
+
+  <section id="verify">
+    <div class="sec-head"><span class="sec-num">03</span><h2>검증 — 단 하나만 한다면 이것 ★</h2></div>
+    <p class="sec-desc">공식 팀이 못 박은 <b>"이 가이드에서 가장 임팩트 큰 단 하나의 팁"</b>. 클로드는 "끝난 것 같으면" 멈춥니다. 스스로 읽을 수 있는 합/불 신호(테스트·빌드·린트·스크린샷)를 주면 루프가 스스로 닫히고, 당신이 검증 루프가 될 필요가 없어집니다 = 자리를 비워도 되는 세션. (재작업을 막아 토큰도 아낍니다.)</p>
+    <div class="grid">
+      <div class="card" data-k="verification 검증 테스트 기준 합불 신호 자가수정">
+        <h3><span class="ic">✅</span>검증 기준을 프롬프트에 박기</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">입문</span></div>
+        <p>"이메일 검증 함수 만들어줘"가 아니라 <b>예시 케이스 + "구현 후 테스트를 돌려라"</b>까지. 합/불이 나오면 클로드가 통과할 때까지 알아서 반복합니다.</p>
+        <div class="snip">validateEmail 작성. 케이스: a@b.com=true,
+"x"=false, u@.com=false. <span class="cmd">구현 후 테스트 실행</span>.<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="screenshot 스크린샷 ui chrome 시각 비교 프론트엔드 브라우저">
+        <h3><span class="ic">🖼️</span>UI는 눈으로 검증 (Chrome 확장)</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">중급</span></div>
+        <p>프론트엔드 작업엔 <b>Claude Code Chrome 확장</b>이 필수. "브라우저 없이 사이트를 잘 만들 엔지니어는 없다." 클로드가 스크린샷을 찍어 원본 디자인과 비교하고 차이를 좁힙니다. 데스크톱 앱은 웹서버 자동 기동·내장 브라우저 테스트 지원.</p>
+        <div class="snip">[디자인 첨부] 이대로 구현하고, 결과를 스크린샷
+찍어 원본과 <span class="cmd">차이를 나열한 뒤 수정</span>해.<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="goal stop hook 게이트 무인 실행 평가자 단계">
+        <h3><span class="ic">🚦</span>정지 강도 단계화</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>검증을 "얼마나 강하게 멈출지"로 단계화하세요. 무인 실행을 진짜로 끝까지 가게 만드는 건 뒤의 두 개입니다.</p>
+        <ul>
+          <li><b>한 프롬프트:</b> "검증 돌리고 반복해"</li>
+          <li><b>세션 전체:</b> <code>/goal</code> 조건 — 매 턴 평가자가 재확인</li>
+          <li><b>결정적 게이트:</b> <code>Stop</code> 훅이 통과 전까지 종료 차단</li>
+          <li><b>제2의 눈:</b> 검증 서브에이전트가 결과를 반박 시도</li>
+        </ul>
+      </div>
+      <div class="card" data-k="simplify 코드품질 병렬 리뷰 재사용 준수">
+        <h3><span class="ic">✨</span>/simplify 로 품질 한 번에</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>변경 후 아무 프롬프트 뒤에 <code>/simplify</code>를 붙이면 병렬 에이전트들이 재사용성·품질·효율·CLAUDE.md 준수를 한 패스로 리뷰합니다.</p>
+        <div class="snip">이 변경 적용하고 그다음 <span class="cmd">/simplify</span> 실행해<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="adversarial review 적대적 리뷰 서브에이전트 diff fresh 갭">
+        <h3><span class="ic">🔍</span>적대적 리뷰 단계</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>"완료"로 치기 전, <b>새 컨텍스트</b>의 서브에이전트에게 diff만 주고 계획 대비 갭을 보고하게 합니다. 만든 본인이 아닌 신선한 모델이 채점.</p>
+        <div class="snip">서브에이전트로 diff를 PLAN.md와 대조해 — 모든
+요구사항 구현·엣지케이스 테스트 여부만. <span class="cmd">갭만 보고</span>.<button class="copy">복사</button></div>
+        <div class="callout warn" style="margin:9px 0 0"><span class="em" style="font-size:16px">⚠</span><p style="font-size:12.4px">리뷰어는 시키면 늘 뭔가 찾아냅니다. <b>정확성·요구사항에 영향 주는 갭만</b> 보라고 못 박지 않으면 과잉 엔지니어링으로 흐릅니다.</p></div>
+      </div>
+      <div class="card" data-k="prove 증거 diff main branch grill 압박">
+        <h3><span class="ic">🧾</span>증거를 요구하라</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>"됐다"는 주장 대신 증거를 받으세요 — 실행한 명령과 출력, 테스트 결과, 스크린샷. 다시 돌려보는 것보다 증거 확인이 빠릅니다.</p>
+        <ul><li>"Prove to me this works" — main↔브랜치 동작 diff</li><li>"Grill me on these changes, don't PR until I pass"</li></ul>
+      </div>
+    </div>
+    <div class="callout tip"><span class="em">🎯</span><p><b>트러스트-검증 갭(흔한 실패):</b> 그럴듯해 보이지만 엣지케이스를 놓친 구현. <b>검증할 수 없으면 배포하지 않는다</b>를 원칙으로. 검증은 도메인마다 다릅니다 — bash·테스트·시뮬레이터·브라우저. 도메인별 검증에 투자하는 것이 가장 남는 장사입니다.</p></div>
+  </section>
+
+  <section id="plan">
+    <div class="sec-head"><span class="sec-num">04</span><h2>계획 · 추론 강도</h2></div>
+    <p class="sec-desc">계획에 쏟은 노력이 구현 품질을 결정합니다. 잘못된 길로 코드를 쏟아내는 것이 토큰 낭비의 가장 큰 원인 — 계획으로 그 재작업을 막는 게 곧 절약입니다.</p>
+    <div class="grid">
+      <div class="card" data-k="plan mode shift tab 플랜모드 정렬 재계획 inspection">
+        <h3><span class="ic">🗺️</span>플랜 모드로 정렬 후 시작</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">입문</span></div>
+        <p><kbd>Shift</kbd>+<kbd>Tab</kbd>으로 진입(또는 <code>/plan</code>). 계획에 노력을 부어 클로드가 원샷 구현하게 합니다. 뭔가 어긋나는 순간 <b>중간에 고치지 말고 곧장 플랜 모드로 돌아가 재계획</b>하는 게 더 빠릅니다. <kbd>Ctrl</kbd>+<kbd>G</kbd>로 에디터에서 직접 계획 편집.</p>
+        <ul><li>한 클로드가 계획 → 다른 클로드가 staff 엔지니어로 리뷰</li><li>5개 이상 파일·고위험(인증/결제/마이그레이션)이면 거의 항상 사용</li></ul>
+      </div>
+      <div class="card" data-k="opus thinking 모델선택 추론 코딩 steer 도구">
+        <h3><span class="ic">🧠</span>Opus + thinking 를 기본으로</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <p>팀의 논리: "더 크고 느려도 <b>덜 잡아줘도 되고 도구 사용이 좋아 결국 더 빠르다</b>." 덜 steer + 더 나은 도구 사용 = 작은 모델보다 총소요가 짧음. (단, 비용 민감하면 02번 모델 분리와 균형을.)</p>
+      </div>
+      <div class="card" data-k="effort low medium high max 토큰 추론강도 디버깅 아키텍처">
+        <h3><span class="ic">🎚️</span>/effort 로 추론 강도 조절</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">중급</span></div>
+        <p>4단계: low(빠름)·medium(기본)·high·max. 팀은 <b>high를 기본</b>으로 쓰고, 난해한 디버깅/설계엔 <code>/effort max</code>. max는 사용량을 빨리 태우니 세션 단위로 켭니다.</p>
+        <div class="snip"><span class="cmd">/effort max</span>   <span class="cm"># 어려운 문제에서 끝까지 추론</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="interview 인터뷰 spec askuserquestion 사양 자기질문 큰기능">
+        <h3><span class="ic">🎤</span>클로드가 당신을 인터뷰하게</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>큰 기능은 최소 프롬프트로 시작해 <code>AskUserQuestion</code>으로 <b>당신을 인터뷰</b>하게 하세요. 미처 생각 못 한 엣지케이스·트레이드오프를 끌어내고 끝에 SPEC.md로 정리. 그 뒤 새 세션에서 깨끗하게 실행.</p>
+        <div class="snip">[간단 설명]을 만들고 싶어. AskUserQuestion으로
+나를 자세히 인터뷰해. 어려운 부분 위주로 파고들고,
+<span class="cmd">끝나면 SPEC.md로 완전한 사양을 써</span>.<button class="copy">복사</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="prompt">
+    <div class="sec-head"><span class="sec-num">05</span><h2>프롬프트 기법</h2></div>
+    <p class="sec-desc">지시가 정밀할수록 교정이 줄어듭니다(= 토큰도 줄어듭니다). 클로드는 의도를 추론하지만 마음을 읽진 못합니다 — 파일·제약·예시 패턴을 가리켜 주세요.</p>
+    <div class="grid">
+      <div class="card" data-k="specific 구체적 파일 패턴 제약 scope 범위 증상 root cause">
+        <h3><span class="ic">🎯</span>구체적 컨텍스트 4종</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">입문</span></div>
+        <p>막연함을 정밀함으로 바꾸는 4가지 축(막연한 "코드베이스 개선해줘"는 광범위 스캔을 유발해 토큰을 태웁니다):</p>
+        <ul>
+          <li><b>범위 지정:</b> 어느 파일·어떤 시나리오·테스트 선호</li>
+          <li><b>출처 지목:</b> "ExecutionFactory의 git 히스토리를 보고 요약"</li>
+          <li><b>기존 패턴 참조:</b> "HotDogWidget.php를 본떠서…"</li>
+          <li><b>증상 기술:</b> 증상 + 추정 위치 + "고쳐진 상태" 정의</li>
+        </ul>
+      </div>
+      <div class="card" data-k="rich content 파일 이미지 url 파이프 cat 데이터 첨부">
+        <h3><span class="ic">📎</span>풍부한 입력 주입</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <p>설명하지 말고 <b>직접 주세요</b>:</p>
+        <div class="snip"><span class="fl">@src/auth/session.ts</span> 이 패턴을 따라줘
+<span class="cm"># 이미지: 복붙/드래그앤드롭으로 첨부</span>
+<span class="cm"># URL: 문서 링크 (/permissions로 도메인 허용)</span>
+cat error.log | <span class="cmd">claude</span>  <span class="cm"># 파이프 주입</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="pushback 압박 scrap elegant 더나은 해법 첫솔루션 거부">
+        <h3><span class="ic">🥊</span>첫 해법을 받아들이지 마라</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>더 잘하게 밀어붙이는 프롬프트:</p>
+        <ul>
+          <li>"Knowing everything you know now, <b>scrap this and implement the elegant solution</b>" — 평범한 1차 시도 뒤에 강력</li>
+          <li>"Grill me on these changes, don't PR until I pass"</li>
+          <li>"Prove to me this works"</li>
+        </ul>
+      </div>
+      <div class="card" data-k="vague 막연 탐색 open ended 개선 course correct">
+        <h3><span class="ic">🌀</span>막연함도 도구다</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">중급</span></div>
+        <p>탐색 단계라 교정 비용을 감당할 수 있을 땐 일부러 막연하게: <code>"이 파일에서 뭘 개선하겠어?"</code> 같은 질문이 당신이 물어볼 생각조차 못 한 것을 끌어냅니다. <b>제약은 나중에</b> 걸어도 됩니다.</p>
+      </div>
+      <div class="card" data-k="voice 음성 dictation 3배 빠르게 말하기 상세">
+        <h3><span class="ic">🎙️</span>말로 입력 (3배 빠름)</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>클로드 코드 팀 코딩의 상당수가 음성. 말하면 타이핑보다 ~3배 빠르고, 그 결과 <b>프롬프트가 더 상세해집니다</b>. CLI <code>/voice</code> 후 스페이스바 홀드, macOS는 <kbd>fn</kbd>×2.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="claudemd">
+    <div class="sec-head"><span class="sec-num">06</span><h2>CLAUDE.md · 메모리</h2></div>
+    <p class="sec-desc">CLAUDE.md는 매 세션 로드되는 "리포지토리의 헌법". 매뉴얼이 아니라 <b>가드레일</b>로 다루는 것이 핵심입니다. 길면 클로드가 절반을 무시하고 토큰도 낭비합니다(200줄 이하 권장).</p>
+    <div class="grid">
+      <div class="card" data-k="claudemd 가드레일 짧게 prune 토큰 init 헌법 forcing function 200줄">
+        <h3><span class="ic">📜</span>매뉴얼 아닌 가드레일로</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">중급</span></div>
+        <p><code>/init</code>로 시작해 <b>클로드가 틀리는 것만</b> 점진적으로 추가. 각 줄마다 "이걸 빼면 클로드가 실수할까?"를 묻고 아니면 삭제. 실무 모노레포도 13KB 선에서 엄격 관리합니다.</p>
+        <ul>
+          <li><b>포함:</b> 못 맞추는 bash 명령, 기본과 다른 코드 스타일, 테스트 방법, 레포 에티켓, 환경 quirk</li>
+          <li><b>제외:</b> 코드 읽으면 아는 것, 표준 관례, 자주 바뀌는 정보, 장황한 설명</li>
+        </ul>
+      </div>
+      <div class="card" data-k="anti pattern never 대안 file 도키 pitch 부정형 wrapper">
+        <h3><span class="ic">🚫</span>안티패턴 3종</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>실무자가 꼽은 흔한 실수:</p>
+        <ul>
+          <li><b>"Never"만 쓰지 마라:</b> 부정형만 주면 그 플래그가 꼭 필요하다 믿을 때 막힘 → <b>항상 대안 제시</b></li>
+          <li><b>문서를 임베드하지 마라:</b> 매 실행에 전체 파일이 박혀 컨텍스트 폭증. 대신 <b>언제·왜 읽을지 "영업"</b>("FooBarError가 나면 X.md 참조")</li>
+          <li><b>강제 함수로 활용:</b> 명령이 장황하면 문서로 때우지 말고 <b>간단한 bash 래퍼</b>를 만들어 그걸 문서화 → 도구가 단순해짐</li>
+        </ul>
+      </div>
+      <div class="card" data-k="memory dream auto 메모리 자동 consolidate rem 정리">
+        <h3><span class="ic">🌙</span>/memory · /dream (자동 메모리)</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p><code>/memory</code>로 내장 메모리 설정. <b>auto-memory</b>가 선호·교정·패턴을 세션 간 저장(유저는 <code>~/.claude/CLAUDE.md</code>, 프로젝트는 <code>./CLAUDE.md</code>). <b>auto-dream</b> 서브에이전트가 쌓인 메모리에서 낡은 가정·중복을 정리·병합(REM 수면이 기억을 정리하듯).</p>
+        <div class="snip"><span class="cmd">/dream</span>   <span class="cm"># 메모리 수동 정리 트리거</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="compounding engineering claude pr github action 자기개선 플라이휠 학습">
+        <h3><span class="ic">🔁</span>Compounding Engineering</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">고급</span></div>
+        <p>핵심 습관: <b>클로드가 틀릴 때마다 그 교정을 CLAUDE.md에 적게 한다.</b> 매 교정이 미래의 모든 세션을 개선합니다. PR 리뷰에서 <code>@claude</code> 태그로 학습을 바로 반영.</p>
+        <div class="snip"><span class="cm">// 교정 끝에 항상:</span>
+<span class="cmd">"다신 그 실수 안 하게 CLAUDE.md를 업데이트해"</span>
+<span class="cm"># PR 코멘트:</span> nit: enum 말고 literal union  <span class="fl">@claude</span> add to CLAUDE.md<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="agents md 동기화 호환 cursor codex ide 배치 위치">
+        <h3><span class="ic">🔗</span>AGENTS.md 동기화 · 배치</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">중급</span></div>
+        <p>다른 AI IDE(Cursor·Codex) 호환 위해 <code>AGENTS.md</code>와 싱크. 배치 전략:</p>
+        <ul>
+          <li><code>~/.claude/CLAUDE.md</code> — 모든 세션 공통(개인)</li>
+          <li><code>./CLAUDE.md</code> — 팀 공유(git 체크인)</li>
+          <li><code>./CLAUDE.local.md</code> — 개인 메모(.gitignore)</li>
+          <li>부모/자식 디렉터리 — 모노레포 자동 병합</li>
+        </ul>
+      </div>
+      <div class="card" data-k="notes directory 노트 디렉터리 태스크 프로젝트 pr 후 업데이트">
+        <h3><span class="ic">🗂️</span>노트 디렉터리 기법</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p>한 팀원은 모든 태스크·프로젝트마다 <b>notes 디렉터리</b>를 유지하게 하고 매 PR 후 갱신 → CLAUDE.md가 그걸 가리키게 합니다. 항상 켜진 짧은 헌법 + 온디맨드 상세 노트의 조합.</p>
+      </div>
+    </div>
+    <div class="callout"><span class="em">📐</span><p><b>분담 원칙:</b> 거의 모든 작업에 적용 → <b>CLAUDE.md</b>(항상 켜짐) · 가끔만 필요 → <b>스킬</b>(온디맨드) · 반드시 실행돼야 함 → <b>훅</b>(결정적). CLAUDE.md는 advisory(권고), 훅은 mandatory(강제)입니다.</p></div>
+  </section>
+
+  <section id="agents">
+    <div class="sec-head"><span class="sec-num">07</span><h2>서브에이전트 · 병렬화</h2></div>
+    <p class="sec-desc">컨텍스트가 근본 제약이므로 서브에이전트는 가장 강력한 도구 중 하나입니다. 별도 컨텍스트에서 탐색하고 요약만 돌려받아 메인 대화를 깨끗하게 유지합니다. 그리고 진짜 생산성 도약은 <b>병렬 세션</b>에서 나옵니다.</p>
+    <div class="grid">
+      <div class="card" data-k="subagent investigate 탐색 격리 별도 컨텍스트 요약 리뷰">
+        <h3><span class="ic">🕵️</span>탐색·리뷰는 서브에이전트로</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">중급</span></div>
+        <p>코드베이스 조사는 파일을 많이 읽어 컨텍스트를 먹습니다. <code>"use subagents to investigate X"</code>로 별도 컨텍스트에서 탐색 후 요약만 받으세요. 구현 후 <code>"use a subagent to review this for edge cases"</code>도 강력.</p>
+        <div class="snip">서브에이전트로 인증 시스템의 토큰 갱신 처리와
+재사용할 OAuth 유틸이 있는지 <span class="cmd">조사해</span>.<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="master clone task 마스터 클론 general 위임 오케스트레이션 동적">
+        <h3><span class="ic">👯</span>Master-Clone &gt; Lead-Specialist</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>실무자 견해: <b>커스텀</b> 서브에이전트는 ① 컨텍스트를 게이트키핑하고 ② 인간이 정한 경직된 워크플로우를 강제하는 함정이 있습니다. 대신 핵심 컨텍스트를 CLAUDE.md에 두고 <b>메인 에이전트가 자기 자신의 복제본에게 동적으로 위임</b>(<code>Task()</code>)하게 하세요.</p>
+      </div>
+      <div class="card" data-k="worktree 병렬 세션 격리 git tmux 분리 충돌방지 언락">
+        <h3><span class="ic">🌲</span>worktree 3~5개 병렬 (최대 언락)</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">고급</span></div>
+        <p>"가장 큰 생산성 언락은 git worktree마다 클로드 세션 3~5개 병렬." 편집이 충돌하지 않습니다. 별칭(<code>za/zb/zc</code>), 탭 색상, 알림으로 방향을 잃지 마세요. "분석 전용" worktree를 하나 두는 것도 팁.</p>
+        <div class="snip"><span class="cmd">claude --worktree</span> auth-refactor <span class="fl">--tmux</span>
+<span class="cm"># Desktop: Code 탭에서 worktree 체크박스</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="batch 마이그레이션 worktree 에이전트 fan out 대규모 자동 pr isolation">
+        <h3><span class="ic">📦</span>/batch · 에이전트 worktree 격리</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>대형 마이그레이션은 <code>/batch</code>가 인터뷰 후 수십~수백 worktree 에이전트로 팬아웃 — 각자 격리·자가 테스트·독립 PR. 에이전트 정의에 <code>isolation: worktree</code>를 넣어도 됩니다.</p>
+        <div class="snip"><span class="cmd">/batch</span> migrate src/ from Solid to React<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="writer reviewer 작성자 리뷰어 fresh 편향 테스트 패턴">
+        <h3><span class="ic">✍️</span>Writer / Reviewer 패턴</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>세션 A가 구현 → 세션 B(신선한 컨텍스트)가 리뷰. 방금 쓴 코드에 편향되지 않아 리뷰 품질이 올라갑니다. 변형: 한 클로드가 테스트 작성 → 다른 클로드가 통과 코드 작성.</p>
+      </div>
+      <div class="card" data-k="agent definition agents readonly tools model color 시스템프롬프트 haiku">
+        <h3><span class="ic">⚙️</span>커스텀 에이전트 정의</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p><code>.claude/agents/</code>에 .md를 두고 이름·색·도구셋·허용/차단 도구·권한 모드·모델을 지정. 단순 작업 에이전트는 <code>model: haiku</code>로 비용↓. 메인 기본 에이전트는 <code>claude --agent &lt;name&gt;</code>.</p>
+        <div class="snip"><span class="cm">--- # .claude/agents/ReadOnly.md</span>
+name: ReadOnly
+tools: Read       <span class="cm"># 읽기 전용, 편집·bash 불가</span>
+---<button class="copy">복사</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="hooks">
+    <div class="sec-head"><span class="sec-num">08</span><h2>훅 — 결정적 강제 규칙</h2></div>
+    <p class="sec-desc">CLAUDE.md가 "해야 한다(should)"라면 훅은 "반드시(must)". 예외 없이 매번 일어나야 하는 일에 씁니다. 출력 전처리로 토큰을 아끼는 데도 핵심(02번 참고). "클로드, 훅 하나 추가해줘"로 시작하세요.</p>
+    <div class="grid">
+      <div class="card" data-k="block at submit commit gate 테스트 통과 pre tool use 게이트">
+        <h3><span class="ic">🚧</span>커밋 시점 게이트 (block-at-submit)</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">고급</span></div>
+        <p>실무 1순위 전략: <code>PreToolUse</code> 훅이 <code>git commit</code>을 감싸 "테스트 통과 시에만 생기는 파일"을 확인. 없으면 커밋 차단 → 클로드가 빌드가 초록이 될 때까지 test-and-fix 루프.</p>
+      </div>
+      <div class="card" data-k="block at write 금지 edit 방해 frustrate 완료 후 검사">
+        <h3><span class="ic">🙅</span>쓰기 시점 차단은 피하라</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>의도적으로 <code>Edit/Write</code> 차단 훅은 쓰지 않습니다. 계획 중간에 막으면 에이전트가 혼란·"좌절". <b>일을 끝내게 둔 뒤 최종 결과를 커밋 단계에서 검사</b>하는 게 훨씬 효과적.</p>
+      </div>
+      <div class="card" data-k="post tool use 포맷 lint 자동 ci 실패 방지 hint">
+        <h3><span class="ic">🎨</span>PostToolUse 자동 포맷</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>Write/Edit 후 자동 포맷해 CI 실패를 예방. 비차단 "힌트 훅"으로 에이전트가 비효율적일 때 살짝 피드백.</p>
+        <div class="snip"><span class="fl">"PostToolUse"</span>: [{ <span class="fl">"matcher"</span>:<span class="cmd">"Write|Edit"</span>,
+  <span class="fl">"hooks"</span>:[{<span class="fl">"command"</span>:<span class="cmd">"bun run format || true"</span>}] }]<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="hook events sessionstart stop postcompact permissionrequest 라이프사이클">
+        <h3><span class="ic">🪝</span>라이프사이클 이벤트 6종</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">중급</span></div>
+        <p>90% 셋업을 커버하는 이벤트:</p>
+        <ul>
+          <li><b>SessionStart</b> — 시작 때 컨텍스트 동적 로드</li>
+          <li><b>PreToolUse</b> — bash 로깅·prod 커밋 차단·출력 필터링</li>
+          <li><b>PostToolUse</b> — 자동 포맷·테스트</li>
+          <li><b>PermissionRequest</b> — Slack/Opus로 라우팅</li>
+          <li><b>Stop</b> — 긴 작업 결정적 체크·계속 nudge</li>
+          <li><b>PostCompact</b> — 압축 후 핵심 지시 재주입</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="skills">
+    <div class="sec-head"><span class="sec-num">09</span><h2>스킬 · 슬래시 커맨드 · MCP</h2></div>
+    <p class="sec-desc">"하루에 한 번 이상 하는 일이면 스킬·커맨드로 만들어라." 스킬은 MCP보다 더 큰 변화일 수 있다는 평가 — 환경을 추상화해 숨기는 대신 raw 환경을 주고 스크립트를 짜게 하는 방향이고, <b>온디맨드 로드</b>라 항상 켜진 컨텍스트를 늘리지 않아 토큰에도 유리합니다.</p>
+    <div class="grid">
+      <div class="card" data-k="skill scripting cli 스킬 워크플로우 반복 도메인 지식 simon willison skill.md frontmatter">
+        <h3><span class="ic">🧩</span>스킬 = "스크립팅"의 산물</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">중급</span></div>
+        <p><code>.claude/skills/&lt;name&gt;/SKILL.md</code>(폴더 + 마크다운 1개) = <b>YAML frontmatter(name·description) + 본문 지시</b>. <code>/</code>로 호출하거나 관련 맥락에서 자동 로드. 에이전트 자율성 3단계 중 ③ <b>스크립팅(raw 환경에 코드 즉석 작성)</b>의 공식화.</p>
+        <div class="snip"><span class="cm">--- # .claude/skills/api-conventions/SKILL.md</span>
+name: api-conventions
+description: REST API 설계 규약
+---<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="great skill 좋은 스킬 5원칙 routing rule deterministic lean companion one job worked example">
+        <h3><span class="ic">🏅</span>좋은 스킬 5원칙</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>잘 쓰이는 스킬의 공통 패턴:</p>
+        <ul>
+          <li><b>description은 라우팅 룰처럼</b> — 정확한 순간에 발동되게 구체적으로</li>
+          <li><b>결정적 작업엔 코드</b> — 파싱·검증·정렬은 "조심해" 대신 스크립트로</li>
+          <li><b>SKILL.md는 가볍게</b> — 상세는 companion 파일로 온디맨드 로드</li>
+          <li><b>스킬 1개 = 직무 1개</b> — 여러 워크플로우 욱여넣지 않기</li>
+          <li><b>추상 규칙보다 구체 예시</b></li>
+        </ul>
+      </div>
+      <div class="card" data-k="notable skills 알아둘 스킬 simplify code-review frontend design doc co-authoring awesome 번들">
+        <h3><span class="ic">⭐</span>알아둘 만한 스킬</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <p>바로 써먹는 것들:</p>
+        <ul>
+          <li><b>번들 내장:</b> <code>/simplify</code>(품질 리뷰), <code>/code-review</code>(diff 버그 점검)</li>
+          <li><b>공식 Frontend Design:</b> 코드 전에 디자인 시스템·철학 주입</li>
+          <li><b>Doc Co-Authoring · Context Engineering · MCP Builder</b></li>
+          <li>커뮤니티 모음: <code>awesome-claude-skills</code></li>
+        </ul>
+        <div class="snip"><span class="cmd">/skills</span>   <span class="cm"># 현재 세션의 스킬 목록</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="slash command 슬래시 커맨드 shortcut catchup pr inline bash 단축 disable-model-invocation">
+        <h3><span class="ic">⌨️</span>슬래시 커맨드 = 단순 단축</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>자주 쓰는 프롬프트의 단축일 뿐. <code>/catchup</code>·<code>/pr</code> 정도로 최소화. <b>복잡한 커맨드 목록은 안티패턴</b> — 인라인 bash로 git status 등을 모델 호출 없이 선계산 가능. 부작용 있는 수동 전용 워크플로우엔 <code>disable-model-invocation: true</code>.</p>
+        <div class="callout warn" style="margin:9px 0 0"><span class="em" style="font-size:15px">⚠</span><p style="font-size:12.3px">"매직 커맨드 목록을 외워야 일할 수 있다"면 실패. 직관적 CLAUDE.md·더 나은 도구가 우선.</p></div>
+      </div>
+      <div class="card" data-k="mcp gateway 게이트웨이 playwright 데이터 덤프 secure 고수준 도구 deferred">
+        <h3><span class="ic">🔌</span>MCP는 "보안 게이트웨이"로</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>REST API를 그대로 미러링한 거대 MCP는 컨텍스트만 먹습니다. MCP의 새 역할은 <b>auth·네트워크·보안 경계만 관리</b>하고 비키는 것 — 소수의 고수준 도구만 노출. 상태 있는 환경(Playwright)엔 MCP, 상태 없는 도구(Jira·AWS·GitHub)는 CLI로.</p>
+        <div class="snip"><span class="cmd">claude mcp add</span>   <span class="cm"># Notion·Figma·DB 등 연결</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="cli tools gh aws gcloud sentry bq context efficient 외부 서비스">
+        <h3><span class="ic">🛠️</span>CLI 도구 우선</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <p>외부 서비스와 상호작용엔 CLI가 가장 컨텍스트 효율적. <code>gh</code>(미설치 시 비인증 API라 rate limit), <code>aws</code>, <code>gcloud</code>, <code>bq</code>… 모르는 CLI도 잘 배웁니다: <code>"foo --help로 익힌 뒤 A,B,C 해결해"</code>.</p>
+        <p style="color:var(--accent2);font-size:12.6px">"6개월 넘게 SQL을 한 줄도 안 썼다" — bq CLI 기반 분석.</p>
+      </div>
+      <div class="card" data-k="plugin marketplace 플러그인 lsp 코드 인텔리전스 번들 설치">
+        <h3><span class="ic">🧱</span>플러그인 (특히 코드 인텔리전스)</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p><code>/plugin</code>으로 마켓플레이스 탐색. 스킬·훅·서브에이전트·MCP를 한 번에 번들. 타입 언어를 쓰면 <b>코드 인텔리전스(LSP) 플러그인</b>으로 정확한 심볼 탐색 + 토큰 절약. 조직 내부 마켓플레이스를 settings.json에 체크인하면 전원 자동 적용.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="perms">
+    <div class="sec-head"><span class="sec-num">10</span><h2>권한 · 안전 (개입 줄이기)</h2></div>
+    <p class="sec-desc">기본은 안전하지만 10번째 승인쯤이면 그냥 클릭만 하게 됩니다. 통제를 유지하면서 개입을 줄이는 3가지 레버.</p>
+    <div class="grid">
+      <div class="card" data-k="permissions allowlist 사전승인 wildcard 안전 명령 감사 가능">
+        <h3><span class="ic">📋</span>/permissions 사전 허용 (권장)</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">입문</span></div>
+        <p>권한 스킵 대신 권장되는 길: 안전한 명령을 미리 허용하고 팀 settings.json에 체크인. 와일드카드 지원 — <code>Bash(bun run *)</code>, <code>Edit(/docs/**)</code>. 감사 가능한 allowlist를 유지하면서 프롬프트만 줄입니다.</p>
+        <div class="snip"><span class="cmd">/permissions</span>   <span class="cm"># 안전 명령 사전 허용</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="auto mode classifier shift tab 자동 승인 위험 차단 무인 accept edits">
+        <h3><span class="ic">🤖</span>오토 모드 · Accept Edits</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>분류기 모델이 매 액션을 평가 — 안전하면 자동 승인, 위험(스코프 확대·미지 인프라)은 차단. <kbd>Shift</kbd>+<kbd>Tab</kbd>으로 모드 순환(default→acceptEdits→plan, +auto). <b>Accept Edits</b>는 편집만 자동 승인하고 셸은 여전히 확인.</p>
+        <div class="snip"><span class="cmd">claude --permission-mode auto</span> -p "fix all lint errors"<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="sandbox os 격리 파일 네트워크 isolation 안전 프롬프트 감소">
+        <h3><span class="ic">📦</span>/sandbox — OS 레벨 격리</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p>오픈소스 샌드박스 런타임으로 파일·네트워크 격리. 안전을 높이면서 권한 프롬프트는 줄입니다. 3모드: BashTool 샌드박스+자동허용 / 샌드박스+일반권한 / 샌드박스 없음.</p>
+      </div>
+      <div class="card" data-k="long running 긴 작업 dontask skip permissions background 검증 ralph">
+        <h3><span class="ic">⏳</span>장시간 무인 작업</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p>아주 긴 작업은 끊김 없이 돌게: 백그라운드 에이전트로 완료 검증 / <code>Stop</code> 훅 결정적 체크(감사용 선호). 샌드박스 환경에선 <code>--permission-mode=dontAsk</code> 또는 <code>--dangerously-skip-permissions</code>로 차단 회피.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="scale">
+    <div class="sec-head"><span class="sec-num">11</span><h2>자동화 · 스케일</h2></div>
+    <p class="sec-desc">한 클로드를 잘 다루게 됐다면, 비대화형 모드·팬아웃·GitHub Action·스케줄로 출력을 곱하세요. 클로드 코드는 수평 확장됩니다.</p>
+    <div class="grid">
+      <div class="card" data-k="headless 비대화형 ci json stream 파이프라인 출력 포맷">
+        <h3><span class="ic">⚡</span>비대화형 claude -p</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>세션 없이 실행 → CI·pre-commit·스크립트에 통합. 출력 포맷으로 결과를 프로그램적으로 파싱.</p>
+        <div class="snip"><span class="cmd">claude -p</span> "List all API endpoints" <span class="fl">--output-format json</span>
+<span class="cmd">claude -p</span> "Analyze log" <span class="fl">--output-format stream-json --verbose</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="fan out 팬아웃 마이그레이션 루프 allowedtools 대규모 병렬 파일">
+        <h3><span class="ic">🔀</span>파일별 팬아웃</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">고급</span></div>
+        <p>대형 마이그레이션은 파일 목록을 만든 뒤 루프로 <code>claude -p</code>를 병렬 호출. 먼저 2~3개로 프롬프트를 다듬고 전체로. <code>--allowedTools</code>로 무인 실행 범위를 제한.</p>
+        <div class="snip">for f in $(cat files.txt); do
+  <span class="cmd">claude -p</span> "Migrate $f. Return OK/FAIL." \
+    <span class="fl">--allowedTools</span> "Edit,Bash(git commit *)"
+done<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="github action gha pr from anywhere slack jira cloudwatch 감사 플라이휠">
+        <h3><span class="ic">🐙</span>GitHub Action (가장 저평가)</h3>
+        <div class="badges"><span class="badge b-top">효과 최상</span><span class="badge b-lv">고급</span></div>
+        <p>그냥 "GHA 안에서 클로드 코드 실행"이지만 컨테이너·환경·샌드박싱·감사를 전부 통제. Slack/Jira/CloudWatch 알림에서 <b>"어디서든 PR"</b> 트리거 → 테스트 완료 PR 반환. GHA 로그를 정기 리뷰해 CLAUDE.md/CLI를 개선하는 <b>자기개선 플라이휠</b>.</p>
+        <div class="snip">query-claude-gha-logs --since 5d | <span class="cmd">claude -p</span>
+"다른 클로드들이 막힌 지점을 보고 고친 뒤 PR 올려"<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="loop schedule 스케줄 반복 로컬 클라우드 babysit pr pruner cron">
+        <h3><span class="ic">🔁</span>/loop (로컬) · /schedule (클라우드)</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p><code>/loop</code>은 로컬에서 최대 3일 반복(노트북 켜져 있어야), <code>/schedule</code>은 클라우드에서 노트북 닫혀도 실행. 가장 흔한 워크플로우를 <b>스킬 + loop</b>로 만드는 게 강력.</p>
+        <div class="snip"><span class="cmd">/loop</span> 5m /babysit      <span class="cm"># 리뷰·리베이스·PR 셰퍼딩</span>
+<span class="cmd">/schedule</span> 매일 PR 변경분으로 문서 업데이트<button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="sdk agent framework 프로토타입 internal 도구 langchain crewai 대체 bare">
+        <h3><span class="ic">🧰</span>Claude Code SDK = 범용 에이전트 프레임워크</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <p>코딩 전용이 아닙니다. ①대규모 병렬 스크립팅 ②비기술 유저용 내부 챗 도구 ③새 에이전트 빠른 프로토타이핑. 비대화형은 <code>--bare</code>로 로컬 설정 탐색을 생략해 시작 ~10배 빠름.</p>
+      </div>
+      <div class="card" data-k="bare add-dir branch fork session multi repo setup script 멀티레포">
+        <h3><span class="ic">🗃️</span>멀티레포 · 세션 분기</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <ul>
+          <li><code>--add-dir</code> / <code>additionalDirectories</code>: 여러 레포 접근</li>
+          <li><code>/branch</code> 또는 <code>--resume &lt;id&gt; --fork-session</code>: 세션 분기</li>
+          <li>클라우드 세션 setup 스크립트로 의존성·환경 선설치(resume 시 생략)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="gems">
+    <div class="sec-head"><span class="sec-num">12</span><h2>✨ 편의 기능 · 숨은 명령어 · 단축키</h2></div>
+    <p class="sec-desc">"이미 명령이 있는 걸 몰라서" 생기는 마찰이 신규 유저 불편의 대부분. 근육 기억에 새겨두면 오래 써먹는, 자주 놓치는 편의 기능 모음입니다. (세션 중 <code>/</code> 입력으로 전체 명령, <kbd>?</kbd>로 현재 환경 단축키를 언제든 볼 수 있어요.)</p>
+    <div class="grid">
+      <div class="card" data-k="diff 미커밋 변경 턴별 뷰어 인터랙티브 review">
+        <h3><span class="ic">🔬</span>/diff — 변경 인터랙티브 뷰어</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <p>미커밋 변경과 <b>턴별 diff</b>를 인터랙티브하게 펼쳐 봅니다. 클로드가 방금 뭘 바꿨는지 빠르게 확인할 때. 마지막 응답만 따로 보고 싶으면 <kbd>Ctrl</kbd>+<kbd>O</kbd>로 전체 트랜스크립트.</p>
+        <div class="snip"><span class="cmd">/diff</span>   <span class="cm"># 미커밋 변경 + 턴별 diff</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="copy export 클립보드 마지막 응답 코드블록 대화 저장 파일">
+        <h3><span class="ic">📋</span>/copy · /export</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p><code>/copy</code>는 마지막 응답(또는 선택한 코드블록)을 클립보드로. <code>/export</code>는 현재 대화 전체를 파일·클립보드로 저장 — 인계·공유·기록용으로 유용.</p>
+        <div class="snip"><span class="cmd">/copy</span>     <span class="cm"># 마지막 응답/코드블록 복사</span>
+<span class="cmd">/export</span>   <span class="cm"># 대화 전체 파일로 저장</span><button class="copy">복사</button></div>
+      </div>
+      <div class="card" data-k="doctor status 진단 설치 환경 버전 계정 모델 디렉터리">
+        <h3><span class="ic">🩺</span>/doctor · /status</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>뭔가 이상할 때 <code>/doctor</code>로 설치·환경 문제를 진단하고, <code>/status</code>로 계정·모델·작업 디렉터리·버전을 한눈에. 버전 확인은 <code>claude --version</code>.</p>
+      </div>
+      <div class="card" data-k="keyboard 단축키 ctrl r 역검색 히스토리 ctrl o 트랜스크립트 화살표 @ 경로">
+        <h3><span class="ic">⌨️</span>꼭 외울 단축키</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">입문</span></div>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>R</kbd> — 프롬프트 히스토리 역검색</li>
+          <li><kbd>Ctrl</kbd>+<kbd>O</kbd> — 전체 트랜스크립트 펼치기</li>
+          <li><kbd>↑</kbd>/<kbd>↓</kbd> — 이전 프롬프트 탐색</li>
+          <li><kbd>Esc</kbd> — 응답 중단 / <kbd>Esc</kbd> <kbd>Esc</kbd> — 되감기</li>
+          <li><kbd>@</kbd>+경로 — 파일 참조 · <kbd>?</kbd> — 단축키 보기</li>
+        </ul>
+      </div>
+      <div class="card" data-k="alias 별칭 reset new clear settings config bug feedback continue resume quit exit">
+        <h3><span class="ic">🔁</span>별칭으로 손에 익히기</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>같은 기능, 다른 이름 — 손에 맞는 걸 쓰세요:</p>
+        <ul>
+          <li><code>/reset</code>·<code>/new</code> = <code>/clear</code></li>
+          <li><code>/settings</code> = <code>/config</code></li>
+          <li><code>/bug</code> = <code>/feedback</code> · <code>/continue</code> = <code>/resume</code></li>
+          <li><code>/quit</code> = <code>/exit</code></li>
+        </ul>
+      </div>
+      <div class="card" data-k="usage credits 지출 한도 pro max 월 spend limit 비용 통제">
+        <h3><span class="ic">💳</span>/usage-credits — 지출 한도</h3>
+        <div class="badges"><span class="badge b-save">절약 연계</span><span class="badge b-lv">입문</span></div>
+        <p>Pro·Max에서 <code>/usage-credits</code>로 월 사용 크레딧 지출 한도를 설정. 한도 도달 시 CLI에서 바로 상향/해제 안내가 떠 작업이 끊기지 않습니다(변경엔 결제 권한 필요).</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="env">
+    <div class="sec-head"><span class="sec-num">13</span><h2>환경 커스터마이징</h2></div>
+    <p class="sec-desc">기본도 훌륭하지만, 커스터마이즈했다면 <b>settings.json을 git에 체크인</b>해 팀이 함께 누리게 하세요. 여러 세션을 동시에 굴릴 때 특히 빛납니다.</p>
+    <div class="grid">
+      <div class="card" data-k="statusline 상태줄 모델 컨텍스트 비용 디렉터리 표시 토큰">
+        <h3><span class="ic">📟</span>/statusline 으로 컨텍스트 상시 표시</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p>모델·디렉터리·<b>남은 컨텍스트</b>·비용을 상태줄에 표시. 토큰을 자산으로 관리하는 1번 습관을 시각화합니다. <code>.bashrc/.zshrc</code> 기반 생성.</p>
+      </div>
+      <div class="card" data-k="color 색상 세션 구분 keybindings vim 터미널 ghostty 멀티세션">
+        <h3><span class="ic">🎨</span>색·키맵·터미널</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>3~5세션을 동시에 굴릴 때 <code>/color</code>로 프롬프트 색을 달리해 한눈에 구분. <code>/keybindings</code> 리맵(라이브 리로드), <code>/vim</code>, <code>/terminal-setup</code>(<kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈). 팀은 <b>Ghostty</b> 추천.</p>
+      </div>
+      <div class="card" data-k="output style explanatory learning 출력 스타일 학습 설명 온보딩">
+        <h3><span class="ic">🎓</span>출력 스타일 (학습 모드)</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p><code>/config</code>에서 <b>Explanatory</b>(작업하며 프레임워크·패턴의 "왜"를 설명, 새 코드베이스에 좋음) 또는 <b>Learning</b>(변경을 코칭)을 켜기. 커스텀 스타일로 톤도 조정. 클로드 코드는 강력한 학습 도구입니다.</p>
+      </div>
+      <div class="card" data-k="settings json proxy timeout apikeyhelper env 디버깅 usage based">
+        <h3><span class="ic">🔧</span>settings.json 고급</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">고급</span></div>
+        <ul>
+          <li><code>HTTPS_PROXY</code>: raw 트래픽 검사로 실제 보내는 프롬프트 확인·네트워크 샌드박싱</li>
+          <li><code>MCP_TOOL_TIMEOUT</code>/<code>BASH_MAX_TIMEOUT_MS</code>: 긴 명령용 상향</li>
+          <li><code>apiKeyHelper</code>: per-seat → usage-based(엔지니어 간 1:100배 사용량 편차 흡수)</li>
+          <li><code>env</code> 필드로 래퍼 스크립트 제거</li>
+        </ul>
+      </div>
+      <div class="card" data-k="resume continue rename 세션 이름 branch 영속 다세션 history logs">
+        <h3><span class="ic">💾</span>세션을 브랜치처럼</h3>
+        <div class="badges"><span class="badge b-high">효과 높음</span><span class="badge b-lv">중급</span></div>
+        <p><code>claude --continue</code>(직전)·<code>--resume</code>(목록)로 다세션 작업을 이어가고 <code>/rename</code>으로 이름 부여(<code>oauth-migration</code>). 며칠 전 세션을 resume해 "그 에러 어떻게 넘었는지 요약"받아 CLAUDE.md 개선. 원본 로그는 <code>~/.claude/projects/</code>.</p>
+      </div>
+      <div class="card" data-k="mobile teleport remote control dispatch 모바일 원격 폰 이동">
+        <h3><span class="ic">📱</span>모바일 · 원격 제어</h3>
+        <div class="badges"><span class="badge b-mid">효과 중간</span><span class="badge b-lv">입문</span></div>
+        <p>모바일 앱 Code 탭, iMessage 플러그인으로 어디서든 태스크 전송. <code>--teleport</code>로 클라우드 세션을 로컬로, <code>/remote-control</code>로 폰/웹에서 로컬 세션 제어. <b>Cowork Dispatch</b>로 자리를 비운 노트북의 MCP·브라우저·컴퓨터 제어.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="anti">
+    <div class="sec-head"><span class="sec-num">14</span><h2>안티패턴 — 일찍 알아채면 시간·토큰 번다</h2></div>
+    <p class="sec-desc">파워유저도 빠지는 흔한 함정. 증상을 빨리 인식하는 것만으로 많은 시간과 토큰을 아낍니다.</p>
+    <div class="grid anti">
+      <div class="card" data-k="kitchen sink 잡탕 세션 무관 작업 컨텍스트 오염">
+        <h3><span class="ic">🍜</span>잡탕 세션</h3>
+        <p>한 작업 하다 무관한 걸 묻고 다시 원래로 — 컨텍스트가 쓸모없는 정보로 가득(매 메시지 토큰 낭비).</p>
+        <div class="fix"><b>FIX</b> · 무관한 작업 사이 <code>/clear</code></div>
+      </div>
+      <div class="card" data-k="correcting 반복 교정 실패 접근 오염">
+        <h3><span class="ic">🔁</span>교정의 무한 반복</h3>
+        <p>틀림→교정→여전히 틀림→또 교정. 실패한 접근들로 컨텍스트가 오염됩니다.</p>
+        <div class="fix"><b>FIX</b> · 2회 실패하면 <code>/clear</code> 후 배운 걸 반영한 더 나은 초기 프롬프트</div>
+      </div>
+      <div class="card" data-k="over specified claudemd 과적 길어 무시 prune 200줄">
+        <h3><span class="ic">📚</span>과적된 CLAUDE.md</h3>
+        <p>너무 길면 중요한 규칙이 노이즈에 묻혀 절반이 무시되고, 매 세션 토큰을 먹습니다.</p>
+        <div class="fix"><b>FIX</b> · 200줄 이하로 가지치기. 특정 워크플로우는 스킬로 이전</div>
+      </div>
+      <div class="card" data-k="trust verify gap 검증 누락 엣지케이스 그럴듯">
+        <h3><span class="ic">🎭</span>트러스트-검증 갭</h3>
+        <p>그럴듯하지만 엣지케이스를 놓친 구현.</p>
+        <div class="fix"><b>FIX</b> · 항상 검증 제공(테스트·스크립트·스크린샷). 검증 못 하면 배포 금지</div>
+      </div>
+      <div class="card" data-k="infinite exploration 무한 탐색 scope 없음 수백 파일 토큰">
+        <h3><span class="ic">♾️</span>무한 탐색</h3>
+        <p>범위 없이 "조사해" → 수백 파일을 읽어 컨텍스트를 다 채움(대량 토큰 소모).</p>
+        <div class="fix"><b>FIX</b> · 좁게 스코프하거나 서브에이전트로 격리해 메인 컨텍스트 보호</div>
+      </div>
+      <div class="card" data-k="compact 자동 압축 신뢰 opaque 손실 캐시 휴식">
+        <h3><span class="ic">🗜️</span>자동 압축 맹신 · 캐시 만료</h3>
+        <p>자동 <code>/compact</code>는 불투명·손실 가능. 또 5분 넘게 자리를 비우면 캐시가 만료돼 전체 재처리.</p>
+        <div class="fix"><b>FIX</b> · 자리 뜨기 전 <code>/clear</code> 또는 "문서화 후 /clear"로 외부 메모리화</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="checklist">
+    <div class="sec-head"><span class="sec-num">15</span><h2>파워유저 셋업 체크리스트</h2></div>
+    <p class="sec-desc">진행 상황은 브라우저에 자동 저장됩니다(localStorage). 💰는 토큰 절약 항목. 위에서부터 한 번씩 적용해 보세요.</p>
+    <div class="checklist">
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="pfill"></div></div>
+        <div class="progress-num" id="pnum">0%</div>
+      </div>
+      <div class="ck-groups" id="ckGroups"></div>
+      <button class="ck-reset" id="ckReset">체크 초기화</button>
+    </div>
+  </section>
+
+  <section id="cheat">
+    <div class="sec-head"><span class="sec-num">16</span><h2>명령어 · 단축키 치트시트</h2></div>
+    <p class="sec-desc">자주 쓰는 명령·플래그·단축키 빠른 참조.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>영역</th><th>핵심 명령 / 플래그</th><th>한 줄 메모</th></tr></thead>
+        <tbody>
+          <tr><td>토큰추적 💰</td><td><code>/cost</code> · <code>/usage</code> · <code>/context</code> · statusline</td><td>먼저 측정해야 아낀다</td></tr>
+          <tr><td>토큰절약 💰</td><td><code>/model</code> · <code>model: haiku</code> · <code>MAX_THINKING_TOKENS</code> · 출력필터 훅</td><td>모델 분리 + 훅이 최대 효과</td></tr>
+          <tr><td>병렬</td><td><code>claude --worktree</code> · <code>--tmux</code> · <code>/batch</code> · <code>isolation: worktree</code></td><td>3~5세션 병렬이 최대 언락</td></tr>
+          <tr><td>계획</td><td><kbd>Shift+Tab</kbd> · <code>/plan</code> · <code>/effort max</code> · <code>claude --name</code></td><td>계획에 노력 → 원샷 구현</td></tr>
+          <tr><td>컨텍스트</td><td><code>/clear</code> · <code>/compact</code> · <code>/btw</code> · <code>/rewind</code></td><td>차오르면 성능·비용 저하</td></tr>
+          <tr><td>검증 ★</td><td>Chrome 확장 · <code>/simplify</code> · <code>/goal</code> · <code>Stop</code> 훅 · <code>/code-review</code></td><td>1순위 기법. 합/불 신호를 줘라</td></tr>
+          <tr><td>메모리</td><td><code>/init</code> · <code>/memory</code> · <code>/dream</code> · PR에서 <code>@claude</code></td><td>틀릴 때마다 CLAUDE.md에 추가</td></tr>
+          <tr><td>에이전트</td><td><code>/agents</code> · <code>.claude/agents/</code> · <code>--agent</code> · <code>"use subagents"</code></td><td>탐색·리뷰를 별도 컨텍스트로</td></tr>
+          <tr><td>훅</td><td><code>PreToolUse</code> · <code>PostToolUse</code> · <code>Stop</code> · <code>PostCompact</code></td><td>출력 필터로 토큰 절약</td></tr>
+          <tr><td>스킬·MCP</td><td><code>/skills</code> · <code>.claude/skills/SKILL.md</code> · <code>claude mcp add</code> · <code>/plugin</code> · <code>/mcp</code></td><td>하루 1회+ 작업은 스킬화</td></tr>
+          <tr><td>편의 ✨</td><td><code>/diff</code> · <code>/copy</code> · <code>/export</code> · <code>/doctor</code> · <code>/status</code></td><td>이미 있는 명령부터 찾기</td></tr>
+          <tr><td>단축키</td><td><kbd>Shift+Tab</kbd> · <kbd>Esc Esc</kbd> · <kbd>Ctrl+R</kbd> · <kbd>Ctrl+O</kbd> · <kbd>@</kbd>경로 · <kbd>?</kbd></td><td><kbd>/</kbd>로 전체 명령 보기</td></tr>
+          <tr><td>권한</td><td><code>/permissions</code> · auto/acceptEdits · <code>/sandbox</code> · <code>--dangerously-skip-permissions</code></td><td>allowlist 체크인이 권장 경로</td></tr>
+          <tr><td>자동화</td><td><code>claude -p</code> · <code>--output-format json</code> · <code>--bare</code> · <code>/loop</code> · <code>/schedule</code></td><td>CI·팬아웃·GHA로 수평 확장</td></tr>
+          <tr><td>세션</td><td><code>--continue</code> · <code>--resume</code> · <code>/rename</code> · <code>/branch</code> · <code>--fork-session</code></td><td>세션을 브랜치처럼 운영</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="model">
+    <div class="sec-head"><span class="sec-num">17</span><h2>마무리 멘탈 모델</h2></div>
+    <p class="sec-desc">이 가이드의 패턴은 정답이 아니라 출발점입니다. 무엇이 통하는지 관찰하며 자신만의 직관을 쌓으세요.</p>
+    <div class="mm">
+      <div class="stage"><div class="n">언제 쌓을까</div><h4>컨텍스트를 일부러 모을 때</h4><p>한 복잡한 문제에 깊이 들어가 히스토리 자체가 가치 있을 땐 비우지 마세요.</p></div>
+      <div class="stage"><div class="n">언제 계획할까</div><h4>탐색이 목적일 땐 건너뛰기</h4><p>접근법을 보고 싶을 땐 막연한 프롬프트가 정답. 계획은 불확실·멀티파일·고위험일 때.</p></div>
+      <div class="stage"><div class="n">무엇으로 평가할까</div><h4>과정이 아닌 최종 PR</h4><p>"어떻게 거기 도달했나"가 아니라 결과물로. 위임하고 떠나라(shoot &amp; forget).</p></div>
+    </div>
+    <div class="callout tip" style="margin-top:20px"><span class="em">🌱</span><p><b>자기개선 플라이휠:</b> 클로드가 잘하면 — 프롬프트 구조·제공 컨텍스트·모드를 기억하세요. 막히면 — 컨텍스트가 시끄러웠는지, 프롬프트가 막연했는지, 작업이 한 번에 하기 너무 컸는지 물으세요. 매 실수를 CLAUDE.md·도구·훅에 반영하면 모든 미래 세션이 좋아집니다.</p></div>
+  </section>
+
+  <footer>
+    <b style="color:var(--txt)">출처 (원문 확인 권장 — 클로드 코드는 자주 업데이트됩니다)</b>
+    <div class="src-list">
+      <a href="https://code.claude.com/docs/en/best-practices" target="_blank">① 공식 · Best practices for Claude Code</a>
+      <a href="https://support.claude.com/en/articles/14554000-claude-code-power-user-tips" target="_blank">② 공식 · Claude Code power user tips</a>
+      <a href="https://code.claude.com/docs/en/costs" target="_blank">③ 공식 · Manage costs effectively (토큰 절약)</a>
+      <a href="https://support.claude.com/en/articles/14553413-claude-code-cheatsheet" target="_blank">④ 공식 · Claude Code cheatsheet</a>
+      <a href="https://blog.sshh.io/p/how-i-use-every-claude-code-feature" target="_blank">⑤ 실무 · How I Use Every Claude Code Feature</a>
+      <a href="https://code.claude.com/docs/en/skills" target="_blank">⑥ 공식 · Extend Claude with skills</a>
+    </div>
+    <p class="foot-note">생성일 2026-06-06 · 한국어 종합 · 고급/파워유저 관점 재구성 · 버전별 세부는 code.claude.com/docs에서 대조하세요.</p>
+  </footer>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  var mem = {};
+  var store = {
+    get: function(k){ try { return localStorage.getItem(k); } catch (e) { return (k in mem) ? mem[k] : null; } },
+    set: function(k,v){ try { localStorage.setItem(k,v); } catch (e) { mem[k] = String(v); } }
+  };
+
+  var themeBtn = document.getElementById('themeBtn');
+  function applyTheme(t){
+    if (t === 'light') { document.documentElement.setAttribute('data-theme','light'); themeBtn.textContent = '다크 모드'; }
+    else { document.documentElement.removeAttribute('data-theme'); themeBtn.textContent = '라이트 모드'; }
+  }
+  applyTheme(store.get('cc_theme') || 'dark');
+  themeBtn.addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    store.set('cc_theme', cur); applyTheme(cur);
+  });
+
+  document.querySelectorAll('.copy').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var snip = btn.parentElement.cloneNode(true);
+      var inner = snip.querySelector('.copy');
+      if (inner) { inner.remove(); }
+      var text = snip.textContent.trim();
+      var done = function(){
+        btn.textContent = '복사됨';
+        btn.classList.add('ok');
+        setTimeout(function(){ btn.textContent = '복사'; btn.classList.remove('ok'); }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function(){ fallbackCopy(text, done); });
+      } else {
+        fallbackCopy(text, done);
+      }
+    });
+  });
+  function fallbackCopy(text, done){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  var search = document.getElementById('search');
+  var meta = document.getElementById('searchMeta');
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.card[data-k]'));
+  var sections = Array.prototype.slice.call(document.querySelectorAll('main section'));
+  search.addEventListener('input', function(){
+    var q = search.value.trim().toLowerCase();
+    if (!q) {
+      cards.forEach(function(c){ c.classList.remove('hidden'); });
+      sections.forEach(function(s){ s.classList.remove('sec-hidden'); });
+      meta.textContent = '';
+      return;
+    }
+    var n = 0;
+    cards.forEach(function(c){
+      var hay = (c.getAttribute('data-k') + ' ' + c.textContent).toLowerCase();
+      var hit = hay.indexOf(q) > -1;
+      c.classList.toggle('hidden', !hit);
+      if (hit) { n++; }
+    });
+    sections.forEach(function(s){
+      var secCards = s.querySelectorAll('.card[data-k]');
+      if (secCards.length === 0) { s.classList.add('sec-hidden'); return; }
+      var anyVisible = Array.prototype.some.call(secCards, function(c){ return !c.classList.contains('hidden'); });
+      s.classList.toggle('sec-hidden', !anyVisible);
+    });
+    meta.textContent = n + '개 기법 매칭';
+  });
+
+  var tocLinks = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var linkMap = {};
+  tocLinks.forEach(function(a){
+    var id = a.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if (el) { linkMap[id] = a; }
+  });
+  function spy(){
+    var pos = window.scrollY + 140;
+    var current = null;
+    Object.keys(linkMap).forEach(function(id){
+      var el = document.getElementById(id);
+      if (el && el.offsetTop <= pos) { current = id; }
+    });
+    tocLinks.forEach(function(a){ a.classList.remove('active'); });
+    if (current && linkMap[current]) {
+      linkMap[current].classList.add('active');
+      if (typeof linkMap[current].scrollIntoView === 'function') {
+        try { linkMap[current].scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (e) {}
+      }
+    }
+  }
+  window.addEventListener('scroll', spy, { passive: true });
+  spy();
+
+  var items = [
+    'CLAUDE.md를 /init로 만들고 가드레일 위주로 200줄 이하 유지',
+    '검증 기준(테스트·스크린샷)을 프롬프트에 항상 포함',
+    '프론트엔드용 Chrome 확장 설치',
+    '플랜 모드(Shift+Tab)를 멀티파일·고위험 작업에 사용',
+    '무관한 작업 사이 /clear 습관화',
+    '/cost·/usage·/context로 토큰 사용을 주기적으로 점검 💰',
+    '모델 분리: Sonnet 기본 / Opus 난제 / Haiku 단순 서브에이전트 💰',
+    '출력 필터 훅(PreToolUse)으로 로그·테스트를 ERROR만 반환 💰',
+    '쉬운 작업은 /effort 낮추기·MAX_THINKING_TOKENS로 사고량 절감 💰',
+    '긴 휴식 전 /compact·/clear로 캐시 재처리 방지 💰',
+    '안 쓰는 MCP 서버는 /mcp로 비활성화, CLI 우선 💰',
+    'worktree로 3~5세션 병렬 운영',
+    '탐색·리뷰를 서브에이전트로 격리(장황한 출력 격리) 💰',
+    'PostToolUse 자동 포맷 훅 + 커밋 게이트(block-at-submit) 훅',
+    '/permissions로 안전 명령 사전 허용 + git 체크인',
+    'auto/acceptEdits 모드 또는 /sandbox로 개입 줄이기',
+    '하루 1회 이상 반복 작업을 스킬/커맨드로 전환',
+    '클로드가 틀릴 때마다 CLAUDE.md 업데이트 지시',
+    '/statusline에 남은 컨텍스트·비용 표시',
+    'settings.json을 git에 체크인해 팀 공유',
+    'claude -p 헤드리스로 CI/팬아웃 자동화',
+    'Opus + thinking, /effort high를 기본으로(비용과 균형)',
+    '큰 기능은 AskUserQuestion 인터뷰 후 SPEC.md, 새 세션',
+    '문서화 후 /clear로 긴 작업의 외부 메모리 구축',
+    'Ctrl+R 히스토리 역검색·/diff·/copy 등 편의 명령 익히기'
+  ];
+  var groups = document.getElementById('ckGroups');
+  var saved = {};
+  try { saved = JSON.parse(store.get('cc_check') || '{}'); } catch (e) { saved = {}; }
+  var fill = document.getElementById('pfill');
+  var num = document.getElementById('pnum');
+  function updateProgress(){
+    var done = 0;
+    for (var k in saved) { if (saved[k]) { done++; } }
+    var pct = Math.round(done / items.length * 100);
+    fill.style.width = pct + '%';
+    num.textContent = pct + '%';
+  }
+  items.forEach(function(txt, i){
+    var label = document.createElement('label');
+    label.className = 'ck';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!saved[i];
+    var sp = document.createElement('span');
+    sp.textContent = txt;
+    label.appendChild(cb);
+    label.appendChild(sp);
+    groups.appendChild(label);
+    cb.addEventListener('change', function(){
+      saved[i] = cb.checked;
+      store.set('cc_check', JSON.stringify(saved));
+      updateProgress();
+    });
+  });
+  updateProgress();
+  document.getElementById('ckReset').addEventListener('click', function(){
+    saved = {};
+    store.set('cc_check', '{}');
+    var boxes = groups.querySelectorAll('input');
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = false; }
+    updateProgress();
+  });
+})();
+</script>
+</body>
+</html>
