@@ -34,6 +34,7 @@
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
 #include "UI/BP/PlayerHUDWidget.h"
+#include "UI/BP/ChatWidget.h"
 #include "UI/BP/ItemTooltipWidget.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Villager/MerchantStall.h"
@@ -128,6 +129,24 @@ AVRPawn::AVRPawn()
     // 패널은 항상 켜 둔다 — HP·스태미나 게이지가 실려 있어 인벤토리와 수명이 다르다.
     // 인벤토리 슬롯만 위젯 안에서 Collapsed 로 접힌다(UPlayerHUDWidget::SetInventoryPanelVisible).
     HUDWidgetComp->SetVisibility(true);
+
+    // 채팅 패널 — 예외적으로 카메라(VRCamera) 부착. 위 HUD 패널 주석의 head-lock 금기는
+    // "상시 표시" 패널 얘기다. 채팅은 Enter 를 눌렀을 때만 잠깐 켜졌다 닫히므로 그 시간대만
+    // 시야에 고정되어도 멀미로 이어지지 않는다 — 대신 타이핑 중 고개를 돌려도 입력창을 잃지 않는다.
+    ChatWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("ChatWidgetComp"));
+    ChatWidgetComp->SetupAttachment(VRCamera);
+    ChatWidgetComp->SetRelativeLocation(ChatPanelOffset);
+    // 가시면은 +X 쪽(HUDWidgetComp 와 동일 관례) — 카메라 앞에 있으니 뒤(-X, 카메라 쪽)를
+    // 보게 Yaw 180.
+    ChatWidgetComp->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
+    ChatWidgetComp->SetDrawSize(ChatPanelDrawSize);
+    ChatWidgetComp->SetRelativeScale3D(FVector(ChatPanelScale));
+    ChatWidgetComp->SetTwoSided(true);
+    ChatWidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
+    // 클릭 없이 키보드 포커스만 쓰므로(FocusChatInput) 광선 레이가 필요 없다.
+    ChatWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    // 손 패널과 달리 상시 표시가 아니다 — Enter 전까지 숨김(OnChatKey 가 켠다).
+    ChatWidgetComp->SetVisibility(false);
 
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
     // 광선이 패널을 빗나간다.
@@ -268,6 +287,20 @@ void AVRPawn::BeginPlay()
         HUDWidgetComp->SetVisibility(true);
     }
 
+    if (ChatWidgetClass && ChatWidgetComp)
+    {
+        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            if (PC->IsLocalController())
+            {
+                ChatWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
+                ChatWidgetComp->SetWidgetClass(ChatWidgetClass);
+                ChatWidgetComp->InitWidget();
+                ChatWidget = Cast<UChatWidget>(ChatWidgetComp->GetUserWidgetObject());
+            }
+        }
+    }
+
     // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
     // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
     ApplyInventoryPresentation(false);
@@ -287,6 +320,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateDynamicCapsule(DeltaTime);
     UpdateHUDPanelFacing();
     UpdateHUDPanelGaze(DeltaTime);
+    UpdateChatPanelVisibility();
     UpdatePointerVisual();
     UpdateItemTooltip();
     UpdateStamina(DeltaTime);
@@ -1150,9 +1184,8 @@ void AVRPawn::UpdateHUDPanelGaze(float DeltaTime)
 
     // 인벤토리를 연 동안에는 시선과 무관하게 완전 불투명. 슬롯을 조준하다 고개가 조금
     // 돌아갔다고 패널이 흐려지면 조작이 끊긴다.
-    // 채팅 입력 중에도 마찬가지 — 글자 치는 동안 패널이 흐려지면 뭘 쓰는지 안 보인다.
     float TargetOpacity = 1.f;
-    if (!bInventoryOpen && !(HUDWidget && HUDWidget->IsChatFocused()))
+    if (!bInventoryOpen)
     {
         const FVector ToPanel =
             (HUDWidgetComp->GetComponentLocation() - VRCamera->GetComponentLocation()).GetSafeNormal();
@@ -1178,6 +1211,15 @@ void AVRPawn::UpdateHUDPanelFacing()
     // Rotation() 은 X 축을 ToCam 방향에 맞추고 Roll 0 — 패널이 기울지 않는다.
     const FQuat LookAt = ToCam.Rotation().Quaternion();
     HUDWidgetComp->SetWorldRotation(LookAt * HUDPanelRotation.Quaternion());
+}
+
+void AVRPawn::UpdateChatPanelVisibility()
+{
+    if (!ChatWidgetComp || !ChatWidget) return;
+    if (ChatWidgetComp->IsVisible() && !ChatWidget->IsChatFocused())
+    {
+        ChatWidgetComp->SetVisibility(false);
+    }
 }
 
 void AVRPawn::ApplyInventoryPresentation(bool bOpen)
@@ -1537,7 +1579,9 @@ FVector AVRPawn::GetHandLocation(bool bRightHand) const
 
 void AVRPawn::OnChatKey()
 {
-    if (HUDWidget) HUDWidget->FocusChatInput();
+    if (!ChatWidgetComp || !ChatWidget) return;
+    ChatWidgetComp->SetVisibility(true);
+    ChatWidget->FocusChatInput();
 }
 
 void AVRPawn::SayToNpc(const FString& Text)
