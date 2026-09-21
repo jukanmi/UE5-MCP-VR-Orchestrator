@@ -211,7 +211,7 @@ def run_python_tests(timeout_sec: int = 60) -> Tuple[bool, str]:
                 fail_info.append(error_match.group(1))
             summary_str = ", ".join(fail_info) if fail_info else "테스트 실패"
 
-            fail_lines = [l for l in output.splitlines() if l.startswith("FAILED") or "AssertionError" in l][:3]
+            fail_lines = [ln for ln in output.splitlines() if ln.startswith("FAILED") or "AssertionError" in ln][:3]
             details = " | ".join(fail_lines) if fail_lines else "상세 로그 참조"
             return False, f"❌ Python Tests FAILED ({summary_str}) — {details}"
     except subprocess.TimeoutExpired:
@@ -247,13 +247,13 @@ def run_engine_tests(test_filter: str = "Project", timeout_sec: int = 120) -> Tu
 
         output = res.stdout + res.stderr
         if "**** TEST COMPLETE. EXIT CODE: 0 ****" in output or res.returncode == 0:
-            failures = [l for l in output.splitlines() if "Error: Automation" in l or "Failed to find" in l]
+            failures = [ln for ln in output.splitlines() if "Error: Automation" in ln or "Failed to find" in ln]
             if not failures:
                 return True, "✅ Engine UAT: Clean (0 errors / Passed)"
             else:
                 return False, f"❌ Engine UAT 실패: {failures[0]}"
         else:
-            errors = [l for l in output.splitlines() if "Error:" in l][:2]
+            errors = [ln for ln in output.splitlines() if "Error:" in ln][:2]
             err_str = " | ".join(errors) if errors else f"Exit Code {res.returncode}"
             return False, f"❌ Engine UAT FAILED: {err_str}"
     except subprocess.TimeoutExpired:

@@ -6,16 +6,19 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.utils.memory_manager import ConversationMemory
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # _prewarm_core_llm
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _make_main_module():
     """main 모듈의 핵심 심볼만 임포트해 테스트 격리."""
     import importlib
     import sys
+
     if "app.main" in sys.modules:
         return sys.modules["app.main"]
     return importlib.import_module("app.main")
@@ -80,6 +83,7 @@ def test_prewarm_uses_stage2_model_not_default():
 
     assert captured_bodies, "POST not called"
     from app.utils import llm_factory
+
     expected_model = llm_factory.MODELS[llm_factory.STAGE2_MODEL]
     assert captured_bodies[0]["model"] == expected_model
 
@@ -110,11 +114,11 @@ def test_prewarm_body_has_no_prompt_key():
 # memory_manager 디바운스
 # ──────────────────────────────────────────────────────────────────────────────
 
-from app.utils.memory_manager import ConversationMemory
 
 
 def _make_memory(tmp_path, agent_id="test_npc") -> ConversationMemory:
     import app.utils.memory_manager as mm
+
     mm.MEMORY_BASE_PATH = str(tmp_path)
     m = ConversationMemory(agent_id)
     return m
@@ -124,16 +128,19 @@ def _force_budget_exceeded(mem: ConversationMemory):
     """임계치를 이미 초과한 상태를 직접 주입."""
     from app.utils.memory_manager import MemoryEntry, MAX_TOKENS_PER_NPC, SUMMARIZE_THRESHOLD
     import math
+
     target = math.ceil(MAX_TOKENS_PER_NPC * SUMMARIZE_THRESHOLD) + 100
     # 한글 문자 — 0.6 tok/char
     chars_needed = math.ceil(target / 0.6) + 100
     with mem.lock:
-        mem.entries.append(MemoryEntry(
-            timestamp="2026-01-01T00:00:00",
-            speaker="Player",
-            content="가" * chars_needed,
-            is_summary=False,
-        ))
+        mem.entries.append(
+            MemoryEntry(
+                timestamp="2026-01-01T00:00:00",
+                speaker="Player",
+                content="가" * chars_needed,
+                is_summary=False,
+            )
+        )
 
 
 def test_debounce_timer_set_when_budget_exceeded(tmp_path):
@@ -161,6 +168,7 @@ def test_debounce_fires_once_after_last_entry(tmp_path):
     """연속 add_entry 시 요약 1회만, 마지막 호출 후 실행."""
     FAST = 0.05  # 테스트용 디바운스 0.05s
     import app.utils.memory_manager as mm
+
     original = mm.SUMMARIZE_DEBOUNCE_S
     mm.SUMMARIZE_DEBOUNCE_S = FAST
 

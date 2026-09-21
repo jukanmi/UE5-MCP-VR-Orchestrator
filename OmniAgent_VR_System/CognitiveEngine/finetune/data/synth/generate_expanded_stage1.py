@@ -22,10 +22,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ENGINE_ROOT = os.path.abspath(os.path.join(_HERE, "../../.."))  # CognitiveEngine
 sys.path.insert(0, _ENGINE_ROOT)
 
-from app.agents.subgraphs.dialogue import _format_speech_style
-from app.agents.subgraphs.prompts import DIALOGUE_STRUCTURED_PROMPT
-from app.agents.subgraphs.rules import validate_and_clamp_action
-from app.schemas.actions import DIALOGUE_ACTION_FIELD_MAP, GameAction
+from app.agents.subgraphs.dialogue import _format_speech_style  # noqa: E402 — sys.path 등록 후 임포트
+from app.agents.subgraphs.prompts import DIALOGUE_STRUCTURED_PROMPT  # noqa: E402
+from app.agents.subgraphs.rules import validate_and_clamp_action  # noqa: E402
+from app.schemas.actions import DIALOGUE_ACTION_FIELD_MAP, GameAction  # noqa: E402
 
 RAW_DIR = os.path.join(_ENGINE_ROOT, "finetune", "data", "raw")
 SYNTH_DIR = _HERE
@@ -196,9 +196,13 @@ def teacher_speech(persona: dict, seed: dict, actions: list, timeout=20) -> dict
     return {"speech": sp, "tone": "calmly"}
 
 
-def build_system(persona: dict, valid_targets: list, inventory: str,
-                  sentiment: str = "Neutral (Score: 0)",
-                  chat_history: str = "No previous conversation") -> str:
+def build_system(
+    persona: dict,
+    valid_targets: list,
+    inventory: str,
+    sentiment: str = "Neutral (Score: 0)",
+    chat_history: str = "No previous conversation",
+) -> str:
     return DIALOGUE_STRUCTURED_PROMPT.format(
         name=persona["name"],
         role=persona.get("role", ""),
@@ -226,7 +230,7 @@ def build_natural_context(seed: dict) -> str:
             occ = "OCCUPIED" if f.get("occupied") else "vacant"
             dist = f.get("dist")
             dist_str = f", {float(dist):.1f}m away" if isinstance(dist, (int, float)) else ""
-            parts.append(f"{f.get('id','?')} ({f.get('type','?')}, {occ}{dist_str})")
+            parts.append(f"{f.get('id', '?')} ({f.get('type', '?')}, {occ}{dist_str})")
         ctx += ". Nearby furniture you can use as Sit/Sleep target: " + "; ".join(parts)
     return ctx
 
@@ -258,12 +262,14 @@ def main():
     all_seeds = core_seeds + parquet_seeds
     rng.shuffle(all_seeds)
 
-    print(f"Loaded {len(core_seeds)} core seeds + {len(parquet_seeds)} parquet lorebook seeds (Total: {len(all_seeds)})")
+    print(
+        f"Loaded {len(core_seeds)} core seeds + {len(parquet_seeds)} parquet lorebook seeds (Total: {len(all_seeds)})"
+    )
 
     # Count raw type frequencies
     raw_type_freq = collections.Counter()
     for s in all_seeds:
-        for a in ((s.get("gold", {}) or {}).get("actions") or []):
+        for a in (s.get("gold", {}) or {}).get("actions") or []:
             raw_type_freq[a.get("type")] += 1
 
     out_rows = []
@@ -313,11 +319,16 @@ def main():
                 "actions": gated,
                 "plan_achieved": False,
             }
-            row = {"messages": [
-                {"role": "system", "content": build_system(persona, valid_targets, inventory, sentiment, chat_history_str)},
-                {"role": "user", "content": f"Context: {build_natural_context(seed)}"},
-                {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
-            ]}
+            row = {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": build_system(persona, valid_targets, inventory, sentiment, chat_history_str),
+                    },
+                    {"role": "user", "content": f"Context: {build_natural_context(seed)}"},
+                    {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
+                ]
+            }
             out_rows.append(row)
             for a in gated:
                 action_c[a["type"]] += 1

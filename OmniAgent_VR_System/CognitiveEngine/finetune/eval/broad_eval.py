@@ -6,6 +6,7 @@
 2) 학습셋에 없는 신규 발화 6개(다른 페르소나·다른 상황 phrasing) → 다양성/일반화 확인.
    overfit 이면 speech 가 학습 문구를 그대로 복붙하거나 액션이 엉뚱하게 나옴.
 """
+
 import argparse
 import json
 import random
@@ -15,26 +16,33 @@ import urllib.request
 # 비교 대상·출력 경로 인자화 — 재학습마다 태그가 늘어나므로(v1, v2, ...) 하드코딩이면
 # 매번 파일을 고쳐야 한다. 기본값은 기존 동작(구모델 vs v1) 그대로.
 _ap = argparse.ArgumentParser()
-_ap.add_argument("--models", nargs="+", default=["gemma4:e4b", "gemma4-e4b-dialogue-v1"],
-                 help="비교할 ollama 태그 2개 이상 (예: gemma4-e4b-dialogue-v1 gemma4-e4b-dialogue-v2)")
+_ap.add_argument(
+    "--models",
+    nargs="+",
+    default=["gemma4:e4b", "gemma4-e4b-dialogue-v1"],
+    help="비교할 ollama 태그 2개 이상 (예: gemma4-e4b-dialogue-v1 gemma4-e4b-dialogue-v2)",
+)
 _ap.add_argument("--data", default="data/processed/stage1_e4b_train.jsonl")
 _ap.add_argument("--out", default="eval/broad_result.json")
 _args = _ap.parse_args()
 
 random.seed(7)
 
-ROWS = [json.loads(l) for l in open(_args.data, encoding="utf-8")]
+ROWS = [json.loads(line) for line in open(_args.data, encoding="utf-8")]
 
 
 def call(model: str, sys_m: str, usr_m: str, temp: float = 0.4) -> dict:
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "system", "content": sys_m}, {"role": "user", "content": usr_m}],
-        "stream": False,
-        "options": {"temperature": temp},
-    }).encode()
-    req = urllib.request.Request("http://127.0.0.1:11434/api/chat", data=body,
-                                 headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "system", "content": sys_m}, {"role": "user", "content": usr_m}],
+            "stream": False,
+            "options": {"temperature": temp},
+        }
+    ).encode()
+    req = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat", data=body, headers={"Content-Type": "application/json"}
+    )
     raw = json.loads(urllib.request.urlopen(req, timeout=120).read())["message"]["content"]
     m = re.search(r"\{.*\}", raw, re.S)
     try:
@@ -45,7 +53,7 @@ def call(model: str, sys_m: str, usr_m: str, temp: float = 0.4) -> dict:
 
 def act_types(d: dict) -> list:
     out = []
-    for a in (d.get("actions") or []):
+    for a in d.get("actions") or []:
         out.append(a.get("type") if isinstance(a, dict) else str(a))
     return out
 
@@ -58,11 +66,11 @@ by_type = {}
 for d in ROWS:
     try:
         gold = json.loads(d["messages"][2]["content"])
-        for a in (gold.get("actions") or []):
+        for a in gold.get("actions") or []:
             t = a.get("type") if isinstance(a, dict) else str(a)
             by_type.setdefault(t, []).append(d)
     except Exception:
-        pass
+        pass  # nosec B110 — 골드 JSON 파싱 실패 행은 샘플링 대상에서 제외하고 계속 진행
 
 pick_types = ["Sleep", "Attack", "GiveItem", "Move", "Comfort", "Trade", "Investigate", "Follow"]
 samples = []
@@ -101,9 +109,13 @@ HELDOUT = [
 for u in HELDOUT:
     row = {"utterance": u}
     for model in MODELS:
-        out = call(model, SYS_MOCA,
-                   f'Context: Player said: "{u}". Nearby furniture you can use as Sit/Sleep target: '
-                   f'1001 (Seat, vacant, 2m); Bed_01 (Bed, vacant, 2m)', temp=0.5)
+        out = call(
+            model,
+            SYS_MOCA,
+            f'Context: Player said: "{u}". Nearby furniture you can use as Sit/Sleep target: '
+            f"1001 (Seat, vacant, 2m); Bed_01 (Bed, vacant, 2m)",
+            temp=0.5,
+        )
         row[model] = {"actions": act_types(out), "speech": (out.get("speech") or out.get("_raw", ""))[:100]}
     report["2_heldout_generalization"].append(row)
 

@@ -9,6 +9,7 @@ Sonnet 서브에이전트 경로(SPEECH_TASK.md)의 대체·보완용. 산출 �
 
 사용: python fill_speech_ollama.py [--only 0,1,2] [--model gemma4-12b] [--workers 2]
 """
+
 import argparse
 import json
 import os
@@ -57,13 +58,13 @@ def build_user(item: dict) -> str:
         "ambient_observation": "\n특칙: 플레이어가 주변 상황을 관찰·언급한다. NPC 도 같이 그 상황에 대해 짧게 반응한다. 행동 예고 금지.",
     }.get(neg, "")
     return (
-        f"NPC: {p['name']} ({p.get('role','')})\n"
+        f"NPC: {p['name']} ({p.get('role', '')})\n"
         f"성격: {', '.join(p.get('traits', []))}\n"
         f"말투 예시:\n{style}\n"
         f"소지품: {', '.join(item.get('inventory') or []) or '없음'}\n"
         f"상황: {item.get('situation') or '특이사항 없음'}\n"
-        f"플레이어에 대한 호감도: {item.get('sentiment','')}\n"
-        f"플레이어 발화: \"{item['utterance']}\"\n"
+        f"플레이어에 대한 호감도: {item.get('sentiment', '')}\n"
+        f'플레이어 발화: "{item["utterance"]}"\n'
         f"지금 수행할 액션: {item['action']}"
         f"{neg_hint}\n"
         "이 순간의 NPC 대사를 써라."
@@ -73,17 +74,22 @@ def build_user(item: dict) -> str:
 def call(model: str, item: dict, timeout: int) -> dict | None:
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": build_user(item)}]
     for temperature in (0.8, 1.0):
-        body = json.dumps({
-            "model": model, "messages": messages, "stream": False,
-            "format": SPEECH_SCHEMA, "think": False,
-            "options": {"temperature": temperature, "num_ctx": 2048, "num_predict": 220},
-        }).encode()
+        body = json.dumps(
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "format": SPEECH_SCHEMA,
+                "think": False,
+                "options": {"temperature": temperature, "num_ctx": 2048, "num_predict": 220},
+            }
+        ).encode()
         try:
             req = urllib.request.Request(OLLAMA, data=body, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 out = json.loads(json.load(resp)["message"]["content"])
         except Exception:
-            continue
+            continue  # nosec B112 — 호출 실패 시도는 건너뛰고 다음 재시도로 계속 진행
         speech = (out.get("speech") or "").strip()
         if not speech or not (8 <= len(speech) <= 140):
             continue
@@ -92,8 +98,12 @@ def call(model: str, item: dict, timeout: int) -> dict | None:
         utt = (out.get("utterance") or "").strip() or item["utterance"]
         if not re.search(r"[가-힣]", utt):
             utt = item["utterance"]
-        return {"id": item["id"], "utterance": utt, "speech": speech,
-                "tone": (out.get("tone") or "calmly").strip()[:20]}
+        return {
+            "id": item["id"],
+            "utterance": utt,
+            "speech": speech,
+            "tone": (out.get("tone") or "calmly").strip()[:20],
+        }
     return None
 
 

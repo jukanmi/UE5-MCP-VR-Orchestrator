@@ -7,6 +7,7 @@ timeline 동사를 EAction 으로 매핑 → Stage2 goal+steps seed.
 character 는 직업 키워드로 우리 5 NPC(Elara/James/Skadi/Moca/Guard) 리맵.
 goal/steps 영문 유지 — 한국어화는 koreanize_stage2.py(teacher)가 후단 처리.
 """
+
 import json
 import glob
 import os
@@ -15,23 +16,54 @@ import collections
 
 # LIGHT timeline 동사 → (EAction, 기본슬롯). 슬롯은 graph 매칭이 우선, 미매칭 시 기본슬롯.
 VERB_MAP = {
-    "go": ("Move", "loc"), "get": ("PickUp", "item"), "grab": ("PickUp", "item"),
-    "follow": ("Follow", "target"), "wear": ("Equip", "item"), "wield": ("Equip", "item"),
-    "equip": ("Equip", "item"), "give": ("GiveItem", "item"), "put": ("Drop", "item"),
-    "drop": ("Drop", "item"), "eat": ("UseItem", "item"), "drink": ("UseItem", "item"),
-    "use": ("UseItem", "item"), "hug": ("Comfort", "target"), "hit": ("Attack", "target"),
-    "steal": ("PickUp", "item"), "remove": ("Unequip", "item"), "take": ("PickUp", "item"),
-    "look": ("Scan", None), "search": ("Investigate", "loc"), "examine": ("Investigate", "loc"),
-    "wait": ("Wait", None), "sit": ("Sit", "target"), "sleep": ("Sleep", "target"),
-    "read": ("Read", "target"), "pray": ("Pray", "target"), "hold": ("HandObject", "item"),
+    "go": ("Move", "loc"),
+    "get": ("PickUp", "item"),
+    "grab": ("PickUp", "item"),
+    "follow": ("Follow", "target"),
+    "wear": ("Equip", "item"),
+    "wield": ("Equip", "item"),
+    "equip": ("Equip", "item"),
+    "give": ("GiveItem", "item"),
+    "put": ("Drop", "item"),
+    "drop": ("Drop", "item"),
+    "eat": ("UseItem", "item"),
+    "drink": ("UseItem", "item"),
+    "use": ("UseItem", "item"),
+    "hug": ("Comfort", "target"),
+    "hit": ("Attack", "target"),
+    "steal": ("PickUp", "item"),
+    "remove": ("Unequip", "item"),
+    "take": ("PickUp", "item"),
+    "look": ("Scan", None),
+    "search": ("Investigate", "loc"),
+    "examine": ("Investigate", "loc"),
+    "wait": ("Wait", None),
+    "sit": ("Sit", "target"),
+    "sleep": ("Sleep", "target"),
+    "read": ("Read", "target"),
+    "pray": ("Pray", "target"),
+    "hold": ("HandObject", "item"),
 }
 ACT_CAT = {
-    "Move": "Common", "Follow": "Common", "Wait": "Common", "Scan": "Common", "Idle": "Common",
-    "UseItem": "Common", "Equip": "Common", "Unequip": "Common",
-    "Attack": "Combat", "PickUp": "Task", "Drop": "Task",
-    "GiveItem": "Social", "Comfort": "Social", "HandObject": "Social",
-    "Investigate": "Investigation", "Sit": "Lifestyle", "Sleep": "Lifestyle",
-    "Read": "Lifestyle", "Pray": "Lifestyle",
+    "Move": "Common",
+    "Follow": "Common",
+    "Wait": "Common",
+    "Scan": "Common",
+    "Idle": "Common",
+    "UseItem": "Common",
+    "Equip": "Common",
+    "Unequip": "Common",
+    "Attack": "Combat",
+    "PickUp": "Task",
+    "Drop": "Task",
+    "GiveItem": "Social",
+    "Comfort": "Social",
+    "HandObject": "Social",
+    "Investigate": "Investigation",
+    "Sit": "Lifestyle",
+    "Sleep": "Lifestyle",
+    "Read": "Lifestyle",
+    "Pray": "Lifestyle",
 }
 STOP = {"the", "a", "an", "to", "from", "on", "in", "at", "my", "some", "of", "with", "for", "and"}
 
@@ -40,11 +72,17 @@ STOP = {"the", "a", "an", "to", "from", "on", "in", "at", "my", "some", "of", "w
 # Elara=Knight Commander(기사단장) · James=Ship Navigator(항법사) · Skadi=Pirate Captain(해적선장)
 # · Moca=ASMR Streamer(차분·다정) · Guard=Inhabitant(주민)
 NPC_RULES = [
-    ("Skadi", r"pirate|corsair|buccaneer|raider|bandit|thief|smuggler|mercenary|warrior|fighter|hunter|archer|swordsman"),
+    (
+        "Skadi",
+        r"pirate|corsair|buccaneer|raider|bandit|thief|smuggler|mercenary|warrior|fighter|hunter|archer|swordsman",
+    ),
     ("James", r"navigator|sailor|seaman|mariner|deck hand|fisher|cartographer|helmsman|traveler"),
     ("Elara", r"knight|commander|paladin|guard|soldier|watchman|sentry|constable|warden|noble"),
     ("Moca", r"bard|singer|musician|dancer|entertainer|storyteller|maid|nurse|caretaker|healer"),
-    ("Guard", r"villager|peasant|farmer|worker|servant|laborer|miller|shepherd|cook|smith|carpenter|merchant|trader|shopkeeper|innkeep|owner|boy|girl"),
+    (
+        "Guard",
+        r"villager|peasant|farmer|worker|servant|laborer|miller|shepherd|cook|smith|carpenter|merchant|trader|shopkeeper|innkeep|owner|boy|girl",
+    ),
 ]
 
 
@@ -90,16 +128,16 @@ def parse_action(raw: str, agents: set, objects: set, rooms: set):
     if arg:
         # graph 매칭 우선 — agent→target, room→loc, object→item. 겹치면 각 슬롯에 분리.
         t = _match(arg, agents)
-        l = _match(arg, rooms)
+        loc = _match(arg, rooms)
         i = _match(arg, objects)
         if t:
             step["target"] = t
         if i and i != t:
             step["item"] = i
-        if l and action == "Move":
-            step["loc"] = l
+        if loc and action == "Move":
+            step["loc"] = loc
         # 아무 것도 안 걸리면 기본 슬롯에 통짜 (최대 3단어)
-        if not (t or i or (l and action == "Move")) and default_slot:
+        if not (t or i or (loc and action == "Move")) and default_slot:
             step[default_slot] = " ".join(arg.split()[:3])
     return step
 
@@ -145,7 +183,7 @@ def main(src_glob, out_path, limit=None):
         try:
             q = json.load(open(f, encoding="utf-8"))
         except Exception:
-            continue
+            continue  # nosec B112 — 손상된 시드 파일 1건은 건너뛰고 나머지 배치 계속 처리
         rec = convert(q)
         if rec:
             out.append(rec)
@@ -163,7 +201,7 @@ def main(src_glob, out_path, limit=None):
     tot = sum(mode_c.values())
     print("=== 모드 분포 ===")
     for m, c in mode_c.most_common():
-        print(f"  {m:14} {c:5} ({100*c/tot:.0f}%)")
+        print(f"  {m:14} {c:5} ({100 * c / tot:.0f}%)")
     print("=== NPC 리맵 분포 ===")
     for n, c in npc_c.most_common():
         print(f"  {n:10} {c}")
@@ -176,5 +214,6 @@ def main(src_glob, out_path, limit=None):
 if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__))
     root = os.path.abspath(os.path.join(base, "../../.."))  # CognitiveEngine/finetune
-    main(os.path.join(root, "data/raw/light/quest_stems/*.json"),
-         os.path.join(root, "data/processed/stage2_light.jsonl"))
+    main(
+        os.path.join(root, "data/raw/light/quest_stems/*.json"), os.path.join(root, "data/processed/stage2_light.jsonl")
+    )

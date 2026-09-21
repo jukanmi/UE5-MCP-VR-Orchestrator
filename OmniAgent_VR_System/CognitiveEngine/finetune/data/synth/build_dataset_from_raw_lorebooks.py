@@ -116,7 +116,7 @@ def process_light_quest_stems():
             with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
-            continue
+            continue  # nosec B112 — 손상된 퀘스트 스템 1건은 건너뛰고 나머지 2000건 계속 처리
 
         qdata = data.get("data", {})
         char = qdata.get("character", "")

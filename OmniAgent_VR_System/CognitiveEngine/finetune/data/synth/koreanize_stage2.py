@@ -6,6 +6,7 @@ teacher 가 goal/steps 를 자연스러운 한국어 plan 으로 재작성 —
 PLAN_SYSTEM_PROMPT 검수 기준(구체적 goal, 실행 가능한 2~4 steps) 준수.
 출력: golden_plan_seed_light.yaml (사람 검수용 초안 — golden_plan_seed.yaml 과 별도 파일).
 """
+
 import json
 import os
 import re
@@ -60,14 +61,16 @@ def teacher_call(rec: dict, timeout=90):
         f"동기: {rec['motivation']}\n목표(영문): {rec['goal_en']}\n"
         f"행동 시퀀스: {steps_txt}\n\n이를 {rec['npc']} 의 한국어 plan 으로 재작성."
     )
-    body = json.dumps({
-        "model": MODEL,
-        "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
-        "stream": False,
-        "format": SCHEMA,
-        "think": False,
-        "options": {"temperature": 0.4, "num_ctx": 2048, "num_predict": 400},
-    }).encode()
+    body = json.dumps(
+        {
+            "model": MODEL,
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
+            "stream": False,
+            "format": SCHEMA,
+            "think": False,
+            "options": {"temperature": 0.4, "num_ctx": 2048, "num_predict": 400},
+        }
+    ).encode()
     req = urllib.request.Request(OLLAMA, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         content = json.load(resp)["message"]["content"]
@@ -109,7 +112,8 @@ def quality_filter(recs):
             char = (r.get("character") or "").strip()
             if not char or re.search(
                 r"\b(deer|bird|butterfly|worm|rat|cat|dog|horse|wolf|bear|fish|dragon|spider|snake|goat|sheep|cow|pig|chicken|monster|beast)\b",
-                char, re.I,
+                char,
+                re.I,
             ):
                 continue
             # "the mysterious owner" → "Mysterious Owner" 꼴 npc_id
@@ -130,15 +134,15 @@ def to_yaml(entries):
     for i, e in enumerate(entries, 1):
         lines.append(f"- id: plan_light_{i:03d}")
         lines.append(f"  npc: {e['npc']}")
-        lines.append(f"  source_goal_en: \"{e['goal_en']}\"")
+        lines.append(f'  source_goal_en: "{e["goal_en"]}"')
         lines.append("  context: |")
         for ln in e["context_ko"].splitlines():
             lines.append(f"    {ln}")
         lines.append("  gold:")
-        lines.append(f"    goal: \"{e['goal_ko']}\"")
+        lines.append(f'    goal: "{e["goal_ko"]}"')
         lines.append("    steps:")
         for s in e["steps_ko"]:
-            lines.append(f"      - \"{s}\"")
+            lines.append(f'      - "{s}"')
         lines.append("")
     return "\n".join(lines)
 
@@ -160,7 +164,7 @@ def main():
     out_yaml = os.path.join(base, args.out)
     out_fail = os.path.join(root, "data/processed/koreanize_failures.jsonl")
 
-    recs = [json.loads(l) for l in open(src, encoding="utf-8")]
+    recs = [json.loads(line) for line in open(src, encoding="utf-8")]
     pool = quality_filter(recs)
     if args.only_core:
         pool = [r for r in pool if r["npc"] in _CORE]
@@ -186,7 +190,7 @@ def main():
             if not validate_ko(ko):  # 1회 재시도 (검증 실패분)
                 ko = teacher_call(r)
             if not validate_ko(ko):
-                raise ValueError(f"검증 실패: {ko.get('goal_ko','')[:40]}")
+                raise ValueError(f"검증 실패: {ko.get('goal_ko', '')[:40]}")
             entries.append({**r, **ko})
         except Exception as e:
             fails.append({"goal_en": r["goal_en"], "err": str(e)})

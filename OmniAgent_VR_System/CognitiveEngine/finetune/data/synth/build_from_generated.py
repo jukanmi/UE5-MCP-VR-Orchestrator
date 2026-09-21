@@ -8,6 +8,7 @@ speech 는 Sonnet 배치가 작성한다(teacher). 이 스크립트는 병합·�
 
 사용: python build_from_generated.py [--out ../processed/stage1_e4b_train.jsonl] [--merge-existing PATH]
 """
+
 import argparse
 import collections
 import json
@@ -41,7 +42,7 @@ def load_speech() -> dict:
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
-                continue
+                continue  # nosec B112 — 손상된 JSONL 1줄은 건너뛰고 나머지 계속 처리
             if rec.get("id"):
                 out[rec["id"]] = rec
     return out
@@ -107,11 +108,18 @@ def main():
             "actions": sc["gold"]["actions"],
             "plan_achieved": False,
         }
-        rows.append({"messages": [
-            {"role": "system", "content": build_system(persona, sit["valid_targets"], inventory, sit["sentiment"])},
-            {"role": "user", "content": f"Context: {build_natural_context(seed_view)}"},
-            {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
-        ]})
+        rows.append(
+            {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": build_system(persona, sit["valid_targets"], inventory, sit["sentiment"]),
+                    },
+                    {"role": "user", "content": f"Context: {build_natural_context(seed_view)}"},
+                    {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
+                ]
+            }
+        )
         seen_speech[assistant["speech"]] += 1
 
     ac = collections.Counter()

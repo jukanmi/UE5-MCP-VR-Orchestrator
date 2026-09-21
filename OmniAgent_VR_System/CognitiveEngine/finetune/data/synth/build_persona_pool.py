@@ -78,7 +78,7 @@ def light_bios():
         try:
             d = json.load(open(f, encoding="utf-8"))["data"]
         except Exception:
-            continue
+            continue  # nosec B112 — 손상된 페르소나 원본 1건은 건너뛰고 나머지 풀 계속 구축
         char = (d.get("character") or "").strip()
         persona = (d.get("persona") or "").strip()
         if not char or not persona or char in seen:
@@ -145,8 +145,7 @@ def validate(card: dict) -> bool:
     if name in ("Elara", "James", "Skadi", "Moca", "Guard", "Player"):
         return False
     # 현대·원작 캐릭터 각색 실패 거부 (role 영어 기준)
-    if re.search(r"agent|spy|detective|scientist|hacker|pilot|streamer|officer|engineer|doctor",
-                 role, re.I):
+    if re.search(r"agent|spy|detective|scientist|hacker|pilot|streamer|officer|engineer|doctor", role, re.I):
         return False
     # traits: 짧은 형용사만 (구절 누출 거부)
     for t in traits:

@@ -19,6 +19,9 @@ on:
       - "pyproject.toml"
       - ".github/workflows/pytest.yml"
 
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -28,6 +31,8 @@ jobs:
         working-directory: OmniAgent_VR_System/CognitiveEngine
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:

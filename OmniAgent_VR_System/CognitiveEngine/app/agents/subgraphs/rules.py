@@ -96,7 +96,7 @@ def _is_target_loc_in_bounds(target_loc_str: str | None) -> bool:
             if isinstance(parsed, dict):
                 coords = {str(k).lower(): float(v) for k, v in parsed.items()}
         except Exception:
-            pass
+            pass  # nosec B110 — dict 파싱 실패는 정상, ② UE 형식 폴백으로 계속 진행
         # ② UE 형식 (X=100,Y=200,Z=0) 폴백 — literal_eval 로는 SyntaxError
         if not coords:
             coords = {k.lower(): float(v) for k, v in re.findall(r"([XYZxyz])\s*=\s*(-?\d+(?:\.\d+)?)", target_loc_str)}

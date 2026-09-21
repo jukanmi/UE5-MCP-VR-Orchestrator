@@ -101,7 +101,7 @@ model = FastLanguageModel.get_peft_model(
 )
 
 # ── Blackwell+bitsandbytes 스트림 충돌 런타임 패치 (chatbot/train.py 이식) ──
-import torch.func as _torch_func
+import torch.func as _torch_func  # noqa: E402 — get_peft_model 이후 패치해야 하므로 지연 임포트
 
 
 def _safe_grad_and_value(func, argnums=0, has_aux=False):
@@ -130,7 +130,7 @@ def _safe_grad_and_value(func, argnums=0, has_aux=False):
 
 _torch_func.grad_and_value = _safe_grad_and_value
 
-import torch.autograd as _tautograd
+import torch.autograd as _tautograd  # noqa: E402 — torch.func 패치 이후 순차 적용
 
 _orig_backward = _tautograd.backward
 
@@ -148,7 +148,8 @@ print("    Blackwell 스트림 동기화 패치 적용됨")
 # 체크포인트 저장 시 torch.save(SFTConfig) → "Can't pickle: not the same object" 크래시 회피.
 # unsloth 2026.7.3 이 SFTConfig 를 런타임 재정의해 클래스 identity 가 깨짐.
 # _save 를 어댑터+토크나이저만 저장하도록 교체(training_args.bin pickle 스킵).
-import transformers.trainer as _hf_trainer
+import transformers.trainer as _hf_trainer  # noqa: E402 — autograd 패치 이후 순차 적용
+
 
 def _save_model_only(self, output_dir=None, state_dict=None):
     output_dir = output_dir or self.args.output_dir
@@ -159,12 +160,13 @@ def _save_model_only(self, output_dir=None, state_dict=None):
         pc.save_pretrained(output_dir)
     print(f"    [checkpoint] adapter 저장 → {output_dir}")
 
+
 _hf_trainer.Trainer._save = _save_model_only
 print("    체크포인트 pickle 회피 패치 적용됨")
 
 # ── 데이터: {"messages":[...]} → chat template 텍스트 (JSONL 우회 로드) ──
 print(f"[2/4] 데이터 로드: {DATA}")
-raw = [json.loads(l) for l in open(DATA, encoding="utf-8")]
+raw = [json.loads(line) for line in open(DATA, encoding="utf-8")]
 
 
 def to_text(sample: dict) -> str:
