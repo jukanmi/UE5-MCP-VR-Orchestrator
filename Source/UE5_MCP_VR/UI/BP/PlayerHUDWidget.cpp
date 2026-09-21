@@ -2,7 +2,6 @@
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
-#include "GameFramework/PlayerController.h"
 #include "Story/StorySubsystem.h"
 #include "Components/Widget.h"
 #include "GameFramework/Pawn.h"
@@ -12,7 +11,6 @@
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
 #include "Kismet/GameplayStatics.h"
-#include "Haptics/HapticFeedbackEffect_Base.h"
 
 void UPlayerHUDWidget::NativeConstruct()
 {
@@ -66,13 +64,6 @@ void UPlayerHUDWidget::HandleStoryUpdated(const FStoryState& State)
     if (QuestUpdateSound)
     {
         UGameplayStatics::PlaySound2D(this, QuestUpdateSound);
-    }
-    if (QuestUpdateHaptic)
-    {
-        if (APlayerController* PC = GetOwningPlayer())
-        {
-            PC->PlayHapticEffect(QuestUpdateHaptic, EControllerHand::Left);
-        }
     }
 }
 

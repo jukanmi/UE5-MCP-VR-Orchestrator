@@ -258,12 +258,13 @@ gantt
 
 ### [Phase 4: VR UI & 플레이어 피드백] (예상: 1일)
 > **완료(2026-09-21)** — 퀘스트 텍스트는 `WBP_PlayerHUD` 의 `QuestLogText`(2026-09-18)로 대체 구현.
-> SFX/햅틱은 `UPlayerHUDWidget::HandleStoryUpdated`(`RefreshQuestLogText` 와 분리해 초기 리플레이 시
-> 오작동 방지)에서 `QuestUpdateSound`/`QuestUpdateHaptic` 재생 — 둘 다 EditDefaultsOnly, 미배정이면 스킵.
+> SFX 는 `UPlayerHUDWidget::HandleStoryUpdated`(`RefreshQuestLogText` 와 분리해 초기 리플레이 시
+> 오작동 방지)에서 `QuestUpdateSound` 재생 — EditDefaultsOnly, 미배정이면 스킵. 햅틱은 2026-09-21 폐기
+> (컨트롤러→손 트래킹 전환 예정이라 진동 하드웨어 자체가 사라짐).
 - **목표**: 플레이어가 VR 헤드셋 안에서 현재 진행해야 할 스토리와 서브 목표를 명확히 인지.
 - **작업 파일**:
   - `Content/UI/WBP_QuestLog.uasset`: `UStorySubsystem::OnStoryUpdated`를 바인딩하여 퀘스트 텍스트 표시.
-  - 퀘스트 갱신/완료 시 효과음(SFX) 및 햅틱 피드백 트리거.
+  - 퀘스트 갱신/완료 시 효과음(SFX) 트리거.
 
 ### [Phase 5: 통합 검증 (End-to-End Test)] (예상: 0.5일)
 - **검증 시나리오**:

@@ -25,7 +25,6 @@ class UPanelWidget;
 class UWidget;
 class UInventoryComponent;
 class USoundBase;
-class UHapticFeedbackEffect_Base;
 
 UCLASS()
 class UE5_MCP_VR_API UPlayerHUDWidget : public UUserWidget
@@ -119,10 +118,6 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
     USoundBase* QuestUpdateSound = nullptr;
 
-    /** 퀘스트 갱신 시 왼손 컨트롤러에 재생할 햅틱 — 미배정이면 조용히 스킵. */
-    UPROPERTY(EditDefaultsOnly, Category = "HUD|Quest")
-    UHapticFeedbackEffect_Base* QuestUpdateHaptic = nullptr;
-
     // --- Gold (상인) ---
 
     /** 골드 — WBP 에 "GoldText" 이름 UTextBlock 배치 시 자동 바인딩(선택). UInventoryComponent::OnGoldChanged 로 갱신. */
@@ -160,7 +155,7 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "HUD")
     TObjectPtr<APawn> OwnerPawn;
 
-    /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신 + SFX/햅틱 피드백. */
+    /** UStorySubsystem::OnStoryUpdated → QuestLogText 갱신 + SFX. */
     UFUNCTION()
     void HandleStoryUpdated(const FStoryState& State);
 

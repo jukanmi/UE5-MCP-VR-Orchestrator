@@ -72,8 +72,6 @@
 
   **3. 페인트 자체가 어두움 — 참조 아이콘 문제.**
   멀티뷰(페인트 직후) 밝기부터 이미 낮은 부류: Glasses 0.162 · BrokenCompass 0.071 · AncientScroll 0.087 · Leather 0.119. 참조 아이콘이 불꽃·날개 등 이펙트가 얹힌 복잡한 일러스트인데 메시는 단순 덩어리라 페인트 모델이 매핑에 실패한다. 이펙트 없는 단순 아이콘 재제작 없이는 생성 파이프라인만으론 해결 불가.
-### 사용자 작업 (에디터·PIE·운영 결정)
-→ **`docs/DoList.md`** 로 이관(2026-07-12) — 에디터 수작업·PIE 검증·GitHub/운영 결정은 전부 거기서 관리. Memo 에 중복 기재 금지.
 
   **4. 저가중치 뷰 색 환각.** Rock 바닥면이 파랗게 칠해짐(원본은 흰 대리석). 바닥·상단 뷰에서만 보이는 면은 페인트 모델이 근거 없이 지어냄.
 ### 문서 부채 (2026-07-10 발굴)
@@ -94,8 +92,9 @@
 - [ ] (소형) Constrained Generation — BehaviorMode·인벤토리 기반 액션 enum grammar 사전 제약. 현행은 valid_targets enum + rules 사후검증.
 - [ ] VR 멀티플레이어 · Quest 3 스탠드얼론 APK(W22 보류 결정 재검토 시점 미정) — 스펙 미작성.
 
-### 사용자 작업 (에디터·PIE·운영 결정)
-→ **`docs/DoList.md`** — 에디터 수작업·PIE 검증·GitHub/운영 결정은 전부 거기서. Memo 에 중복 기재 금지.
+### 사용자 작업 (MCP 로 안 되는 것만)
+→ **`docs/DoList.md`** — 에디터 작업은 ue5 MCP 로 클로드가 먼저 시도(2026-09-21 규칙 변경, 종전엔 에디터 작업 전부 사용자
+이관). MCP 로 실패한 것·BP 그래프 노드·헤드셋 PIE 육안·GitHub/운영 결정만 거기에. Memo 에 중복 기재 금지.
 
 ---
 
@@ -109,8 +108,20 @@
   +`FocusChatInput()`, 매 틱 `UpdateChatPanelVisibility()` 가 포커스 잃으면(전송 후 `SetInputMode(GameOnly)`·빈 Enter)
   숨김. `UpdateHUDPanelGaze` 의 `IsChatFocused()` 특례 제거. **AddToViewport 는 여전히 금지**(VR 스테레오, `VRPawn.h:124`
   주석) — 카메라 부착 world-space 가 "화면 고정" 의 정답. head-lock 멀미 금기는 상시 패널 얘기라 채팅(잠깐 켜짐)은 예외로
-  명시(생성자 주석). `sol_pi.py verify all` = 빌드 0 오류·pytest 75·UAT clean. WBP_Chat 생성·BP_VRPawn `ChatWidgetClass`
-  배선·PIE 는 DoList 1-15(MCP 끊겨 수작업).
+  명시(생성자 주석). `sol_pi.py verify all` = 빌드 0 오류·pytest 75·UAT clean. 코드는 `05d610b0`.
+  - [x] **WBP_Chat + BP_VRPawn 배선 + PIE 검증 — 전부 MCP (`.mcp.json` 복구 후 재연결)**. 함정 2개: ① `WidgetBlueprintFactory`
+    로 새로 만들면 트리가 **루트 없이** 생성되고 `WidgetTree.root_widget` 이 Python 미노출이라 못 꽂음 → **기존 WBP 복제
+    (`EAL.duplicate_asset`) → `BEL.reparent_blueprint(wbp, unreal.ChatWidget)` → 루트 `clear_children()` → 재구성** 이 유일한 길.
+    ② 복제 원본(WBP_InventorySlot)의 위젯 변수(`ItemName`)가 그래프 노드에 남아 컴파일 에러 → `BEL.remove_graph(find_event_graph)`
+    로 이벤트그래프 통째 제거 후 `remove_unused_variables` 로 정리(채팅은 그래프 0노드가 목표라 정답). 트리:
+    SizeBox(루트, 오버라이드 전부 clear) → Border `ChatFrame`(검정 α.65) → VerticalBox → ScrollBox **`ChatLog`**(Fill) +
+    EditableTextBox **`ChatInput`**. 인스턴스 위젯은 `find_object(cw,"WidgetTree")` 로는 안 잡힘 — `ObjectIterator(ScrollBox)`
+    에서 outer 체인으로 소유자 판정. PIE(헤드셋 없이): `WBP_Chat_C` 인스턴스 생성·`VRCamera` 부착·초기 숨김·`focus_chat_input`
+    → `is_chat_focused` True·`append_chat_line` 2줄 → ChatLog children 2·스크린샷에 텍스트 정방향(Yaw 180 관례 확인)·
+    `WidgetLibrary.set_input_mode_game_only` → 다음 틱 숨김. **HighResShot 은 `SetVisibility(true)` 직후 프레임엔 렌더타깃이
+    비어 안 찍힘 — 몇 틱 뒤 촬영.** 첫 PIE 는 128s 걸려 MCP HTTP 가 타임아웃(`socket_send_failure`) — 실행은 되니 로그로 확인.
+    `WBP_PlayerHUD` 의 옛 채팅 서브트리(`BottomRow` → `ChatBox`(VerticalBox) → `ChatInput`+`ChatLog`)도 MCP 로
+    `remove_child` 해 제거·컴파일 클린(`ScrollBox_0` 은 인벤토리 `SlotGrid` 컨테이너라 무관). 헤드셋 육안만 DoList 1-15.
 - [x] **엔진 빌드 봉쇄 해소 + `.uproject` VisualStudioTools 비활성화 (2026-09-21)** — 세션 시작부터 `Expecting to find a
   type ... 'VisualStudioTools' in 'UE5Rules'` 로 빌드 0초 실패(develop 순정도 동일 — 코드 무관). 근본 원인은 Handoff U-2.
   헛다리 2건(둘 다 Verify 로 되돌림): ① `Engine/Intermediate/Build/BuildRules/UE5Rules.dll` 삭제 → Installed Build 는
@@ -137,14 +148,11 @@
     (`ESenseType::Parried` 신규, `PerceptionIdFor`·`FPerceptionData` 기존 피격 패턴 재사용) → emergency_report
     로 LLM 이 패링 인지. `ParrySound` 는 `BP_SmartNPC` CDO 에 기존 `S_Hit_Metal_0`(Memo 에 "미배정"으로 남아있던
     바로 그 에셋) 배정.
-  - [x] **퀘스트 SFX/햅틱** — `UPlayerHUDWidget::HandleStoryUpdated` 를 `RefreshQuestLogText`(텍스트만, `NativeConstruct`
-    초기 리플레이 전용)와 분리해 소리/진동이 레벨 로드마다 오작동하는 것 방지. `QuestUpdateSound` 는 `/Engine/
-    VREditor/Sounds/VR_confirm` 배정 완료. `QuestUpdateHaptic`(`UHapticFeedbackEffect_Curve`) 는 **미배정** —
-    `RuntimeFloatCurve` 의 에디터 커브 데이터가 python 리플렉션에 없어(`external_curve`→`UCurveFloat` 별도 에셋
-    경유 필요) 새 `UCurveFloat.float_curve` 프로퍼티 접근 시도 중 RemoteControl 서버가 완전히 멎어(HTTP 응답
-    0, `Get-Process ... Responding=True` 인데 요청 무응답) 에디터 강제종료·재시작 1회 발생. 재현 위험 있어
-    커브 자동생성은 포기 — 에디터에서 수동으로 짧은 펄스 커브 2개(Amplitude/Frequency) 만들어 `HF_QuestComplete`
-    (`/Game/VR/Haptics/`, 빈 폴더만 남음)에 연결하면 끝(DoList).
+  - [x] **퀘스트 SFX** — `UPlayerHUDWidget::HandleStoryUpdated` 를 `RefreshQuestLogText`(텍스트만, `NativeConstruct`
+    초기 리플레이 전용)와 분리해 소리가 레벨 로드마다 오작동하는 것 방지. `QuestUpdateSound` 는 `/Engine/
+    VREditor/Sounds/VR_confirm` 배정 완료. **햅틱(`QuestUpdateHaptic`)은 같은 날 저녁 폐기** — 컨트롤러→손 트래킹
+    전환 예정이라 진동 하드웨어 자체가 없어짐(Handoff B "햅틱 전면 폐기"). 부수 기록: `UCurveFloat.float_curve` 를 python 으로
+    건드리면 RemoteControl 서버가 멎어 에디터 강제종료됨(재현 위험) — 커브 에셋 자동생성은 하지 말 것.
   - [x] **서브퀘스트 5종 E2E** — `s_moca_herbs`(HerbBasket `TryPickupInto`)·`s_hunt_forest_raiders`(Bandit
     3마리 `apply_damage`)·`s_hunt_bridge_troll`(Orc_Vagron)·`s_hunt_imp`(Imp 처치+ImpHorn `TryPickupInto`)·
     `s_hunt_dead_wraith`(Wraith 5마리 — 스포너 3마리 한도라 3킬 후 리스폰 대기 120s 필요) 전부 `story_state.json.side`
@@ -283,7 +291,9 @@
 
 - **Physics Asset 필수** — 없으면 `SetSimulatePhysics` 조용히 무효 + `FindClosestBone` None→Torso 폴백(부위 인지 무력화). 래그돌은 `UNPCRagdollComponent`(09-12 추출), 튜닝은 BP 의 `Ragdoll` 컴포넌트 Details.
 - **스켈레톤 = Mixamo X_Bot**(Mannequin 아님). `BoneToBodyPart` 양 네이밍 수용. 손 소켓/본 = `RightHand`/`LeftHand`(`hand_rSocket` 류 없음).
-- **VR 럼블 = `PlayHapticEffect` 에셋 필수** — `ClientPlayForceFeedback` 은 게임패드용. 햅틱은 `AVRPawn` 캐스트 성공 시만, 그 외 폰은 넉백만.
+- **햅틱 전면 폐기(2026-09-21)** — 컨트롤러→손 트래킹 전환 예정이라 진동 낼 하드웨어가 없어짐. 마지막 잔재
+  `UPlayerHUDWidget::QuestUpdateHaptic` 삭제로 코드베이스에 `PlayHapticEffect` 호출 0. 새 피드백은 SFX·시각(패널/마커)으로만.
+  (옛 메모: `ClientPlayForceFeedback` 은 게임패드용, VR 럼블은 `PlayHapticEffect`+에셋 — 되살릴 일 있으면 참고.)
 - **데미지 = 공격 인지 단일 기준** — 밀치기(약속도)는 `TakeDamage` 안 부름 → LLM 공격 인지 없음(의도). 넉다운 임계는 데미지값 비교(임펄스 아님). NPC 근접 데미지 = `Combat.AttackPower×AttackDamageScale` 고정(몽타주라 스윙 속도 없음). 플레이어는 쥔 아이템 방향 상자 + 마스터 테이블 Weight 질량(맨손은 손 구 + `WeaponMass`).
 - **새 Attack 몽타주엔 `NPC Attack Hit Window` 노티파이 필수**(SmartNPC) — 미배치 시 `PerformAttackHit` 안 불려 데미지 0(조용히). 스윙당 1회·지정 타겟만·arc 게이트. 판정 본체는 `ACombatCharacter::PerformAttackHit`(2026-09-18 이동). 적(EnemyCharacter)은 노티파이 대신 시간 기준.
 - **PauseAI/ResumeAI = StopLogic/StartLogic**, UnPossess 안 씀(재빙의·BB 손실 회피). Resume 시 StateTree 루트 재가동 = 기상 후 위협 재평가(의도). 기상 몽타주는 컴포넌트 기본값(`AM_LayUp`·`AS_stand_up`), 미할당 시 서기 스냅. `ProjectileClass` 미지정이면 원거리 발사 자체 없음.
@@ -347,7 +357,7 @@
   & "C:\Program Files\Epic Games\UE_5.5\Engine\Build\BatchFiles\Build.bat" UE5_MCP_VREditor Win64 Development -Project="C:\github\UE5_MCP_VR\UE5_MCP_VR.uproject" -WaitMutex
   ```
   증분 빌드 ~15초. 에디터가 열려 있어도 핫리로드 대상 DLL 링크는 됨(`-WaitMutex` 가 UBT 뮤텍스 대기). 빌드 에러는 클로드가 직접 수정 후 재빌드.
-- **PIE·에디터 런타임 검증**: 사용자가 실행 — 육안 확인(몽타주·이동·VR)은 여전히 사용자 몫. 클로드는 체크리스트만 제시.
+- **에디터 작업·PIE 검증**: 에디터 조작(에셋·BP 생성, 프로퍼티, 레벨, 헤드셋 없는 PIE)은 MCP 로 클로드가 먼저. 헤드셋 육안 확인(몽타주·이동·VR 체감)만 사용자 몫, 클로드는 체크리스트 제시.
 - **Python·기타(RAG 인덱스 빌드, 테스트, 스크립트 등)**: 클로드가 직접 실행·검증까지 완료. 사용자에게 미루지 말 것. 예: `python -m app.utils.build_knowledge --all` 후 retrieve 결과까지 확인.
 
 ---

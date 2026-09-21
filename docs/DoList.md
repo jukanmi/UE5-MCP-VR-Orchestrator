@@ -1,7 +1,9 @@
 # DoList — 사용자 작업 목록
 
-> 클로드가 못 하는 것(에디터 수작업·PIE 육안 검증·GitHub UI 결정)만 여기에. 완료 시 체크 후 클로드에게 알려주면 후속(커밋 등) 진행.
-> 코드 작업·빌드는 클로드 담당 — 여기 안 씀.
+> **MCP 로 시도해서 안 된 것만** 여기에. 에디터 작업(에셋·BP 생성, 위젯 트리, 프로퍼티, 레벨 배치, 헤드셋 없는 PIE)은
+> 클로드가 ue5 MCP 로 먼저 하고, 실패한 항목만 "무엇을 시도했고 왜 막혔는지"와 함께 등록. MCP 서버가 끊겨 있으면
+> 에디터 기동·재연결까지 해본 뒤. 처음부터 사람 몫: BP 그래프 노드 편집, 헤드셋 PIE 육안 검증, GitHub UI·운영 결정.
+> 완료 시 체크 후 클로드에게 알려주면 후속(커밋 등) 진행. 코드 작업·빌드는 클로드 담당 — 여기 안 씀.
 
 ---
 
@@ -10,28 +12,19 @@
 > 공통: 가구 BP 는 이벤트 그래프 노드 **0개** — 부모 `FurnitureActor`, 컴포넌트·프로퍼티 설정만.
 > 절차 상세는 `주간기록/2026-W29` BP_Chair 항목 참조(동일 패턴).
 
-### 1-15. 대화창 UI 분리 — WBP_Chat 신규 + BP_VRPawn 배선 (2026-09-21 구현)
+### 1-15. 대화창 UI 분리 — 헤드셋 육안만 남음 (2026-09-21 구현, MCP 로 에셋·배선·PIE 완료)
 
-> 배경: 대화창(ChatInput/ChatLog)을 손 HUD 패널에서 뽑아 새 C++ 클래스 `UChatWidget`
-> (`Source/UE5_MCP_VR/UI/BP/ChatWidget.h`)로 분리, VRPawn 에 카메라 부착 `ChatWidgetComp` 신설
-> (Enter 로 열림, 포커스 잃으면 자동 닫힘). 빌드는 통과. MCP 로 먼저 시도함 — `mcp__ue5__*` 전부
-> "서버 끊김"으로 세션에서 사라진 상태라 에디터를 새로 띄우고 Remote Control API(`:30010`)가 응답하는
-> 것까지 확인했는데도 도구 목록에 안 뜸(2026-09-21). 세션 레벨 연결 문제라 `/mcp` 재연결이나 새 세션
-> 없이는 복구 불가 — 그래서 아래는 진짜 수작업으로 남긴 항목.
+> `WBP_Chat` 생성·`BP_VRPawn.ChatWidgetClass` 배선·헤드셋 없는 PIE 검증은 전부 클로드가 MCP 로 끝냄
+> (Memo Done 2026-09-21 참조, 스크린샷 `Saved/Screenshots/WindowsEditor/chat_panel_open2.png`).
 
-- [ ] **WBP_Chat 신규 생성** — `Content/Core/interface/` 우클릭 → User Interface → Widget Blueprint,
-  부모 클래스로 `UChatWidget` 지정(부모 클래스 선택 창에서 검색), 이름 `WBP_Chat`.
-  - 위젯 트리에 `UEditableTextBox` 하나 추가하고 이름을 정확히 **ChatInput** 으로.
-  - `UScrollBox` 하나 추가하고 이름을 정확히 **ChatLog** 로. (`BindWidgetOptional` 이 이름으로 자동 바인딩 —
-    `WBP_PlayerHUD` 만들 때와 동일 패턴.)
-  - 캔버스 크기는 `VRPawn.h` 의 `ChatPanelDrawSize` 기본값(500×260)에 맞추면 무난. 컴파일·저장.
-- [ ] **BP_VRPawn 배선** — `Content/Blueprint/Player/BP_VRPawn.uasset` 열어 Class Defaults →
-  `UI|Chat` 카테고리 → `ChatWidgetClass` 에 방금 만든 `WBP_Chat` 지정 → 컴파일·저장.
-- [ ] **PIE 검증** — Enter → 대화창이 시야 중앙 부근에 뜨고 고개 돌려도 따라오는지(카메라 고정) ·
-  텍스트 입력 후 Enter → 전송되고 창 닫히는지(NPC 응답 ChatLog 에 쌓이는지) · 빈 Enter → 그냥 닫히는지 ·
-  손 패널(HP/스태미나/인벤토리/퀘스트/골드)에 채팅 흔적 없고 기존 기능 정상인지.
+- [ ] **헤드셋 PIE 육안** — Enter 로 뜬 대화창이 고개를 돌려도 시야에 붙어 오는지(카메라 고정 체감·멀미 여부) ·
+  기본 크기/거리(`ChatPanelScale 0.08`, `ChatPanelOffset (80,0,-15)`, BP_VRPawn 디테일에서 조정 가능)가 헤드셋에서
+  읽히는지 · 손 패널(옛 `ChatBox` 서브트리는 MCP 로 제거 완료)에 채팅 흔적 없고 인벤토리·퀘스트·골드 레이아웃이
+  안 깨졌는지 · 실제 NPC 앞에서 입력→Enter→응답이 ChatLog 에 쌓이는지.
 
-### 1-14. NPC RNG 패링 + 퀘스트 SFX/햅틱 (2026-09-21 구현, `docs/SPEC_realistic_combat.md` §3.2·로드맵 Phase4)
+### 1-14. NPC RNG 패링 + 퀘스트 SFX (2026-09-21 구현, `docs/SPEC_realistic_combat.md` §3.2·로드맵 Phase4)
+
+> 햅틱은 2026-09-21 폐기(컨트롤러→손 트래킹 전환 예정, 진동 낼 하드웨어가 없어짐). `QuestUpdateHaptic` 코드 삭제.
 
 - [ ] **헤드셋 PIE — 패링 체감** — SmartNPC(James 등) 상대로 검을 여러 번 휘두르기. Agility 50 기준
   25% 확률로 "챙강" 금속음(`S_Hit_Metal_0`)과 함께 데미지가 안 들어가는지, 나머지는 평소처럼 맞는지.
@@ -39,11 +32,6 @@
   특화 대사가 나오는지는 몇 번 시도해야 걸릴 수 있음).
 - [ ] **PIE — 퀘스트 갱신 소리** — 비트 전이 시 `VR_confirm` 소리가 나는지(HUD 텍스트 갱신과 동시).
   레벨 재접속 시(위젯 재생성) 소리가 안 나고 텍스트만 갱신되는지도 확인(의도된 동작).
-- [ ] **(선택) 퀘스트 갱신 진동 — 햅틱 커브 수동 제작** — `QuestUpdateHaptic` 미배정 상태. 자동 생성 시도
-  중 UE5 python 이 `UCurveFloat` 의 에디터 커브 리플렉션을 못 찾아 RemoteControl 서버가 멎어 에디터
-  강제종료까지 발생 — 재시도 리스크 있어 보류. 필요하면 에디터에서 직접: `/Game/VR/Haptics/` 에
-  `UHapticFeedbackEffect_Curve` 신규 + `UCurveFloat` 2개(Amplitude 0→1→0 짧은 펄스, Frequency 상수 1.0)
-  만들어 연결 → `WBP_PlayerHUD` CDO 의 `QuestUpdateHaptic` 에 배정.
 
 ### 1-8. 인벤토리 슬롯 발동 → 사용/장착 (2026-09-07 조작 방식 변경)
 
