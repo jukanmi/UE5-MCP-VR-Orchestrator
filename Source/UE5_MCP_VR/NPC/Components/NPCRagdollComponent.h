@@ -17,6 +17,16 @@ class UAnimMontage;
 class UPhysicalAnimationComponent;
 class USkeletalMeshComponent;
 
+/** 비틀거림 4방향 — 피격 방향을 소유자 로컬로 옮겨 양자화한 값. 몽타주 슬롯 키. */
+UENUM(BlueprintType)
+enum class EStumbleDir : uint8
+{
+    Front UMETA(DisplayName = "Front"),
+    Back  UMETA(DisplayName = "Back"),
+    Left  UMETA(DisplayName = "Left"),
+    Right UMETA(DisplayName = "Right")
+};
+
 UCLASS(ClassGroup = (MCP), meta = (BlueprintSpawnableComponent))
 class UE5_MCP_VR_API UNPCRagdollComponent : public UActorComponent
 {
@@ -28,12 +38,18 @@ public:
     /** 직전 피격의 본·방향 — TakeDamage 가 채우고 EnterRagdoll/Flinch 가 임펄스에 쓴다. */
     void NoteHit(FName Bone, const FVector& Direction);
 
-    /** 피격 강도(=½mv² 데미지)로 반응 분기. >= KnockdownImpulseThreshold → Knockdown, else → Flinch. */
+    /** 피격 강도(=½mv² 데미지)로 반응 분기. >= Knockdown → Knockdown(막는 중이면 Stumble),
+     *  >= Stumble → Stumble, else → Flinch. */
     void ReactToHit(float HitStrength);
 
     /** 약타 반응 — 상체(FlinchRootBone 이하) 물리 블렌드 + 임펄스 → Tick 램프로 애니 복귀. 넉다운/기상 중이면 무시. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Ragdoll")
     void Flinch();
+
+    /** 중타 반응 — 피격 방향 4방향 몽타주(루트 모션이 캡슐을 끈다).
+     *  몽타주가 없으면 Flinch + 밀림으로 폴백. 넉다운/기상 중이면 무시. */
+    UFUNCTION(BlueprintCallable, Category = "MCP|Ragdoll")
+    void Stumble();
 
     /** 강타 반응 — 전신 래그돌 + AI 정지 + 안착 후 기상. 넉다운/기상 중 재호출 시 재진입(저글). */
     UFUNCTION(BlueprintCallable, Category = "MCP|Ragdoll")
@@ -50,6 +66,10 @@ public:
     /** 이 데미지(=½mv² 에너지 스케일) 이상이면 넉다운, 미만이면 Flinch. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
     float KnockdownImpulseThreshold = 40.f;
+
+    /** 이 데미지 이상이면 Stumble(넉다운 미만일 때). 넉다운 임계의 절반 — 한손검 보통 스윙 ½mv² 가 15~30 대. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float StumbleThreshold = 20.f;
 
     /** 래그돌에 가할 타격 방향 임펄스 강도(본 단위, bVelChange=false → 질량 의존). 0 이면 순수 중력. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
@@ -76,6 +96,17 @@ public:
     /** 물리→애니 블렌드 복귀 속도(weight/초). Flinch·기상 블렌드 램프 공용. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
     float FlinchRecoverSpeed = 3.0f;
+
+    // --- Stumble (중타) ---
+
+    /** 4방향 비틀거림 몽타주. 생성자에서 `/Game/Core/Animation/Hit/AM_Stumble_*` 로 채운다.
+     *  비어 있는 칸은 절차적 폴백(Flinch + 밀림)으로 대체된다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    TMap<EStumbleDir, UAnimMontage*> StumbleMontages;
+
+    /** 절차적 폴백의 밀림 속도(cm/s, 수평만). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Ragdoll")
+    float StumbleLaunchSpeed = 450.f;
 
     // --- Knockdown / 기상 ---
 
@@ -131,6 +162,12 @@ private:
 
     /** Flinch 램프·넉다운 진행 중에만 틱. */
     void RefreshTickEnabled();
+
+    /** 직전 피격 방향(LastHitDirection)을 소유자 로컬로 옮겨 4방향으로 양자화. */
+    EStumbleDir ResolveStumbleDir() const;
+
+    /** 소유자가 지금 Block 액션 중인가(가드 브레이크 판정용). SmartNPC 외에는 항상 false. */
+    bool IsOwnerBlocking() const;
 
     USkeletalMeshComponent* GetOwnerMesh() const;
     class ACharacter* GetOwnerCharacter() const;

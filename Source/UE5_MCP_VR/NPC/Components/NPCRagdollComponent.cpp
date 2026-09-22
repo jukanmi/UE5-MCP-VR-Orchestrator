@@ -6,6 +6,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "AIController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/Action/NPCActionComponent.h"
 #include "NPC/Action/SmartNPCAIController.h"
@@ -53,6 +54,17 @@ UNPCRagdollComponent::UNPCRagdollComponent()
     static ConstructorHelpers::FObjectFinder<UAnimMontage> FaceDown(TEXT("/Game/Core/Animation/AS_stand_up.AS_stand_up"));
     if (FaceUp.Succeeded())   GetUpMontage_FaceUp = FaceUp.Object;
     if (FaceDown.Succeeded()) GetUpMontage_FaceDown = FaceDown.Object;
+
+    // 4방향 비틀거림 몽타주도 같은 이유로 C++ 확정 — BP 마다 다시 꽂지 않게.
+    // 에셋이 없으면 칸이 비고, Stumble 이 절차적 폴백으로 내려간다.
+    static ConstructorHelpers::FObjectFinder<UAnimMontage> StFront(TEXT("/Game/Core/Animation/Hit/AM_Stumble_Front.AM_Stumble_Front"));
+    static ConstructorHelpers::FObjectFinder<UAnimMontage> StBack (TEXT("/Game/Core/Animation/Hit/AM_Stumble_Back.AM_Stumble_Back"));
+    static ConstructorHelpers::FObjectFinder<UAnimMontage> StLeft (TEXT("/Game/Core/Animation/Hit/AM_Stumble_Left.AM_Stumble_Left"));
+    static ConstructorHelpers::FObjectFinder<UAnimMontage> StRight(TEXT("/Game/Core/Animation/Hit/AM_Stumble_Right.AM_Stumble_Right"));
+    if (StFront.Succeeded()) StumbleMontages.Add(EStumbleDir::Front, StFront.Object);
+    if (StBack.Succeeded())  StumbleMontages.Add(EStumbleDir::Back,  StBack.Object);
+    if (StLeft.Succeeded())  StumbleMontages.Add(EStumbleDir::Left,  StLeft.Object);
+    if (StRight.Succeeded()) StumbleMontages.Add(EStumbleDir::Right, StRight.Object);
 }
 
 // --- 소유자 접근 ---
@@ -157,7 +169,14 @@ void UNPCRagdollComponent::ReactToHit(float HitStrength)
 
     if (HitStrength >= KnockdownImpulseThreshold)
     {
-        Knockdown();
+        // 가드 브레이크 — 막고 있었다면 넉다운 대신 비틀거림. 막다가 뚫리는 연출이라 넉다운보다 가볍다.
+        if (IsOwnerBlocking()) { Stumble(); }
+        else                   { Knockdown(); }
+    }
+    else if (HitStrength >= StumbleThreshold)
+    {
+        // Stumble 내부에서 넉다운/기상 중이면 무시.
+        Stumble();
     }
     else
     {
@@ -165,6 +184,89 @@ void UNPCRagdollComponent::ReactToHit(float HitStrength)
         Flinch();
     }
 }
+
+// 소유자가 Block 액션 중인가 — SmartNPC 만 액션 컴포넌트를 갖는다(필드 몹·주민은 항상 false).
+bool UNPCRagdollComponent::IsOwnerBlocking() const
+{
+    ACharacter* OwnerChar = GetOwnerCharacter();
+    if (!OwnerChar) return false;
+    const UNPCActionComponent* ActionComp = OwnerChar->FindComponentByClass<UNPCActionComponent>();
+    return ActionComp && ActionComp->GetCurrentAction().ActionType == EAction::Block;
+}
+
+// 피격 방향을 소유자 로컬로 옮겨 4방향 양자화.
+// LastHitDirection 은 ShotDirection(가해자→대상)이다. 정면에서 맞으면 벡터가 앞에서 뒤로
+// 향하므로 로컬 X 가 **음수** — 부호를 헷갈리면 앞뒤/좌우가 통째로 뒤집힌다.
+EStumbleDir UNPCRagdollComponent::ResolveStumbleDir() const
+{
+    const ACharacter* OwnerChar = GetOwnerCharacter();
+    if (!OwnerChar || LastHitDirection.IsNearlyZero()) return EStumbleDir::Front;
+
+    FVector Dir = LastHitDirection;
+    Dir.Z = 0.f;
+    const FVector Local = OwnerChar->GetActorTransform().InverseTransformVectorNoScale(Dir.GetSafeNormal());
+
+    if (FMath::Abs(Local.X) >= FMath::Abs(Local.Y))
+    {
+        // X 음수 = 가해자가 앞에 있었다 = 정면 피격.
+        return Local.X < 0.f ? EStumbleDir::Front : EStumbleDir::Back;
+    }
+    // Y 음수 = 가해자가 오른쪽(+Y)에 있었다 = 오른쪽 피격.
+    return Local.Y < 0.f ? EStumbleDir::Right : EStumbleDir::Left;
+}
+
+// 중타 — 4방향 몽타주(루트 모션이 캡슐을 끈다), 없으면 Flinch + 밀림 폴백.
+void UNPCRagdollComponent::Stumble()
+{
+    ACharacter* OwnerChar = GetOwnerCharacter();
+    if (!OwnerChar || IsOwnerDead()) return;
+
+    // 넉다운/기상 중에는 생략 — 전신 래그돌이 우선(Flinch 와 같은 규율).
+    if (KnockdownPhase != EKnockdownPhase::None) return;
+
+    const EStumbleDir Dir = ResolveStumbleDir();
+    UAnimMontage* const* Found = StumbleMontages.Find(Dir);
+    UAnimMontage* Montage = Found ? *Found : nullptr;
+
+    // 비틀거리는 동안 AI 가 계속 걸어가면 연출이 뭉개진다 — 진행 중 이동만 끊는다(액션 큐는 그대로).
+    if (AAIController* AI = Cast<AAIController>(OwnerChar->GetController()))
+    {
+        AI->StopMovement();
+    }
+
+    if (Montage)
+    {
+        // 몽타주가 캡슐을 직접 끌고 간다 — 시퀀스 `bEnableRootMotion=true` + ABP `RootMotionFromMontagesOnly`.
+        // Mixamo 는 In Place 배포본이 없어 이동이 애니에 통째로 들어있다. 루트를 고정하면 "밀려나는
+        // 그림인데 제자리" 가 되고, 루트 모션을 끄면 메시만 끌려갔다가 몽타주 끝에 캡슐로 스냅백한다.
+        // 그래서 코드로 미는 대신 애니의 이동을 그대로 쓴다(둘 다 하면 이중 이동).
+        OwnerChar->PlayAnimMontage(Montage);
+    }
+    else
+    {
+        // 폴백 — 상체 움찔 + 수평 밀림. LaunchCharacter 직후 Falling 으로 바꿔야 지면 마찰에
+        // 즉시 먹히지 않고 실제로 밀려난다(Walking 유지 시 BrakingDecelerationWalking 에 0.2s 만에 정지).
+        // MaxWalkSpeed 를 0 으로 누르는 식의 이동 잠금은 쓰지 말 것 — Walking 복귀 순간
+        // CalcVelocity 가 방금 준 속도까지 0 으로 클램프해 한 발짝도 안 밀린다.
+        // 비틀거리는 동안 AI 가 걸어가는 것은 위의 StopMovement 로 이미 끊었다.
+        Flinch();
+
+        FVector Push = LastHitDirection;
+        Push.Z = 0.f;
+        Push = Push.IsNearlyZero() ? -OwnerChar->GetActorForwardVector() : Push.GetSafeNormal();
+        Push.Z = 0.f;
+
+        OwnerChar->LaunchCharacter(Push * StumbleLaunchSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
+        if (UCharacterMovementComponent* CMC = OwnerChar->GetCharacterMovement())
+        {
+            CMC->SetMovementMode(MOVE_Falling);
+        }
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Ragdoll] %s Stumble dir=%s (montage=%s)"),
+           *GetOwnerAgentID(), *UEnum::GetValueAsString(Dir), *GetNameSafe(Montage));
+}
+
 
 void UNPCRagdollComponent::EnterDeathRagdoll()
 {
