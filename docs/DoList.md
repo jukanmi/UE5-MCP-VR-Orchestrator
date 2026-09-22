@@ -102,19 +102,6 @@
   종류 분기(소비=사용 / 장비=장착 / 그 외=손에 쥐기)는 `ActivateItem` 안 — 그래프에서 갈라놓지 말 것.
   그립 뗄 때 분기(열림=회수 / 닫힘=던지기)는 W37 확인 완료. PIE 검증은 아래 별도 Done 항목.
 
-- [X] ~~1-13. 필드 적 시스템~~ (2026-09-18 구현, 헤드셋 PIE 체감 완료) — 도적 캠프(4300,-5600)·다리 오크
-  (14400,-2300)·죽은 숲 망령(11500,15500) 스포너 3. 한 명이 보면 셋이 오고, 둘만 붙고 셋째가 3.6m 링을 도는 것·
-  타격 시 펀치음+래그돌 플린치·저HP 도주 전부 확인. 육안 `Saved/Screenshots/scene/enemies_front.png`.
-  잔여(선택): 무기 색이 몸 텍스처라 약간 어긋남. 적 BP `/Game/Blueprint/Enemy/`, 값 원본 `tools/make_enemy_bps.py`.
-
-- [X] ~~1-1. 기타 에디터 잔짐~~ (2026-09-18 MCP Done) — ① 래그돌→기상 몽타주 포즈 스냅 완화: AnimBP 캐시 포즈
-  블렌드로 C++ 구현 완료(BP 노드 연결만 잔여). ② NPC `HandObject` 제시 몽타주: `Wizard_Spell1` 활용
-  `AM_NPC_HandObject` 생성·`DA_NPC_Actions` 의 `HandObject` 키 할당 완료 — C++ 수정 없이 재생됨.
-
-- [x] ~~2-7. 서버 재시작~~ — 2026-09-20 15:04 클로드가 재기동(pid 27556, `.venv` python, cwd CognitiveEngine,
-  로그 `Saved/Logs/cognitive_server.log`). 이전 터미널 서버는 종료됨 — 터미널에서 직접 보고 싶으면 이 프로세스
-  끄고 다시 띄울 것. story_state 는 b5 그대로. (절 2-7 의 "PIE — 아군 선공 확인" 은 미완으로 남아 있음.)
-
 - [x] ~~3. main 에서 ignore 파일 6개 추적 해제 결정~~ (2026-09-21 당일 해결, Memo Handoff U-1) — 커밋 불필요했음:
   원격 `origin/main` 은 이미 6개 미추적이라 stale 로컬 `main` 을 `git fetch origin main:main` 으로 FF 한 것으로
   끝(사용자 지적). 추가로 `docs/` gitignore 해제·추적 시작 커밋으로 Memo/DoList 는 이제 git 이력에 남음.
@@ -122,10 +109,6 @@
 - [X] ~~3. PR #26 `refactor/dead-code` → Develop 머지 결정~~ — 2026-09-13 생성, 검증 완료.
   https://github.com/jukanmi/UE5-MCP-VR-Orchestrator/pull/26
 
-- [x] ~~3. 월드 아이템을 Python 에 보낼지 결정~~ (2026-09-18 MCP Done) — "먼저 정할 것은 소비처" 였고,
-  **NPC 프롬프트**로 확정. `NPCManager` PromptPayload 에 반경 5m `nearby_items` 주입(`46c0c92`)으로 해소 —
-  별도 Envelope 타입 신설 없이 끝났다. 삭제된 `ItemManager::SerializeActiveItemsToJson`(항상 빈 `data`,
-  호출자 0)은 되살리지 않음.
 - [X] ~~2-6. 퀘스트 giver 주민 "!" 마커~~ (`Villager/VillagerCharacter`, 2026-09-21 클로드 MCP 전항목 검증) —
   `Content/StarterContent/` 6폴더가 로컬에서 완전히 비어있어(원인 불명, gitignore 대상이라 이력 없음)
   `build_story_scene.py` 가 `Shape_Cube` 못 찾아 죽던 문제 먼저 해결(엔진 Samples 에서 복사, 495MB).
@@ -133,9 +116,6 @@
   "!" 마커 `Visible=True`(James 2턴 만족 순간)·Interact 3회 순차 수락(`available→active`)·전부 소진 후
   `Visible=False`·4번째 Interact 도 에러 없이 기본 대사(멱등) 전부 확인.
 - [X] ~~1-12. 스토리 디렉터 Phase B·C 에디터 작업~~ (`docs/SPEC_story_director.md` §3.7, 2026-09-21 전항목 완료) — 의자 착석 PIE·전 맵 육안 확인·동선 PIE(구역 트리거 9)·spawn_enemy 스폰·보스 시야 즉시 교전(danger=0.60)·시나리오 대사 톤(Guard/James) 전부 확인. 보스 처치→전이는 클로드가 MCP(`GameplayStatics.apply_damage`)·`/api/debug/say` 로 b1→end 전체 재확인.
-- [x] **`BP_SmartNPC` 의 `DialogueWidget` 확인** — 네이티브 서브오브젝트 클래스가 (2026-09-18 MCP Done)
-- [x] **Phase C `spawn_enemy` 매핑** — `UStorySubsystem` 의 `enemy_id → TSubclassOf<AActor>` UPROPERTY 채우기, `loc` 이름→좌표 레지스트리. (2026-09-18 MCP Done)
-
 - [X] **PIE 검증** — 인벤토리 열고 슬롯 선택 후 그립:
   빵 → HP+15·스태미나+25·수량 −1·HUD 즉시 갱신 / 검 → 오른손 부착 / 이미 장착된 것 재선택 → 해제.
 - (선택) **`WBP_InventorySlot` 클릭 버튼** — 마우스/광선 클릭 경로도 원할 때만.
@@ -145,25 +125,5 @@
     `PressPointerKey(LeftMouseButton)` 를 날린다. 추가 입력 에셋 불필요.
   - 버튼이 광선에 안 맞으면 슬롯 위젯 Visibility 를 `Visible`(= Self-Hit-Test Invisible 아님)로.
   - MCP 로는 불가 — 위젯 그래프 노드 편집 API 가 없다(1-0b 와 같은 이유).
-
-- [x] ~~퀘스트 로그 WBP~~ — 2026-09-18 MCP 로 `WBP_PlayerHUD` StatusBox 하단에 `QuestLogText`(TextBlock, 노랑 18pt) 추가·저장.
-  바인딩은 C++ `PlayerHUDWidget::QuestLogText`(BindWidgetOptional) + `OnStoryUpdated` 구독 — 그래프 0노드. 위치/폰트는 디자이너에서 취향껏.
-
-- [x] ~~시나리오 NPC 배치~~ — 2026-09-18 MCP 로 `Sample` 레벨에 `NPC_Guard/James/Skadi/Elara`(BP_SmartNPC, AgentID 세팅) Moca 반경 5m 배치·저장. 위치 조정은 자유.
-
-- [x] ~~트리거 9구역~~ — 2026-09-18 텔레포트 PIE 로 전부 수신 확인(클로드). 헤드셋 걷기 검증은 선택.
-
-- [x] ~~PIE 검증(B)~~ — 2026-09-18 클로드가 헤드셋 없이 b1→end 완주(UE 로그 `[Story] 비트 갱신` 8건, state `end`). HUD 텍스트 육안만 남음(선택).
-
-- [x] ~~작가 콘텐츠 교체~~ — 2026-09-18 `STORY_SCENARIO.md` 7비트 + `s_moca_herbs` 로 교체 완료. NPC 페르소나·RAG 지식도 시나리오판으로 seed 됨(옛 해적 세계관은 `docs/archive/npc_pirate_2026-09-18/`).
-
-- [x] ~~보스 NPC 배치~~ — 2026-09-18 MCP 로 `BOSS_Commander_Vorg`(마을 +80m)·`BOSS_DemonLord`(+150m) 배치, 호감도 시드 완료. 위치는 "전초기지/마왕성" 느낌 나게 옮겨도 됨(AgentID 만 유지).
-
-- [x] ~~HerbBasket 드롭 배치~~ — `build_story_scene.py` 가 숲 빈터에 배치, 2026-09-18 획득→`서브 완료` 확인.
-
-- [x] **itch.io 수동 다운로드 3팩** (2026-09-18 MCP 완료 - import_itch_assets.py 작성 및 임포트)(CC0, 로그인 불필요, "Download Now → No thanks" → zip 을 `RawAssets/` 에):
-  [Bestiary Dungeon Monsters](https://quaternius.itch.io/bestiary-dungeon-monsters-kit)(오크·고블린·해골 — 오크 메시 교체용) ·
-  [Fantasy Props MegaKit](https://quaternius.itch.io/fantasy-props-megakit)(횃불·통·상자, UE 프로젝트 포함) ·
-  [Universal Animation Library](https://quaternius.itch.io/universal-animation-library). 받으면 알려주면 임포트·교체는 클로드.
 
 완료 항목은 해당 주차 `docs/주간기록/2026-W##` 의 "사용자 작업" 절로 이관한다(2026-09-13 W29~W37 이관 완료 — 비어 있음).

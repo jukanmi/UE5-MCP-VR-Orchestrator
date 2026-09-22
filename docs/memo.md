@@ -190,23 +190,8 @@
   - [x] seed.py 적 호감도 (2026-09-20) — `ENEMIES ↔ ALLIES` 양방향 -100 시딩, 보스와 동일 적대 경로(`AffinityHostileThreshold=-30`).
   - [x] 로드맵 스펙↔구현 이름 정렬·Elara 초기 위치 은신처·디렉터 타임아웃 5s·플레이어 방어력 0 — 결정 완료(DoList 3 이관분 포함).
   - [x] UE5 `story_event` 송신·perception/victory id AgentID 통일·플레이어 id "Player" 상수화 (2026-09-18).
-- [x] **임프 비행·오크 횃불 소품 수정 (2026-09-19)** — `BP_Enemy_Imp`를 `AFlyingEnemyCharacter`로 재부모화해 기본 이동 모드 `MOVE_Flying` 확인. `BP_OrcVagron`과 `BP_Enemy_OrcVagron`의 `Torch_Metal` HandProp 제거 확인.
-- [x] **build_story_scene 재생성 방지 (2026-09-20, `ead8366`)** — 기본 실행 = sync(라벨 고정 액터만 `_spawn_or_reuse` 로 제자리 갱신, GUID 유지). 전체 재생성은 `SCN_FULL=1`, 구역은 `SCN_ONLY`. `build_enemies` 소품/`sync_enemies` 스포너 분리(첫 sync 테스트에서 소품 9개 중복 생성 → 분리 후 재검증 1779→1779 무변동). 함정: `SCN_ONLY` 없이 그냥 돌리면 이제 지오메트리는 절대 안 바뀜 — 좌표 고쳤으면 `SCN_ONLY=<zone>`.
-- [x] **커밋 6개 (2026-09-20)** — `ee20421`(side yaml)·`3f74014`(giver+마커)·`5ada1f9`(적 호감도)·`8a183da`(대쉬 디버그)·`23cd612`(씬 재생성 3571 파일)·`ead8366`(sync 리팩토링). 미커밋 잔여 = 세션 전 잔여물(.gitignore·WBP_PlayerHUD·NewProjectTest.umap·finetune 7·AM_NPC_HandObject·tools 3) + sync 테스트로 재저장된 ExternalActors 30(M, 내용 무변동).
-- [x] **메인퀘스트 월드 마커(네비게이터) (2026-09-20)** — "안 보임" 원인은 미구현: `FStoryState.QuestTargetTag` 는 파싱만 되고 소비처 0, `main.yaml` 도 전 비트 빈 값. 신규 `Story/QuestMarkerActor`(엔진 `/Engine/BasicShapes/Cone` 뒤집기 + `LevelColorationUnlitMaterial` MID `Color` 노랑, 대상 위 280cm 바운스·회전, 매 틱 대상 추적, 대상 소멸 시 숨김) + `UStorySubsystem::SetQuestTarget(Tag)`(BlueprintCallable, `ApplyStoryJson` 이 호출) — 해석은 `NPCManager::GetNPCById(AgentID)` 우선, 없으면 `ActorHasTag`; 마커는 월드당 1개 재사용. `main.yaml` 7비트 `quest_target_tag` = Guard/James/Moca/Commander_Vorg/James/DemonLord/Elara. **PIE 검증(클로드, 헤드셋 없이)**: `set_quest_target` 직접 호출 4케이스(James·""·미존재·DemonLord) + 실제 wire(`zone_enter/plaza` → 서버 Story 블록 → UE `비트 갱신 … target=Guard`) 스크린샷 `Saved/Screenshots/scene/quest_marker_wire_b1.png`. 한계(기존 갭): Story 블록은 전이·첫 디렉션 뒤 첫 응답에만 실리므로 게임 시작 직후엔 첫 트리거(존 진입/대화) 전까지 마커 없음.
-- [x] **디버그용 대쉬 스태미나 무료 (2026-09-20)** — `AVRPawn::bDebugDashFreeStamina`(기본 false, Category `VR|Dash|Debug`) — true 면 `OnDash` 가 소모·부족 게이트를 건너뜀(쿨다운은 그대로). BP_VRPawn 디테일 체크박스 또는 PIE 중 `ue_set_property` 로 토글. 빌드 완료(에디터 Live Coding 충돌 → `quit_editor`→Build.bat→재실행).
-
 완료 항목은 날짜와 함께 여기 적고, 주가 바뀌거나 쌓이면 `docs/주간기록/2026-W##_주제.md` 로 옮기고 여기서 **삭제**한다. 비어 있는 것이 정상.
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
-
-- [x] **Stage 1 (e4b) V4 파인튜닝 마스터 골드 데이터셋 구축 완료 (2026-09-20)** — AI 직접 추론 토큰 투입으로 42건 골드 데이터셋(`stage1_e4b_train_v4_master.jsonl`) 완성. 실측 런타임 로그 122건 정밀 분석 및 핵심 결함 턴(Guard 성문 부상/욕설 피신 안내, James 성검 복원 오더/출진, Moca 파편 위치 안내/돌멩이 소진 거절/뉴스 멘트 대처, Skadi 감사 퉁명 응대/전투 돌입) 수작업 교정 탑재. plan_achieved: true 비율 ~19% 정상화, GiveItem vs HandObject 엄격 분리, 인게임 실시간 턴 감시 도구(`tools/harvest_game_turns.py --watch/--scan`) 구축.
-- [x] **스토리 액터 배치 저장 누락 수정 (2026-09-18, `78da2c9`)** — NPC 7·PlayerStart·Bed·ruins 트리거가 두 커밋에 걸쳐 조용히 유실돼 있었다(`modify()` 없는 이동은 WP 외부 패키지 미저장). `place_actors()` 분리로 재빌드 없이 재배치 가능.
-- [x] **필드 적 시스템 (2026-09-18, `e0a979b`·`730b660`·`1ae09e1`)** — `ACombatCharacter` 공통 베이스(피격/타격 규약을 SmartNPC 에서 분리) · `AEnemyCharacter`+`AEnemyAIController`(배회→추적→공격→복귀, 무리 경보·공격 슬롯 2/포위 링·저HP 도주·내비 폴백) · `AEnemySpawner`(주기 스폰·킬 수 flag) · Quaternius CC0 캐릭터 3종(단일노드 애니, PA, 텍스처) · Kenney 사운드. 스포너 3 배치(도적 캠프·다리 오크·죽은 숲). PIE 로 전 동작 실측.
-- [x] **전 루프 E2E 주행 b1→end (2026-09-18, 헤드셋 없이 15분)** — LLM 실서버로 7비트 + `s_moca_herbs` 완주. 발견·수정 4건: 대상 라우팅(이름 언급이 명시 타겟 덮음, `dbdcb50`) · RAG 경로 cwd 상대(전 NPC 0건, `78272d9`) · 디렉터 goal Stage1 미주입(`78272d9`) · `num_ctx` 2048 초과로 JSON 잘림(`dd2e664`). 재주행에서 Guard 가 함락·피난처를, James 가 Moca 이름을 말함.
-- [x] **무료 에셋 다운로더 (2026-09-18, `a3a50a6`)** — `tools/fetch_assets.py`, `RawAssets/` 204MB(Quaternius 6팩 + Kenney 사운드 2팩, 전부 CC0).
-- [x] **스토리 진행 요소 조사 및 종합 로드맵 SPEC 수립 (2026-09-18)** — `docs/SPEC_story_progression_roadmap.md` 작성 완료. 5막 7비트 메인 시나리오 및 서브퀘스트 4종의 파이프라인, Stage 2 모델 기반 Elara 동적 거점 제어, C++ AEnemySpawner/AEnemyCharacter 연동, ItemRegistry 확장, Phase 1~5 개발 로드맵 명세화. (코드 수정 없음, 단일 SPEC 산출물).
-- [x] **CrewAI 기반 다중 에이전트(Master-Dev-QA) 시스템 SPEC 수립 (2026-09-19)** — `docs/SPEC_crewai_multi_agent.md` 작성 완료. Master(PM/설계) -> Dev(C++/Python/Asset 병렬) -> QA(SoL-Pi 하네스 자동 검증) 3계층 아키텍처, UBT 락 직렬화, Pydantic 계약 모델, 2회 자가 수정 루프 제한 가드레일 확립.
-- [x] **월간정리 동기화 (2026-09-17)** — `docs/월간정리.md`를 W30~W37(2026-07~2026-09) 최신 주간기록 내용으로 전면 롤업 동기화 완료 (파인튜닝 M2/v2/v3, StandUp, 3806행 파이프라인, 에디터 브리지, 척수반사 테이블, 플레이어 시스템, 아이템 레지스트리/파이프라인 72종, VR 손 쥐기 일원화, 음성 폐기, 리팩토링 1~6단계, SoL-Pi 등). 기록 공백 갱신.
 
 ---
 
