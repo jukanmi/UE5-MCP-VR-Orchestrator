@@ -12,6 +12,12 @@
 > 공통: 가구 BP 는 이벤트 그래프 노드 **0개** — 부모 `FurnitureActor`, 컴포넌트·프로퍼티 설정만.
 > 절차 상세는 `주간기록/2026-W29` BP_Chair 항목 참조(동일 패턴).
 
+### 1-16. Stumble 4방향 몽타주 임포트 (2026-09-22 SPEC, `docs/SPEC_realistic_combat.md` §5.3)
+- [ ] Mixamo 에서 hit-reaction 4종("Stumble Backwards"·"Hit To Body"·좌/우 hit reaction) FBX 를 **Without Skin** 으로 받아
+  NPC 스켈레톤(Mixamo, 리타겟 불필요)에 임포트 → `Content/Core/Animation/` 에 시퀀스 4개.
+  이후 `AM_Stumble_Front/Back/Left/Right` 몽타주 생성·`NPCRagdollComponent.StumbleMontages` 슬롯 배정은 클로드가 MCP 로.
+  에셋 없어도 절차적 폴백(Flinch+밀림)으로 동작하므로 블로커 아님.
+
 ### 1-15. 대화창 UI 분리 — 헤드셋 육안만 남음 (2026-09-21 구현, MCP 로 에셋·배선·PIE 완료)
 
 > `WBP_Chat` 생성·`BP_VRPawn.ChatWidgetClass` 배선·헤드셋 없는 PIE 검증은 전부 클로드가 MCP 로 끝냄
