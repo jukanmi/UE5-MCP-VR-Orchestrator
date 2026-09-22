@@ -9,7 +9,8 @@
 ## Todo
 
 ### 전투 SPEC 잔여 — `docs/SPEC_realistic_combat.md` (§3.2·§2.3 완료 2026-09-21, §3.5 공격토큰 중앙화는 2026-09-22 폐기 — 필드 몹 `MaxAttackers=2` 로 충분, 나머지 3개 보류)
-- [ ] **§3.1·3.3·3.4 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 순서: Stumble 폴백 → Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0. 사람 작업은 Mixamo 스태거 4방향 임포트뿐(DoList 1-16), 없어도 절차적 폴백.
+- [x] ~~§3.4 Stumble~~ — 2026-09-23 구현·헤드셋 검증 완료(아래 Done).
+- [ ] **§3.1·3.3 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 남은 순서: Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0.
 
 ### 플레이어 시스템 잔여 갭 — `docs/SPEC_player_systems.md`
 - [x] **[갭 3] VR 물리 손 쥐기 및 플레이어→NPC 전달** — 2026-09-05 C++ 구현·빌드 완료.
@@ -92,6 +93,43 @@
 ---
 
 ## Done
+
+- [x] **§5.3 Stumble 3분기 구현 + 4방향 몽타주 — 헤드셋 검증 완료 (2026-09-23)** — `docs/SPEC_realistic_combat.md` §5.3.
+  `NPCRagdollComponent` 만 수정(호출자 3곳 무변경): `EStumbleDir` enum · `StumbleMontages` TMap(생성자에서
+  `/Game/Core/Animation/Hit/AM_Stumble_*` 4개 자동 바인딩 — 기상 몽타주와 같은 관례) · `StumbleThreshold 20` ·
+  `ReactToHit` 3분기(Knockdown ≥40 / Stumble ≥20 / Flinch) · **가드 브레이크**(Block 중 강타는 넉다운 대신 Stumble).
+  - **PIE 실측(헤드셋 없이)**: 4방향 dir 매칭 4/4 정확 · 폴백 `montage=None` 경로 · 미방어 120 raw →
+    `IsKnockedDown=True` · Skadi `Block` 중 120 raw → `Stumble dir=Front`(넉다운 안 됨). `sol_pi build` 0 오류,
+    pytest 83 passed. **헤드셋 PIE(사용자)**: 몽타주·밀림·복귀 정상.
+  - **방향 부호 함정** — `LastHitDirection` 은 ShotDirection(가해자→대상)이라 정면 피격이 소유자 로컬 X **음수**.
+    처음 반대로 썼다가 PIE 전에 수정.
+
+- [x] **Stumble 애니 "밀려나는 그림인데 제자리" / "튕겼다 스냅백" — 루트 모션으로 해결 (2026-09-23)** —
+  Mixamo hit-reaction 은 **In Place 배포본이 없어** 이동이 애니에 통째로 들어있다(실측 Hips 수평 이동:
+  Back 398cm · Left 603cm · Right 455cm · Front 13cm). 세 상태를 거쳤다: ① 루트모션 OFF → 메시만 끌려갔다가
+  몽타주 끝에 캡슐로 **스냅백** ② `bForceRootLock=true` → 제자리는 되는데 **밀려나는 그림인데 안 움직임**
+  ③ **정답: 시퀀스 `bEnableRootMotion=true` + `bForceRootLock=false`**(`ABP_SmartNPC` 는 이미
+  `RootMotionFromMontagesOnly`) → 몽타주가 캡슐을 직접 끌고 간다. 코드의 `LaunchCharacter` 는 몽타주 분기에서
+  제거(이중 이동), 몽타주 없는 폴백에만 남김.
+  - **밀림이 아예 안 되던 진짜 원인은 내가 넣은 이동 잠금**: `MaxWalkSpeed=0` 이 Walking 복귀 순간
+    `CalcVelocity` 에서 방금 준 launch 속도를 같이 0 으로 클램프했다. 잠금 코드·헤더 멤버
+    (`StumbleLockTime`·`StumbleLockTimer`·`SavedMaxWalkSpeed`·`EndStumbleLock`) 전부 제거하고 같은 커밋에 포함.
+
+- [x] **1-16 임포트 뒤처리 — AnimSequence 가 0개였다 (2026-09-23)** — 사용자가 임포트한
+  `Content/Core/Animation/Hit/` 에 **SkeletalMesh 4 + PhysicsAsset 4 + Material 2 뿐, 애니 시퀀스 0개**
+  (skin 포함 FBX 가 메시로만 들어감). 원본이 기록된 `C:\Program Files\Epic Games\Art\Meshes\` 는 폴더째
+  사라져 `Downloads\` 의 4개(Head Hit / Hit On Back·Left·Right Of Head)로 애니만 재임포트.
+  FBX 당 take 2개가 들어오는데 `_Take_001` 은 **회전 변화 0도**(빈 트랙), `_mixamo_com` 이 진짜(45~71도) —
+  빈 것 삭제 후 진짜를 `AS_Hit_*` 로 rename, 잔재 21개 삭제(외부 참조 0 확인). `AM_Stumble_*` 4개 생성,
+  슬롯 `DefaultSlot`(기존 몽타주 20개 관례).
+
+- [x] **1-14 패링·퀘스트 SFX 검증 (2026-09-23)** — 패링은 헤드셋 체감 확인(소리·데미지 무효 정상. 다만
+  `S_Hit_Metal_0` 이 "챙강" 보다 "띵" 에 가까움 — 에셋 취향 문제, 교체 미정).
+  헤드리스 확인분: `CheckReflex(Agility 50, Difficulty 2)` 4000회 → **24.7%**(기대 25%) ·
+  `ParrySound`/`QuestUpdateSound`(`VR_confirm`) CDO 배정 · `ESenseType::Parried` 주입 →
+  `[NPCManager] Event Report Sent` → 0.34s 뒤 서버 응답(`BatchCount: 0` — emergency_report 는 통보 전용이라 정상) ·
+  `OnStoryUpdated` 브로드캐스트 → `QuestLogText` 즉시 갱신 + 0.28s 뒤 `LogAudio: parsed seektable`.
+  **남은 건 퀘스트 갱신음 실청**(DoList 1-14).
 
 - [x] **`.claude/skills/` 9개가 한 번도 로드된 적 없었음 — 디렉터리 형식으로 전환 (2026-09-23)** — Claude Code 는
   `.claude/skills/<name>/SKILL.md` 만 읽는데 9개 전부 평면 `.md`(2026-05-02~06-12 작성)로 있어 스킬 목록에 아예
@@ -351,6 +389,19 @@
   같은 kebab-case. 평면 `skills/foo.md` 는 조용히 무시된다(에러 없음 — 스킬 목록에 안 뜨는 걸로만 판정 가능).
   `.claude/` 전체가 gitignore 라 이 폴더의 소실·변경은 **git 으로 추적·복구 불가**. 이름이 유저/플러그인 스킬과
   겹치면 그쪽이 이기므로 프로젝트 스킬 이름은 충분히 구체적으로(`spec` 같은 일반어 금지).
+- **Mixamo 액션 애니는 In Place 배포본이 없다 — 루트 모션을 켜는 게 정답**: 이동이 Hips 트랙에 통째로 들어있어
+  ① 루트모션 OFF 면 메시만 끌려갔다가 몽타주 끝에 캡슐로 스냅백 ② `bForceRootLock` 으로 묶으면 "밀려나는 그림인데
+  제자리". 시퀀스 `bEnableRootMotion=true` + `bForceRootLock=false` + AnimBP `RootMotionFromMontagesOnly`
+  (ABP_SmartNPC 는 이미 그렇게 돼 있음) 조합이어야 몽타주가 캡슐을 끌고 간다. 이때 코드로도 밀면 이중 이동.
+- **`MaxWalkSpeed=0` 은 이동 잠금으로 쓰면 안 된다**: Walking 복귀 순간 `CalcVelocity` 가 직전 `LaunchCharacter`
+  속도까지 0 으로 클램프해 한 발짝도 안 밀린다. `DisableMovement` 도 같은 이유로 못 씀(밀림 속도 소멸).
+- **FBX 임포트 함정 2개**: `import_mesh=False`·`FBXIT_ANIMATION` 을 줘도 **SkeletalMesh·PhysicsAsset·Material 이
+  같이 생성**되므로 임포트 후 잔재 정리가 필수. Mixamo FBX 는 take 2개(`_mixamo_com` = 진짜, `_Take_001` = 빈 트랙)로
+  들어오니 본 회전 변화량으로 골라낼 것(`AnimationLibrary.get_bone_pose_for_time`).
+- **cpp 만 고쳤으면 MCP 로 Live Coding**: `execute_console_command(None, "LiveCoding.Compile")` → UE 로그
+  `Live coding succeeded`. 에디터·PIE 안 끄고 반영된다. 헤더를 건드렸으면 이 길은 없고 `quit_editor`→빌드→재실행.
+- **WS 는 서버보다 먼저 뜨면 Offline Mode 로 고착**: 5회 재접속 실패 후 `Switching to permanent Offline AI Mode`.
+  **PIE 재시작으로는 안 풀리고 에디터를 재시작해야 한다.** 상태 확인은 `curl 127.0.0.1:8000/api/ws/status`.
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
 - **gitignore**: `docs/`·`tests/`·`knowledge/`·`personas/generic/*.yaml` 로컬 전용(`knowledge_template/` 만 추적). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 ---

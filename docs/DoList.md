@@ -12,12 +12,6 @@
 > 공통: 가구 BP 는 이벤트 그래프 노드 **0개** — 부모 `FurnitureActor`, 컴포넌트·프로퍼티 설정만.
 > 절차 상세는 `주간기록/2026-W29` BP_Chair 항목 참조(동일 패턴).
 
-### 1-16. Stumble 4방향 몽타주 임포트 (2026-09-22 SPEC, `docs/SPEC_realistic_combat.md` §5.3)
-- [ ] Mixamo 에서 hit-reaction 4종("Stumble Backwards"·"Hit To Body"·좌/우 hit reaction) FBX 를 **Without Skin** 으로 받아
-  NPC 스켈레톤(Mixamo, 리타겟 불필요)에 임포트 → `Content/Core/Animation/` 에 시퀀스 4개.
-  이후 `AM_Stumble_Front/Back/Left/Right` 몽타주 생성·`NPCRagdollComponent.StumbleMontages` 슬롯 배정은 클로드가 MCP 로.
-  에셋 없어도 절차적 폴백(Flinch+밀림)으로 동작하므로 블로커 아님.
-
 ### 1-15. 대화창 UI 분리 — 헤드셋 육안만 남음 (2026-09-21 구현, MCP 로 에셋·배선·PIE 완료)
 
 > `WBP_Chat` 생성·`BP_VRPawn.ChatWidgetClass` 배선·헤드셋 없는 PIE 검증은 전부 클로드가 MCP 로 끝냄
@@ -32,10 +26,6 @@
 
 > 햅틱은 2026-09-21 폐기(컨트롤러→손 트래킹 전환 예정, 진동 낼 하드웨어가 없어짐). `QuestUpdateHaptic` 코드 삭제.
 
-- [ ] **헤드셋 PIE — 패링 체감** — SmartNPC(James 등) 상대로 검을 여러 번 휘두르기. Agility 50 기준
-  25% 확률로 "챙강" 금속음(`S_Hit_Metal_0`)과 함께 데미지가 안 들어가는지, 나머지는 평소처럼 맞는지.
-  성공 시 서버 로그/대사에 패링 인지가 반영되는지(`emergency_report` → LLM, 예: "제법 묵직하지만…" 류
-  특화 대사가 나오는지는 몇 번 시도해야 걸릴 수 있음).
 - [ ] **PIE — 퀘스트 갱신 소리** — 비트 전이 시 `VR_confirm` 소리가 나는지(HUD 텍스트 갱신과 동시).
   레벨 재접속 시(위젯 재생성) 소리가 안 나고 텍스트만 갱신되는지도 확인(의도된 동작).
 
@@ -96,6 +86,18 @@
 ---
 
 ## Done
+
+- [X] ~~1-16. Stumble 4방향 몽타주 임포트~~ (2026-09-23 임포트=사용자 / 뒤처리·몽타주·구현=클로드 MCP) —
+  임포트분에 **AnimSequence 가 0개**였다(skin 포함 FBX 라 메시로만 들어감). `Downloads\` 원본으로 애니만
+  재임포트 → 빈 take(`_Take_001`, 회전 변화 0도) 걸러내고 `AS_Hit_Front/Back/Left/Right` 확정, 잔재 21개 삭제,
+  `AM_Stumble_*` 4개 생성(`DefaultSlot`). C++ §5.3 도 같이 구현해 슬롯 자동 바인딩(생성자) — 에디터 배정 불필요.
+  **헤드셋 PIE 확인 완료**: 4방향 몽타주 재생·루트 모션 밀림·복귀 정상. Mixamo In Place 배포본이 없어
+  `bEnableRootMotion=true` 로 가야 한다는 게 이번 함정(Memo Handoff).
+
+- [X] ~~1-14. 헤드셋 PIE — 패링 체감~~ (2026-09-23 확인) — SmartNPC 상대 스윙에서 패링 발동·데미지 무효·
+  `S_Hit_Metal_0` 재생 확인. 확률은 별도로 `CheckReflex(50, 2)` 4000회 = 24.7%(기대 25%) 실측.
+  소리가 "챙강" 보다 "띵" 에 가깝다는 의견 — 에셋 취향 문제라 교체는 미정. (같은 절의 "퀘스트 갱신 소리" 는 미완 존치.)
+
 
 - [X] ~~1-8. 인벤토리 슬롯 발동 → 사용/장착~~ (조작 방식 확정 2026-09-07, 2026-09-23 이관) — 인벤토리를 연 채
   오른손 스틱으로 슬롯을 고르고 그립 = 발동(`VRPawn::OnGrabStart` → `InventoryComponent::ActivateItem`).
