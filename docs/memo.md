@@ -93,6 +93,20 @@
 
 ## Done
 
+- [x] **`.claude/skills/` 9개가 한 번도 로드된 적 없었음 — 디렉터리 형식으로 전환 (2026-09-23)** — Claude Code 는
+  `.claude/skills/<name>/SKILL.md` 만 읽는데 9개 전부 평면 `.md`(2026-05-02~06-12 작성)로 있어 스킬 목록에 아예
+  안 떴다. `<name>/SKILL.md` 로 이동 + frontmatter `name:` 을 디렉터리 슬러그(kebab-case)로 통일 → 재시작 없이
+  즉시 로드 확인. `.claude/commands/` 는 존재하지도 않아 CLAUDE.md 가 적어둔 `/session-end`·`/spec` 슬래시 커맨드도
+  작동한 적 없음. `.claude/` 는 gitignore 라 git 이력 0 — "사라진" 게 아니라 처음부터 안 잡힌 것(전 브랜치 추적 0건으로 확인).
+  잔여: 프로젝트 `spec` 이 gstack `spec` 과 이름 충돌(현재 gstack 것만 노출) — 쓰려면 리네임 필요.
+
+- [x] **세션·주 마감 스킬 정비 (2026-09-23)** — `session-end` 에 **B. DoList 이관** 단계 신설(체크된 항목 수집 →
+  절 전체 체크면 절째로·일부면 줄만 → `- [X] ~~제목~~ (날짜 주체) — 검증 내용` 취소선 형식 → DoList Done 은
+  기간 만료 삭제 없음). 신규 `week-end` 스킬 — Memo/DoList 의 `Done` 을 `docs/주간기록/2026-W##_*.md` 로 **이관 후
+  작업판에서 삭제**(Handoff Notes 는 존치), 소스 4개(Memo Done·Handoff·DoList Done·**git log**) 중 커밋 기록이 뼈대
+  (`--all` 필수 — 브랜치 분산, Done 에 없는 커밋이 그 주 서사인 경우 많음), 끝에 INDEX·`_결정원장` 갱신.
+  발견: `docs/주간기록/INDEX.md` 표가 **W23 에서 멈춤**(파일은 W37 까지) · **W38·W39 미작성**(마지막 파일 W37 = 09-07~09-13).
+
 - [x] **오픈소스 Jevlike 기반 NPC StateTree 전술 편향기 파이프라인 구현 완료 (2026-09-22)** — `docs/SPEC_jev_neuro_symbolic_st.md` §5·§6·§7.
   - **Python 인지 백엔드**: `EEnvelopeType.JEV_QUERY` / `JEV_DECISION`, `JevQueryPayload` 정의(`app/schemas/envelope.py`), `JevlikeService` 로컬 전술 편향기(`app/services/jev_service.py` — 체크포인트 부재 시 단조성 규칙 기반 휴리스틱 폴백 완비, 100회 평균 < 1ms), `_handle_jev_query` LLM 미경유 즉시 동기 회신(`app/main.py`), 신규 단위 테스트 8건 작성 및 통과(`tests/test_jevlike_service.py`).
   - **UE5 C++ 핵심 클래스**: `FEnvelopeBuilder::BuildJevQuery` 구현, `ASmartNPCAIController` Jev 결정 캐시(`FJevDecision`)·1.0s 쿨다운·in-flight 가드·세대 카운터(`JevGeneration`)·0.3s 워치독 타이머(`JevTimeoutTimer`) 및 감각 갱신(`OnTargetPerceptionUpdated`)·HP 25% 하향 교차 시 단 1회 트리거 연동, `FSTEvaluator_JevTactics` 0ms 캐시 복사 및 2.0s TTL 만료 검사, `FSTCondition_NoulGuard` 유해/탈옥 차단 사전조건, `NPCActionComponent::SelectCombatAction` Jevlike 승수 `[0.25, 4.0]` Clamp 곱셈(`MaxConsecutiveAttacks` 0점 처리 뒤, `Bravery`/`Feared` 앞), `ComputeEQSWeights` 전술 편향, `BaseMove` `ProjectPointToNavigation` NavMesh 투영(벽 끼임 방지).
@@ -348,6 +362,10 @@
 - **대화 입력 경로(음성 폐기 후)**: HUD `ChatInput` + `SayToNpc` Exec → `PlayerInteractionUtils::SendDialogueToNpc` 수렴. 자막 `HandleNPCDialogue → ShowSubtitle`, 길이 비례 타이머.
 - **print+이모지 = 파이프 지뢰**: stdout 이 파이프/리다이렉트면 cp949 `UnicodeEncodeError` → LangGraph 노드 통째 사망 → 빈 배치 폴백. 런타임 print 에 이모지·em-dash 금지, logger 는 삼켜서 안전. 스크립트는 상단 `sys.stdout.reconfigure(encoding='utf-8')`.
 - **`style` 파라미터**: 어휘 단일 소스 = C++ `EMoveType`(Walk/Run/Sprint/Crouch), 미매칭은 Walk 폴백 + Warning. 액션별 의미 다름(Move/Follow=속도, Sing/Emote=미디어 키). `EMoveType` 추가 시 `ParseMoveStyle` 분기 필수(`test_move_style_vocabulary_matches_cpp` 가 잡음).
+- **`.claude/skills/` 는 디렉터리 형식만 로드된다**: `<name>/SKILL.md` 여야 하고 frontmatter `name:` 은 디렉터리명과
+  같은 kebab-case. 평면 `skills/foo.md` 는 조용히 무시된다(에러 없음 — 스킬 목록에 안 뜨는 걸로만 판정 가능).
+  `.claude/` 전체가 gitignore 라 이 폴더의 소실·변경은 **git 으로 추적·복구 불가**. 이름이 유저/플러그인 스킬과
+  겹치면 그쪽이 이기므로 프로젝트 스킬 이름은 충분히 구체적으로(`spec` 같은 일반어 금지).
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
 - **gitignore**: `docs/`·`tests/`·`knowledge/`·`personas/generic/*.yaml` 로컬 전용(`knowledge_template/` 만 추적). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 ---

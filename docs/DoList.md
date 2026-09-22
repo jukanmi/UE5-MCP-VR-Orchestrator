@@ -39,14 +39,6 @@
 - [ ] **PIE — 퀘스트 갱신 소리** — 비트 전이 시 `VR_confirm` 소리가 나는지(HUD 텍스트 갱신과 동시).
   레벨 재접속 시(위젯 재생성) 소리가 안 나고 텍스트만 갱신되는지도 확인(의도된 동작).
 
-### 1-8. 인벤토리 슬롯 발동 → 사용/장착 (2026-09-07 조작 방식 변경)
-
-> 그립 뗄 때 분기(열림=회수·닫힘=던지기)는 확인 완료(W37).
-
-**방안 변경**: 슬롯 클릭 버튼은 **필수 아님**. 인벤토리를 연 채 오른손 **스틱으로 슬롯을 고르고
-그립을 누르면** 그 슬롯이 발동된다(`VRPawn::OnGrabStart` → `InventoryComponent::ActivateItem`).
-종류 분기(소비=사용 / 장비=장착 / 그 외=손에 쥐기)는 `ActivateItem` 안에 있어 그래프에서 갈라놓지 말 것.
-
 ### 1-10. VR 공간 UI — 거래 테이블 PIE 검증 (2026-09-05 구현, `SPEC_vr_ui_systems`)
 
 > 이름표·버튼 튜닝은 2026-09-07 완료(W37). 음성 입력 구는 2026-09-12 음성 폐기로 소멸.
@@ -68,40 +60,19 @@
   (TTS 자막 싱크 항목은 2026-09-12 음성 폐기로 소멸.)
   - 점 애니(Thinking)는 항목에서 빠졌다 — 표시 자체가 제거됐다(커밋 `5f28e37`).
 
-### 1-13. 필드 적 시스템 (2026-09-18 구현, `docs/SPEC_story_progression_roadmap.md` Phase 2)
-
-> 도적 캠프(4300,-5600)·다리 오크(14400,-2300)·죽은 숲 망령(11500,15500) 스포너 3. 적 BP `/Game/Blueprint/Enemy/`, 값은 `tools/make_enemy_bps.py` 가 원본.
-
-- [X] **헤드셋 PIE — 도적 캠프 체감** — 남문 밖 숲길(4300,-5600) 접근: 한 명이 보면 셋이 오는지 · 둘만 붙고 셋째가 3.6m 링을 도는지 · 검 스윙 타격에 펀치 소리+래그돌 플린치 · 처치 시 둔탁음+래그돌 · 도적 HP 20% 에 도망갔다 돌아오는지. 플레이어 HP 가 55초면 바닥나므로(방어 0) 체감 후 밸런스 의견.
-- [X] **육안 확인** — `Saved/Screenshots/scene/enemies_front.png`(정면 3인) 이미 있음. 무기 색이 몸 텍스처라 약간 어긋남 — 신경 쓰이면 클로드에게(텍스처 3장 5분).
-
-### 1-1. 기타 에디터 잔짐 (Memo 이관, 선택)
-- [x] 래그돌→기상 몽타주 포즈 스냅 완화 — AnimBP 캐시 포즈 블렌드
- (2026-09-18 MCP Done - C++ 구현 완료, BP 노드 연결만 남음)
-- [x] **NPC `HandObject` 제시 몽타주** — 현재 `ExecuteHandObject` 는 `EquipItem` 만 불러 손에 붙이기만 한다.
- (2026-09-18 MCP Done - Wizard_Spell1 활용 AM_NPC_HandObject 생성 및 DA 할당 완료)
-  "내미는" 동작이 없어 플레이어 눈에는 그냥 들고 선 것으로 보인다. 팔을 앞으로 뻗는 짧은 몽타주를
-  구해 `DA_NPC_Actions` 의 `HandObject` 키에 할당하면 C++ 수정 없이 재생된다(다른 액션과 같은 경로).
-  - 에셋이 없어 보류된 항목 — 2026-09-07 `Refactoring.md` 폐기하며 이관.
-
 ---
 
 ## 2. PIE 검증
 
 ### 2-7. 적 호감도 시딩 후 아군 선공 (2026-09-20, `app/story/seed.py`)
 
-- [x] ~~서버 재시작~~ — 2026-09-20 15:04 클로드가 재기동(pid 27556, `.venv` python, cwd CognitiveEngine, 로그 `Saved/Logs/cognitive_server.log`). 이전 터미널 서버는 종료됨 — 터미널에서 직접 보고 싶으면 이 프로세스 끄고 다시 띄울 것. story_state 는 b5 그대로.
 - [ ] **PIE — 아군 선공 확인** — James/Elara/Skadi/Moca/Guard 를 도적 캠프(4300,-5600)·다리 오크(ORC_LAIR)·죽은 숲 망령 근처로 데려가서 적이 먼저 안 때려도 시야만으로 교전 붙는지.
-
 
 
 ---
 
 ## 3. GitHub / 운영 결정
 
-- [x] ~~main 에서 ignore 파일 6개 추적 해제 결정~~ (2026-09-21 당일 해결, Memo Handoff U-1) — 커밋 불필요했음: 원격
-  `origin/main` 은 이미 6개 미추적이라 stale 로컬 `main` 을 `git fetch origin main:main` 으로 FF 한 것으로 끝(사용자 지적).
-  추가로 `docs/` gitignore 해제·추적 시작 커밋으로 Memo/DoList 는 이제 git 이력에 남음.
 
 - [ ] **Visual Studio 미사용 전환 결정** (2026-09-21, 엔진 룰 캐시 버그 조사 중 발견) — `.uproject` 의
   `VisualStudioTools` 플러그인이 `Enabled: true` 인 이유: VS 확장이 프로젝트를 열 때마다 자동으로 켠다.
@@ -113,17 +84,6 @@
     확장 없으면 VS 로 열어도 `.uproject` 플러그인 설정을 안 건드림.
   - 아무것도 안 하면: 다음에 새 플러그인이 켜질 때마다(VS 뿐 아니라 다른 경로로도) 같은 클래스 버그 재발 가능.
 
-- [X] **PR #26 `refactor/dead-code` → Develop 머지 결정** — https://github.com/jukanmi/UE5-MCP-VR-Orchestrator/pull/26 (2026-09-13 생성, 검증 완료)
-
-- [x] **월드 아이템을 Python 에 보낼지 결정** (2026-09-18 MCP Done - NPCManager Prompt에 nearby_items 추가) — 2026-09-07 `ItemManager::SerializeActiveItemsToJson`
-  스텁을 삭제하며 남기는 메모. 그 함수는 `{"type":"world_items_state","count":N,"data":[]}` 를
-  만들었지만 `data` 가 항상 비어 있었고, 호출자도 0이었다. Python 쪽 `EEnvelopeType` 에 대응
-  타입이 없어 보내도 무음 무시된다.
-  - 만들려면 세 곳을 동시에 고쳐야 한다: UE5 `EnvelopeBuilder::Build*()` ·
-    `schemas/envelope.py::EEnvelopeType` · `interface_input.py` 수신 분기.
-  - **먼저 정할 것은 소비처다** — NPC 프롬프트에 "주변 아이템"을 넣을 것인지, 아니면 별도
-    조회 도구인지. 그에 따라 보낼 범위(전체 월드 vs NPC 반경)와 필드가 달라진다.
-    지금 만들면 소비처가 정해질 때 스키마를 다시 뜯게 된다.
 
 - [ ] **로드맵 스펙 ↔ 구현 정렬 결정** (`SPEC_story_progression_roadmap.md` §3.1·§3.3 vs 실제) — 어느 쪽을 고칠지:
   BP 이름 `BP_Bandit/OrcVagron/KnightWraith`(구현) vs `BP_Enemy_Bandit/OrcVagron/Wraith`(스펙) ·
@@ -136,6 +96,36 @@
 ---
 
 ## Done
+
+- [X] ~~1-8. 인벤토리 슬롯 발동 → 사용/장착~~ (조작 방식 확정 2026-09-07, 2026-09-23 이관) — 인벤토리를 연 채
+  오른손 스틱으로 슬롯을 고르고 그립 = 발동(`VRPawn::OnGrabStart` → `InventoryComponent::ActivateItem`).
+  종류 분기(소비=사용 / 장비=장착 / 그 외=손에 쥐기)는 `ActivateItem` 안 — 그래프에서 갈라놓지 말 것.
+  그립 뗄 때 분기(열림=회수 / 닫힘=던지기)는 W37 확인 완료. PIE 검증은 아래 별도 Done 항목.
+
+- [X] ~~1-13. 필드 적 시스템~~ (2026-09-18 구현, 헤드셋 PIE 체감 완료) — 도적 캠프(4300,-5600)·다리 오크
+  (14400,-2300)·죽은 숲 망령(11500,15500) 스포너 3. 한 명이 보면 셋이 오고, 둘만 붙고 셋째가 3.6m 링을 도는 것·
+  타격 시 펀치음+래그돌 플린치·저HP 도주 전부 확인. 육안 `Saved/Screenshots/scene/enemies_front.png`.
+  잔여(선택): 무기 색이 몸 텍스처라 약간 어긋남. 적 BP `/Game/Blueprint/Enemy/`, 값 원본 `tools/make_enemy_bps.py`.
+
+- [X] ~~1-1. 기타 에디터 잔짐~~ (2026-09-18 MCP Done) — ① 래그돌→기상 몽타주 포즈 스냅 완화: AnimBP 캐시 포즈
+  블렌드로 C++ 구현 완료(BP 노드 연결만 잔여). ② NPC `HandObject` 제시 몽타주: `Wizard_Spell1` 활용
+  `AM_NPC_HandObject` 생성·`DA_NPC_Actions` 의 `HandObject` 키 할당 완료 — C++ 수정 없이 재생됨.
+
+- [x] ~~2-7. 서버 재시작~~ — 2026-09-20 15:04 클로드가 재기동(pid 27556, `.venv` python, cwd CognitiveEngine,
+  로그 `Saved/Logs/cognitive_server.log`). 이전 터미널 서버는 종료됨 — 터미널에서 직접 보고 싶으면 이 프로세스
+  끄고 다시 띄울 것. story_state 는 b5 그대로. (절 2-7 의 "PIE — 아군 선공 확인" 은 미완으로 남아 있음.)
+
+- [x] ~~3. main 에서 ignore 파일 6개 추적 해제 결정~~ (2026-09-21 당일 해결, Memo Handoff U-1) — 커밋 불필요했음:
+  원격 `origin/main` 은 이미 6개 미추적이라 stale 로컬 `main` 을 `git fetch origin main:main` 으로 FF 한 것으로
+  끝(사용자 지적). 추가로 `docs/` gitignore 해제·추적 시작 커밋으로 Memo/DoList 는 이제 git 이력에 남음.
+
+- [X] ~~3. PR #26 `refactor/dead-code` → Develop 머지 결정~~ — 2026-09-13 생성, 검증 완료.
+  https://github.com/jukanmi/UE5-MCP-VR-Orchestrator/pull/26
+
+- [x] ~~3. 월드 아이템을 Python 에 보낼지 결정~~ (2026-09-18 MCP Done) — "먼저 정할 것은 소비처" 였고,
+  **NPC 프롬프트**로 확정. `NPCManager` PromptPayload 에 반경 5m `nearby_items` 주입(`46c0c92`)으로 해소 —
+  별도 Envelope 타입 신설 없이 끝났다. 삭제된 `ItemManager::SerializeActiveItemsToJson`(항상 빈 `data`,
+  호출자 0)은 되살리지 않음.
 - [X] ~~2-6. 퀘스트 giver 주민 "!" 마커~~ (`Villager/VillagerCharacter`, 2026-09-21 클로드 MCP 전항목 검증) —
   `Content/StarterContent/` 6폴더가 로컬에서 완전히 비어있어(원인 불명, gitignore 대상이라 이력 없음)
   `build_story_scene.py` 가 `Shape_Cube` 못 찾아 죽던 문제 먼저 해결(엔진 Samples 에서 복사, 495MB).
