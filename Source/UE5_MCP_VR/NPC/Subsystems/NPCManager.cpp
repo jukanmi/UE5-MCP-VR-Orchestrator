@@ -5,6 +5,7 @@
 #include "Network/MCPJsonUtils.h"
 #include "Network/EnvelopeBuilder.h"
 #include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "Story/StorySubsystem.h"
@@ -458,6 +459,27 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                                 DebugNpcId, DebugText);
                         }
                     });
+            }
+            return;
+        }
+    }
+
+    // jev_decision — jevlike 전술 편향 회신. 캐시·세대 판정은 컨트롤러가 독점(BB/ST 쓰기 단일 진입점).
+    {
+        FString TypeStr;
+        if (Root->TryGetStringField(TEXT("type"), TypeStr) && TypeStr == TEXT("jev_decision"))
+        {
+            const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
+            FString NpcId;
+            if (Root->TryGetObjectField(TEXT("payload"), PayloadObj) && (*PayloadObj)->TryGetStringField(TEXT("npc_id"), NpcId))
+            {
+                if (ASmartNPC* NPC = GetNPCById(NpcId))
+                {
+                    if (ASmartNPCAIController* AIC = Cast<ASmartNPCAIController>(NPC->GetController()))
+                    {
+                        AIC->HandleJevDecisionResponse(*PayloadObj);
+                    }
+                }
             }
             return;
         }

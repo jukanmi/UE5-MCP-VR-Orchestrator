@@ -10,6 +10,9 @@
 #include "GameplayTagAssetInterface.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Network/EnvelopeBuilder.h"
+#include "Dom/JsonObject.h"
 
 // Define Key Names
 const FName ASmartNPCAIController::Key_TargetLocation(TEXT("TargetLocation"));
@@ -22,6 +25,15 @@ namespace
     constexpr float SightBaseDanger = 0.6f;
     // 이 이상이면 EQS 전술 쿼리 발동(적대 판정). 중립(배율 0.5→0.3)은 미발동.
     constexpr float CombatDangerThreshold = 0.5f;
+
+    // Python jev_decision stance 문자열 → enum. 미매칭은 Default(중립).
+    EJevTacticalStance ParseJevStance(const FString& S)
+    {
+        if (S.Equals(TEXT("Aggressive"), ESearchCase::IgnoreCase)) return EJevTacticalStance::Aggressive;
+        if (S.Equals(TEXT("Defensive"),  ESearchCase::IgnoreCase)) return EJevTacticalStance::Defensive;
+        if (S.Equals(TEXT("Flee"),       ESearchCase::IgnoreCase)) return EJevTacticalStance::Flee;
+        return EJevTacticalStance::Default;
+    }
 }
 
 
@@ -339,6 +351,9 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                             EnemyLocs.Add(Actor->GetActorLocation());
                             ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
                         }
+
+                        // 적대 감지는 jevlike 전술 편향 요청 트리거(쿨다운·in-flight 가드는 내부).
+                        RequestJevDecision();
                     }
                 }
             }
@@ -416,6 +431,7 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                             TArray<FVector> EnemyLocs;
                             EnemyLocs.Add(Stimulus.StimulusLocation);
                             ActionComp->TryStartTacticalQueryForCombat(EnemyLocs);
+                            RequestJevDecision();
                         }
                         else
                         {
@@ -494,4 +510,138 @@ void ASmartNPCAIController::OnPerceptionTick()
             StateComp->FlagDangerReplan();
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Jevlike 전술 편향기 — 요청/응답/워치독. 캐시·세대 카운터의 유일한 쓰기 지점.
+// ─────────────────────────────────────────────────────────────────────────────
+
+FJevDecision ASmartNPCAIController::GetFreshJevDecision() const
+{
+    const bool bFresh = JevDecision.ReceivedAt >= 0.0
+        && (FPlatformTime::Seconds() - JevDecision.ReceivedAt) < static_cast<double>(JevDecisionTTL);
+    return bFresh ? JevDecision : FJevDecision();
+}
+
+void ASmartNPCAIController::RequestJevDecision()
+{
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    UWorld* World = GetWorld();
+    if (!NPC || !World || !NPC->StateComponent) return;
+
+    // 쿨다운 1.0s + in-flight 1건 가드 — 감각 이벤트 폭주가 곧 요청 폭주가 되지 않게.
+    const double Now = FPlatformTime::Seconds();
+    if (bJevRequestInFlight || (Now - LastJevRequestTime) < static_cast<double>(JevRequestCooldown)) return;
+
+    UNPCManager* Manager = UNPCManager::Get(this);
+    if (!Manager || !Manager->IsServerConnected()) return; // 미연결 — 승수 1.0 중립 그대로
+
+    UNPCStateComponent* StateComp = NPC->StateComponent;
+    const FVector OwnerLoc = NPC->GetActorLocation();
+
+    // ── 정규화 지표 사전 계산(좌표·절대 HP 금지 — 비율/미터/개수/불리언만) ──
+    const float HpPct = FMath::Clamp(StateComp->GetAttributes().Resources.GetHealthPercent(), 0.f, 1.f);
+
+    AActor* Target = Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(Key_TargetActor)) : nullptr;
+    const float DistanceM = Target ? FVector::Dist(OwnerLoc, Target->GetActorLocation()) / 100.f : 5.f;
+
+    // 현재 시야 안 적대 대상 수 + 포위 여부(두 적의 방향이 90° 이상 벌어지면 포위).
+    TArray<FVector> HostileDirs;
+    if (PerceptionComp)
+    {
+        TArray<AActor*> Perceived;
+        PerceptionComp->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), Perceived);
+        for (AActor* A : Perceived)
+        {
+            if (!A || A == NPC || IsTargetDead(A)) continue;
+            if (A != Target && StateComp->GetRelation(ASmartNPC::PerceptionIdFor(A)) != ENPCRelation::Hostile) continue;
+            HostileDirs.Add((A->GetActorLocation() - OwnerLoc).GetSafeNormal2D());
+        }
+    }
+    if (Target && HostileDirs.Num() == 0)
+    {
+        HostileDirs.Add((Target->GetActorLocation() - OwnerLoc).GetSafeNormal2D());
+    }
+    bool bFlanked = false;
+    for (int32 i = 0; i < HostileDirs.Num() && !bFlanked; ++i)
+    {
+        for (int32 j = i + 1; j < HostileDirs.Num(); ++j)
+        {
+            if (FVector::DotProduct(HostileDirs[i], HostileDirs[j]) < 0.f) { bFlanked = true; break; }
+        }
+    }
+
+    // ── 세대 증가 + 워치독 가동 후 발송 ──
+    ++JevGeneration;
+    bJevRequestInFlight = true;
+    LastJevRequestTime = Now;
+    World->GetTimerManager().SetTimer(JevTimeoutTimer, this, &ASmartNPCAIController::HandleJevTimeout, JevTimeoutSeconds, false);
+
+    TSharedRef<FJsonObject> Metrics = MakeShared<FJsonObject>();
+    Metrics->SetNumberField(TEXT("hp_pct"),      HpPct);
+    Metrics->SetNumberField(TEXT("distance_m"),  DistanceM);
+    Metrics->SetNumberField(TEXT("enemy_count"), FMath::Max(1, HostileDirs.Num()));
+    Metrics->SetBoolField  (TEXT("is_flanked"),  bFlanked);
+
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("npc_id"),     NPC->AgentID);
+    Payload->SetNumberField(TEXT("generation"), static_cast<double>(JevGeneration));
+    Payload->SetObjectField(TEXT("metrics"),    Metrics);
+
+    Manager->SendEnvelopePromptToLLM(FEnvelopeBuilder::BuildJevQuery(Payload));
+    UE_LOG(LogTemp, Verbose, TEXT("[Jev] %s gen=%u 요청 hp=%.2f dist=%.1f count=%d flanked=%d"),
+        *NPC->AgentID, JevGeneration, HpPct, DistanceM, HostileDirs.Num(), bFlanked ? 1 : 0);
+}
+
+void ASmartNPCAIController::HandleJevDecisionResponse(const TSharedPtr<FJsonObject>& Payload)
+{
+    if (!Payload.IsValid()) return;
+
+    // 세대 불일치(늦은 패킷) 또는 워치독이 이미 닫은 요청 → 폐기.
+    int32 Generation = 0;
+    Payload->TryGetNumberField(TEXT("generation"), Generation);
+    if (!bJevRequestInFlight || static_cast<uint32>(Generation) != JevGeneration)
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[Jev] stale 응답 폐기 gen=%d (현재 %u, inflight=%d)"),
+            Generation, JevGeneration, bJevRequestInFlight ? 1 : 0);
+        return;
+    }
+
+    bJevRequestInFlight = false;
+    if (UWorld* W = GetWorld()) W->GetTimerManager().ClearTimer(JevTimeoutTimer);
+
+    double Confidence = 0.0;
+    Payload->TryGetNumberField(TEXT("confidence"), Confidence);
+    if (Confidence < static_cast<double>(JevMinConfidence))
+    {
+        // 저신뢰도 — 편향 미적용(중립 1.0 유지). 이전 캐시도 지워 오래된 기조가 잔존하지 않게.
+        JevDecision = FJevDecision();
+        return;
+    }
+
+    FString StanceStr;
+    Payload->TryGetStringField(TEXT("stance"), StanceStr);
+    double Aggr = 1.0, Caution = 1.0, Noul = 0.0;
+    Payload->TryGetNumberField(TEXT("score_aggression"), Aggr);
+    Payload->TryGetNumberField(TEXT("score_caution"),    Caution);
+    Payload->TryGetNumberField(TEXT("noul_harmful"),     Noul);
+
+    JevDecision.Stance          = ParseJevStance(StanceStr);
+    JevDecision.Confidence      = static_cast<float>(Confidence);
+    JevDecision.ScoreAggression = static_cast<float>(Aggr);
+    JevDecision.ScoreCaution    = static_cast<float>(Caution);
+    JevDecision.NoulHarmful     = static_cast<float>(FMath::Clamp(Noul, 0.0, 1.0));
+    JevDecision.ReceivedAt      = FPlatformTime::Seconds();
+
+    UE_LOG(LogTemp, Log, TEXT("[Jev] %s gen=%u ← %s conf=%.2f aggr=%.2f caution=%.2f noul=%.2f"),
+        *ASmartNPC::PerceptionIdFor(GetPawn()), JevGeneration, *StanceStr, Confidence, Aggr, Caution, Noul);
+}
+
+void ASmartNPCAIController::HandleJevTimeout()
+{
+    if (!bJevRequestInFlight) return;
+    // 세대를 올려 이후 도착하는 같은 세대 패킷을 폐기. 캐시는 건드리지 않음 — TTL 이 자연 만료시킨다.
+    ++JevGeneration;
+    bJevRequestInFlight = false;
+    UE_LOG(LogTemp, Verbose, TEXT("[Jev] 워치독 타임아웃(%.2fs) — gen→%u, 중립 유지"), JevTimeoutSeconds, JevGeneration);
 }

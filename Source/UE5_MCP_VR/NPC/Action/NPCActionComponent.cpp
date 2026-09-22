@@ -30,6 +30,7 @@
 #include "Utils/DiceSystem.h" // [추가] 패닉 주사위 판정용
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
 #include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
+#include "NavigationSystem.h" // BaseMove 목적지 NavMesh 투영(벽 끼임 방지)
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -582,6 +583,16 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
 {
     if (AAIController* AIController = PrepareMove(SpeedType))
     {
+        // 셀렉터 산출 좌표(Spacing 링·도주 벡터)는 NavMesh 밖일 수 있다 — MoveToLocation 기본값이
+        // bProjectDestinationToNavigation=false 라 벽 끼임·즉시 실패가 나므로 먼저 투영한다.
+        if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+        {
+            FNavLocation NavLoc;
+            if (NavSys->ProjectPointToNavigation(TargetLocation, NavLoc, FVector(200.f, 200.f, 300.f)))
+            {
+                TargetLocation = NavLoc.Location;
+            }
+        }
         const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
         HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
@@ -1024,6 +1035,18 @@ UNPCActionComponent::FEQSWeights UNPCActionComponent::ComputeEQSWeights() const
     W.AggressionWeight = Attr.Behavior.Aggression * 0.1f;
 
     W.SafeDistance     = Attr.Combat.Range * 0.8f;
+
+    // jevlike 승수 편향 — 신규 EQS 에셋 없이 기존 TacticalPositionsQuery Named Parameter 만 기울인다.
+    // 미도착·만료 시 1.0 중립. [0.25, 4.0] Clamp 로 극단값 방어.
+    {
+        ASmartNPCAIController* AIC = GetOwnerAIController();
+        const FJevDecision Jev = AIC ? AIC->GetFreshJevDecision() : FJevDecision();
+        const float Caution = FMath::Clamp(Jev.ScoreCaution,    0.25f, 4.0f);
+        const float Aggr    = FMath::Clamp(Jev.ScoreAggression, 0.25f, 4.0f);
+        W.CoverWeight      *= Caution;
+        W.DistanceWeight   *= Caution;
+        W.AggressionWeight *= Aggr;
+    }
 
     return W;
 }
@@ -1806,6 +1829,26 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
         if (C.Action == LastCombatChoice && ConsecutiveCombatChoiceCount > 0)
         {
             C.Weight *= FMath::Pow(CombatRepeatPenalty, static_cast<float>(ConsecutiveCombatChoiceCount));
+        }
+    }
+
+    // jevlike 전술 승수 — 컨트롤러 캐시(TTL 만료·미도착 시 1.0 중립).
+    // 연산 순서: MaxConsecutiveAttacks 0점 처리 뒤(0×k=0, 하드캡 보존) → 여기서 [0.25, 4.0] Clamp 곱셈
+    //          → Bravery 주사위·Feared 오버라이드 앞(C++ 생존 룰이 최종권한).
+    {
+        ASmartNPCAIController* AIC = GetOwnerAIController();
+        const FJevDecision Jev = AIC ? AIC->GetFreshJevDecision() : FJevDecision();
+        for (FCombatCandidate& C : Candidates)
+        {
+            float Multiplier = 1.f;
+            switch (C.Action)
+            {
+            case EAction::Attack: Multiplier = Jev.ScoreAggression; break;
+            case EAction::Dodge:  Multiplier = Jev.ScoreCaution;    break;
+            case EAction::Flee:   Multiplier = Jev.ScoreCaution;    break;
+            default:              break;
+            }
+            C.Weight *= FMath::Clamp(Multiplier, 0.25f, 4.0f); // 극단값 방어 — 후보 전멸 방지
         }
     }
 

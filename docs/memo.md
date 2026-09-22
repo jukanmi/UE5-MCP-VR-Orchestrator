@@ -8,15 +8,8 @@
 
 ## Todo
 
-### 전투 SPEC 잔여 — `docs/SPEC_realistic_combat.md` (§3.2·§2.3 완료 2026-09-21, 나머지 4개 보류)
-- [ ] **§3.1 Footwork EQS** — 현재 `SpacingIdealRange` 링 지점 직선 이동(EQS 미경유). `TacticalPositionsQuery`
-  는 전투 셀렉터 커버링에만 쓰임. Strafing/Disengage 없음. 신규 EQS 쿼리 필요.
-- [ ] **§3.3 감각 융합 척수 반사** — Sight/Hearing 이 `TryReflexReact` 로 개별 처리만 됨. 청각→시야
-  체이닝 스캔·투사체 즉각 회피·Startle 전부 없음. 새 반사 상태머신 필요.
-- [ ] **§3.4 Stumble 3단계** — Flinch/Knockdown 2단계뿐(`NPCRagdollComponent::ReactToHit` 임계 40).
-  방향성 비틀거림 중간 단계는 스태거 몽타주 에셋이 없어 보류(다른 애니메이션 갭들과 동일 사유).
-- [ ] **§3.5 공격토큰 중앙화** — `AEnemyAIController::bEngaged`+`MaxAttackers=2` 로 필드 몹 한정 존재.
-  `SmartNPC`/LLM 전투 경로엔 없고 `NPCManager` 중앙집중도 아님. 재설계 필요.
+### 전투 SPEC 잔여 — `docs/SPEC_realistic_combat.md` (§3.2·§2.3 완료 2026-09-21, §3.5 공격토큰 중앙화는 2026-09-22 폐기 — 필드 몹 `MaxAttackers=2` 로 충분, 나머지 3개 보류)
+- [ ] **§3.1·3.3·3.4 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 순서: Stumble 폴백 → Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0. 사람 작업은 Mixamo 스태거 4방향 임포트뿐(DoList 1-16), 없어도 절차적 폴백.
 
 ### 플레이어 시스템 잔여 갭 — `docs/SPEC_player_systems.md`
 - [x] **[갭 3] VR 물리 손 쥐기 및 플레이어→NPC 전달** — 2026-09-05 C++ 구현·빌드 완료.
@@ -99,6 +92,21 @@
 ---
 
 ## Done
+
+- [x] **오픈소스 Jevlike 기반 NPC StateTree 전술 편향기 파이프라인 구현 완료 (2026-09-22)** — `docs/SPEC_jev_neuro_symbolic_st.md` §5·§6·§7.
+  - **Python 인지 백엔드**: `EEnvelopeType.JEV_QUERY` / `JEV_DECISION`, `JevQueryPayload` 정의(`app/schemas/envelope.py`), `JevlikeService` 로컬 전술 편향기(`app/services/jev_service.py` — 체크포인트 부재 시 단조성 규칙 기반 휴리스틱 폴백 완비, 100회 평균 < 1ms), `_handle_jev_query` LLM 미경유 즉시 동기 회신(`app/main.py`), 신규 단위 테스트 8건 작성 및 통과(`tests/test_jevlike_service.py`).
+  - **UE5 C++ 핵심 클래스**: `FEnvelopeBuilder::BuildJevQuery` 구현, `ASmartNPCAIController` Jev 결정 캐시(`FJevDecision`)·1.0s 쿨다운·in-flight 가드·세대 카운터(`JevGeneration`)·0.3s 워치독 타이머(`JevTimeoutTimer`) 및 감각 갱신(`OnTargetPerceptionUpdated`)·HP 25% 하향 교차 시 단 1회 트리거 연동, `FSTEvaluator_JevTactics` 0ms 캐시 복사 및 2.0s TTL 만료 검사, `FSTCondition_NoulGuard` 유해/탈옥 차단 사전조건, `NPCActionComponent::SelectCombatAction` Jevlike 승수 `[0.25, 4.0]` Clamp 곱셈(`MaxConsecutiveAttacks` 0점 처리 뒤, `Bravery`/`Feared` 앞), `ComputeEQSWeights` 전술 편향, `BaseMove` `ProjectPointToNavigation` NavMesh 투영(벽 끼임 방지).
+  - **검증 결과**: `tools/sol_pi.py verify all` C++ 컴파일 에러 0건, Python 테스트 83건(100%) 통과, Engine UAT 클린 통과.
+
+- [x] **오픈소스 Jevlike 기반 NPC StateTree 전술 편향기(Tactical Bias) SPEC 수립 (2026-09-22)** — `docs/SPEC_jev_neuro_symbolic_st.md`.
+  TypeSafe 상용 클라우드 Jev 대신 오픈소스 `vinnylarouge/jevlike` 로컬 PyTorch 엔진 채택 확정 및 Claude 교차 코드 리뷰/토론 거쳐 설계 완료.
+  - **파라미터 산출 책임 엄격 분담**: "행동 종류"가 아닌 **"파라미터 종류"** 기준 분리. 물리/공간 파라미터(좌표, 방향, 타겟, 몽타주, Spacing) = C++ 0ms 동기 유추, 전술 가중치 승수 = Jevlike 5~20ms, 서사/대사 = LLM 1~3s(행동 선행, 텍스트 후행 비동기 도착).
+  - **C++ Gotchas 방어**: Jev 승수 `[0.25, 4.0]` Clamp 필수(후보 전멸 방지), `MoveToLocation` 호출 시 `bProjectDestinationToNavigation=true` 투영 필수(벽 끼임 방지).
+  - **로컬 5~20ms 초고속 추론**: 클라우드 API 및 외부 인터넷 의존성 완전 제거, Python 백엔드 인프로세스 PyTorch 추론으로 VR 지연 극소화.
+  - **아키텍처 전환**: Jevlike를 "State 직접 전이 선택기"에서 **"전술 가중치 편향기(Tactical Bias)"**로 재정의하여 기존 C++ `SelectCombatAction` 및 `TryReflexReact`의 결정론적 소유권과 비침습 결합.
+  - **무중단 폴백(Graceful Fallback)**: 네트워크 타임아웃(0.3s) 및 저신뢰도(<0.5) 시 배율 1.0(중립) 유지하여 Jev 장애 시에도 C++ 100% 정상 작동.
+  - **StateTree 5.5 연동**: `FSTEvaluator_JevTactics` 0ms 복사(2초 TTL 만료), `FSTCondition_NoulGuard`(bool TestCondition) 가드레일, Choice는 `Alert`/`Common` 내부 서브 전이에만 사용(최상위 `BehaviorMode` 소유권 침범 0).
+  - **단일 채널 및 소유권**: 기존 WebSocket `MessageEnvelope`(`jev_query` / `jev_decision`) 단일 채널 및 `SmartNPCAIController` 단일 진입점(규칙 6-2) 준수. Latent Task 및 지연 은폐 몽타주 삭제.
 
 - [x] **대화창 UI 분리 — 손 패널 → 카메라 고정 패널 (2026-09-21, 미커밋)** — `UPlayerHUDWidget` 안에 섞여 있던
   ChatInput/ChatLog/HandleChatCommitted/AppendChatLine/FocusChatInput/IsChatFocused/HandleNPCResponse 를 신규
@@ -195,6 +203,16 @@
 코드·주석만 봐선 모를 배경과 함정만. 서사(문제→조치 경위)는 주간기록에, 결정 이력은 `_결정원장.md` 에.
 ### 음성 파이프라인 폐기 (2026-09-12, 리팩토링 1단계 C10·C11)
 - [x] TTS·ASR 후속 3건(ASR partial 스트리밍·TTS M4 Lip Sync·VAD barge-in) — 파이프라인 자체 삭제로 폐기. 복원은 `bd057b8` 이전 이력.
+### J. 오픈소스 Jevlike StateTree 전술 편향기 연동 (2026-09-22 신설)
+- **오픈소스 `vinnylarouge/jevlike` 로컬 인프로세스 추론 채택**: TypeSafe 상용 클라우드 Jev를 배제하고, Python 백엔드(`OmniAgent_VR_System/CognitiveEngine`) 내에 `jevlike`를 직접 탑재. 클라우드 RTT(150~300ms) 및 외부 API 키 의존성을 완전히 제거하고 **로컬 5~20ms 초고속 추론**으로 VR 90Hz 프레임 예산을 완벽히 보호.
+- **Jevlike의 역할은 State 선택기가 아닌 "전술 가중치 편향기(Tactical Bias)"**: C++ `SelectCombatAction` 및 `TryReflexReact`의 결정론적 소유권을 보존하기 위해, Jevlike는 StateTree 최상위 모드(`ENPCBehaviorMode`)를 바꾸지 않고 C++ 셀렉터의 액션 가중치(공격/회피/도주) 및 EQS 파라미터에 배율(Multiplier)로만 개입한다.
+- **무중단(Graceful Degradation) 1.0 중립 폴백**: 타임아웃(0.3s) 만료, 세대 불일치, Confidence < 0.5 발생 시 중립 배율 1.0을 유지하므로, Jevlike 지연/예외 시에도 C++ NPC 로직은 0ms로 100% 정상 작동한다.
+- **단일 채널 규약(CLAUDE.md §1) 및 단일 진입점(규칙 6-2)**: UE5 클라이언트 소스 변경 없이 기존 로컬 WebSocket `MessageEnvelope`(`jev_query`/`jev_decision`) 채널을 재사용하며, C++ 진입점은 `SmartNPCAIController`로 일원화(세대 카운터, 0.3s 워치독 타이머, 2.0s TTL 캐시).
+- **StateTree 5.5 연동 규칙**: Latent Task 및 지연 은폐 몽타주는 일체 사용하지 않음(5~20ms 추론이라 은폐 자체가 불필요). `FSTEvaluator_JevTactics`는 Controller 결정을 0ms 복사만 수행하며, `FSTCondition_NoulGuard`(bool TestCondition)로 유해 행동 진입을 2차 방어한다.
+- **파라미터 산출 분담 ("파라미터 종류" 기준)**: 물리/공간 파라미터(좌표, 방향, 몽타주, Spacing) = C++ 100% 동기 유추(0ms). 전술 가중치 승수 = Jevlike(5~20ms). 대사/서사 = LLM(1~3s, 단 행동 선행 집행 후 텍스트 비동기 후속 도착 필수).
+- **C++ Gotchas 방어**: Jev 승수 연산 시 `[0.25, 4.0]` Clamp 필수(후보 전멸 방지), `MoveToLocation` 호출 시 `bProjectDestinationToNavigation=true` 투영 필수(BaseMove:585 기본값 false 로 인한 벽 끼임 버그 방지).
+- **상세 명세서**: `docs/SPEC_jev_neuro_symbolic_st.md`.
+
 ---
 
 ### S. 스토리 진행 & NPC 오케스트레이션 (2026-09-18 신설)

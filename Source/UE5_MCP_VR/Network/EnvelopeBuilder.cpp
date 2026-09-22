@@ -18,6 +18,8 @@ FString FEnvelopeBuilder::EnvelopeTypeToString(EEnvelopeType Type)
         case EEnvelopeType::EmergencyReport: return TEXT("emergency_report");
         case EEnvelopeType::LocationDecision: return TEXT("location_decision");
         case EEnvelopeType::StoryEvent:   return TEXT("story_event");
+        case EEnvelopeType::JevQuery:     return TEXT("jev_query");
+        case EEnvelopeType::JevDecision:  return TEXT("jev_decision");
         default:
             // 새 EEnvelopeType 추가 후 여기 미반영 시 도달(새 Envelope 타입을 양쪽에 동시 반영하지 않았다는 신호) — prompt 폴백은
             // Python 이 엉뚱한 핸들러로 라우팅하는 무음 장애가 되므로 Error 로 승격.
@@ -83,4 +85,9 @@ FString FEnvelopeBuilder::BuildStateUpdate(const TSharedRef<FJsonObject>& Payloa
 FString FEnvelopeBuilder::BuildStoryEvent(const TSharedRef<FJsonObject>& Payload)
 {
     return BuildEnvelope(EEnvelopeType::StoryEvent, Payload);
+}
+
+FString FEnvelopeBuilder::BuildJevQuery(const TSharedRef<FJsonObject>& Payload)
+{
+    return BuildEnvelope(EEnvelopeType::JevQuery, Payload);
 }

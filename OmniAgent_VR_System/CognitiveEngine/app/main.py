@@ -20,7 +20,9 @@ from .schemas.envelope import (
     PromptPayload,
     LocationDecisionPayload,
     EmergencyReportPayload,
+    JevQueryPayload,
 )
+from .services.jev_service import get_jev_service
 from .schemas.vr_context import GesPrompt
 from .schemas.actions import ModeActionRequest, NPCBehaviorMode
 from .agents.state import AgentState
@@ -251,6 +253,9 @@ async def _process_llm_message(raw_data: str) -> str:
 
         elif envelope.type == EEnvelopeType.STORY_EVENT:
             return await _handle_story_event(envelope)
+
+        elif envelope.type == EEnvelopeType.JEV_QUERY:
+            return _handle_jev_query(envelope)
 
         else:
             logger.error(f"[Main] 알 수 없는 메시지 타입: {envelope.type}")
@@ -700,6 +705,42 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
         return _location_decision_fast_path(payload_raw, "exception")
+
+
+def _handle_jev_query(envelope: MessageEnvelope) -> str:
+    """jev_query → jev_decision. 로컬 jevlike(또는 휴리스틱) 동기 추론 5~20ms — LLM 미경유.
+
+    동기 함수인 이유: 추론이 ms 단위라 await 포인트가 불필요하고, 이벤트루프 양보 없이
+    바로 회신해야 UE5 0.3s 워치독 안에 든다. 어떤 예외든 중립 응답(confidence 0.0 →
+    UE5 가 승수 1.0 유지)으로 돌려 무음 드랍을 막는다. generation 은 그대로 echo.
+    """
+    payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
+    npc_id = str(payload_raw.get("npc_id", "unknown"))
+    try:
+        generation = int(payload_raw.get("generation", 0))
+    except (TypeError, ValueError):
+        generation = 0
+
+    try:
+        payload = JevQueryPayload(**payload_raw)
+        decision = get_jev_service().evaluate_tactics(payload.metrics)
+    except Exception as e:
+        logger.warning(f"[Jev] 평가 실패 npc={npc_id} → 중립 응답: {e}")
+        decision = {
+            "stance": "Default",
+            "confidence": 0.0,
+            "score_aggression": 1.0,
+            "score_caution": 1.0,
+            "noul_harmful": 0.0,
+        }
+
+    logger.info(f"[Jev] {npc_id} gen={generation} → {decision['stance']} conf={decision['confidence']:.2f}")
+    return json.dumps(
+        {
+            "type": EEnvelopeType.JEV_DECISION.value,
+            "payload": {"npc_id": npc_id, "generation": generation, **decision},
+        }
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

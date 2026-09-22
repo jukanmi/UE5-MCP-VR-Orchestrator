@@ -75,6 +75,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|State")
     float LastHitTime = 0.0f;
 
+    /** HP 비율이 이 값 아래로 처음 내려갈 때 jevlike 전술 재평가 요청(ApplyDamage 교차 1회). */
+    UPROPERTY(EditDefaultsOnly, Category = "NPC|Jev", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float JevLowHpThreshold = 0.25f;
+
     // --- Helper: Owner Attributes Access ---
     FNPCAttributes GetAttributes() const;
     FNPCAttributes& GetMutableAttributes();
