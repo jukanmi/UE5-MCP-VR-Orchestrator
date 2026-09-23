@@ -3,6 +3,7 @@
 > 전투 편향기 SPEC(`docs/SPEC_jev_neuro_symbolic_st.md`)과 **문서는 분리**, 파이프라인은 **공유**.
 > 인터뷰 결정 2026-09-23. 개정 2026-09-23: 단일 선택 → **슬롯별 순차 선택**. 개정 2026-09-24: 활동 12개 통합·대분류 폐지·전투 척수 유지·POI 목업·D10.
 > 상태: **M1 착수 전**(D9 PickUp 전환만 선행 완료 — `f59fe0c8`·`d046c715`).
+> 선행 SPEC: `docs/SPEC_behavior_mode_reduce.md`(BehaviorMode 6→2, M1 전에 처리).
 
 ## 목표
 
