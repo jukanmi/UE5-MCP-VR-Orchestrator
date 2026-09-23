@@ -16,7 +16,7 @@ MESSAGE TYPE 분류:
 
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Literal
 import time
 
 
@@ -170,7 +170,11 @@ class JevQueryPayload(BaseModel):
 
     npc_id: str
     generation: int = 0
-    metrics: Dict[str, Any] = Field(default_factory=dict)  # hp_pct, distance_m, enemy_count, is_flanked
+    # combat: hp_pct·distance_m·enemy_count·is_flanked / daily: posture·idle_s·player_dist_m 등(SPEC_jev_daily D3)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    domain: Literal["combat", "daily"] = "combat"  # 누락 = combat(구 C++ 하위호환)
+    activities: List[str] = Field(default_factory=list)  # daily 전용 — C++ 가 지금 실행 가능하다고 판정한 활동 id
+    pools: Dict[str, Any] = Field(default_factory=dict)  # daily 전용 — actors·places·pois·items·ground_items·media
 
 
 # ─────────────────────────────────────────────────────────────────────────────

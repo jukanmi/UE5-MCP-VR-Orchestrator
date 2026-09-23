@@ -23,6 +23,7 @@ from .schemas.envelope import (
     JevQueryPayload,
 )
 from .services.jev_service import get_jev_service
+from .agents.subgraphs.dialogue import load_persona
 from .schemas.vr_context import GesPrompt
 from .schemas.actions import ModeActionRequest, NPCBehaviorMode
 from .agents.state import AgentState
@@ -721,6 +722,9 @@ def _handle_jev_query(envelope: MessageEnvelope) -> str:
     except (TypeError, ValueError):
         generation = 0
 
+    if payload_raw.get("domain") == "daily":
+        return _handle_jev_daily(npc_id, generation, payload_raw)
+
     try:
         payload = JevQueryPayload(**payload_raw)
         decision = get_jev_service().evaluate_tactics(payload.metrics)
@@ -740,6 +744,31 @@ def _handle_jev_query(envelope: MessageEnvelope) -> str:
             "type": EEnvelopeType.JEV_DECISION.value,
             "payload": {"npc_id": npc_id, "generation": generation, **decision},
         }
+    )
+
+
+def _handle_jev_daily(npc_id: str, generation: int, payload_raw: dict) -> str:
+    """daily jev_query → 활동+슬롯. persona(role·traits)는 서버만 알아서 여기서 붙인다(C++ 는 모름).
+    어떤 실패든 stay(= 현행 Idle)로 회신 — 장애가 나도 지금보다 나빠지지 않는다."""
+    try:
+        payload = JevQueryPayload(**payload_raw)
+        try:
+            persona = load_persona(npc_id) or {}
+        except Exception as e:  # persona 없이도 휴리스틱은 돈다
+            logger.debug(f"[Jev] persona 로드 실패 npc={npc_id}: {e}")
+            persona = {}
+        decision = get_jev_service().evaluate_daily(payload.metrics, payload.activities, payload.pools, persona)
+    except Exception as e:
+        logger.warning(f"[Jev] daily 평가 실패 npc={npc_id} → stay: {e}")
+        decision = {"activity": "stay", "slots": {}, "confidence": 0.0, "passes": 0}
+
+    logger.info(f"[Jev] {npc_id} daily → {decision['activity']} {decision['slots']} passes={decision['passes']}")
+    return json.dumps(
+        {
+            "type": EEnvelopeType.JEV_DECISION.value,
+            "payload": {"npc_id": npc_id, "generation": generation, "domain": "daily", **decision},
+        },
+        ensure_ascii=False,
     )
 
 
