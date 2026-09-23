@@ -205,6 +205,23 @@ def _format_nearby_furniture(vr_context: GesPrompt) -> str:
     return ". Nearby furniture you can use as Sit/Sleep target: " + "; ".join(parts)
 
 
+def _format_nearby_items(vr_context: GesPrompt) -> str:
+    """바닥 아이템 인지 조각(". Items on the ground ...") — 없으면 "".
+    WHY: UE5 는 아이템 instance id 를 valid_targets 에 싣지만 id 는 UUID 라, 무슨 물건인지
+    (template_id)를 같이 보여주지 않으면 LLM 이 PickUp target 을 고를 수 없다."""
+    items = getattr(vr_context, "nearby_items", None) or []
+    if not items:
+        return ""
+    parts = []
+    for it in items:
+        iid = it.get("id", "?")
+        kind = it.get("template_id", "?")
+        dist = it.get("dist_m")
+        dist_str = f", {dist:.1f}m away" if isinstance(dist, (int, float)) else ""
+        parts.append(f"{iid} ({kind}{dist_str})")
+    return ". Items on the ground you can PickUp (use the id as target): " + "; ".join(parts)
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
@@ -230,6 +247,7 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
 
     natural_context += _format_plan_context(state)
     natural_context += _format_nearby_furniture(vr_context)
+    natural_context += _format_nearby_items(vr_context)
 
     return natural_context
 

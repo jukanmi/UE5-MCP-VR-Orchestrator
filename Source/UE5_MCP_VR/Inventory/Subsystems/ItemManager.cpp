@@ -69,6 +69,13 @@ void UItemManager::UnregisterDroppedItem(const FString& InInstanceID)
     UE_LOG(LogTemp, Log, TEXT("[ItemManager] Unregistered Item: %s"), *InInstanceID);
 }
 
+ADroppedItemBase* UItemManager::FindDroppedItem(const FString& InInstanceID) const
+{
+    const FDroppedItemData* Found = ActiveDroppedItems.Find(InInstanceID);
+    if (!Found || !IsValid(Found->ItemActor)) return nullptr;
+    return Cast<ADroppedItemBase>(Found->ItemActor);
+}
+
 TArray<ADroppedItemBase*> UItemManager::GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const
 {
     TArray<ADroppedItemBase*> FoundItems;

@@ -269,7 +269,8 @@ ACTION_REQUIRED_PARAMS: Dict[str, list] = {
     "GiveItem": [("target_id",), ("give_item_id", "item")],
     "Comfort": [("target_id",)],
     "HandObject": [("item", "target_id")],
-    "PickUp": [("target_loc",)],
+    # target_id = 바닥 아이템 instance id(valid_targets 에 실림) — C++ 가 그 아이템까지 걸어가 그것만 줍는다.
+    "PickUp": [("target_id", "target_loc")],
     "Drop": [("item", "target_id")],
     "Craft": [("item_ids", "item", "target_id")],
     "Investigate": [("target_loc",)],

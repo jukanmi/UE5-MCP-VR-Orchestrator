@@ -439,6 +439,7 @@ void UNPCActionComponent::ClearActiveActionState()
     bActionAwaitingAsync = false;
     PendingMoveMediaKey.Reset();
     bPendingPickup = false; // 이동 중단 시 스테일 플래그가 다음 액션에서 잘못 발동하는 것 방지
+    PendingPickupItem.Reset();
     PendingFurnitureTarget.Reset(); // 이동 중단 시 스테일 가구 목적지 방지 — 점유 전이라 Release 불필요
     StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
     if (UWorld* World = GetWorld())
@@ -593,8 +594,7 @@ void UNPCActionComponent::BaseMove(FVector TargetLocation, EMoveType SpeedType, 
                 TargetLocation = NavLoc.Location;
             }
         }
-        const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);
-        HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
+        const EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(TargetLocation, AcceptanceRadius);        HandleImmediateMoveResult(AIController, MoveResult); // AlreadyAtGoal/Failed 는 콜백 미발화 — 동기 처리
     }
 }
 
@@ -921,7 +921,8 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::HandObject:   ExecuteHandObject(ItemID); break;
 
     // Task
-    case EAction::PickUp:       ExecutePickUp(Location); break;
+    // 대상 해석이 아이템이 아니면(빈 target → BB 전투 타겟 폴백 등) 캐스트가 걸러 좌표 경로로 간다.
+    case EAction::PickUp:       ExecutePickUp(Cast<ADroppedItemBase>(TargetActor), Location); break;
     case EAction::Drop:         ExecuteDrop(ItemID, Amount); break;
     case EAction::Craft:        ExecuteCraft(CraftItemIDs); break;
     
@@ -1620,6 +1621,7 @@ void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FP
         {
             PerformPickupAtDestination();
         }
+        PendingPickupItem.Reset(); // 이동 실패로 탐색을 건너뛴 경우에도 다음 픽업에 대상이 새지 않게
 
         // 성공 시 종료 콜백이 OnActionCompleted 호출, 미등록이면 여기서 즉시 완료.
         if (!PlayActionMediaWithPosture(TEXT("PickUp")))
@@ -2091,12 +2093,14 @@ void UNPCActionComponent::ExecuteHandObject(const FString& ItemID)
 // [4] Task Behaviors
 // ==========================================
 
-void UNPCActionComponent::ExecutePickUp(FVector Location)
+void UNPCActionComponent::ExecutePickUp(ADroppedItemBase* TargetItem, FVector Location)
 {
-    // 탐색은 도착 후 OnMoveActionCompleted → PerformPickupAtDestination 이 수행한다.
+    // 습득은 도착 후 OnMoveActionCompleted → PerformPickupAtDestination 이 수행한다.
     // 여기서 즉시 하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다.
+    // BaseMove 가 AlreadyAtGoal 을 동기 처리할 수 있으므로 상태는 반드시 BaseMove 전에 세팅.
+    PendingPickupItem = TargetItem;
     bPendingPickup = true;
-    BaseMove(Location, EMoveType::Walk);
+    BaseMove(IsValid(TargetItem) ? TargetItem->GetActorLocation() : Location, EMoveType::Walk);
 }
 
 void UNPCActionComponent::PerformPickupAtDestination()
@@ -2107,7 +2111,36 @@ void UNPCActionComponent::PerformPickupAtDestination()
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter) return;
 
-    // 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
+    // 지정 아이템 경로 — 그 아이템만. 걷는 동안 상태가 바뀌었으면 줍지 않고 끝낸다(추격하지 않음).
+    // 대상을 지정했는데 실패했다고 근처 다른 아이템을 줍지 않는다 — 지정한 것과 다른 물건이 들어오면 안 된다.
+    // IsExplicitlyNull: "처음부터 대상 없음"(좌표 경로)과 "지정했는데 파괴됨"(stale)을 가른다.
+    if (!PendingPickupItem.IsExplicitlyNull())
+    {
+        ADroppedItemBase* Target = PendingPickupItem.Get();
+        PendingPickupItem.Reset();
+        if (!IsValid(Target))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상이 사라짐 — 습득 생략"), *GetOwnerAgentID());
+            return;
+        }
+        // 쥔 물건은 손 메시에 붙어 있다(InventoryComponent::AttachItemToHand).
+        if (Target->GetAttachParentActor())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상 %s 를 누가 쥐고 있음 — 습득 생략"),
+                *GetOwnerAgentID(), *Target->ItemData.ItemInstanceID);
+            return;
+        }
+        if (FVector::Dist2D(Target->GetActorLocation(), OwnerCharacter->GetActorLocation()) > PickupReach)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상 %s 가 도달 거리(%.0fcm) 밖으로 옮겨짐 — 습득 생략"),
+                *GetOwnerAgentID(), *Target->ItemData.ItemInstanceID, PickupReach);
+            return;
+        }
+        Target->TryPickupInto(InventoryComponent);
+        return;
+    }
+
+    // 좌표 경로 — 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
     // 액션 1회당 1개 묶음만 — 범위 내 전부 쓸어 담지 않는다.
     for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {

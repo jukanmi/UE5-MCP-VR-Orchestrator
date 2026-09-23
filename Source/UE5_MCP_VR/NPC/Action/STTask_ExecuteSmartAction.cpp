@@ -9,6 +9,8 @@
 #include "NPC/Struct/NPCActionKeys.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
+#include "Inventory/Subsystems/ItemManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/GameInstance.h"
 
@@ -16,7 +18,7 @@ namespace
 {
     // LLM target_id 의미키워드 → 실제 AActor*.
     //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟
-    //   / 그 외 → NPCMap AgentID 조회 → FurnitureManager 가구 ID 조회 순.
+    //   / 그 외 → NPCMap AgentID 조회 → FurnitureManager 가구 ID 조회 → ItemManager 바닥 아이템 ID 조회 순.
     // 해석 실패 시 BB 타겟으로 폴백(기존 동작 보존).
     AActor* ResolveActionTarget(ASmartNPC* Self, const FString& Keyword, AActor* BBTarget)
     {
@@ -44,6 +46,15 @@ namespace
         if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(Self))
         {
             if (AFurnitureActor* Found = FurnMgr->GetFurnitureByID(Keyword))
+            {
+                return Found;
+            }
+        }
+        // <ItemInstanceID> — 바닥 아이템 조회. valid_targets 가 아이템 ID 를 싣기 때문에 해석도 여기서 받는다
+        // (없으면 BB 타겟=전투 상대로 폴백돼 PickUp 대상이 엉뚱해진다).
+        if (UItemManager* ItemMgr = UItemManager::Get(Self))
+        {
+            if (ADroppedItemBase* Found = ItemMgr->FindDroppedItem(Keyword))
             {
                 return Found;
             }

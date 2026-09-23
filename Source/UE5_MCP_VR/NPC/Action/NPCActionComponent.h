@@ -39,6 +39,7 @@ enum class ETacticalMoveState : uint8
 class ASmartNPCAIController;
 class AAIController;
 class AFurnitureActor;
+class ADroppedItemBase;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
@@ -423,8 +424,16 @@ public:
      *  검사하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다. */
     bool bPendingPickup = false;
 
-    /** OnMoveActionCompleted 도착 처리에서 실제 탐색·습득을 수행한다(bPendingPickup 소비).
-     *  범위 내 여러 개가 있어도 액션 1회당 1개 묶음만 줍는다. */
+    /** 지정 아이템 픽업의 대상 — 있으면 도착 후 이 아이템만 줍는다. 없으면 도착 지점 반경 탐색(좌표 경로).
+     *  약참조: 걷는 동안 플레이어가 먼저 줍거나 파괴될 수 있다. 이동 중단 시 ClearActiveActionState 가 리셋. */
+    TWeakObjectPtr<ADroppedItemBase> PendingPickupItem;
+
+    /** 지정 아이템이 도착 지점에서 이만큼 넘게 떨어져 있으면(걷는 동안 누가 옮김) 줍지 않는다. 추격하지 않는다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Pickup", meta = (ClampMin = "50.0"))
+    float PickupReach = 150.f;
+
+    /** OnMoveActionCompleted 도착 처리에서 실제 습득을 수행한다(bPendingPickup 소비).
+     *  지정 아이템이 있으면 그것만, 없으면 범위 내 첫 1개 묶음만 줍는다. */
     void PerformPickupAtDestination();
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
@@ -673,8 +682,10 @@ public:
     // ----------------------------------------------------------------------------
     // [4] Task Behaviors
     // ----------------------------------------------------------------------------
+    /** 대상 아이템이 있으면 그 아이템까지 걸어가 그것만 줍는다(Sit/Sleep 가구 경로와 같은 방식 — 호출자는 "무엇을"만 고른다).
+     *  대상이 없으면 Location 까지 걸어가 반경 내 첫 아이템을 줍는다(좌표만 주는 기존 호출 호환). */
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecutePickUp(FVector Location);
+    void ExecutePickUp(ADroppedItemBase* TargetItem, FVector Location);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteDrop(const FString& ItemID, int32 Amount);

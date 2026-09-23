@@ -66,6 +66,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     TArray<ADroppedItemBase*> GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const;
 
+    // 인스턴스 ID 로 월드 드랍 아이템을 찾는다 — 액션 target 에 아이템 ID 가 오면 액터로 해석하는 경로.
+    // 미등록이거나 액터가 이미 파괴됐으면 nullptr.
+    ADroppedItemBase* FindDroppedItem(const FString& InInstanceID) const;
+
     // DataTable에서 ItemID(TemplateID)에 해당하는 아이템 원본 데이터를 가져옵니다. (레지스트리 및 하드코딩 에셋 로딩 방식 대체)
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     bool GetItemDataByID(const FString& InTemplateID, FItemData& OutItemData) const;
