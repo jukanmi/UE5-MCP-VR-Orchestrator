@@ -150,12 +150,36 @@ public:
 	/** 0.3s 워치독 만료 — 세대를 올려 늦은 패킷을 폐기하고 in-flight 해제. */
 	void HandleJevTimeout();
 
+	/** Jev daily — 비전투·큐 빔·!bIsBusy 인 틱마다 STTask 가 호출. Idle 경과·LLM 직후·서버 연결·in-flight
+	 *  게이트를 통과하면 daily 요청 1건. in-flight·세대·워치독은 전투 요청과 공유한다. */
+	void TickJevDaily();
+
+	/** Idle 이 아닐 때(액션 진행·전투) — Idle 경과를 처음부터 다시 잰다. */
+	void ResetJevDailyIdle() { JevDailyIdleSince = -1.0; }
+
 protected:
 	FJevDecision JevDecision;
 	uint32 JevGeneration = 0;
 	bool bJevRequestInFlight = false;
 	double LastJevRequestTime = 0.0;
 	FTimerHandle JevTimeoutTimer;
+
+	/** 진행 중 요청이 daily 인지 — 응답 분기용. 전투 요청은 daily 를 끊고 들어간다. */
+	bool bJevInFlightDaily = false;
+
+	/** Idle 시작 시각(FPlatformTime). -1 = Idle 아님. */
+	double JevDailyIdleSince = -1.0;
+
+	/** 세대 증가·in-flight·워치독 가동 후 발송 — 전투·daily 공용. generation 필드는 여기서 채운다. */
+	void SendJevQuery(const TSharedRef<FJsonObject>& Payload, bool bDaily);
+
+	/** 비전투 Idle 이 이만큼 이어지면 daily 요청(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "1.0"))
+	float JevDailyIdleSeconds = 10.0f;
+
+	/** 마지막 LLM 배치 후 이 시간(초) 동안은 daily 요청 안 함 — 대화 직후 끼어들기 방지. */
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.0"))
+	float JevDailyAfterLLMSeconds = 15.0f;
 
 	/** 요청 최소 간격(초) — 매 프레임 폭주 방지. */
 	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.1"))

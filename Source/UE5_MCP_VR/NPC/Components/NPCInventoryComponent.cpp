@@ -31,6 +31,8 @@ FString UNPCInventoryComponent::GetInventoryJson() const
             JsonObj->SetNumberField(TEXT("count"), Slot.Count);
             JsonObj->SetNumberField(TEXT("weight"), Slot.ItemData.Weight);
             JsonObj->SetStringField(TEXT("type"), TEXT("item")); // 구분자
+            // EItemType(General/Consumable/Equipment/Quest) — Jev 가 use_item·give_item 후보를 거른다. LLM 은 모르는 키라 무시.
+            JsonObj->SetStringField(TEXT("category"), StaticEnum<EItemType>()->GetNameStringByValue(static_cast<int64>(Slot.ItemData.ItemType)));
             
             TSharedRef<FJsonValueObject> JsonValue = MakeShareable(new FJsonValueObject(JsonObj));
             JsonArray.Add(JsonValue);
@@ -51,6 +53,7 @@ FString UNPCInventoryComponent::GetInventoryJson() const
         JsonObj->SetNumberField(TEXT("count"), EqSlot.Count);
         JsonObj->SetNumberField(TEXT("weight"), EqSlot.ItemData.Weight);
         JsonObj->SetStringField(TEXT("type"), TEXT("item"));
+        JsonObj->SetStringField(TEXT("category"), StaticEnum<EItemType>()->GetNameStringByValue(static_cast<int64>(EqSlot.ItemData.ItemType)));
         JsonObj->SetBoolField(TEXT("equipped"), true);
 
         JsonArray.Add(MakeShareable(new FJsonValueObject(JsonObj)));

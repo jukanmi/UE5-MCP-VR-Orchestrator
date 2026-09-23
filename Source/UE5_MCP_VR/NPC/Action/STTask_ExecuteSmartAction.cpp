@@ -17,13 +17,15 @@
 namespace
 {
     // LLM target_id 의미키워드 → 실제 AActor*.
-    //   Player → 플레이어 폰 / Self → 자신 / Enemy·빈값 → BB perception 타겟
+    //   Player → 플레이어 폰 / Self → 자신 / None → 없음 / Enemy·빈값 → BB perception 타겟
     //   / 그 외 → NPCMap AgentID 조회 → FurnitureManager 가구 ID 조회 → ItemManager 바닥 아이템 ID 조회 순.
     // 해석 실패 시 BB 타겟으로 폴백(기존 동작 보존).
     AActor* ResolveActionTarget(ASmartNPC* Self, const FString& Keyword, AActor* BBTarget)
     {
         if (Keyword.IsEmpty()) return BBTarget;
         if (Keyword.Equals(TEXT("Self"), ESearchCase::IgnoreCase)) return Self;
+        // None — 의도적 무대상(좌표만 쓰는 Jev 조립 액션). BB 타겟(최근 본 아무나)으로 폴백하지 않는다.
+        if (Keyword.Equals(TEXT("None"), ESearchCase::IgnoreCase)) return nullptr;
         if (Keyword.Equals(TEXT("Enemy"), ESearchCase::IgnoreCase)) return BBTarget;
         if (Keyword.Equals(TEXT("Player"), ESearchCase::IgnoreCase))
         {

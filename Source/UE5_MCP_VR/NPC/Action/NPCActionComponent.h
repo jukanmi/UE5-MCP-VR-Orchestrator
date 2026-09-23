@@ -37,6 +37,8 @@ enum class ETacticalMoveState : uint8
 };
 
 class ASmartNPCAIController;
+struct FNPCNearbyContext;
+class FJsonObject;
 class AAIController;
 class AFurnitureActor;
 class ADroppedItemBase;
@@ -116,8 +118,12 @@ public:
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
 
-    // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
-    EAction LastQueuedActionType = EAction::Idle;
+    // 마지막으로 큐에 들어간 액션의 (타입+대상) 키 — 같은 액션 연속 중복 추가 방지용.
+    // 타입만 보면 서로 다른 대상의 같은 액션(아이템 A·B PickUp)까지 삼킨다.
+    FString LastQueuedKey;
+
+    /** 중복 판정 키 — 타입·target_id·target_loc·item·style. */
+    static FString QueueKey(const FGameAction& Action);
 
     // 현재 진행 중인 액션 캐싱 (STTask 등에서 참조)
     FGameAction CurrentAction;
@@ -172,6 +178,31 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action")
     void AbortCurrentAction();
+
+    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸·피격 공통 경로. */
+    void StopTracking();
+
+    /** Track 지속 추적 중인지 — 액션은 즉시 완료되지만 따라가는 중이라 Idle 이 아니다. */
+    bool IsTracking() const { return TrackedTarget.IsValid(); }
+
+    // ============================================================================
+    // Jev daily — 비전투 일상 활동 (SPEC_jev_daily). 요청·세대·워치독은 컨트롤러, 풀·조립·주입·선점은 여기.
+    // ============================================================================
+
+    /** daily jev_query 의 metrics·activities·pools 를 채운다. activities 는 지금 실행 가능한 것만. */
+    void BuildJevDailyQuery(const FNPCNearbyContext& Ctx, float IdleSeconds, FJsonObject& OutPayload) const;
+
+    /** jev_decision(daily) → FGameAction 조립·주입(최하위 우선순위). 무효 슬롯은 그 슬롯만 default 로 치환. */
+    void ApplyJevDaily(const FJsonObject& Payload);
+
+    /** 다른 출처(LLM 배치·척수반사·전투 셀렉터)가 액션을 넣기 직전 — 진행·대기 중인 Jev 활동을 끊는다. */
+    void PreemptJevActivity();
+
+    /** 마지막 LLM 배치(액션 ≥1) 수신 시각(FPlatformTime) — daily 가 대화 직후 끼어들지 않게. */
+    double GetLastLLMBatchTime() const { return LastLLMBatchTime; }
+
+    /** 비전투에서 대사할 때 바라볼 상대 — 플레이어 발화 송신 시 NPCManager 가 세팅. */
+    void SetDialoguePartner(AActor* Partner) { DialoguePartner = Partner; }
 
 protected:
     virtual void BeginPlay() override;
@@ -285,9 +316,6 @@ private:
 
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
-
-    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸 공통 경로. */
-    void StopTracking();
 
     /** 이동 공통 전처리 — MaxWalkSpeed 반영, PathFollowing 완료 콜백 바인딩, 비동기 대기 플래그.
      *  반환된 컨트롤러로 MoveToLocation/MoveToActor 를 발행하고 HandleImmediateMoveResult 로 넘긴다. 컨트롤러 없으면 nullptr. */
@@ -639,6 +667,25 @@ public:
     float ReflexGlobalCooldown = 1.5f;
 
 private:
+    // --- Jev daily 상태 ---
+    double LastLLMBatchTime = -1000.0;
+    TWeakObjectPtr<AActor> DialoguePartner;
+    /** 큐에 Jev 액션이 대기 중 — 빈 큐에만 1건 주입하므로 큐 전체가 Jev 몫이다. */
+    bool bJevActionQueued = false;
+    /** 지금 실행 중인 액션이 Jev 출처인지(ProcessNextAction 이 넘겨받음). */
+    bool bCurrentActionFromJev = false;
+    /** 직전 Jev 활동 id — 반복 억제 지표(last_activity). */
+    FString LastJevActivity;
+    /** 자세(앉기·눕기) 진입 시각(FPlatformTime) — posture_s 지표. */
+    double PostureSince = 0.0;
+
+    /** 활동+슬롯 → FGameAction. stay·조립 불가면 false. 무효 슬롯은 Slots 를 default 로 고쳐 쓴다(로그용). */
+    bool BuildJevDailyAction(const FString& Activity, TMap<FString, FString>& Slots,
+                             const FNPCNearbyContext& Ctx, FGameAction& Out) const;
+
+    /** DA_NPC_Actions 에서 표현 계열(Emote·Pray·Dance·Sing) 미디어 키 수집. bSeated 면 Emote 계열만. */
+    TArray<FString> CollectExpressionMediaKeys(bool bSeated) const;
+
     /** 룰별 마지막 발동 시각. ReflexRules 와 인덱스 정합(첫 호출 시 크기 맞춤). */
     TArray<float> ReflexRuleLastFireTime;
 

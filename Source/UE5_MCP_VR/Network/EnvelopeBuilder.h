@@ -77,7 +77,8 @@ public:
 
     /**
      * jev_query Envelope 생성. 컨트롤러가 사전 정규화한 전투 지표를 jevlike 전술 편향기로 보낸다.
-     * @param Payload - {npc_id, generation, metrics{hp_pct, distance_m, enemy_count, is_flanked}} (Python JevQueryPayload 와 1:1)
+     * @param Payload - {npc_id, generation, metrics, domain?, activities?, pools?} (Python JevQueryPayload 와 1:1).
+     *                  domain 누락 = combat(metrics: hp_pct·distance_m·enemy_count·is_flanked), daily 는 SPEC_jev_daily D3·D5
      */
     static FString BuildJevQuery(const TSharedRef<FJsonObject>& Payload);
 

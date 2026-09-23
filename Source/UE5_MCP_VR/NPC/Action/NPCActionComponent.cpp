@@ -31,6 +31,7 @@
 #include "Kismet/GameplayStatics.h" // 액션 미디어 사운드 재생
 #include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #include "NavigationSystem.h" // BaseMove 목적지 NavMesh 투영(벽 끼임 방지)
+#include "Furniture/Subsystems/FurnitureManager.h" // Jev daily 가구 검증
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -160,7 +161,8 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
     if (!World || !StateComponent || ReflexRules.Num() == 0) return false;
 
     // 진행 중 액션·대기 큐가 있으면 개입하지 않는다(셀렉터와 동일 규율).
-    if (bIsBusy || !ActionQueue.IsEmpty()) return false;
+    // 단 Jev 일상 활동은 전투 진입 반사가 끊고 들어간다(아래 룰 매칭 후 판정).
+    if ((bIsBusy && !bCurrentActionFromJev) || (!ActionQueue.IsEmpty() && !bJevActionQueued)) return false;
 
     const float Now = World->GetTimeSeconds();
     if (Now - LastReflexTime < ReflexGlobalCooldown) return false;
@@ -181,6 +183,14 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
         // 매칭은 됐지만 쿨다운 중 — 아래 룰로 흘리지 않고 여기서 끝낸다.
         // (넘기면 더 약한 룰이 대신 튀어 같은 자극에 계속 반응하는 꼴이 된다)
         if (Now - ReflexRuleLastFireTime[i] < Rule.Cooldown) return false;
+
+        // 대화 직후엔 비전투 반사(주변 경계 Scan 등)로 고개를 돌리지 않는다 — 말한 상대를 보는 중(D10).
+        // ponytail: 8초 고정. 대사 길이에 맞추려면 TTS·자막 종료 이벤트로 교체.
+        if (!Rule.bEnterCombat && FPlatformTime::Seconds() - LastLLMBatchTime < 8.0) return false;
+
+        // Jev 일상 활동은 전투 진입 반사만 끊는다. 비전투 반사(중립 경계 Scan 등)까지 끊게 하면
+        // 마을 주민을 볼 때마다(쿨다운 10s) 앉기·산책이 시작 직후 잘린다(2026-09-24 Simulate 실측).
+        if ((bIsBusy || bJevActionQueued) && !Rule.bEnterCombat) return false;
 
         const TArray<TPair<EAction, float>> WeightPairs = Rule.ActionWeights.Array();
         const int32 Idx = PickWeightedIndex(WeightPairs.Num(), [&WeightPairs](int32 j) { return WeightPairs[j].Value; });
@@ -216,8 +226,9 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
             break;
         }
 
+        PreemptJevActivity();
         ActionQueue.Enqueue(Action);
-        LastQueuedActionType = Chosen;
+        LastQueuedKey = QueueKey(Action);
 
         ReflexRuleLastFireTime[i] = Now;
         LastReflexTime = Now;
@@ -361,6 +372,10 @@ void UNPCActionComponent::ExecuteActionBatch(const FActionBatch& Batch)
     // "행동을 지시하지 않은 응답"에 모드 전환 권한을 주지 않는 것이 요점.
     if (Batch.Actions.Num() > 0)
     {
+        // Jev 일상 활동은 최하위 — LLM 배치가 오면 즉시 끊는다(Dance 몽타주 끝날 때까지 밀리지 않게).
+        PreemptJevActivity();
+        LastLLMBatchTime = FPlatformTime::Seconds();
+
         if (StateComponent) StateComponent->SetBehaviorMode(Batch.Mode);
 
         // LLM 이 전투 밖으로 전환시키면 셀렉터 연속성도 새 전투 기준으로 초기화.
@@ -414,16 +429,17 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         }
         else
         {
-            // 동일 액션 타입이 큐 끝에 이미 있으면 추가하지 않음 — 이벤트 폭증 시 같은 액션 반복 큐잉 방지
-            if (Action.ActionType == LastQueuedActionType)
+            // 같은 (타입+대상) 액션이 큐 끝에 이미 있으면 추가하지 않음 — 이벤트 폭증 시 반복 큐잉 방지.
+            // 타입만 비교하면 서로 다른 아이템 PickUp 2개 중 2번째가 로그 없이 사라진다(2026-09-24 실측).
+            const FString Key = QueueKey(Action);
+            if (Key == LastQueuedKey)
             {
-                UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 중복 액션 스킵: %s"),
-                    *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
+                UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - 중복 액션 스킵: %s"), *GetOwnerAgentID(), *Key);
                 continue;
             }
             // [의도(Why)] 일반 물리적 액션은 이전 행동이 끝나길 기다렸다가 순차적으로 실행(Queue)되도록 보장합니다.
             ActionQueue.Enqueue(Action);
-            LastQueuedActionType = Action.ActionType;
+            LastQueuedKey = Key;
             UE_LOG(LogTemp, Verbose, TEXT("[NPCAction] %s - Action Queued. Action: %s"),
                 *GetOwnerAgentID(), *UEnum::GetValueAsString(Action.ActionType));
         }
@@ -474,7 +490,9 @@ void UNPCActionComponent::StopAllActions()
     ActionQueue.Empty();
     ClearActiveActionState();
     ResetPostureFlags(); // 사망·넉다운·전투종료 등 전면 정지 — 앉/눕 자세도 해제(AnimBP 자세 고착 방지)
-    LastQueuedActionType = EAction::Idle;
+    LastQueuedKey.Reset();
+    bJevActionQueued = false;
+    bCurrentActionFromJev = false;
     ResetCombatSelectorState(); // 전투 종료(ExitCombat)·비상 정지 공통 — 셀렉터 연속성 초기화
 
     ResetAllStateTagsToIdle(GetOwner());
@@ -498,11 +516,24 @@ bool UNPCActionComponent::ProcessNextAction()
     if (ActionQueue.Dequeue(CurrentAction))
     {
         bIsBusy = true;
+        bCurrentActionFromJev = bJevActionQueued;
+        bJevActionQueued = false;
 
-        // Track 이외 명령이 오면 추적 즉시 해제 — 새 명령이 추적을 덮어쓰는 게 자연스러운 동작
-        if (CurrentAction.ActionType != EAction::Track && TrackedTarget.IsValid())
+        // 추적과 충돌하는 액션(다른 곳으로 이동·공격·다른 대상 추적)만 추적을 끊는다.
+        // 둘러보기·표정·대사 같은 제자리 액션까지 끊으면 반사 Scan 한 번에 따라가기가 풀린다(2026-09-24 실측).
+        // Track 은 ExecuteTrack 이 기존 추적을 해제하고 새로 건다.
+        if (TrackedTarget.IsValid())
         {
-            StopTracking();
+            switch (CurrentAction.ActionType)
+            {
+            case EAction::Move: case EAction::Follow: case EAction::Attack: case EAction::Flee:
+            case EAction::Dodge: case EAction::PickUp: case EAction::Sit: case EAction::Sleep:
+            case EAction::Investigate: case EAction::Scout:
+                StopTracking();
+                break;
+            default:
+                break;
+            }
         }
 
         // 물리적 액션 시작 전 상태(Facial) 업데이트
@@ -561,9 +592,12 @@ AAIController* UNPCActionComponent::PrepareMove(EMoveType SpeedType)
     if (!OwnerCharacter) return nullptr;
 
     // 이동 속도(Walk, Run 등)에 맞춰 물리 컴포넌트의 설정값을 변경.
+    // 이동 중엔 진행 방향을 본다(BaseFaceRotate 가 켠 컨트롤러 회전 추종을 되돌림 — 옆걸음 방지).
     if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
     {
         MovementComp->MaxWalkSpeed = ParseMoveSpeed(SpeedType);
+        MovementComp->bOrientRotationToMovement = true;
+        MovementComp->bUseControllerDesiredRotation = false;
     }
 
     AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController());
@@ -643,6 +677,7 @@ bool UNPCActionComponent::PlayActionMediaWithPosture(const FString& MediaKey)
     {
         if (MediaKey == NPCActionKeys::Interact_SitDown)      StateComponent->bIsSit = true;
         else if (MediaKey == NPCActionKeys::Interact_LieDown) StateComponent->bIsLie = true;
+        if (StateComponent->bIsSit || StateComponent->bIsLie) PostureSince = FPlatformTime::Seconds();
     }
     return bPlayed;
 }
@@ -668,6 +703,14 @@ void UNPCActionComponent::BaseEmotion(const EFacialState Emotion)
 void UNPCActionComponent::BaseDialogue(const FString& DialogueText, const EFacialState Emotion)
 {
     BaseEmotion(Emotion);
+    // 비전투 대사는 말을 건 상대를 바라본다 — Jev 를 거치지 않는 C++ 기본 동작. 전투 중엔 전투 대상 초점을 유지.
+    if (GetBehaviorMode() != ENPCBehaviorMode::Combat)
+    {
+        if (const AActor* Partner = DialoguePartner.Get())
+        {
+            BaseFaceRotate(Partner->GetActorLocation());
+        }
+    }
     if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
     {
         if (UWorld* World = GetWorld())
@@ -686,6 +729,13 @@ void UNPCActionComponent::BaseFaceRotate(FVector TargetLocation, float TurnSpeed
     if (!OwnerCharacter) return;
     if (AAIController* AIController = Cast<AAIController>(OwnerCharacter->GetController()))
         AIController->SetFocalPoint(TargetLocation);
+    // 초점만 바꾸면 몸이 안 돈다 — 이동 방향 회전(bOrientRotationToMovement)만 켜져 있어 컨트롤러 회전이 무시된다.
+    // 제자리에선 컨트롤러 목표 회전을 RotationRate 로 따라 돌게 한다. 다음 이동(PrepareMove)이 되돌린다.
+    if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+    {
+        MovementComp->bOrientRotationToMovement = false;
+        MovementComp->bUseControllerDesiredRotation = true;
+    }
 }
 
 void UNPCActionComponent::BaseSitDown(AActor* TargetSeat)
@@ -1305,7 +1355,7 @@ void UNPCActionComponent::OnTacticalCandidatesDone(TSharedPtr<FEnvQueryResult> R
             MoveAction.ActionType = EAction::Move;
             MoveAction.Parameters.Add(NPCActionKeys::Key_TargetLoc, CachedEnemyLocations[0].ToString());
             ActionQueue.Enqueue(MoveAction);
-            LastQueuedActionType = EAction::Move;
+            LastQueuedKey = QueueKey(MoveAction);
         }
         return;
     }
@@ -1565,6 +1615,11 @@ void UNPCActionComponent::ExecuteTurnTo(FVector TargetLocation, AActor* TargetAc
 void UNPCActionComponent::ExecuteScan(FVector TargetLocation, AActor* TargetActor)
 {
     FVector Focus = TargetActor ? TargetActor->GetActorLocation() : TargetLocation;
+    // 대상·좌표 없으면 월드 원점이 아니라 자기 전방 5m 를 둘러본다.
+    if (Focus.IsNearlyZero())
+    {
+        if (const AActor* Owner = GetOwner()) Focus = Owner->GetActorLocation() + Owner->GetActorForwardVector() * 500.f;
+    }
     BaseFaceRotate(Focus + FVector(FMath::VRand().X, FMath::VRand().Y, 0.f) * 100.f, 3.f);
 }
 
@@ -1941,6 +1996,7 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
         break;
     }
 
+    PreemptJevActivity();
     ActionQueue.Enqueue(Action);
 
     // 연속성 추적 갱신.
@@ -2197,6 +2253,15 @@ void UNPCActionComponent::ExecuteTrack(AActor* TargetActor)
     // 기존 추적 해제 후 새 대상 설정, 즉시 첫 이동 명령
     StopTracking();
     TrackedTarget = TargetActor;
+    // 추적은 PrepareMove 를 안 거친다 — 진행 방향 회전을 직접 켠다(BaseFaceRotate 잔여 설정이면 옆걸음).
+    if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
+    {
+        if (UCharacterMovementComponent* MovementComp = OwnerCharacter->GetCharacterMovement())
+        {
+            MovementComp->bOrientRotationToMovement = true;
+            MovementComp->bUseControllerDesiredRotation = false;
+        }
+    }
     if (ASmartNPCAIController* AICon = GetOwnerAIController())
     {
         AICon->MoveToActor(TargetActor, 150.f);
@@ -2342,7 +2407,8 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
     switch (LifestyleType)
     {
         // Sit/Sleep 은 위에서 가구 타겟 필수 처리(무가구 = 무동작) — 여기 도달 불가.
-        case EAction::Pray:  BasePlayActionMedia(TEXT("Pray")); break;
+        // Pray_* 변형 선택 가능 — style 이 Pray 계열이 아니면(빈 값·target_id 폴백) 기본 키.
+        case EAction::Pray:  BasePlayActionMedia(StringParam.StartsWith(TEXT("Pray")) ? StringParam : FString(TEXT("Pray"))); break;
         case EAction::Read:  BasePlayActionMedia(TEXT("Read")); break;
         case EAction::Dance:
         case EAction::Sing:
@@ -2352,3 +2418,460 @@ void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* 
     }
 }
 
+// ==========================================
+// [7] Jev daily — 비전투 일상 활동 (SPEC_jev_daily)
+// ==========================================
+
+namespace
+{
+    using FJevEntry = FNPCNearbyContext::FEntry;
+
+    /** 풀 상한 — 거리순으로 자른다(Jev 는 후보가 많을수록 느려지고 헷갈린다). */
+    constexpr int32 JevPoolCap = 12;
+    /** 무대상 표시 — ResolveActionTarget 이 BB 타겟(최근 본 아무나)으로 폴백하지 않게. */
+    const TCHAR* JevNoTarget = TEXT("None");
+
+    const FJevEntry* JevFind(const TArray<FJevEntry>& Arr, const FString& Id)
+    {
+        return Arr.FindByPredicate([&Id](const FJevEntry& E) { return E.Id == Id; });
+    }
+
+    const FJevEntry* JevNearest(const TArray<FJevEntry>& Arr, TFunctionRef<bool(const FJevEntry&)> Pred)
+    {
+        const FJevEntry* Best = nullptr;
+        for (const FJevEntry& E : Arr)
+        {
+            if (Pred(E) && (!Best || E.DistM < Best->DistM)) Best = &E;
+        }
+        return Best;
+    }
+
+    TArray<FJevEntry> JevCapped(TArray<FJevEntry> Arr)
+    {
+        Arr.Sort([](const FJevEntry& A, const FJevEntry& B) { return A.DistM < B.DistM; });
+        if (Arr.Num() > JevPoolCap) Arr.SetNum(JevPoolCap);
+        return Arr;
+    }
+
+    TSharedPtr<FJsonValue> JevPoolEntry(const FString& Id, const FString& Desc)
+    {
+        TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
+        O->SetStringField(TEXT("id"), Id);
+        O->SetStringField(TEXT("desc"), Desc);
+        return MakeShared<FJsonValueObject>(O);
+    }
+
+    FString JevMeters(float M) { return FString::Printf(TEXT("%.0fm"), M); }
+
+    FString JevRelation(ENPCRelation R)
+    {
+        switch (R)
+        {
+            case ENPCRelation::Friendly: return TEXT("friendly");
+            case ENPCRelation::Hostile:  return TEXT("hostile");
+            default:                     return TEXT("neutral");
+        }
+    }
+
+    /** 인벤 원소(GetInventoryJson) 중 슬롯 보유분(장착 제외)만 — GiveItem·UseItem 이 슬롯 기준으로 검사한다. */
+    struct FJevItem { FString Id; FString Category; int32 Count = 1; };
+    TArray<FJevItem> JevSlotItems(const TArray<TSharedPtr<FJsonValue>>& Inventory)
+    {
+        TArray<FJevItem> Out;
+        for (const TSharedPtr<FJsonValue>& V : Inventory)
+        {
+            const TSharedPtr<FJsonObject> O = V.IsValid() ? V->AsObject() : nullptr;
+            bool bEquipped = false;
+            if (!O || (O->TryGetBoolField(TEXT("equipped"), bEquipped) && bEquipped)) continue;
+            FJevItem& I = Out.AddDefaulted_GetRef();
+            O->TryGetStringField(TEXT("id"), I.Id);
+            O->TryGetStringField(TEXT("category"), I.Category);
+            O->TryGetNumberField(TEXT("count"), I.Count);
+        }
+        return Out;
+    }
+
+    /** 표현 미디어 키 → EAction. 규약 `<계열>` 또는 `<계열>_<변형>`. */
+    EAction JevExpressionAction(const FString& Key)
+    {
+        if (Key.StartsWith(TEXT("Pray")))  return EAction::Pray;
+        if (Key.StartsWith(TEXT("Dance"))) return EAction::Dance;
+        if (Key.StartsWith(TEXT("Sing")))  return EAction::Sing;
+        return EAction::Emote;
+    }
+}
+
+FString UNPCActionComponent::QueueKey(const FGameAction& Action)
+{
+    return FString::Printf(TEXT("%s|%s|%s|%s|%s"), *UEnum::GetValueAsString(Action.ActionType),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_TargetID),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_TargetLoc),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_Item),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_Style));
+}
+
+void UNPCActionComponent::PreemptJevActivity()
+{
+    if (bJevActionQueued)
+    {
+        // 빈 큐에만 1건 주입하므로 큐 전체가 Jev 몫이다.
+        ActionQueue.Empty();
+        bJevActionQueued = false;
+    }
+    if (bIsBusy && bCurrentActionFromJev)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Jev] %s daily 활동 선점 — '%s' 중단"),
+            *GetOwnerAgentID(), *UEnum::GetValueAsString(CurrentAction.ActionType));
+        AbortCurrentAction();
+    }
+    bCurrentActionFromJev = false;
+}
+
+TArray<FString> UNPCActionComponent::CollectExpressionMediaKeys(bool bSeated) const
+{
+    static const TCHAR* Families[] = { TEXT("Emote"), TEXT("Pray"), TEXT("Dance"), TEXT("Sing") };
+    TArray<FString> Keys;
+    if (!ActionData) return Keys;
+    for (const TPair<FString, FActionMediaData>& Pair : ActionData->ActionMedias)
+    {
+        if (!Pair.Value.Montage) continue;
+        for (const TCHAR* Family : Families)
+        {
+            // 앉은 채로는 상체 표현(Emote 계열)만.
+            if (bSeated && FCString::Strcmp(Family, TEXT("Emote")) != 0) continue;
+            // "Dancer" 같은 우연한 접두 일치는 규약 밖이라 제외.
+            if (Pair.Key == Family || Pair.Key.StartsWith(FString(Family) + TEXT("_")))
+            {
+                Keys.Add(Pair.Key);
+                break;
+            }
+        }
+    }
+    Keys.Sort();
+    return Keys;
+}
+
+void UNPCActionComponent::BuildJevDailyQuery(const FNPCNearbyContext& Ctx, float IdleSeconds, FJsonObject& OutPayload) const
+{
+    const bool bSit = StateComponent && StateComponent->bIsSit;
+    const bool bLie = StateComponent && StateComponent->bIsLie;
+    const bool bStand = !bSit && !bLie;
+    const FJevEntry* Player = JevFind(Ctx.PerceivedActors, TEXT("Player"));
+
+    // ── metrics — 좌표·절대값 금지(전투와 같은 규약): 상태 문자열·경과초·미터·개수만 ──
+    TSharedPtr<FJsonObject> M = MakeShared<FJsonObject>();
+    M->SetStringField(TEXT("posture"), bLie ? TEXT("lie") : bSit ? TEXT("sit") : TEXT("stand"));
+    M->SetNumberField(TEXT("posture_s"), bStand ? 0.0 : FMath::Clamp(FPlatformTime::Seconds() - PostureSince, 0.0, 600.0));
+    M->SetNumberField(TEXT("idle_s"), IdleSeconds);
+    M->SetNumberField(TEXT("player_dist_m"), Player ? Player->DistM : -1.f);
+    M->SetStringField(TEXT("player_relation"), StateComponent ? JevRelation(StateComponent->GetRelation(TEXT("Player"))) : TEXT("neutral"));
+    int32 NpcNear = 0;
+    for (const FJevEntry& E : Ctx.PerceivedActors)
+    {
+        if (E.Type == TEXT("npc") && E.Relation != TEXT("hostile") && E.DistM <= 10.f) ++NpcNear;
+    }
+    M->SetNumberField(TEXT("npc_near"), NpcNear);
+    M->SetStringField(TEXT("last_activity"), LastJevActivity);
+    M->SetStringField(TEXT("goal"), StateComponent ? StateComponent->GetCurrentPlan().Goal.Left(40) : FString());
+
+    // ── pools — 후보는 공통 풀로 한 번만. desc 는 의미 특징만(Jev 는 산술을 못 한다) ──
+    TArray<TSharedPtr<FJsonValue>> Actors, Places, Pois, Items, Ground, Media;
+    int32 NpcActors = 0;
+    for (const FJevEntry& E : JevCapped(Ctx.PerceivedActors))
+    {
+        if (E.Relation == TEXT("hostile")) continue; // 적대는 일상 후보가 아니다
+        if (E.Type == TEXT("npc")) ++NpcActors;
+        Actors.Add(JevPoolEntry(E.Id, FString::Printf(TEXT("%s|%s|%s"), *E.Type, *E.Relation, *JevMeters(E.DistM))));
+    }
+    int32 Vacant = 0;
+    for (const FJevEntry& E : JevCapped(Ctx.Furniture))
+    {
+        if (!E.bOccupied) ++Vacant;
+        const bool bNearPlayer = Player && FVector::Dist2D(E.Location, Player->Location) <= 300.f;
+        Places.Add(JevPoolEntry(E.Id, FString::Printf(TEXT("%s|%s|%s%s"), *E.Type.ToLower(),
+            E.bOccupied ? TEXT("occupied") : TEXT("vacant"), *JevMeters(E.DistM), bNearPlayer ? TEXT("|near_player") : TEXT(""))));
+    }
+    for (const FJevEntry& E : JevCapped(Ctx.Pois))
+    {
+        Pois.Add(JevPoolEntry(E.Id, FString::Printf(TEXT("poi|%s|%s"), *E.Type, *JevMeters(E.DistM))));
+    }
+    bool bHasConsumable = false, bHasGiveable = false;
+    for (const FJevItem& I : JevSlotItems(Ctx.Inventory))
+    {
+        if (Items.Num() >= JevPoolCap) break;
+        bHasConsumable |= I.Category == TEXT("Consumable");
+        bHasGiveable |= I.Category != TEXT("Quest");
+        Items.Add(JevPoolEntry(I.Id, FString::Printf(TEXT("%s|x%d"), *I.Category.ToLower(), I.Count)));
+    }
+    for (const FJevEntry& E : JevCapped(Ctx.GroundItems))
+    {
+        Ground.Add(JevPoolEntry(E.Id, FString::Printf(TEXT("%s|%s"), *E.Type, *JevMeters(E.DistM))));
+    }
+    if (!bLie)
+    {
+        for (const FString& Key : CollectExpressionMediaKeys(bSit)) Media.Add(MakeShared<FJsonValueString>(Key));
+    }
+
+    TSharedPtr<FJsonObject> P = MakeShared<FJsonObject>();
+    P->SetArrayField(TEXT("actors"), Actors);
+    P->SetArrayField(TEXT("places"), Places);
+    P->SetArrayField(TEXT("pois"), Pois);
+    P->SetArrayField(TEXT("items"), Items);
+    P->SetArrayField(TEXT("ground_items"), Ground);
+    P->SetArrayField(TEXT("media"), Media);
+
+    // ── activities — 지금 실행 가능한 것만(SPEC D4 조건 열). follow·equip 은 command 전용이라 안 보낸다 ──
+    TArray<TSharedPtr<FJsonValue>> Acts;
+    auto Add = [&Acts](const TCHAR* A) { Acts.Add(MakeShared<FJsonValueString>(A)); };
+    Add(TEXT("stay"));
+    if (!bStand)                              Add(TEXT("stand_up"));
+    if (!bLie)                                Add(TEXT("look_at"));
+    if (bStand)                               Add(TEXT("wander"));
+    if (bStand && Pois.Num() > 0)             Add(TEXT("patrol"));
+    if (bStand && Vacant > 0)                 Add(TEXT("rest"));
+    if (Media.Num() > 0)                      Add(TEXT("emote"));
+    if (bHasConsumable)                       Add(TEXT("use_item"));
+    if (bStand && bHasGiveable && NpcActors > 0) Add(TEXT("give_item"));
+    if (bStand && Ground.Num() > 0)           Add(TEXT("pick_up"));
+
+    OutPayload.SetObjectField(TEXT("metrics"), M);
+    OutPayload.SetArrayField(TEXT("activities"), Acts);
+    OutPayload.SetObjectField(TEXT("pools"), P);
+}
+
+void UNPCActionComponent::ApplyJevDaily(const FJsonObject& Payload)
+{
+    FString Activity = TEXT("stay");
+    Payload.TryGetStringField(TEXT("activity"), Activity);
+    int32 Passes = 0;
+    Payload.TryGetNumberField(TEXT("passes"), Passes);
+    TMap<FString, FString> Slots;
+    const TSharedPtr<FJsonObject>* SlotsObj = nullptr;
+    if (Payload.TryGetObjectField(TEXT("slots"), SlotsObj))
+    {
+        for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*SlotsObj)->Values)
+        {
+            FString V;
+            if (Pair.Value.IsValid() && Pair.Value->TryGetString(V)) Slots.Add(Pair.Key, V);
+        }
+    }
+
+    // 왕복 사이 전투 진입·다른 액션 시작이면 버린다 — daily 는 최하위라 기다리지 않는다.
+    if (GetBehaviorMode() == ENPCBehaviorMode::Combat || bIsBusy || !ActionQueue.IsEmpty())
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Jev] %s daily 응답 폐기(%s) — 그사이 전투·다른 액션"), *GetOwnerAgentID(), *Activity);
+        return;
+    }
+
+    ASmartNPC* Self = Cast<ASmartNPC>(GetOwner());
+    UNPCManager* Mgr = UNPCManager::Get(this);
+    if (!Self || !Mgr) return;
+    // 슬롯 검증은 지금 이 순간의 세계로(대상 사라짐·의자 점유됨).
+    const FNPCNearbyContext Ctx = Mgr->CollectNearbyContext(Self);
+
+    FGameAction Action;
+    const bool bHasAction = BuildJevDailyAction(Activity, Slots, Ctx, Action);
+    LastJevActivity = Activity;
+
+    FString SlotStr, ParamStr;
+    for (const TPair<FString, FString>& P : Slots) SlotStr += FString::Printf(TEXT("%s=%s "), *P.Key, *P.Value);
+    for (const TPair<FString, FString>& P : Action.Parameters) ParamStr += FString::Printf(TEXT("%s=%s "), *P.Key, *P.Value);
+    UE_LOG(LogTemp, Log, TEXT("[Jev] %s daily → %s {%s} passes=%d%s"), *GetOwnerAgentID(), *Activity, *SlotStr.TrimEnd(), Passes,
+        bHasAction ? *FString::Printf(TEXT(" ⇒ %s facial=%s [%s]"), *UEnum::GetValueAsString(Action.ActionType),
+                                      *UEnum::GetValueAsString(Action.FacialState), *ParamStr.TrimEnd())
+                   : TEXT(" ⇒ (없음)"));
+    if (!bHasAction) return;
+
+    // LLM 중복 스킵 필터(LastQueuedKey)는 우회 — 같은 활동을 다시 골라도 필터에 삼켜지지 않게.
+    ActionQueue.Enqueue(Action);
+    bJevActionQueued = true;
+}
+
+bool UNPCActionComponent::BuildJevDailyAction(const FString& Activity, TMap<FString, FString>& Slots,
+                                              const FNPCNearbyContext& Ctx, FGameAction& Out) const
+{
+    const AActor* Owner = GetOwner();
+    if (!Owner) return false;
+    const FVector OwnerLoc = Owner->GetActorLocation();
+    const FString Default = TEXT("default");
+
+    // 슬롯 값이 후보 밖이거나 지금 무효면 그 슬롯만 default — 전체를 버리지 않는다.
+    auto Slot = [&](const TCHAR* Name, TFunctionRef<bool(const FString&)> IsValidValue) -> FString
+    {
+        FString& V = Slots.FindOrAdd(Name);
+        if (V.IsEmpty()) V = Default;
+        if (V != Default && !IsValidValue(V))
+        {
+            UE_LOG(LogTemp, Log, TEXT("[Jev] %s 슬롯 %s='%s' 무효 → default"), *GetOwnerAgentID(), Name, *V);
+            V = Default;
+        }
+        return V;
+    };
+    auto Facial = [&](EFacialState Preset) -> EFacialState
+    {
+        const UEnum* E = StaticEnum<EFacialState>();
+        const FString V = Slot(TEXT("facial"), [E](const FString& S) { return E->GetValueByNameString(S) != INDEX_NONE; });
+        return V == Default ? Preset : static_cast<EFacialState>(E->GetValueByNameString(V));
+    };
+    auto IsActor = [&Ctx](const FString& Id)
+    {
+        const FJevEntry* E = JevFind(Ctx.PerceivedActors, Id);
+        return E && E->Relation != TEXT("hostile");
+    };
+    auto AnyActor = [](const FJevEntry& E) { return E.Relation != TEXT("hostile"); };
+    auto Any = [](const FJevEntry&) { return true; };
+    auto SetTarget = [&Out](const FString& Id) { Out.Parameters.Add(NPCActionKeys::Key_TargetID, Id); };
+    auto SetLoc = [&Out](const FVector& L) { Out.Parameters.Add(NPCActionKeys::Key_TargetLoc, L.ToString()); };
+
+    if (Activity == TEXT("stand_up"))
+    {
+        Out.ActionType = EAction::StandUp;
+        return StateComponent && (StateComponent->bIsSit || StateComponent->bIsLie);
+    }
+
+    if (Activity == TEXT("look_at"))
+    {
+        FString T = Slot(TEXT("target"), [&](const FString& V) {
+            return V == TEXT("around") || IsActor(V) || JevFind(Ctx.Furniture, V) || JevFind(Ctx.Pois, V); });
+        if (T == Default)
+        {
+            const FJevEntry* Near = JevNearest(Ctx.PerceivedActors, AnyActor);
+            T = Near ? Near->Id : TEXT("around");
+        }
+        Out.FacialState = Facial(EFacialState::Neutral);
+        if (T == TEXT("around"))
+        {
+            Out.ActionType = EAction::Scan;
+            SetTarget(JevNoTarget);
+            SetLoc(OwnerLoc + Owner->GetActorForwardVector() * 500.f);
+            return true;
+        }
+        Out.ActionType = EAction::TurnTo;
+        if (const FJevEntry* Poi = JevFind(Ctx.Pois, T)) { SetTarget(JevNoTarget); SetLoc(Poi->Location); }
+        else SetTarget(T); // 인물·가구 id 는 ResolveActionTarget 이 해석
+        return true;
+    }
+
+    if (Activity == TEXT("wander") || Activity == TEXT("patrol"))
+    {
+        const bool bPatrol = Activity == TEXT("patrol");
+        FString D = Slot(TEXT("dest"), [&](const FString& V) {
+            return JevFind(Ctx.Pois, V) || (!bPatrol && (V == TEXT("random") || IsActor(V) || JevFind(Ctx.Furniture, V))); });
+        if (D == Default)
+        {
+            const FJevEntry* Poi = JevNearest(Ctx.Pois, Any);
+            D = Poi ? Poi->Id : (bPatrol ? FString() : FString(TEXT("random")));
+        }
+        FVector Dest = FVector::ZeroVector;
+        if (D == TEXT("random"))
+        {
+            // ponytail: 반경 8m 고정 — PIE 튜닝값(SPEC 미결). 필요하면 EditDefaultsOnly 로.
+            FNavLocation NavLoc;
+            UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+            // Navigable(경로 불요) — Reachable 은 NavMesh 경계에 선 NPC 에서 가끔 실패했다(Simulate 실측).
+            if (NavSys && NavSys->GetRandomPointInNavigableRadius(OwnerLoc, 800.f, NavLoc)) Dest = NavLoc.Location;
+        }
+        else if (const FJevEntry* E = JevFind(Ctx.Pois, D)) Dest = E->Location;
+        else if (const FJevEntry* F = JevFind(Ctx.Furniture, D)) Dest = F->Location;
+        else if (const FJevEntry* A = JevFind(Ctx.PerceivedActors, D))
+        {
+            Dest = A->Location + (OwnerLoc - A->Location).GetSafeNormal2D() * 150.f; // 그 사람 곁으로
+        }
+        if (Dest.IsNearlyZero()) return false;
+
+        Out.ActionType = bPatrol ? EAction::Scout : EAction::Move;
+        SetTarget(JevNoTarget);
+        SetLoc(Dest);
+        if (!bPatrol)
+        {
+            const FString St = Slot(TEXT("style"), [](const FString& V) {
+                return V == TEXT("Walk") || V == TEXT("Run") || V == TEXT("Crouch"); });
+            Out.Parameters.Add(NPCActionKeys::Key_Style, St == Default ? FString(TEXT("Walk")) : St);
+        }
+        return true;
+    }
+
+    if (Activity == TEXT("rest"))
+    {
+        auto Vacant = [](const FJevEntry& E) { return !E.bOccupied; };
+        FString T = Slot(TEXT("target"), [&](const FString& V) { const FJevEntry* F = JevFind(Ctx.Furniture, V); return F && !F->bOccupied; });
+        if (T == Default)
+        {
+            const FJevEntry* F = JevNearest(Ctx.Furniture, Vacant);
+            if (!F) return false;
+            T = F->Id;
+        }
+        // 자세는 가구 타입이 결정 — Bed 면 낮에도 잔다.
+        Out.ActionType = JevFind(Ctx.Furniture, T)->Type == TEXT("Bed") ? EAction::Sleep : EAction::Sit;
+        SetTarget(T);
+        return true;
+    }
+
+    if (Activity == TEXT("emote"))
+    {
+        const bool bSeated = StateComponent && StateComponent->bIsSit;
+        const TArray<FString> Keys = CollectExpressionMediaKeys(bSeated);
+        FString St = Slot(TEXT("style"), [&Keys](const FString& V) { return Keys.Contains(V); });
+        // default = 계열 기본 키. 빈 style 이면 BasePlayActionMedia("") 가 몽타주 없이 즉시 완료된다.
+        if (St == Default) St = Keys.Contains(TEXT("Emote")) || Keys.IsEmpty() ? FString(TEXT("Emote")) : Keys[0];
+        Out.ActionType = JevExpressionAction(St);
+        Out.Parameters.Add(NPCActionKeys::Key_Style, St);
+
+        const FString T = Slot(TEXT("target"), [&](const FString& V) { return V == TEXT("none") || IsActor(V); });
+        SetTarget(T == Default || T == TEXT("none") ? FString(JevNoTarget) : T);
+        const bool bCheerful = Out.ActionType == EAction::Dance || Out.ActionType == EAction::Sing;
+        Out.FacialState = Facial(bCheerful ? EFacialState::Happy : EFacialState::Neutral);
+        return true;
+    }
+
+    if (Activity == TEXT("use_item") || Activity == TEXT("give_item"))
+    {
+        const bool bUse = Activity == TEXT("use_item");
+        const TArray<FJevItem> Items = JevSlotItems(Ctx.Inventory);
+        auto Fits = [bUse](const FJevItem& I) { return bUse ? I.Category == TEXT("Consumable") : I.Category != TEXT("Quest"); };
+
+        if (!bUse)
+        {
+            // daily give_item 은 NPC 대상만(Player·ground 는 command 전용).
+            FString T = Slot(TEXT("target"), [&](const FString& V) {
+                const FJevEntry* E = JevFind(Ctx.PerceivedActors, V);
+                return E && E->Type == TEXT("npc") && E->Relation != TEXT("hostile"); });
+            if (T == Default)
+            {
+                const FJevEntry* E = JevNearest(Ctx.PerceivedActors, [](const FJevEntry& X) {
+                    return X.Type == TEXT("npc") && X.Relation != TEXT("hostile"); });
+                if (!E) return false;
+                T = E->Id;
+            }
+            SetTarget(T);
+        }
+
+        FString It = Slot(TEXT("item"), [&](const FString& V) {
+            return Items.ContainsByPredicate([&](const FJevItem& I) { return I.Id == V && Fits(I); }); });
+        if (It == Default)
+        {
+            const FJevItem* First = Items.FindByPredicate(Fits);
+            if (!First) return false;
+            It = First->Id;
+        }
+        Out.ActionType = bUse ? EAction::UseItem : EAction::GiveItem;
+        Out.Parameters.Add(NPCActionKeys::Key_Item, It);
+        return true;
+    }
+
+    if (Activity == TEXT("pick_up"))
+    {
+        FString T = Slot(TEXT("target"), [&](const FString& V) { return JevFind(Ctx.GroundItems, V) != nullptr; });
+        if (T == Default)
+        {
+            const FJevEntry* E = JevNearest(Ctx.GroundItems, Any);
+            if (!E) return false;
+            T = E->Id;
+        }
+        Out.ActionType = EAction::PickUp;
+        SetTarget(T); // 바닥 아이템 instance id — 이동은 ExecutePickUp 내장
+        return true;
+    }
+
+    return false; // stay · 미지원 활동(follow·equip 은 command 전용)
+}

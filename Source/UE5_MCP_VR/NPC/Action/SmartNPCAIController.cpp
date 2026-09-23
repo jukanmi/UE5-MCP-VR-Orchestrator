@@ -530,8 +530,10 @@ void ASmartNPCAIController::RequestJevDecision()
     if (!NPC || !World || !NPC->StateComponent) return;
 
     // 쿨다운 1.0s + in-flight 1건 가드 — 감각 이벤트 폭주가 곧 요청 폭주가 되지 않게.
+    // 진행 중인 게 daily 면 전투가 끊고 들어간다(세대 증가로 daily 늦은 응답은 자동 폐기).
     const double Now = FPlatformTime::Seconds();
-    if (bJevRequestInFlight || (Now - LastJevRequestTime) < static_cast<double>(JevRequestCooldown)) return;
+    const bool bBlockedByInFlight = bJevRequestInFlight && !bJevInFlightDaily;
+    if (bBlockedByInFlight || (Now - LastJevRequestTime) < static_cast<double>(JevRequestCooldown)) return;
 
     UNPCManager* Manager = UNPCManager::Get(this);
     if (!Manager || !Manager->IsServerConnected()) return; // 미연결 — 승수 1.0 중립 그대로
@@ -571,11 +573,7 @@ void ASmartNPCAIController::RequestJevDecision()
         }
     }
 
-    // ── 세대 증가 + 워치독 가동 후 발송 ──
-    ++JevGeneration;
-    bJevRequestInFlight = true;
     LastJevRequestTime = Now;
-    World->GetTimerManager().SetTimer(JevTimeoutTimer, this, &ASmartNPCAIController::HandleJevTimeout, JevTimeoutSeconds, false);
 
     TSharedRef<FJsonObject> Metrics = MakeShared<FJsonObject>();
     Metrics->SetNumberField(TEXT("hp_pct"),      HpPct);
@@ -585,10 +583,9 @@ void ASmartNPCAIController::RequestJevDecision()
 
     TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
     Payload->SetStringField(TEXT("npc_id"),     NPC->AgentID);
-    Payload->SetNumberField(TEXT("generation"), static_cast<double>(JevGeneration));
     Payload->SetObjectField(TEXT("metrics"),    Metrics);
 
-    Manager->SendEnvelopePromptToLLM(FEnvelopeBuilder::BuildJevQuery(Payload));
+    SendJevQuery(Payload, false);
     UE_LOG(LogTemp, Verbose, TEXT("[Jev] %s gen=%u 요청 hp=%.2f dist=%.1f count=%d flanked=%d"),
         *NPC->AgentID, JevGeneration, HpPct, DistanceM, HostileDirs.Num(), bFlanked ? 1 : 0);
 }
@@ -609,6 +606,17 @@ void ASmartNPCAIController::HandleJevDecisionResponse(const TSharedPtr<FJsonObje
 
     bJevRequestInFlight = false;
     if (UWorld* W = GetWorld()) W->GetTimerManager().ClearTimer(JevTimeoutTimer);
+
+    // daily 응답 — 전투 승수 캐시와 무관. 받은 즉시 컴포넌트가 조립·주입한다.
+    if (bJevInFlightDaily)
+    {
+        bJevInFlightDaily = false;
+        if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
+        {
+            if (UNPCActionComponent* ActionComp = NPC->GetActionComponent()) ActionComp->ApplyJevDaily(*Payload);
+        }
+        return;
+    }
 
     double Confidence = 0.0;
     Payload->TryGetNumberField(TEXT("confidence"), Confidence);
@@ -643,5 +651,54 @@ void ASmartNPCAIController::HandleJevTimeout()
     // 세대를 올려 이후 도착하는 같은 세대 패킷을 폐기. 캐시는 건드리지 않음 — TTL 이 자연 만료시킨다.
     ++JevGeneration;
     bJevRequestInFlight = false;
+    // daily 타임아웃 = stay(현행 Idle). Idle 경과는 요청 때 이미 다시 재기 시작했다.
+    bJevInFlightDaily = false;
     UE_LOG(LogTemp, Verbose, TEXT("[Jev] 워치독 타임아웃(%.2fs) — gen→%u, 중립 유지"), JevTimeoutSeconds, JevGeneration);
+}
+
+void ASmartNPCAIController::SendJevQuery(const TSharedRef<FJsonObject>& Payload, bool bDaily)
+{
+    UWorld* World = GetWorld();
+    UNPCManager* Manager = UNPCManager::Get(this);
+    if (!World || !Manager) return;
+
+    ++JevGeneration;
+    bJevRequestInFlight = true;
+    bJevInFlightDaily = bDaily;
+    World->GetTimerManager().SetTimer(JevTimeoutTimer, this, &ASmartNPCAIController::HandleJevTimeout, JevTimeoutSeconds, false);
+
+    Payload->SetNumberField(TEXT("generation"), static_cast<double>(JevGeneration));
+    Manager->SendEnvelopePromptToLLM(FEnvelopeBuilder::BuildJevQuery(Payload));
+}
+
+void ASmartNPCAIController::TickJevDaily()
+{
+    const double Now = FPlatformTime::Seconds();
+    if (JevDailyIdleSince < 0.0)
+    {
+        JevDailyIdleSince = Now;
+        return;
+    }
+    if (Now - JevDailyIdleSince < static_cast<double>(JevDailyIdleSeconds) || bJevRequestInFlight) return;
+
+    ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
+    UNPCActionComponent* ActionComp = NPC ? NPC->GetActionComponent() : nullptr;
+    if (!ActionComp) return;
+    if (Now - ActionComp->GetLastLLMBatchTime() < static_cast<double>(JevDailyAfterLLMSeconds)) return;
+
+    // 미연결이면 조용히 Idle 유지(경고 스팸 금지) — 재연결되면 다음 틱에 바로 요청한다.
+    UNPCManager* Manager = UNPCManager::Get(this);
+    if (!Manager || !Manager->IsServerConnected()) return;
+
+    const float IdleS = static_cast<float>(Now - JevDailyIdleSince);
+    // 요청 후 다시 잰다 — stay 가 오면 N초 뒤 재요청, 활동이 오면 그 활동이 끝난 뒤부터 잰다.
+    JevDailyIdleSince = Now;
+
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(TEXT("npc_id"), NPC->AgentID);
+    Payload->SetStringField(TEXT("domain"), TEXT("daily"));
+    ActionComp->BuildJevDailyQuery(Manager->CollectNearbyContext(NPC), IdleS, *Payload);
+
+    SendJevQuery(Payload, true);
+    UE_LOG(LogTemp, Verbose, TEXT("[Jev] %s gen=%u daily 요청 idle=%.1fs"), *NPC->AgentID, JevGeneration, IdleS);
 }

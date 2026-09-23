@@ -111,6 +111,15 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount, float Multiplier)
         LastHitTime = World->GetTimeSeconds();
     }
 
+    // 맞으면 따라가기(Track)를 멈춘다 — 피격 중에도 대상 뒤를 쫓는 건 부자연스럽다.
+    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+    {
+        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+        {
+            ActionComp->StopTracking();
+        }
+    }
+
     // HP 25% 하향 교차 — jevlike 전술 재평가 트리거(매 피격 요청 금지, 임계 교차 1회만).
     if (HpPctBefore >= JevLowHpThreshold && Attrs.Resources.GetHealthPercent() < JevLowHpThreshold && Attrs.Resources.IsAlive())
     {
