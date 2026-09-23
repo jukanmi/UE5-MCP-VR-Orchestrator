@@ -1,7 +1,8 @@
 # SPEC: jev-daily — Jevlike 상황→일상 활동 매칭
 
 > 전투 편향기 SPEC(`docs/SPEC_jev_neuro_symbolic_st.md`)과 **문서는 분리**, 파이프라인은 **공유**.
-> 인터뷰 결정 2026-09-23. 개정 2026-09-23: 단일 선택 → **슬롯별 순차 선택**(하위 파라미터까지 Jev 가 고름). 상태: M1 착수 전.
+> 인터뷰 결정 2026-09-23. 개정 2026-09-23: 단일 선택 → **슬롯별 순차 선택**. 개정 2026-09-24: 활동 12개 통합·대분류 폐지·전투 척수 유지·POI 목업·D10.
+> 상태: **M1 착수 전**(D9 PickUp 전환만 선행 완료 — `f59fe0c8`·`d046c715`).
 
 ## 목표
 
@@ -23,17 +24,19 @@ LLM 판단을 따라 배우는 증류 방식으로는 학습 데이터를 만들
 | C++ | `NPC/Action/SmartNPCAIController.{h,cpp}` | `RequestJevDecision` 을 도메인 인자화(combat/daily). in-flight·세대·워치독 공유. 응답을 domain 으로 분기 |
 | C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | 실행 가능 활동 목록 + 공통 후보 풀 산출, 응답(활동+슬롯) → `FGameAction` 조립·큐 주입, Jev 출처 표시·선점 |
 | C++ | `Network/EnvelopeBuilder.{h,cpp}` | `BuildJevQuery` 가 domain 필드 포함 |
-| C++ | `NPC/Subsystems/NPCManager.{h,cpp}` | `SendPlayerDialogue` 인라인 주변 수집(`:272-383`)을 `CollectNearbyContext` 로 추출(§D8). LLM·Jev 가 같은 함수 사용 |
-| C++ | `NPC/Components/NPCInventoryComponent.cpp` | `GetInventoryJson` 에 `category`(EItemType) 필드 추가(가산 변경) |
-| C++ | `Inventory/Subsystems/ItemManager.{h,cpp}` | `FindDroppedItem(InstanceID)` 조회 추가(§D9) |
-| C++ | `NPC/Action/STTask_ExecuteSmartAction.cpp` | `ResolveActionTarget` 에 바닥 아이템 instance id 분기 추가(§D9) |
-| C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | `ExecutePickUp` 을 대상 아이템 기반(이동+줍기 내장)으로 전환(§D9) |
-| Python | `app/schemas/actions.py` | `ACTION_REQUIRED_PARAMS["PickUp"]` 을 `("target_id", "target_loc")` 로(§D9) |
+| C++ | `NPC/Subsystems/NPCManager.{h,cpp}` | `SendPlayerDialogue` 인라인 주변 수집(`:272-383`)을 `CollectNearbyContext` 로 추출(§D8). LLM·Jev 가 같은 함수 사용. **POI 목업**: `POI_` 태그 액터 수집 → `Pois[]`(§D4). 바닥 아이템 주석 "5m" → 실제 15m 정정 |
+| C++ | `NPC/Components/NPCInventoryComponent.cpp` | `GetInventoryJson` 에 `category`(EItemType) 필드 추가(가산 변경). 장착 중 목록(`equipped` 풀) 수집 |
+| C++ | `NPC/Action/NPCActionComponent.cpp` | `DispatchActions` 연속 스킵 필터를 (타입+대상) 기준으로 교체(구현 기록 결함 1). Pray 를 style 경로로(§D4). `BaseDialogue` 에 화자 바라보기(§D10). 추적과 충돌하는 액션 진입 시 `StopTracking`(§D10) |
+| C++ | `NPC/Components/NPCStateComponent.cpp` | `ApplyDamage` 에서 추적 중단(§D10) |
+| C++ | `Inventory/Subsystems/ItemManager.{h,cpp}` | ✅ `FindDroppedItem(InstanceID)` 조회 추가(§D9, 완료) |
+| C++ | `NPC/Action/STTask_ExecuteSmartAction.cpp` | ✅ `ResolveActionTarget` 에 바닥 아이템 instance id 분기 추가(§D9, 완료) |
+| C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | ✅ `ExecutePickUp` 을 대상 아이템 기반(이동+줍기 내장)으로 전환(§D9, 완료) |
+| Python | `app/schemas/actions.py` | ✅ `ACTION_REQUIRED_PARAMS["PickUp"]` 을 `("target_id", "target_loc")` 로(§D9, 완료). `interface_input.py` 바닥 아이템 프롬프트 노출도 완료 |
 | Python | `app/schemas/envelope.py` | `JevQueryPayload` 에 `domain`·`activities`·`pools` 추가(기본 `combat` — 하위호환) |
 | Python | `app/services/jev_service.py` | `evaluate_daily(metrics, activities, pools, persona)` — 활동 1패스 + 슬롯별 순차 패스. 모델은 전투와 같은 체크포인트 |
 | Python | `app/main.py::_handle_jev_query` | domain 분기, persona(`load_persona`) role·traits 로 context 보강 |
 | Python | `tests/test_jevlike_service.py` | daily 케이스 추가 |
-| 에셋 | 없음(규약만) | ST 에셋·새 EAction·새 envelope 타입 **0**. `DA_NPC_Actions` 미디어 키 명명 규약만 추가(§D4) |
+| 에셋 | 없음(규약만) | ST 에셋·새 EAction·새 envelope 타입 **0**. `DA_NPC_Actions` 미디어 키 명명 규약(§D4). 검증용 `POI_` 태그 액터는 레벨에 MCP 로 배치 |
 
 ## 결정 사항
 
@@ -50,7 +53,7 @@ LLM 판단을 따라 배우는 증류 방식으로는 학습 데이터를 만들
 - 자세(bIsSit/bIsLie)는 선점으로 자동 해제하지 않는다. 기존대로 LLM 이 StandUp 을 고른다.
 - 선점은 큐 소유자인 `NPCActionComponent` 의 공통 진입부 **한 곳**에서 처리한다. 출처별로 따로 넣지 않는다.
 
-**D3. 입력: 기존 데이터만. 신규 시스템 0**
+**D3. 입력: 기존 데이터만. 신규 게임 시스템 0**(시간대·욕구 없음. POI 는 태그 목업뿐 — §D4)
 C++ 가 정규화해서 보내는 `metrics`(좌표·절대값 금지 — 전투와 같은 규약):
 
 | 키 | 타입 | 출처 |
@@ -102,7 +105,8 @@ Python 이 `load_persona(npc_id)` 의 `role`·`traits` 를 context 문자열에 
 | `give_item` | GiveItem, 대상이 `ground` 면 Drop | ✅ 단 NPC 대상만 (`Player`·`ground` 는 command 전용) | stand ∧ items ≥1 | target(actors ∪ `ground`) → item(Quest·장착 제외) |
 | `pick_up` | PickUp | ✅ | stand ∧ ground_items ≥1 | target(ground_items) — 이동은 C++ 내장(§D9) |
 
-- Jev 밖에 남는 것: **Dialogue·Trade**(LLM), **Stop**(즉시 제어 신호 — 선점 경로), **전투 5종**(C++ 척수, 비고 B.1), **Craft·Read**(보류), **Comfort**(제거 — EAction 삭제 4곳 체크리스트 대상).
+- Jev 밖에 남는 것: **Dialogue·Trade**(LLM), **Stop**(즉시 제어 신호 — 선점 경로), **전투 5종**(C++ 척수, 비고 B.1), **Craft·Read**(보류), **Comfort**(제거 결정 — 실제 EAction 삭제는 M1 밖, command 전환 때).
+- `follow`·`equip` 은 daily ❌ 라 M1 에서 Jev 가 고르지 않는다(command 트리거용 예약). 단 D10 의 Track 정지 조건은 지금 LLM 경로의 결함 수정을 겸해 M1 에 포함한다.
 - **통합은 활동 표에서만 한다.** C++ 조립기가 활동+슬롯을 기존 EAction 으로 풀어 쓰므로 EAction enum·LLM 스키마는 이번에 건드리지 않는다. enum 정리는 LLM 이 액션을 내지 않게 된 뒤(비고 B.5 command 전환) 따로 한다.
 - **POI 목업**: POI 시스템은 추후 만든다. 그 전까지 레벨에 `POI_<이름>` 태그를 단 액터(TargetPoint)를 풀 `pois` 의 소스로 쓴다(`desc` = `poi|<이름>|dist_m`). 실제 POI 시스템이 들어오면 소스만 바꾸고 계약(`pois` 풀)은 유지한다. 이 목업으로 `wander`(POI 목적지)·`patrol`·`look_at`(POI 바라보기)·Investigate(자극 지점)가 동작한다.
 - `Read` 제외: 2026-09-23 기준 `DA_NPC_Actions` 에 Read 몽타주가 없다. 몽타주가 들어오면 `emote` 의 style 후보(`Read*`)로 흡수한다.
@@ -113,7 +117,7 @@ Python 이 `load_persona(npc_id)` 의 `role`·`traits` 를 context 문자열에 
 - **Pray 는 키 고정**: `BasePlayActionMedia(TEXT("Pray"))`(`:2304`)라 style 을 무시한다. M1 에서 Pray 도 style 경로로 바꾼다(빈 값이면 `Pray`). 그래야 `emote` 가 `Pray_*` 변형을 고를 수 있다.
 - `give_item` 의 daily 제한: 플레이어 대상은 경제·퀘스트 흐름이 깨지고, `ground`(버리기)는 자율로 하면 인벤토리가 줄기만 한다. 둘 다 command 전용이다.
 
-**D10. 지속 추적(`follow`) 종료 조건과 대화 시 바라보기 — C++**
+**D10. 지속 추적(`follow`) 종료 조건과 대화 시 바라보기 — C++, M1 포함**
 - 현재 코드(2026-09-24 확인): `Follow` 는 대상 뒤 300cm 로 **한 번 이동하고 끝난다**(`NPCActionComponent.cpp:1537-1544`). 계속 따라다니는 쪽은 `Track` 이다. Track 은 0.5s 마다 `MoveToActor` 를 재발행하고(`:2193-2241`), 대상 소멸·`AbortCurrentAction` 때만 멈춘다.
   - **결함**: Track 은 이동 콜백을 걸지 않아 액션은 즉시 완료되고 추적 타이머만 뒤에서 돈다. 다음 Move 를 넣어도 0.5s 뒤 추적이 목적지를 덮어쓴다.
 - `follow` 는 Track 의 지속 추적을 쓰고, 종료 조건을 C++ 에 넣는다(Jev 재평가 없음):
@@ -239,64 +243,73 @@ Jev 효과:
 ## 완료 기준
 
 **M1**
-1. `pytest tests` 전부 통과. daily 신규 ≥10건:
+1. `pytest tests` 전부 통과. daily 신규 ≥12건:
    - 반환 활동 ∈ `activities`, 반환 슬롯 값 ∈ 해당 슬롯 후보 ∪ {`default`}
-   - 활동별 슬롯 순서·구성이 D4 표와 일치(emote 3슬롯, stay 0슬롯)
-   - 후보 1개 슬롯은 추론을 건너뜀(`passes` 로 확인)
+   - 활동별 슬롯 순서·구성이 D4 표와 일치(emote 3슬롯, stay 0슬롯, pick_up 1슬롯)
+   - 후보 1개 슬롯은 추론을 건너뜀(`passes` 로 확인). ground_items 1개인 pick_up 은 총 1패스
    - 풀이 비면 해당 슬롯은 `default`
    - `stay` 항상 포함
    - domain 누락 시 combat 경로
    - 시드 고정 시 조합 전체가 재현됨
    - 예외 시 `stay`
    - 반복 페널티 동작
-   - `give_item` 대상에 Player 가 나오지 않음
-   - `pick_up` 은 슬롯 1개(target ∈ ground_items), ground_items 1개면 총 1패스
-   - (Python) `ACTION_REQUIRED_PARAMS["PickUp"]` 이 target_id 만 있는 액션을 통과시킴
+   - daily 에서 `follow`·`equip` 이 활동으로 나오지 않음
+   - daily `give_item` 대상에 `Player`·`ground` 가 나오지 않음
+   - `emote` 의 style 후보 = `media` 풀 전체
 2. `evaluate_daily` 최대 4패스 휴리스틱 100회 평균 < 2ms.
 3. `sol_pi.py build` 에러 0.
-4. PIE(헤드셋 불필요, MCP): 비전투 NPC 가 LLM 입력 없이 10~25s 안에 Idle 이 아닌 활동 1개를 시작한다. 로그 `[Jev] <id> daily → <activity> <slots> passes=<n>` 로 확인.
+4. PIE(헤드셋 불필요, MCP Simulate): 비전투 NPC 가 LLM 입력 없이 10~25s 안에 Idle 이 아닌 활동 1개를 시작한다. 로그 `[Jev] <id> daily → <activity> <slots> passes=<n>` 로 확인.
 5. PIE: 조립된 `FGameAction` 의 `Key_TargetID`/`Key_TargetLoc`/`Key_Style`/`Key_Item`/`FacialState` 가 응답 슬롯과 일치한다. 무효 슬롯은 `default` 로 치환된다(로그).
-6. PIE: Jev 활동(dance) 중 플레이어가 말을 걸면 LLM 배치 도착 즉시 몽타주가 끊기고 LLM 액션이 실행된다.
-7. PIE: Python 서버를 끄면 NPC 는 Idle 을 유지한다(크래시·경고 스팸 없음).
-8. 전투 Jev 회귀 없음: 기존 테스트 8건 통과, 전투 중 daily 요청 0건(로그).
-9a. PIE: LLM 이 `PickUp target=<아이템 instance id>` 를 내면 NPC 가 그 아이템까지 걸어가 **그 아이템만** 줍는다. 중간에 플레이어가 먼저 집으면 줍지 않고 완료된다(경고 1줄). Jev `pick_up` 도 같은 경로.
-9. `CollectNearbyContext` 추출 회귀 없음: 같은 상황에서 `SendPlayerDialogue` 페이로드가 추출 전과 키·값이 동일하다(가산 필드 `category` 제외). 로그 JSON diff 로 확인.
-10. 같은 틱에 LLM `nearby_furniture` 에 있는 빈 가구 id 집합과 Jev `places` 의 vacant id 집합이 일치한다(상한 12 이내일 때).
+6. PIE: 활동 → EAction 조립이 D4 표대로다. `rest`(Bed)→Sleep·`rest`(Seat)→Sit, `emote`(`Pray`)→Pray 몽타주, `look_at`(`around`)→Scan, `give_item`(NPC)→GiveItem.
+7. PIE: 레벨에 `POI_` 태그 액터 ≥2개를 두면 `pois` 풀에 실리고, `patrol`·`wander` 목적지로 쓰인다(로그).
+8. PIE: Jev 활동(emote Dance) 중 플레이어가 말을 걸면 LLM 배치 도착 즉시 몽타주가 끊기고 LLM 액션이 실행된다.
+9. PIE: Python 서버를 끄면 NPC 는 Idle 을 유지한다(크래시·경고 스팸 없음).
+10. 전투 Jev 회귀 없음: 기존 테스트 8건 통과, 전투 중 daily 요청 0건(로그).
+11. 연속 스킵 필터 교체: 같은 타입·다른 대상 액션 2개(예: 서로 다른 아이템 PickUp 2개)를 연달아 넣으면 둘 다 실행된다. 같은 타입·같은 대상은 기존처럼 스킵된다.
+12. `CollectNearbyContext` 추출 회귀 없음: 같은 상황에서 `SendPlayerDialogue` 페이로드가 추출 전과 키·값이 동일하다(가산 필드 `category` 제외). 로그 JSON diff 로 확인.
+13. 같은 틱에 LLM `nearby_furniture` 의 빈 가구 id 집합과 Jev `places` 의 vacant id 집합이 일치한다(상한 12 이내일 때).
+14. D10 추적: Track 중 Move 를 넣으면 추적이 멈추고 Move 목적지에 도착한다(덮어쓰기 없음). 피격 시 추적이 멈춘다. 대사 수신 중에는 추적이 유지된다.
+15. D10 바라보기: 비전투에서 NPC 가 대사를 하면 말하는 상대 쪽으로 돈다.
+16. ✅ PickUp 대상 기반 전환(D9) — `f59fe0c8`, 2026-09-24 Simulate 검증 완료(아래 구현 기록).
 
 **M2**
-11. 합성 조합 daily ≥ 2,000건(패스 예시 ≈ 5,000건) + combat ≥ 2,000건 생성. 체크포인트 로드 로그 `[Jev] jevlike 로드 완료`.
-12. 홀드아웃 세트에서 패스별 top-1 이 합성 정답과 일치하는 비율 ≥ 휴리스틱 일치율 + 10%p(활동 패스·슬롯 패스 각각 측정).
-13. 모델 경로 최대 4패스 지연 < 100ms(0.3s 워치독 대비 여유 3배).
+17. 합성 조합 daily ≥ 2,000건(패스 예시 ≈ 5,000건) + combat ≥ 2,000건 생성. 체크포인트 로드 로그 `[Jev] jevlike 로드 완료`.
+18. 홀드아웃 세트에서 패스별 top-1 이 합성 정답과 일치하는 비율 ≥ 휴리스틱 일치율 + 10%p(활동 패스·슬롯 패스 각각 측정).
+19. 모델 경로 최대 4패스 지연 < 100ms(0.3s 워치독 대비 여유 3배).
 
 ## 단계
 
-- **M1** — Python(스키마·서비스·핸들러·테스트) → C++(도메인 인자화·활동 목록·후보 풀 산출·조립·주입·선점) → 빌드 → MCP PIE 로 기준 4~10 검증. C++ 는 `CollectNearbyContext` 추출(기준 9)을 가장 먼저 한다 — Jev 풀이 여기에 의존한다.
-  Python 을 먼저 하는 이유: 서버 단독 테스트로 계약(payload 형태)을 먼저 고정하면 C++ 가 그 계약에 맞춰 붙는다.
-- **M2** — jevlike 설치 → 합성 데이터 생성 스크립트 → 학습 → 체크포인트 교체 → 기준 11~13.
-  Memo Todo 의 "jevlike 설치·체크포인트 학습" 항목과 합친다.
+- **M1**
+  1. **Python** — 스키마·서비스·핸들러·테스트(기준 1~2). 서버 단독 테스트로 계약(payload 형태)을 먼저 고정하면 C++ 가 그 계약에 맞춰 붙는다.
+  2. **C++ 선행** — Jev 본체가 의존하는 것부터:
+     `CollectNearbyContext` 추출 + POI 목업 + `equipped` + 인벤 `category`(기준 12~13) → `DispatchActions` 스킵 필터 교체(기준 11) → Pray style 경로.
+  3. **C++ 본체** — 도메인 인자화·활동 목록 산출·조립·주입·선점(기준 4~10).
+  4. **D10** — Track 정지 조건·대화 시 바라보기(기준 14~15). Jev 와 독립이라 1~3 과 병행해도 된다.
+  5. 빌드 → MCP Simulate PIE 로 기준 4~15 검증.
+- **M2** — jevlike 설치 → 합성 데이터 생성 스크립트 → 학습 → 체크포인트 교체 → 기준 17~19. Memo Todo 의 "jevlike 설치·체크포인트 학습" 항목과 합친다.
+- **M1 밖(후속)** — Comfort 제거와 EAction enum 정리는 command 전환(비고 B.5) 때 LLM 스키마 변경과 함께 한다. 그 전까지 Comfort 는 Jev 활동 표에 넣지 않는 것으로 충분하다.
 
 ## 미결 사항
 
-- 전투 SPEC Todo "ST 에셋 바인딩": daily 가 큐 주입으로 결정돼 ST 노드와 무관해졌다. 전투 쪽 `FSTEvaluator_JevTactics`·`FSTCondition_NoulGuard`
-  바인딩은 여전히 남는다. 다만 전투 승수는 이미 `SelectCombatAction` 이 컨트롤러 캐시를 직접 읽는다. ST 노드가 실제로 막는 상태가 있는지부터 따로 판단해야 한다.
 - 대화 중 판정: `JevDailyAfterLLMSeconds` 만으로 부족하면(플레이어가 말을 거는 중 LLM 응답 전 공백) "플레이어 발화 수신 시각"을 추가 게이트로 쓴다. PIE 결과 보고 결정.
-- `give_item`·`use_item` 의 퀘스트 아이템 보호: 인벤토리에 퀘스트 태그가 있으면 풀에서 제외. 태그 유무를 M1 착수 시 확인.
 - 슬롯 추가 후보(지속 시간·대사 주제)는 이번 범위 밖. 추가하려면 D4 표에 슬롯 한 줄 + 휴리스틱 규칙 + 테스트만 늘리면 된다.
-- `dest=random` 반경, 풀 최대 12개는 PIE 튜닝 대상. 가구·아이템 반경은 `FurnitureContextRange` 공유(§D8).
+- 튜닝값: `dest=random` 반경 8m, 풀 상한 12, `JevDailyIdleSeconds` 10s, `JevDailyAfterLLMSeconds` 15s — PIE 에서 조정. 가구·아이템·POI 반경은 `FurnitureContextRange` 공유(§D8).
 - LLM `valid_targets` 가 거리·인지와 무관하게 등록 NPC 전원을 노출한다. 멀리 있는 NPC 에게 GiveItem 하는 식의 오지정 여지가 있다. `PerceivedActors` 로 좁힐지는 LLM 동작 변경이라 별도 결정.
-- `NPCManager.cpp:352` 주석 "반경 5m" ↔ 실제 `FurnitureContextRange` 1500cm 불일치. 추출 시 주석 정정.
-- Read 몽타주 추가 시 활동 복귀.
-- **D9 구현 완료(2026-09-24, `f59fe0c8`)** — Simulate PIE 검증: 지정 아이템만 습득(반경 100cm 안 다른 아이템 무시) ✅, 걷는 중 150cm 밖으로 옮기면 경고 후 생략 ✅. 검증 중 발견한 기존 결함 3건(미수정):
-  1. **중복 액션 스킵이 Jev 연속 선택을 삼킨다**: `DispatchActions`(`NPCActionComponent.cpp:417-423`)가 직전 큐잉 타입과 같으면 버린다. PickUp 연속 2회 중 2번째가 무음 드랍됨을 실측. Jev daily 가 같은 활동(다른 대상)을 연달아 고르면 같은 현상 → M1 주입 경로는 이 필터를 우회하거나 (타입+대상) 기준으로 바꿔야 한다.
-  2. ~~**`AM_Pickup` 9.57초 vs 액션 워치독 15초**~~ — 해결(2026-09-24): 몽타주 재생 시 워치독을 `길이+2s` 로 연장(줄이지 않음). 10m 보행 후 15.3s 완료 실측.
-     원 기록: 5.4초 넘게 걸으면 몽타주가 끝나기 전에 워치독이 강제 완료. D9 로 PickUp 이 최대 15m 를 걷게 돼 더 자주 걸린다. 몽타주를 짧게 하거나, 도착 시 워치독을 몽타주 길이 기준으로 재시작해야 한다.
-  3. ~~**습득 실패해도 `AM_Pickup` 재생**~~ — 해결(2026-09-24): `PerformPickupAtDestination` 이 bool 반환, 주웠을 때만 재생. 실측 확인.
-     원 기록: 아이템이 없어도 허리를 숙인다(좌표 경로도 동일). `PerformPickupAtDestination` 이 성공 여부를 돌려주고 성공 시에만 재생하면 된다.
+- 실제 POI 시스템(지형 저장)은 별도 SPEC. 이 SPEC 은 `pois` 풀 계약과 태그 목업까지만.
+
+## 구현 기록
+
+- **D9 PickUp 대상 기반 전환 — 완료(2026-09-24, `f59fe0c8`)**. Simulate PIE: 지정 아이템만 습득(반경 100cm 안 다른 아이템 무시) ✅, 걷는 중 150cm 밖으로 옮기면 경고 후 생략 ✅.
+- 검증 중 발견한 기존 결함 3건:
+  1. **중복 액션 스킵이 연속 선택을 삼킨다** — `DispatchActions`(`NPCActionComponent.cpp:417-423`)가 직전 큐잉 타입과 같으면 버린다. PickUp 연속 2회 중 2번째가 로그 없이 사라짐을 실측 → M1 범위로 편입(기준 11).
+  2. ~~`AM_Pickup` 9.57초 vs 액션 워치독 15초~~ — 해결(2026-09-24, `d046c715`): 몽타주 재생 시 워치독을 `길이+2s` 로 연장(줄이지 않음). 10m 보행 후 15.3s 완료 실측.
+  3. ~~습득 실패해도 `AM_Pickup` 재생~~ — 해결(2026-09-24, `d046c715`): `PerformPickupAtDestination` 이 bool 반환, 주웠을 때만 재생.
   - 참고: 아이템이 월드 밖으로 떨어지면(z 수천 cm 아래) NavMesh 투영이 실패해 이동이 끝나지 않고 워치독 15초까지 정지한다(테스트 중 순간이동으로 재현).
 
 ---
 
-## 부록 A. 전체 EAction 파라미터 선택지 카탈로그 (2026-09-23 코드 기준)
+
+## 부록 A. 전체 EAction 파라미터 선택지 카탈로그 (2026-09-23 코드 조사, 2026-09-24 사용자 검토 반영)
 
 근거: `NPCActionComponent::ExecuteInteraction`(`NPCActionComponent.cpp:785-957`)이 읽는 키, 각 `Execute*` 본문, Python `app/schemas/actions.py`(`ACTION_REQUIRED_PARAMS`), `DA_NPC_Actions` 몽타주 보유 여부.
 
