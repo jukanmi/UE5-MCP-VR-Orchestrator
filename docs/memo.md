@@ -10,7 +10,14 @@
 
 ### 전투 SPEC 잔여 — `docs/SPEC_realistic_combat.md` (§3.2·§2.3 완료 2026-09-21, §3.5 공격토큰 중앙화는 2026-09-22 폐기 — 필드 몹 `MaxAttackers=2` 로 충분, 나머지 3개 보류)
 - [x] ~~§3.4 Stumble~~ — 2026-09-23 구현·헤드셋 검증 완료(아래 Done).
+- [ ] **저HP 자동 후퇴·회복 연쇄(척수)** — 2026-09-24 결정. Combat ∧ HP ≤ 0.3 ∧ 회복 Consumable 보유 → 주사위 없이 [EQS 후퇴 → UseItem] 결정론 주입, 전투당 1회. 회복템 없으면 기존 Flee 램프. 상세 `SPEC_jev_daily.md` 비고 B.1. 전투 브랜치에서 구현.
 - [ ] **§3.1·3.3 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 남은 순서: Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0.
+
+### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
+- [ ] **일상 활동 매칭 M1** — 설치 주목적. 비전투 Idle 10s 후 Jev 가 활동 1패스 + 슬롯(대상·장소·방식·아이템·표정) 순차 패스(최대 4)로 조합 선택 → 큐 주입(최하위 우선순위, 다른 출처 액션 오면 선점). envelope·서비스·체크포인트는 전투와 공유(`domain` 필드). 2026-05-16 "비전투 자율 주입 없음" 결정 번복.
+- [ ] **StateTree 에셋 바인딩(전투 전용)** — 일상은 큐 주입이라 무관. 전투 승수는 `SelectCombatAction` 이 캐시를 직접 읽으므로 ST 노드가 실제로 막을 상태가 있는지부터 판단(SPEC_jev_daily 미결).
+- [ ] **Phase 4 PIE 실측(전투)** — 적 조우, HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백. 폴백 검증은 휴리스틱만으로 가능.
+- [ ] **jevlike 설치·체크포인트 학습 = 일상 M2** — 2026-09-23 확인: 패키지 미설치, `app/models/jevlike_tactics.pt` 없음 → 휴리스틱만 동작. LLM 로그엔 일상 액션 3건뿐이라 합성 데이터 필요. 전투+일상 합쳐 체크포인트 1개.
 
 ### 플레이어 시스템 잔여 갭 — `docs/SPEC_player_systems.md`
 - [x] **[갭 3] VR 물리 손 쥐기 및 플레이어→NPC 전달** — 2026-09-05 C++ 구현·빌드 완료.
