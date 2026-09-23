@@ -359,8 +359,9 @@ def activity_logit(activity: str, ctx: _DailyCtx) -> float:
     }.get(activity, 0.0)
     if ctx.player_near:
         v += {"rest": -1.0, "look_at": 0.8, "stay": 0.5, "emote": 0.3}.get(activity, 0.0)
-    if activity == "stand_up" and ctx.posture in ("sit", "lie") and ctx.posture_s > 120:
-        v += 2.5
+    if activity == "stand_up" and ctx.posture in ("sit", "lie"):
+        # 앉자마자·눕자마자 일어나지 않게 — 2분 전엔 억제, 넘으면 크게 올린다.
+        v += 2.5 if ctx.posture_s > 120 else -1.5
     if ctx.traits & _WATCHFUL and activity in ("look_at", "wander", "patrol"):
         v += 0.7
     if ctx.traits & _DEVOUT and activity == "emote":

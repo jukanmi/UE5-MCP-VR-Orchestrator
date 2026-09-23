@@ -257,3 +257,12 @@ def test_handle_jev_query_daily_and_default_combat(monkeypatch: pytest.MonkeyPat
     p = json.loads(main._handle_jev_query(combat))["payload"]
     assert REQUIRED_KEYS <= set(p) and "activity" not in p
     assert JevQueryPayload(npc_id="G").domain == "combat"
+
+
+def test_daily_stand_up_waits_for_posture_time() -> None:
+    from app.services.jev_service import _DailyCtx, activity_logit
+
+    fresh = _DailyCtx({"posture": "lie", "posture_s": 10}, PERSONA)
+    long = _DailyCtx({"posture": "lie", "posture_s": 300}, PERSONA)
+    assert activity_logit("stand_up", fresh) < activity_logit("stay", fresh)
+    assert activity_logit("stand_up", long) > activity_logit("stay", long)
