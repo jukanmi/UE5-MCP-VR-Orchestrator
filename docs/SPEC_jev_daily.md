@@ -2,8 +2,8 @@
 
 > 전투 편향기 SPEC(`docs/SPEC_jev_neuro_symbolic_st.md`)과 **문서는 분리**, 파이프라인은 **공유**.
 > 인터뷰 결정 2026-09-23. 개정 2026-09-23: 단일 선택 → **슬롯별 순차 선택**. 개정 2026-09-24: 활동 12개 통합·대분류 폐지·전투 척수 유지·POI 목업·D10.
-> 상태: **M1 착수 전**(D9 PickUp 전환만 선행 완료 — `f59fe0c8`·`d046c715`).
-> 선행 SPEC: `docs/SPEC_behavior_mode_reduce.md`(BehaviorMode 6→2, M1 전에 처리).
+> 상태: **M1 완료(2026-09-24)** — `b704d0a6`(Python)·`769bd13e`(C++)·`9b98ed7b`·`ca316c01`. M2(학습) 남음.
+> 선행 SPEC: `docs/SPEC_behavior_mode_reduce.md`(BehaviorMode 6→2) — 완료 `13f94484`.
 
 ## 목표
 
@@ -299,6 +299,44 @@ Jev 효과:
 - 실제 POI 시스템(지형 저장)은 별도 SPEC. 이 SPEC 은 `pois` 풀 계약과 태그 목업까지만.
 
 ## 구현 기록
+
+### M1 (2026-09-24) — 완료 기준 1~15 전부 확인
+
+| 기준 | 결과 |
+|---|---|
+| 1 | pytest 106 passed(daily 15건: 활동·슬롯 유효성, 슬롯 구성, 1패스 pick_up, 최대 4패스, 빈 풀 default, stay 상시, 시드 재현, 예외 stay, 반복 억제, follow·equip 차단, give_item Player·ground·퀘스트 제외, emote style=media, domain 누락 combat, 기상 억제) |
+| 2 | 100회 평균 < 2ms 테스트 통과 |
+| 3 | `sol_pi.py build` 에러 0 |
+| 4 | PIE: 전 NPC 가 idle 10.0s 에 첫 daily 요청 → 활동 시작. 로그 `[Jev] <id> daily → <activity> {slots} passes=n ⇒ EAction [params]` |
+| 5 | 같은 로그에 조립된 `FGameAction`(타입·facial·target_id·target_loc·item·style)이 슬롯과 함께 찍힘. default 는 C++ 규칙으로 해석(예: `look_at target=default ⇒ TurnTo Commander_Vorg`, `patrol dest=default ⇒ POI_Plaza`) |
+| 6 | `rest`(Bed `1002`)→Sleep, `rest`(Seat)→Sit(AM_SitDown), `emote`(Pray)→AM_pray, `look_at`(around)→Scan, `give_item`(NPC)→GiveItem(James→Elara Torch `전달: Torch x1`) |
+| 7 | POI 3개(`POI_Gate`·`POI_Plaza`·`POI_Well`, 커밋 `ca316c01`) 수집 로그, `patrol dest=POI_Well ⇒ Scout`, `wander dest=POI_Plaza ⇒ Move` |
+| 8 | Moca Dance 중 말 걸기 → LLM 배치 도착 같은 틱에 `daily 활동 선점 — 'Dance' 중단` 후 대사 |
+| 9 | 서버 종료 35s: daily 0건, 신규 경고 0(기존 SignalAllies 미디어 경고만) |
+| 10 | Guard 전투 진입 후 Guard daily 요청 0건. 전투 반사가 진행 중 Jev Scan 을 선점 |
+| 11 | PickUp(A)·PickUp(B)·PickUp(B) 주입 → A·B 실행, 연속 중복 B 스킵 |
+| 12 | 추출 후 prompt 키 = `current_plan·nearby_furniture·npc_inventory·player_id·requires_replan·stats·target_npc_id·valid_targets·voice_transcript`(추출 전과 동일, 인벤 원소에 `category` 가산). 추출 전 바이너리와의 바이트 diff 는 못 함(빌드 교체) |
+| 13 | 같은 시점 Moca prompt `nearby_furniture` 빈 가구 = Jev `places` vacant = `{Chair_Library_Reading}` |
+| 14 | Track(Player) 후 플레이어 8m 이동 → 197cm 까지 따라옴 / 대사 배치 후에도 186cm 유지 / Move 주입 → 목적지 도착 후 끌려가지 않음 / 피격 후 플레이어 9m 이동 → 767cm 그대로(추적 중단) |
+| 15 | Moca 등 뒤(180°)에서 말 걸기 → 대사 후 0° |
+
+설계·구현 중 바뀐 것:
+- **반사 선점 범위**: D2 는 "척수반사가 액션을 넣으면 선점"이지만, **전투 진입 반사만** Jev 활동을 끊게 했다. 비전투 반사(중립 주민 경계 Scan, 쿨다운 10s)까지 끊으면 앉기·산책이 시작 20ms 만에 잘렸다(Simulate 실측).
+- **대화 직후 8초 비전투 반사 억제**: 말을 건 상대를 보자마자 주민 경계 Scan 이 고개를 돌렸다(실측). ponytail 8s 고정.
+- **추적 중단 조건**: 기존 코드는 Track 외 **모든** 액션이 추적을 끊었다 → 반사 Scan 한 번에 따라가기가 풀렸다. 이동·공격·줍기·앉기 등 충돌 액션만 끊게 바꿨다. 추적 중엔 daily 도 안 한다(Track 은 즉시 완료라 Idle 로 보였다).
+- **바라보기가 원래 안 됐다**: `bOrientRotationToMovement` 만 켜져 있어 `SetFocalPoint`(TurnTo·Scan·대화)가 몸을 안 돌렸다. `BaseFaceRotate` 가 컨트롤러 목표 회전 추종으로, 이동 진입(`PrepareMove`·Track)이 진행 방향 회전으로 되돌린다.
+- **`None` 타깃 키워드**: 좌표만 쓰는 조립 액션(Scan around·POI TurnTo·Move·emote none)이 빈 target_id 면 `ResolveActionTarget` 이 BB 타겟(최근 본 아무나)으로 폴백했다.
+- **Jev 주입은 중복 스킵 필터 우회**: 같은 활동 재선택이 필터에 삼켜지지 않게.
+- `equipped` 풀은 안 보낸다 — `equip` 이 daily ❌ 라 소비처가 없다(command 전환 때).
+- `stand_up` 휴리스틱: 자세 2분 전엔 억제(눕자마자 30% 확률로 일어나던 문제).
+
+검증 환경 주의:
+- **에디터가 백그라운드면 3fps** 로 떨어져 응답이 0.3s 워치독을 넘긴다(전부 stale 폐기). MCP 로 `Default__EditorPerformanceSettings.bThrottleCPUWhenNotForeground=false` 후 검증, 끝나고 원복. 헤드셋 90fps 에선 무관.
+- 서버를 재시작하면 UE 클라이언트가 재연결 5회 후 Offline 으로 영구 전환 — PIE 재시작 필요(기존 동작).
+
+남은 것(M1 범위 밖):
+- 미결 "대화 중 판정": 플레이어 발화 송신 ~ LLM 응답 사이에 daily 가 끼는 것을 1회 실측(Moca Pray). 응답 도착 시 선점되므로 해는 작다. 게이트 추가는 보류.
+- `use_item` 이 스토리용 소비템(HealthPotion 등)을 자율 소비한다 — 인벤이 줄기만 한다. 소비 빈도·대상 제한은 튜닝 과제.
 
 - **D9 PickUp 대상 기반 전환 — 완료(2026-09-24, `f59fe0c8`)**. Simulate PIE: 지정 아이템만 습득(반경 100cm 안 다른 아이템 무시) ✅, 걷는 중 150cm 밖으로 옮기면 경고 후 생략 ✅.
 - 검증 중 발견한 기존 결함 3건:

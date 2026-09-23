@@ -103,4 +103,4 @@ C++ 와 Python 을 **같은 커밋에서 동시에** 고친다(Envelope 계약 �
 | 4 ST_NPC | 컴파일 성공, enum 경고 0. Simulate 중 7개 NPC 모두 `COMMON(1)` 로 읽힘 |
 | 5 Simulate | Vorg 를 James 3m 앞에 두자 `[Reflex] 적대·근접 즉시 공격 → Attack (Combat 진입)`. Vorg 사망 후 Guard `전투 타겟 장기 소실(8.0초) — 전투 해제, Common 복귀`(대상 액터가 사망 처리로 퇴출돼 사망 분기 대신 소실 분기로 빠짐 — 둘 다 `ExitCombat`) |
 | 6 Stage1 5턴(Moca) | 5배치 전부 Mode ∈ {Common, Combat}, 파싱 실패 0. 모욕 발화 턴은 `[Dialogue, Dodge]` + `Combat`. Attack 은 안 나왔다 |
-| 7 BP enum 삭제 | referencers 0 확인. **삭제는 자동 모드 권한 분류기가 차단** → DoList 로 이관 |
+| 7 BP enum 삭제 | referencers 0 확인. **삭제는 자동 모드 권한 분류기가 차단** → DoList 1-17 로 이관 |

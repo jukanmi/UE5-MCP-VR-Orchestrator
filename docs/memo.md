@@ -14,7 +14,6 @@
 - [ ] **§3.1·3.3 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 남은 순서: Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0.
 
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
-- [ ] **일상 활동 매칭 M1** — 설치 주목적. 비전투 Idle 10s 후 Jev 가 활동 1패스 + 슬롯(대상·장소·방식·아이템·표정) 순차 패스(최대 4)로 조합 선택 → 큐 주입(최하위 우선순위, 다른 출처 액션 오면 선점). envelope·서비스·체크포인트는 전투와 공유(`domain` 필드). 2026-05-16 "비전투 자율 주입 없음" 결정 번복.
 - [ ] **StateTree 에셋 바인딩(전투 전용)** — 일상은 큐 주입이라 무관. 전투 승수는 `SelectCombatAction` 이 캐시를 직접 읽으므로 ST 노드가 실제로 막을 상태가 있는지부터 판단(SPEC_jev_daily 미결).
 - [ ] **Phase 4 PIE 실측(전투)** — 적 조우, HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백. 폴백 검증은 휴리스틱만으로 가능.
 - [ ] **jevlike 설치·체크포인트 학습 = 일상 M2** — 2026-09-23 확인: 패키지 미설치, `app/models/jevlike_tactics.pt` 없음 → 휴리스틱만 동작. LLM 로그엔 일상 액션 3건뿐이라 합성 데이터 필요. 전투+일상 합쳐 체크포인트 1개.
@@ -100,6 +99,13 @@
 ---
 
 ## Done
+
+- [x] **Jev 일상 활동 매칭 M1 — PIE 검증 완료 (2026-09-24)** — `docs/SPEC_jev_daily.md` 구현 기록.
+  Python `b704d0a6`(evaluate_daily·domain 분기·테스트 15) · C++ `769bd13e`(CollectNearbyContext·POI 목업·daily 요청/조립/주입/선점·
+  (타입+대상) 중복 필터·Pray style·D10 추적/바라보기) · `9b98ed7b`(기상 억제) · `ca316c01`(POI 액터 3개).
+  완료 기준 1~15 전부 PIE(헤드셋 없이) 확인 — Sleep·Sit·Pray·Scan·GiveItem·POI 순찰·LLM 선점·서버 단절·전투 중 0건·추적·바라보기.
+- [x] **BehaviorMode 6→2 축소 (2026-09-24)** — `13f94484`, `docs/SPEC_behavior_mode_reduce.md`. Simulate 반사 Combat 진입·Common 복귀,
+  Stage1 5턴 Mode∈{Common,Combat}. 고아 BP enum 삭제만 DoList 1-17(권한 분류기 차단).
 
 - [x] **§5.3 Stumble 3분기 구현 + 4방향 몽타주 — 헤드셋 검증 완료 (2026-09-23)** — `docs/SPEC_realistic_combat.md` §5.3.
   `NPCRagdollComponent` 만 수정(호출자 3곳 무변경): `EStumbleDir` enum · `StumbleMontages` TMap(생성자에서
@@ -256,6 +262,9 @@
 - **파라미터 산출 분담 ("파라미터 종류" 기준)**: 물리/공간 파라미터(좌표, 방향, 몽타주, Spacing) = C++ 100% 동기 유추(0ms). 전술 가중치 승수 = Jevlike(5~20ms). 대사/서사 = LLM(1~3s, 단 행동 선행 집행 후 텍스트 비동기 후속 도착 필수).
 - **C++ Gotchas 방어**: Jev 승수 연산 시 `[0.25, 4.0]` Clamp 필수(후보 전멸 방지), `MoveToLocation` 호출 시 `bProjectDestinationToNavigation=true` 투영 필수(BaseMove:585 기본값 false 로 인한 벽 끼임 버그 방지).
 - **상세 명세서**: `docs/SPEC_jev_neuro_symbolic_st.md`.
+- **daily(2026-09-24)**: 비전투 반사는 Jev 활동을 끊지 않는다 — 중립 주민 경계 Scan(쿨다운 10s)이 앉기·산책을 시작 20ms 만에 잘랐다. 전투 진입 반사·LLM 배치·전투 셀렉터만 선점. 대화 직후 8s 는 비전투 반사 억제(말한 상대 보기 유지).
+- **SetFocalPoint 는 원래 몸을 안 돌렸다**: SmartNPC 는 `bOrientRotationToMovement` 전용이라 TurnTo·Scan 이 시선만 바꿨다. 지금은 `BaseFaceRotate` 가 컨트롤러 목표 회전 추종으로, `PrepareMove`·Track 이 진행 방향 회전으로 전환한다. 새 이동 경로를 만들면 이 전환을 거칠 것.
+- **Jev 검증은 에디터 포그라운드 조건**: 백그라운드 3fps 면 응답이 0.3s 워치독을 넘어 전부 폐기된다. MCP 로 `/Script/UnrealEd.Default__EditorPerformanceSettings.bThrottleCPUWhenNotForeground=false` 후 검증(메모리만, 재시작 시 원복). 서버 재시작 시 UE 는 재연결 5회 후 Offline 영구 → PIE 재시작.
 
 ---
 

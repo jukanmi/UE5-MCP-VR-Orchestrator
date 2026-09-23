@@ -12,7 +12,7 @@
 > 공통: 가구 BP 는 이벤트 그래프 노드 **0개** — 부모 `FurnitureActor`, 컴포넌트·프로퍼티 설정만.
 > 절차 상세는 `주간기록/2026-W29` BP_Chair 항목 참조(동일 패턴).
 
-### 1-16. 고아 BP enum 에셋 삭제 (2026-09-24, `SPEC_behavior_mode_reduce.md` D4)
+### 1-17. 고아 BP enum 에셋 삭제 (2026-09-24, `SPEC_behavior_mode_reduce.md` D4)
 
 > 시도: MCP 로 AssetRegistry referencers 조회 → **0건** 확인. `EditorAssetLibrary.delete_asset` 호출은
 > 클로드 자동 모드 권한 분류기가 "되돌릴 수 없는 삭제"로 차단. C++ enum 은 이미 2값으로 줄었고 이 에셋은 아무도 안 씀.
