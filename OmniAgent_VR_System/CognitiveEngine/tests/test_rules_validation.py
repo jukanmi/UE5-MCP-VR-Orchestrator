@@ -15,9 +15,10 @@ NOTE: 현재 Rules 계약은 GameAction(ActionType, Parameters) 기반 — targe
 """
 
 from app.agents.subgraphs.rules import (
+    _correct_mode_mismatch,
     validate_and_clamp_action,
 )
-from app.schemas.actions import GameAction
+from app.schemas.actions import ActionBatch, GameAction
 
 
 def _loc(x: float, y: float, z: float) -> str:
@@ -108,3 +109,21 @@ class TestValueClamping:
         )
         assert action is not None
         assert float(action.Parameters["speed"]) <= 600
+
+
+class TestModeCorrection:
+    """Mode 보정 — 전투 액션이 있으면 Combat, 그 밖은 LLM 이 준 Mode 유지."""
+
+    def _mode_after(self, action_type: str, mode: str) -> str:
+        batch = ActionBatch(AgentID="npc", Mode=mode, Actions=[make_action(action_type=action_type)])
+        _correct_mode_mismatch(batch)
+        return batch.Mode
+
+    def test_attack_common_becomes_combat(self):
+        assert self._mode_after("Attack", "Common") == "Combat"
+
+    def test_dialogue_combat_kept(self):
+        assert self._mode_after("Dialogue", "Combat") == "Combat"
+
+    def test_give_item_common_kept(self):
+        assert self._mode_after("GiveItem", "Common") == "Common"

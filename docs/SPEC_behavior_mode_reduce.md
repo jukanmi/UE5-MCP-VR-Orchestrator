@@ -1,7 +1,7 @@
 # SPEC: behavior-mode-reduce — 행동 대분류(BehaviorMode) 6값 → 2값 축소
 
 > 작성 2026-09-24. `SPEC_jev_daily.md` M1 의 **선행 리팩토링**(Jev M1 과 독립, 한 커밋).
-> 상태: 착수 전.
+> 상태: **완료(2026-09-24)** — 에셋 삭제(D4)만 사용자 몫으로 남음(아래 구현 기록).
 
 ## 목표
 
@@ -93,3 +93,14 @@ C++ 와 Python 을 **같은 커밋에서 동시에** 고친다(Envelope 계약 �
 - Stage1 `mode` 필드 완전 제거는 command 전환 때(D2).
 - e4b 파인튜닝 데이터에는 옛 6값이 들어 있다. 재학습 여부는 기준 6 결과를 보고 판단한다. 문법 제약으로 형식은 보장되므로 당장은 불필요할 것으로 본다.
 - `train_logs` 의 과거 기록에 있는 Social 등의 값은 그대로 둔다(기록 데이터, 소비처 없음).
+
+## 구현 기록 (2026-09-24)
+
+| 기준 | 결과 |
+|---|---|
+| 1·2 pytest | 91 passed(신규 Mode 보정 3건 포함) |
+| 3 빌드 | `sol_pi.py build` 에러 0 |
+| 4 ST_NPC | 컴파일 성공, enum 경고 0. Simulate 중 7개 NPC 모두 `COMMON(1)` 로 읽힘 |
+| 5 Simulate | Vorg 를 James 3m 앞에 두자 `[Reflex] 적대·근접 즉시 공격 → Attack (Combat 진입)`. Vorg 사망 후 Guard `전투 타겟 장기 소실(8.0초) — 전투 해제, Common 복귀`(대상 액터가 사망 처리로 퇴출돼 사망 분기 대신 소실 분기로 빠짐 — 둘 다 `ExitCombat`) |
+| 6 Stage1 5턴(Moca) | 5배치 전부 Mode ∈ {Common, Combat}, 파싱 실패 0. 모욕 발화 턴은 `[Dialogue, Dodge]` + `Combat`. Attack 은 안 나왔다 |
+| 7 BP enum 삭제 | referencers 0 확인. **삭제는 자동 모드 권한 분류기가 차단** → DoList 로 이관 |

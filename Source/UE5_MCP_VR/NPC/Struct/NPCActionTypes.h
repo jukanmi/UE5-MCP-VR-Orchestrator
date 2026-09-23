@@ -24,15 +24,11 @@ enum class EFacialState : uint8
 	Pain            UMETA(DisplayName = "Pain")
 };
 
-/** ENPCBehaviorMode: 최상위 행동 카테고리 (STTask 자율 행동 분기 기준) */
+/** ENPCBehaviorMode: 전투 여부 (Combat 이면 전투 셀렉터, 아니면 Common) */
 UENUM(BlueprintType)
 enum class ENPCBehaviorMode : uint8
 {
 	Combat         UMETA(DisplayName = "Combat"),
-	Social         UMETA(DisplayName = "Social"),
-	Task           UMETA(DisplayName = "Task"),
-	Investigation  UMETA(DisplayName = "Investigation"),
-	Lifestyle      UMETA(DisplayName = "Lifestyle"),
 	Common         UMETA(DisplayName = "Common")
 };
 

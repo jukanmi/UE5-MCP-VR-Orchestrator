@@ -305,7 +305,7 @@ async def _run_stage1_llm(
             resp = None
 
     if resp is None:
-        resp = DialogueResponse(mode="Social", facial="Neutral", speech="...", tone="confused", actions=[])
+        resp = DialogueResponse(mode="Common", facial="Neutral", speech="...", tone="confused", actions=[])
 
     # byte-fallback 토큰 정제 — 구조화 obj 필드에 in-place(정규식 텍스트 왕복 없이 parity).
     # cross-module 정제 중복 회피: interface_output 은 이미 정제된 speech 가정.

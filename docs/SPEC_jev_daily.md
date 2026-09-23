@@ -391,7 +391,7 @@ Jev 효과:
 
 - 34개 EAction → **Jev 활동 12개**(D4). 흡수 관계는 위 "통합 활동" 열.
 - Jev 밖: **LLM 2**(Dialogue·Trade) · **척수 5**(전투) · **제어 1**(Stop) · **보류 2**(Craft·Read) · **제거 1**(Comfort) · **유지(추후 흡수) 1**(Wait).
-- **대분류 폐지 근거**: C++ 에서 `ENPCBehaviorMode::Social/Task/Investigation/Lifestyle` 참조 0곳(동작을 가르는 건 Combat 여부뿐). Python 은 `rules.py:273` Mode 보정 1곳만 대분류를 쓴다 → command 전환으로 LLM 이 액션을 안 내면 함께 제거.
+- **대분류 폐지 — 완료(2026-09-24, `SPEC_behavior_mode_reduce.md`)**: `ENPCBehaviorMode` 는 `Combat`/`Common` 2값. Python 카테고리 맵은 `COMBAT_ACTIONS` 하나로 축소(Mode 보정 = 전투 액션 있으면 Combat).
 - 남은 일(우선순위 순):
   1. **POI 목업**(`POI_` 태그 → `pois` 풀) — wander·patrol·look_at·Investigate 가 함께 풀림.
   2. **D10**: 지속 추적 종료 조건 + Track 덮어쓰기 결함, 대화 시 자동 바라보기.
@@ -447,7 +447,7 @@ Jev 효과:
 3. **선점 우선순위**: `척수(반사·전투) > command > daily`. 높은 쪽이 낮은 쪽의 진행 중 액션을 끊는다(D2 일반화). Stop 은 큐를 거치지 않는 즉시 신호로 둔다.
 4. **중복 액션 스킵 필터 교체**: `DispatchActions` 의 "직전 타입과 같으면 버림"은 다른 대상의 같은 액션도 막는다(2026-09-24 실측). (타입+대상) 기준으로 바꾸거나 Jev 주입 경로는 우회한다.
 5. **활동 표 한 곳**: D4 활동 표를 C++ 조립기와 Python 서비스가 함께 쓰도록 JSON 1개로 뽑는다(양쪽 하드코딩 2벌 금지).
-6. **BehaviorMode 소유권**: 지금 Combat/Common 전환 일부는 LLM 배치 `Mode` 가 한다(`NPCActionComponent.cpp:356-371`). command 전환으로 LLM 이 액션을 안 보내면 **척수(반사 `bEnterCombat`·`ExitCombat`)가 단독 소유**한다. 대분류 모드(Social·Task 등)는 C++ 참조 0곳이라 함께 정리한다.
+6. **BehaviorMode 소유권**: 지금 Combat/Common 전환 일부는 LLM 배치 `Mode` 가 한다(`NPCActionComponent.cpp:356-371`). command 전환으로 LLM 이 액션을 안 보내면 **척수(반사 `bEnterCombat`·`ExitCombat`)가 단독 소유**한다. 대분류 모드(Social·Task 등)는 2026-09-24 제거 완료(`SPEC_behavior_mode_reduce.md`).
 
 ### B.4 학습 데이터
 

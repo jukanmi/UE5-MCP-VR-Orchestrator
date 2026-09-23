@@ -23,12 +23,11 @@
 import logging
 import ast
 import re
-from collections import Counter
 
 from ..state import AgentState
 from ...utils.train_logger import log_rules_result
 from ...schemas.actions import (
-    ACTION_CATEGORY,
+    COMBAT_ACTIONS,
     ACTION_REQUIRED_PARAMS,
     ActionBatch,
     GameAction,
@@ -264,19 +263,14 @@ def _validate_batch(
 
 def _correct_mode_mismatch(batch: "ActionBatch") -> None:
     """
-    Mode↔액션 카테고리 불일치 보정 (액션 제거 아님 — 덜 파괴적).
+    전투 액션이 있는데 Mode 가 Combat 이 아니면 Combat 으로 보정 (액션 제거 아님).
 
-    규칙: 비-Common 액션들의 다수 카테고리가 Mode 와 다르고, Mode 가 어떤
-    액션 카테고리와도 일치하지 않으면 Mode 를 다수 카테고리로 교정.
-    Common 전용 배치는 Mode 유지 — Combat 모드 중 대사(Dialogue)는 정상이므로.
+    보정하지 않으면 C++ 가 Combat 에 들어가지 않아 전투 셀렉터가 돌지 않는다.
+    반대 방향(Combat 인데 전투 액션 없음)은 유지 — 전투 중 대사만 하는 배치는 정상.
     """
-    non_common = [cat for a in batch.Actions if (cat := ACTION_CATEGORY.get(a.ActionType, "Common")) != "Common"]
-    if not non_common:
-        return
-    majority, _count = Counter(non_common).most_common(1)[0]
-    if batch.Mode != majority and batch.Mode not in non_common:
-        logger.info(f"[Rules] FIX Mode 보정: {batch.Mode} → {majority} ({batch.AgentID}, 액션 카테고리 불일치)")
-        batch.Mode = majority
+    if batch.Mode != "Combat" and any(a.ActionType in COMBAT_ACTIONS for a in batch.Actions):
+        logger.info(f"[Rules] FIX Mode 보정: {batch.Mode} → Combat ({batch.AgentID}, 전투 액션 포함)")
+        batch.Mode = "Combat"
 
 
 def rules_node(state: AgentState) -> dict:
