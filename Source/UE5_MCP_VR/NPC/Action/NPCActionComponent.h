@@ -433,8 +433,8 @@ public:
     float PickupReach = 150.f;
 
     /** OnMoveActionCompleted 도착 처리에서 실제 습득을 수행한다(bPendingPickup 소비).
-     *  지정 아이템이 있으면 그것만, 없으면 범위 내 첫 1개 묶음만 줍는다. */
-    void PerformPickupAtDestination();
+     *  지정 아이템이 있으면 그것만, 없으면 범위 내 첫 1개 묶음만 줍는다. 실제로 주웠으면 true. */
+    bool PerformPickupAtDestination();
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),

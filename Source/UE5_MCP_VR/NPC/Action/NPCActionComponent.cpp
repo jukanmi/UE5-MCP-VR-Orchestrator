@@ -750,6 +750,17 @@ bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
                             bPlayedMontage = true;
                         }
                     }
+                    // 워치독은 액션 시작부터 센다 — 걸어간 뒤 재생하는 긴 몽타주(AM_Pickup 9.6s 등)가
+                    // 종료 전에 강제 완료되지 않게 몽타주 길이+여유로 연장한다. 줄이지는 않는다(반복 몽타주 기존 동작 유지).
+                    if (bIsBusy)
+                    {
+                        FTimerManager& TM = GetWorld()->GetTimerManager();
+                        const float Needed = Length + 2.f;
+                        if (TM.GetTimerRemaining(ActionWatchdogTimer) < Needed)
+                        {
+                            TM.SetTimer(ActionWatchdogTimer, this, &UNPCActionComponent::HandleActionWatchdog, Needed, false);
+                        }
+                    }
                     UE_LOG(LogTemp, Log, TEXT("[NPCAction] DataAsset 몽타주 재생: %s"), *MediaData->Montage->GetName());
                 }
             }
@@ -1617,14 +1628,11 @@ void UNPCActionComponent::OnMoveActionCompleted(FAIRequestID RequestID, const FP
         bPendingPickup = false;
 
         // 도착에 성공했을 때만 탐색한다 — 실패·중단 시 엉뚱한 위치에서 줍지 않는다.
-        if (Result.IsSuccess())
-        {
-            PerformPickupAtDestination();
-        }
+        const bool bPicked = Result.IsSuccess() && PerformPickupAtDestination();
         PendingPickupItem.Reset(); // 이동 실패로 탐색을 건너뛴 경우에도 다음 픽업에 대상이 새지 않게
 
-        // 성공 시 종료 콜백이 OnActionCompleted 호출, 미등록이면 여기서 즉시 완료.
-        if (!PlayActionMediaWithPosture(TEXT("PickUp")))
+        // 주운 게 없으면 허리 숙이는 몽타주 없이 바로 완료. 재생 성공 시엔 종료 콜백이 완료, 미등록이면 여기서 완료.
+        if (!bPicked || !PlayActionMediaWithPosture(TEXT("PickUp")))
         {
             OnActionCompleted();
         }
@@ -2103,13 +2111,13 @@ void UNPCActionComponent::ExecutePickUp(ADroppedItemBase* TargetItem, FVector Lo
     BaseMove(IsValid(TargetItem) ? TargetItem->GetActorLocation() : Location, EMoveType::Walk);
 }
 
-void UNPCActionComponent::PerformPickupAtDestination()
+bool UNPCActionComponent::PerformPickupAtDestination()
 {
     UItemManager* ItemManager = UItemManager::Get(this);
-    if (!ItemManager || !InventoryComponent) return;
+    if (!ItemManager || !InventoryComponent) return false;
 
     ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
+    if (!OwnerCharacter) return false;
 
     // 지정 아이템 경로 — 그 아이템만. 걷는 동안 상태가 바뀌었으면 줍지 않고 끝낸다(추격하지 않음).
     // 대상을 지정했는데 실패했다고 근처 다른 아이템을 줍지 않는다 — 지정한 것과 다른 물건이 들어오면 안 된다.
@@ -2121,31 +2129,31 @@ void UNPCActionComponent::PerformPickupAtDestination()
         if (!IsValid(Target))
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상이 사라짐 — 습득 생략"), *GetOwnerAgentID());
-            return;
+            return false;
         }
         // 쥔 물건은 손 메시에 붙어 있다(InventoryComponent::AttachItemToHand).
         if (Target->GetAttachParentActor())
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상 %s 를 누가 쥐고 있음 — 습득 생략"),
                 *GetOwnerAgentID(), *Target->ItemData.ItemInstanceID);
-            return;
+            return false;
         }
         if (FVector::Dist2D(Target->GetActorLocation(), OwnerCharacter->GetActorLocation()) > PickupReach)
         {
             UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 픽업 대상 %s 가 도달 거리(%.0fcm) 밖으로 옮겨짐 — 습득 생략"),
                 *GetOwnerAgentID(), *Target->ItemData.ItemInstanceID, PickupReach);
-            return;
+            return false;
         }
-        Target->TryPickupInto(InventoryComponent);
-        return;
+        return Target->TryPickupInto(InventoryComponent);
     }
 
     // 좌표 경로 — 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
     // 액션 1회당 1개 묶음만 — 범위 내 전부 쓸어 담지 않는다.
     for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
     {
-        if (Dropped->TryPickupInto(InventoryComponent)) break;
+        if (Dropped->TryPickupInto(InventoryComponent)) return true;
     }
+    return false;
 }
 
 void UNPCActionComponent::ExecuteDrop(const FString& TargetTemplateID, int32 Amount)
