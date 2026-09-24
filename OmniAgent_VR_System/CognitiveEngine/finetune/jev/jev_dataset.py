@@ -649,7 +649,7 @@ def sheet(n: int, seed: int, candidates: int) -> None:
     LLM 가중치는 gold_scenarios.jsonl 에만 남기고 시트엔 안 보인다(사람 판단을 끌지 않게).
     """
     rng = random.Random(seed)
-    scenarios, cards = [], []
+    scenarios = []
     for k in range(candidates):
         if len(scenarios) >= n:
             break
