@@ -12,7 +12,7 @@
 > | §6 UE5.5 C++ 핵심 클래스 구현 명세 | **구현완료** (2026-09-22, sol_pi build 0 에러) | `SmartNPCAIController`, `STEvaluator_JevTactics`, `STCondition_NoulGuard`, `SelectCombatAction` |
 > | §7 Python 백엔드 로컬 서비스 구현 명세 | **구현완료** (2026-09-22, pytest 76 통과) | `JevlikeService` — jevlike 실제 API(`load_checkpoint`/`ChoiceExample`)로 로드, 체크포인트 부재 시 휴리스틱 폴백 |
 > | §8 장애 대응, 지연 및 안전 가드레일 | 설계완료 | 0.3s 워치독 타이머, 세대 카운터, TTL 2.0s 캐시, 1.0 중립 무중단 폴백 |
-> | §9 단계별 도입 로드맵 (Phase 1~4) | 진행중 | Phase 2·3 코드 구현 완료. 남은 것: jevlike 패키지 설치·체크포인트 학습, ST 에셋 노드 바인딩, Phase 4 PIE |
+> | §9 단계별 도입 로드맵 (Phase 1~4) | 진행중 | Phase 2 완료(soft 체크포인트 배포·휴리스틱 라벨 피팅·성격 돌파 2026-09-24), Phase 3 코드 완료. 남은 것: ST 에셋 노드 바인딩(필요성 재검토), Phase 4 PIE 잔여 |
 > | §10 프로젝트 규약 준수 매트릭스 | **완료** | 규칙 6-1, 6-2, 6-4, CLAUDE.md §1 준수 검증 완료 |
 >
 > **기반 연구**: *"신경 기호형 게임 인공지능과 TypeSafe AI 'Jev' 모델을 활용한 차세대 NPC 행동 트리 아키텍처 연구"* (`docs/Jev 기반 NPC 행동트리 조사.pdf`)  
@@ -109,7 +109,8 @@ scores = scorer.score(
 ### 4.1 산술 연산 결여 대비 C++ 정량 수치 사전 정규화
 - Jev/Jevlike 모델은 공간 좌표 간 거리 계산이나 HP 백분율 계산 등 수학적 산술 연산 능력이 없습니다.
 - **원칙**: 모든 공간/물리 지표는 C++ 컨트롤러에서 사전 계산되어 0.0~1.0의 비율 또는 정규화된 실수 형태로 주입되어야 합니다.
-  - **허용**: `{"hp_pct": 0.35, "distance_m": 4.2, "enemy_count": 2, "is_flanked": true}`
+  - **허용**: `{"hp_pct": 0.35, "distance_m": 4.2, "enemy_count": 2, "is_flanked": true, "aggression": 0.8, "bravery": 0.7}`
+  - 성격(`aggression`·`bravery`)은 C++ `FBehavioralTraits` 0~100 을 /100 한 0~1 값(2026-09-24 추가, §7.2). 누락 시 서버는 0.5(중립)로 본다.
   - **금지**: `{"npc_loc": [100, 200, 50], "target_loc": [500, 200, 50], "hp": 45, "max_hp": 300}`
 
 ### 4.2 맥락 부패(Context Rot) 방지를 위한 토큰 다이어트
@@ -198,7 +199,9 @@ NPC 전술 모델 파인튜닝 시 `jevlike` 표준 학습 포맷을 사용합�
       "hp_pct": 0.35,
       "distance_m": 4.2,
       "enemy_count": 2,
-      "is_flanked": true
+      "is_flanked": true,
+      "aggression": 0.8,
+      "bravery": 0.7
     }
   }
 }
@@ -522,6 +525,22 @@ class JevlikeService:
 JEV_SERVICE = JevlikeService()
 ```
 
+### 7.2 전투 휴리스틱 라벨 피팅 및 성격 돌파 항 (2026-09-24)
+
+- **휴리스틱 계수 = LLM 라벨 피팅값**: `heuristic_probs` 의 클래스별 선형 로짓(상수·hp·hp²·추가 적 수·포위)을
+  전투 라벨 2000개(`finetune/jev/data/combos_combat.jsonl`)에 피팅한다(`finetune/jev/fit_combat_heuristic.py`).
+  L2 0.003 — 0 이면 계수가 ~15 까지 커져 라벨의 "포위·적 4명·HP<25% 에서 aggressive 0%" 를 그대로 재현하고,
+  0.05 면 과평탄해 log-loss 가 나빠진다. 홀드아웃 정확도 70.8%→84.5%, log-loss 0.688→0.429.
+- **거리 항은 설계값 고정** `−0.1·max(0, dist−3)`: 라벨러(gemma4)가 거리를 무시해 거리 구간별 라벨 분포가 같았다 — 라벨로는 추정 불가.
+  같은 라벨로 학습한 soft 체크포인트는 이 거리 무시를 물려받는다(라벨 재생성 여부는 Memo Todo).
+- **성격 돌파 항 `apply_personality`**: 라벨에 성격이 없어 피팅 대상이 아닌 조정 노브.
+  `shift = BREAKTHROUGH_GAIN(3.0) × hp × (2·trait − 1) × pressure`, `trait = (aggression + bravery)/2`,
+  `pressure = min(1, flanked + 0.5·추가 적 수)` 를 aggressive 로짓에 더한다. 모델·휴리스틱 두 경로 공통(`evaluate_tactics` 말단).
+  성격 50 또는 1:1 교전(pressure 0)은 효과 0 — C++ `SelectCombatAction` 의 `AggrMult` 가 이미 1:1 성격을 반영한다.
+  근거: 포위 시 Jev 승수가 Clamp 하한 0.25 에 붙으면 `AggrMult`(최대 1.5)를 곱해도 0.375 배라 용감한 NPC 도 돌파 공격이 사실상 불가했다.
+- 실측(HP 100%·거리 3m, 성격 0/50/75/100 의 P(aggressive)): 적 2명 포위 4/43/77/94% · 적 4명 포위 0/1/4/14% · HP 30% 는 성격 무관 ~0%.
+  PIE(Guard, 적 2명 비포위, HP 100%): 성격 100 conf 1.00 / 성격 0 0.91, 적 1명은 둘 다 0.97.
+
 ---
 
 ## 8. 장애 대응, 지연 및 안전 가드레일 (Safety Guardrails & Failover)
@@ -544,7 +563,8 @@ JEV_SERVICE = JevlikeService()
 - [x] 세션 인수인계 메모 갱신 (`docs/Memo.md`).
 
 ### Phase 2: Python 백엔드 `jevlike` 모듈 탑재 및 서비스 구현
-- [ ] `jevlike` 로컬 패키지 설치(PyPI 미배포 — `pip install git+https://github.com/vinnylarouge/jevlike`) 및 `app/models/jevlike_tactics.pt` 학습. 미설치 시 휴리스틱 폴백으로 동작.
+- [x] `jevlike` 로컬 패키지 설치(PyPI 미배포 — `pip install git+https://github.com/vinnylarouge/jevlike`) 및 `app/models/jevlike_tactics.pt` 학습 — soft 체크포인트 배포(2026-09-24, `SPEC_jev_daily.md` M2). 미설치 시 휴리스틱 폴백으로 동작. 경로는 절대경로(`0885b200` — repo 루트 기동 시 상대경로 미탐지 버그 수정).
+- [x] 전투 휴리스틱 라벨 피팅 + 성격 돌파 항(§7.2, `92027d4e`).
 - [x] `app/services/jev_service.py` 생성 및 전술 옵션 스코어러 구현(모델/휴리스틱 이중 경로).
 - [x] `app/schemas/envelope.py`에 `EEnvelopeType.JEV_QUERY`, `EEnvelopeType.JEV_DECISION` + `JevQueryPayload` 추가.
 - [x] `app/main.py::_process_llm_message` 에 `jev_query` 분기 + `_handle_jev_query` 배선(이 프로젝트의 WS 수신 지점은 `ws_router.py` 가 아니라 `main.py`).
@@ -558,7 +578,8 @@ JEV_SERVICE = JevlikeService()
 - [x] `sol_pi.py build` 컴파일 0 에러 + `pytest tests` 76 통과 (2026-09-22).
 
 ### Phase 4: 라이브 VR 에디터 PIE 실측 검증
-- [ ] 에디터 라이브 PIE 구동 후 도적/몬스터 조우 테스트.
+- [x] 에디터 라이브 PIE 구동 후 적 조우 테스트 — 2026-09-24 헤드셋 없이 Guard vs Vorg·DemonLord, 모델 경로 판정·성격 보정 확인(§7.2).
+- [ ] 포위(`flanked=1`) 재현 — 돌진하는 NPC 는 두 적이 동시에 시야 90°+ 로 안 잡힌다. 동시 감지 시 쿨다운으로 `count` 과소 집계되는 C++ 한계도 있음(Memo Todo).
 - [ ] 체력 저하 시 Flee 가중치 승수 주입으로 적절한 거리 벌리기 실측.
 - [ ] 네트워크 강제 단절 시 C++ 기본 1.0 가중치 폴백 동작 실측.
 
