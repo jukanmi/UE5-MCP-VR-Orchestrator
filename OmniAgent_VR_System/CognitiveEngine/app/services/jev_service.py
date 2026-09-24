@@ -56,7 +56,10 @@ def _softmax(logits: List[float]) -> List[float]:
 def heuristic_probs(metrics: Dict[str, Any]) -> List[float]:
     """규칙 기반 폴백 — 체크포인트 없이도 단조적(HP↓·적↑·포위 → flee↑)인 확률 분포.
 
-    ponytail: 손튜닝 로짓. 학습 체크포인트가 생기면 이 함수는 폴백으로만 남는다.
+    계수는 LLM 라벨 2000개(finetune/jev/data/combos_combat.jsonl)에 피팅한 값이다
+    (finetune/jev/fit_combat_heuristic.py, L2=0.003 — 홀드아웃 정확도 70.8%→84.5%, log-loss 0.688→0.429).
+    거리 항만 설계값 고정: 라벨러가 거리를 무시해 라벨로는 추정할 수 없었다.
+    ponytail: 선형 로짓 5계수 — 라벨을 재생성하면 스크립트를 다시 돌려 계수만 교체.
     """
     try:
         hp = min(1.0, max(0.0, float(metrics.get("hp_pct", 1.0))))
@@ -66,11 +69,39 @@ def heuristic_probs(metrics: Dict[str, Any]) -> List[float]:
     except (TypeError, ValueError):
         return [1 / 3, 1 / 3, 1 / 3]
 
-    loss = 1.0 - hp
-    aggressive = 2.0 * hp - 0.6 * extra - 0.8 * flanked - 0.1 * max(0.0, dist - 3.0)
-    defensive = 0.4 + 0.5 * extra + 0.6 * flanked + 1.0 * loss
-    flee = 4.0 * loss * loss + 0.4 * extra + 0.6 * flanked - 0.8
+    hp2 = hp * hp
+    aggressive = -1.04 + 3.15 * hp + 3.09 * hp2 - 1.72 * extra - 1.90 * flanked - 0.1 * max(0.0, dist - 3.0)
+    defensive = -0.29 + 1.00 * hp + 0.21 * hp2 + 0.53 * extra + 0.39 * flanked
+    flee = 1.32 - 4.15 * hp - 3.30 * hp2 + 1.18 * extra + 1.51 * flanked
     return _softmax([aggressive, defensive, flee])
+
+
+# 돌파 공격 세기. 라벨에 성격이 없어 피팅 대상이 아닌 조정 노브 — PIE 로 튜닝.
+# 3.0 실측(HP 100%, 거리 3m, P(aggressive), 성격 0/50/75/100): 적 2명 포위 4%/43%/77%/94% · 적 4명 포위 0%/1%/4%/14%.
+# HP 에 비례하므로 빈사(HP 30%)에선 성격과 무관하게 거의 0 — 돌파는 건강할 때만.
+BREAKTHROUGH_GAIN = 3.0
+
+
+def apply_personality(probs: List[float], metrics: Dict[str, Any]) -> List[float]:
+    """포위·수적 열세에서 공격성·배짱이 높은 NPC 는 돌파 공격 확률을 올리고, 낮은 NPC 는 내린다.
+
+    aggression·bravery 는 C++ FBehavioralTraits 값/100(0~1). 누락 시 0.5 = 중립이라 효과 0 —
+    성격을 안 보내는 구 C++ 와 1:1 교전(압박 0)에서는 기존 분포 그대로. 모델·휴리스틱 두 경로 공통.
+    """
+    try:
+        trait = (float(metrics.get("aggression", 0.5)) + float(metrics.get("bravery", 0.5))) / 2.0
+        hp = min(1.0, max(0.0, float(metrics.get("hp_pct", 1.0))))
+        extra = max(0, int(metrics.get("enemy_count", 1)) - 1)
+        flanked = 1.0 if metrics.get("is_flanked", False) else 0.0
+    except (TypeError, ValueError):
+        return probs
+    pressure = min(1.0, flanked + 0.5 * extra)
+    shift = BREAKTHROUGH_GAIN * hp * (2.0 * min(1.0, max(0.0, trait)) - 1.0) * pressure
+    if shift == 0.0:
+        return probs
+    logits = [math.log(max(p, 1e-9)) for p in probs]
+    logits[0] += shift
+    return _softmax(logits)
 
 
 class JevlikeService:
@@ -131,7 +162,7 @@ class JevlikeService:
         t0 = time.perf_counter()
         metrics = metrics if isinstance(metrics, dict) else {}
         context = build_context(metrics)
-        probs = self._model_probs(context) or heuristic_probs(metrics)
+        probs = apply_personality(self._model_probs(context) or heuristic_probs(metrics), metrics)
 
         best = max(range(len(probs)), key=probs.__getitem__)
         result = {

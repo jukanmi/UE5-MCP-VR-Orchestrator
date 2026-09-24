@@ -580,6 +580,10 @@ void ASmartNPCAIController::RequestJevDecision()
     Metrics->SetNumberField(TEXT("distance_m"),  DistanceM);
     Metrics->SetNumberField(TEXT("enemy_count"), FMath::Max(1, HostileDirs.Num()));
     Metrics->SetBoolField  (TEXT("is_flanked"),  bFlanked);
+    // 성격(0~1) — 포위·수적 열세에서 공격성·배짱이 높으면 Jev 가 돌파 공격 확률을 올린다(Python apply_personality).
+    const FBehavioralTraits& Traits = StateComp->GetAttributes().Behavior;
+    Metrics->SetNumberField(TEXT("aggression"),  FMath::Clamp(Traits.Aggression / 100.f, 0.f, 1.f));
+    Metrics->SetNumberField(TEXT("bravery"),     FMath::Clamp(Traits.Bravery / 100.f, 0.f, 1.f));
 
     TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
     Payload->SetStringField(TEXT("npc_id"),     NPC->AgentID);
