@@ -162,7 +162,10 @@ class JevlikeService:
         t0 = time.perf_counter()
         metrics = metrics if isinstance(metrics, dict) else {}
         context = build_context(metrics)
-        probs = apply_personality(self._model_probs(context) or heuristic_probs(metrics), metrics)
+        # 전투는 체크포인트가 있어도 피팅 휴리스틱만 쓴다(모델은 daily 전용). 모델이 전투 라벨의 "포위 시 aggressive 0%" 를
+        # 극단 확률로 학습해 성격 돌파가 성격 0~100 전부 0% 로 죽었다(2026-09-24 실측). 전투 라벨을 soft 등급으로
+        # 재생성·재학습하면 `self._model_probs(context) or heuristic_probs(metrics)` 로 되돌린다.
+        probs = apply_personality(heuristic_probs(metrics), metrics)
 
         best = max(range(len(probs)), key=probs.__getitem__)
         result = {

@@ -25,6 +25,16 @@ def test_breakthrough_is_monotonic_in_trait_when_surrounded():
     assert probs[0] < probs[1] < probs[2]
 
 
+def test_combat_ignores_model_even_when_loaded():
+    """전투 모델이 극단 확률(포위 시 aggressive 0)을 내도 전투는 휴리스틱 경로라 성격 돌파가 산다."""
+    from app.services.jev_service import JevlikeService
+
+    svc = JevlikeService("없는_체크포인트.pt")
+    svc._model_probs = lambda *_a, **_k: [0.0, 1.0, 0.0]  # type: ignore[method-assign]
+    brave = svc.evaluate_tactics({**SURROUNDED, "aggression": 1.0, "bravery": 1.0})
+    assert brave["score_aggression"] / 2 > 0.5
+
+
 def test_dying_npc_gets_no_breakthrough():
     dying = {**SURROUNDED, "hp_pct": 0.1, "aggression": 1.0, "bravery": 1.0}
     assert _p_aggr(dying) < 0.05
