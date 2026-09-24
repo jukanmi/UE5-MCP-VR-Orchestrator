@@ -624,31 +624,35 @@ def train_rows(r: Dict[str, Any], mode: str) -> List[Dict[str, Any]]:
 BALANCE_MAX = 4.0  # 드문 활동 복제 상한 — √(최다/해당) 배. 과보정하면 흔한 상황에서도 드문 활동을 고른다.
 
 
-def balance_activities(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """학습 줄 중 활동 패스만 드문 활동을 복제해 균형을 맞춘다(슬롯·전투 패스는 그대로).
+def balance_activities(passes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """활동 패스를 상황(패스) 단위로 복제 — 1위(best) 활동이 드문 상황을 √(최다/해당)배(≤BALANCE_MAX) 더 보게 한다.
 
     학습 라벨 1위가 look_at 26%·give_item 1.5% 로 치우쳐 모델 argmax 가 look_at 64% 로 증폭됐다(2026-09-25 골드셋 실측).
+    soft 로 펴기 **전에** 복제해야 한다 — 펴진 줄 단위로 복제하면 한 상황 안의 LLM 분포가 왜곡돼 전체 정답률이
+    77%→39% 로 무너졌다(v2a 실측). 동률 1위면 그중 가장 드문 활동의 배수. 슬롯·전투 패스는 그대로.
     """
 
-    def act(r: Dict[str, Any]) -> str:
-        return r["options"][r["label"]].split("|", 1)[0]
+    def acts(r: Dict[str, Any]) -> List[str]:
+        return [r["options"][i].split("|", 1)[0] for i in r["best"]]
 
     counts: Dict[str, int] = {}
-    for r in rows:
+    for r in passes:
         if r["slot"] == "activity":
-            counts[act(r)] = counts.get(act(r), 0) + 1
+            for a in acts(r):
+                counts[a] = counts.get(a, 0) + 1
     if not counts:
-        return rows
+        return passes
     top = max(counts.values())
     out: List[Dict[str, Any]] = []
-    for r in rows:
-        k = 1 if r["slot"] != "activity" else max(1, round(min(BALANCE_MAX, (top / counts[act(r)]) ** 0.5)))
-        out.extend([r] * k)
     after: Dict[str, int] = {}
-    for r in out:
+    for r in passes:
+        k = 1
         if r["slot"] == "activity":
-            after[act(r)] = after.get(act(r), 0) + 1
-    print("활동 균형:", ", ".join(f"{a} {counts[a]}→{after[a]}" for a in sorted(counts, key=counts.get, reverse=True)))
+            k = max(1, round(max(min(BALANCE_MAX, (top / counts[a]) ** 0.5) for a in acts(r))))
+            for a in acts(r):
+                after[a] = after.get(a, 0) + k
+        out.extend([r] * k)
+    print("상황 균형(1위 활동 패스 수):", ", ".join(f"{a} {counts[a]}→{after[a]}" for a in sorted(counts, key=counts.get, reverse=True)))
     return out
 
 
@@ -675,8 +679,8 @@ def build() -> None:
     write(DATA / "test.jsonl", splits["test"])
     for mode in ("soft", "clear"):
         for name in ("train", "validation"):
-            rows = [x for r in splits[name] for x in train_rows(r, mode)]
-            write(DATA / mode / f"{name}.jsonl", balance_activities(rows) if name == "train" else rows)
+            passes = balance_activities(splits[name]) if name == "train" else splits[name]
+            write(DATA / mode / f"{name}.jsonl", [x for r in passes for x in train_rows(r, mode)])
 
 
 def evaluate(checkpoint: str) -> None:
