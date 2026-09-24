@@ -38,7 +38,8 @@
 | **빌드 & 검증 (SoL-Pi)** | [`.agents/rules/sol_pi.md`](.agents/rules/sol_pi.md) | `tools/sol_pi.py verify` (액션 퓨전: 빌드+테스트) |
 | **3D 에셋 & VR 최적화**| [`.agents/rules/mesh_doctor.md`](.agents/rules/mesh_doctor.md) | `tools/mesh_doctor.py` 지오메트리 치료 및 콜리전 감사 |
 | **Git 커밋·브랜치·PR** | [`.agents/rules/git.md`](.agents/rules/git.md) | 브랜치 전략, 메시지 형식, `.uasset` 커밋 단위 |
-| **세션 진행 및 백로그** | [`docs/Memo.md`](docs/Memo.md) | 세션 간 인수인계 단일 진실 원천(SSOT). `## Todo` / `## Done` / `## Handoff Notes` |
+| **세션 진행 및 백로그** | [`docs/Memo.md`](docs/Memo.md) | 진행 상황 SSOT. `## Todo` / `## Done` 만 (자주 읽으므로 짧게 유지) |
+| **함정·제약 노트** | [`.agents/rules/pitfalls.md`](.agents/rules/pitfalls.md) | 코드 밖 운영·도구·환경 지뢰, 비직관적 도메인 규칙 |
 | **사용자 작업 목록** | [`docs/DoList.md`](docs/DoList.md) | 에이전트가 MCP 로 못 하는 것만 (§5) |
 
 ---

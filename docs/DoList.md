@@ -89,7 +89,7 @@
   스폰 주기 30/60/40s·망령 3/5킬(구현) vs 15s·2/4킬(스펙) · 도적 위치 숲길 외곽(구현) vs FOREST 중심(스펙) ·
   HP 240/600/300(구현) vs 50/180/80(스펙 — 공식 하한 165 라 불가, 플레이어 스윙 상한 100 이면 원샷). 클로드 추천: 이름·주기는 스펙, 위치·HP 는 구현.
 - [ ] **디렉터 타임아웃 5s → 8~10s?** — 첫 전이마다 폴백(`ReadTimeout`). 대사엔 영향 없고 quest_log 각색만 빠짐. 올리면 그 턴 NPC 응답이 그만큼 늦어짐.
-- [ ] **VRAM 16GB OOM 대책 결정** — 12B+e4b+PIE 동시 부하 시 Ollama 500/ReadTimeout. TTS GPU 폐기(2026-09-12) 후 재현되는지 먼저 확인, 재현 시 `num_ctx` 축소. KV 양자화는 크래시 불가(Handoff)
+- [ ] **VRAM 16GB OOM 대책 결정** — 12B+e4b+PIE 동시 부하 시 Ollama 500/ReadTimeout. TTS GPU 폐기(2026-09-12) 후 재현되는지 먼저 확인, 재현 시 `num_ctx` 축소. KV 양자화는 크래시 불가(pitfalls.md A)
 
 ---
 
@@ -100,7 +100,7 @@
   재임포트 → 빈 take(`_Take_001`, 회전 변화 0도) 걸러내고 `AS_Hit_Front/Back/Left/Right` 확정, 잔재 21개 삭제,
   `AM_Stumble_*` 4개 생성(`DefaultSlot`). C++ §5.3 도 같이 구현해 슬롯 자동 바인딩(생성자) — 에디터 배정 불필요.
   **헤드셋 PIE 확인 완료**: 4방향 몽타주 재생·루트 모션 밀림·복귀 정상. Mixamo In Place 배포본이 없어
-  `bEnableRootMotion=true` 로 가야 한다는 게 이번 함정(Memo Handoff).
+  `bEnableRootMotion=true` 로 가야 한다는 게 이번 함정(`.agents/rules/pitfalls.md`).
 
 - [X] ~~1-14. 헤드셋 PIE — 패링 체감~~ (2026-09-23 확인) — SmartNPC 상대 스윙에서 패링 발동·데미지 무효·
   `S_Hit_Metal_0` 재생 확인. 확률은 별도로 `CheckReflex(50, 2)` 4000회 = 24.7%(기대 25%) 실측.
@@ -112,7 +112,7 @@
   종류 분기(소비=사용 / 장비=장착 / 그 외=손에 쥐기)는 `ActivateItem` 안 — 그래프에서 갈라놓지 말 것.
   그립 뗄 때 분기(열림=회수 / 닫힘=던지기)는 W37 확인 완료. PIE 검증은 아래 별도 Done 항목.
 
-- [x] ~~3. main 에서 ignore 파일 6개 추적 해제 결정~~ (2026-09-21 당일 해결, Memo Handoff U-1) — 커밋 불필요했음:
+- [x] ~~3. main 에서 ignore 파일 6개 추적 해제 결정~~ (2026-09-21 당일 해결, pitfalls.md U-1) — 커밋 불필요했음:
   원격 `origin/main` 은 이미 6개 미추적이라 stale 로컬 `main` 을 `git fetch origin main:main` 으로 FF 한 것으로
   끝(사용자 지적). 추가로 `docs/` gitignore 해제·추적 시작 커밋으로 Memo/DoList 는 이제 git 이력에 남음.
 

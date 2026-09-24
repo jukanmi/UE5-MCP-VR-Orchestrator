@@ -2,7 +2,7 @@
 
 <!--
 파일명: 2026-W##_핵심주제.md  (ISO 주차, 월요일 시작)
-작성법: git log + docs/Memo.md(Done·Handoff Notes) 기반. 한 주 커밋 없으면 파일 생성 안 함.
+작성법: git log + docs/Memo.md(Done)·.agents/rules/pitfalls.md 기반. 한 주 커밋 없으면 파일 생성 안 함.
 작성 후 INDEX.md 표에 행 추가.
 -->
 
@@ -18,7 +18,7 @@
 ### <분류 2>
 - **<작업 제목>** (`<해시>`)
 
-## 메모 (Memo.md Handoff Notes, 날짜)
+## 메모 (pitfalls.md 신규 항목, 날짜)
 - **<제목>**: <코드만 봐선 모를 배경·결정 이유·다음 주의점>
 
 ## 커밋
