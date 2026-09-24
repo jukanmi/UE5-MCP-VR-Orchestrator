@@ -58,7 +58,7 @@ def test_garbage_metrics_do_not_raise(service: JevlikeService) -> None:
 
 def test_context_is_token_diet() -> None:
     ctx = build_context({"hp_pct": 0.35, "distance_m": 4.2, "enemy_count": 2, "is_flanked": True})
-    assert ctx == "hp:0.35 dist:4.2 count:2 flanked:true"
+    assert ctx == "[combat] hp:0.35 dist:4.2 count:2 flanked:true"
     assert len(ctx.split()) <= 5
 
 
@@ -266,3 +266,21 @@ def test_daily_stand_up_waits_for_posture_time() -> None:
     long = _DailyCtx({"posture": "lie", "posture_s": 300}, PERSONA)
     assert activity_logit("stand_up", fresh) < activity_logit("stay", fresh)
     assert activity_logit("stand_up", long) > activity_logit("stay", long)
+
+
+def test_daily_body_and_event_signals() -> None:
+    """hp·stamina·피격·대화 신호(C++ 가산 필드) — 휴리스틱 반영 + 구 C++(필드 없음) 호환 + context 구간화."""
+    from app.services.jev_service import _DailyCtx, activity_logit, slot_logit
+
+    old = _DailyCtx({"posture": "stand"}, PERSONA)
+    hurt = _DailyCtx({"posture": "stand", "hp_pct": 0.1, "stamina_pct": 0.1, "hit_s": 20}, PERSONA)
+    assert (old.hp, old.hit, old.talk) == ("high", "", "")
+    assert activity_logit("use_item", hurt) > activity_logit("use_item", old)
+    assert activity_logit("rest", hurt) > activity_logit("rest", old)
+
+    talked = _DailyCtx({"posture": "stand", "talk_s": 30, "talk_with": "Elara"}, PERSONA)
+    assert slot_logit("look_at", "target", "Elara", "npc|neutral|8m", talked) > slot_logit(
+        "look_at", "target", "James", "npc|neutral|8m", talked
+    )
+    text = talked.text("target")
+    assert "talk:recent/Elara" in text and "hp:high" in text

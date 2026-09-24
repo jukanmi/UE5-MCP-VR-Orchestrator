@@ -2574,6 +2574,19 @@ void UNPCActionComponent::BuildJevDailyQuery(const FNPCNearbyContext& Ctx, float
     M->SetStringField(TEXT("last_activity"), LastJevActivity);
     M->SetStringField(TEXT("goal"), StateComponent ? StateComponent->GetCurrentPlan().Goal.Left(40) : FString());
 
+    // 몸 상태·최근 사건 — 원값만 보낸다(구간화는 Python context 가 한다). 없는 사건은 -1.
+    if (StateComponent)
+    {
+        const FNPCAttributes Attrs = StateComponent->GetAttributes();
+        M->SetNumberField(TEXT("hp_pct"), FMath::Clamp(Attrs.Resources.GetHealthPercent(), 0.f, 1.f));
+        M->SetNumberField(TEXT("stamina_pct"), FMath::Clamp(Attrs.Resources.GetStaminaPercent(), 0.f, 1.f));
+        const float HitAgo = GetWorld() ? GetWorld()->GetTimeSeconds() - StateComponent->LastHitTime : -1.f;
+        M->SetNumberField(TEXT("hit_s"), StateComponent->LastHitTime > 0.f ? FMath::Min(HitAgo, 600.f) : -1.f);
+    }
+    const bool bTalked = LastLLMBatchTime > 0.0;
+    M->SetNumberField(TEXT("talk_s"), bTalked ? FMath::Min(FPlatformTime::Seconds() - LastLLMBatchTime, 600.0) : -1.0);
+    M->SetStringField(TEXT("talk_with"), bTalked && DialoguePartner.IsValid() ? ASmartNPC::PerceptionIdFor(DialoguePartner.Get()) : FString());
+
     // ── pools — 후보는 공통 풀로 한 번만. desc 는 의미 특징만(Jev 는 산술을 못 한다) ──
     TArray<TSharedPtr<FJsonValue>> Actors, Places, Pois, Items, Ground, Media;
     int32 NpcActors = 0;

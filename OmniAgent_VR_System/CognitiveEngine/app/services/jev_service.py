@@ -39,7 +39,8 @@ def build_context(metrics: Dict[str, Any]) -> str:
         flanked = bool(metrics.get("is_flanked", False))
     except (TypeError, ValueError):
         hp, dist, count, flanked = 1.0, 5.0, 1, False
-    return f"hp:{hp:.2f} dist:{dist:.1f} count:{count} flanked:{str(flanked).lower()}"
+    # [combat] 접두사: daily 와 같은 체크포인트를 공유하므로 도메인을 context 로 구분한다.
+    return f"[combat] hp:{hp:.2f} dist:{dist:.1f} count:{count} flanked:{str(flanked).lower()}"
 
 
 def _softmax(logits: List[float]) -> List[float]:
@@ -164,41 +165,20 @@ class JevlikeService:
         self, metrics: Dict[str, Any], activities: List[str], pools: Dict[str, Any], persona: Dict[str, Any], rng: Any
     ) -> Dict[str, Any]:
         t0 = time.perf_counter()
-        ctx = _DailyCtx(metrics, persona)
-        # 목록 밖·command 전용 활동은 버리고 stay 는 항상 넣는다(탈출구).
-        acts = [a for a in dict.fromkeys(activities) if a in ACTIVITY_SLOTS and a not in DAILY_BLOCKED]
-        if "stay" not in acts:
-            acts.append("stay")
 
-        passes = 0
-        if len(acts) == 1:
-            activity, confidence = acts[0], 1.0
-        else:
-            probs = self._pass_probs(ctx.text("activity"), acts, [activity_logit(a, ctx) for a in acts])
+        def choose(slot: str, context: str, texts: List[str], logits: List[float]) -> Tuple[int, float]:
+            # 모델이 있으면 모델, 없으면 휴리스틱 로짓 softmax. 온도는 _sample 이 적용.
+            probs = self._model_probs(context, texts) or _softmax(logits)
             idx = _sample(probs, rng)
-            activity, confidence = acts[idx], float(probs[idx])
-            passes += 1
+            return idx, float(probs[idx])
 
-        slots: Dict[str, str] = {}
-        ctx.chosen["activity"] = activity
-        for slot in ACTIVITY_SLOTS[activity]:
-            cands = slot_candidates(activity, slot, pools)
-            if len(cands) <= 1:  # 후보 0개 = default, 1개 = 그대로 — 추론 생략
-                value = cands[0][0] if cands else DEFAULT
-            else:
-                ids = [c[0] for c in cands] + [DEFAULT]
-                logits = [slot_logit(activity, slot, cid, desc, ctx) for cid, desc in cands] + [DEFAULT_LOGIT]
-                value = ids[_sample(self._pass_probs(ctx.text(slot), ids, logits), rng)]
-                passes += 1
-            slots[slot] = value
-            ctx.chosen[slot] = value
-
-        logger.debug(f"[Jev] daily {activity} {slots} passes={passes} {(time.perf_counter() - t0) * 1000:.2f}ms")
-        return {"activity": activity, "slots": slots, "confidence": confidence, "passes": passes}
-
-    def _pass_probs(self, context: str, options: List[str], logits: List[float]) -> List[float]:
-        """모델이 있으면 모델, 없으면 휴리스틱 로짓 softmax. 온도는 샘플링(_sample)이 적용."""
-        return self._model_probs(context, options) or _softmax(logits)
+        out = run_daily_passes(metrics, activities, pools, persona, choose)
+        out.pop("trace")
+        logger.debug(
+            f"[Jev] daily {out['activity']} {out['slots']} passes={out['passes']} "
+            f"{(time.perf_counter() - t0) * 1000:.2f}ms"
+        )
+        return out
 
 
 _SERVICE: Optional[JevlikeService] = None
@@ -327,20 +307,45 @@ class _DailyCtx:
         self.player_dist = _num(metrics.get("player_dist_m"), -1.0)
         self.posture = str(metrics.get("posture") or "stand")
         self.posture_s = _num(metrics.get("posture_s"), 0.0)
+        # 몸 상태·최근 사건. 구 C++(필드 없음)면 hp·stamina 는 high, 사건은 없음으로 본다.
+        self.hp = _band(_num(metrics.get("hp_pct"), 1.0))
+        self.stamina = _band(_num(metrics.get("stamina_pct"), 1.0))
+        self.hit = _ago(_num(metrics.get("hit_s"), -1.0))
+        self.talk = _ago(_num(metrics.get("talk_s"), -1.0))
+        self.talk_with = str(metrics.get("talk_with") or "") if self.talk else ""
+        self.goal = str(metrics.get("goal") or "")[:40]
 
     @property
     def player_near(self) -> bool:
         return 0.0 <= self.player_dist <= 5.0
 
     def text(self, slot: str) -> str:
-        """모델 입력 context — 학습 JSONL(M2)과 같은 포맷. 산술 금지라 수치는 반올림만."""
+        """모델 입력 context — 학습 JSONL(M2)과 같은 포맷. 산술 금지라 수치는 구간 문자열로.
+
+        바이트 인코더가 뒤를 자르므로(--context-tokens) 패스마다 달라지는 pick·chosen 을 앞에, 긴 goal 을 끝에 둔다.
+        """
         m = self.metrics
-        chosen = ", ".join(f"{k}={v}" for k, v in self.chosen.items())
-        return (
-            f"[daily] pick:{slot} posture:{self.posture} player:{self.player_dist:.0f}m/{m.get('player_relation', '')} "
-            f"npc_near:{m.get('npc_near', 0)} last:{m.get('last_activity', '')} role:{self.role} "
-            f"traits:{','.join(sorted(self.traits))}" + (f" chosen: {chosen}" if chosen else "")
+        chosen = ",".join(f"{k}={v}" for k, v in self.chosen.items())
+        # 자세 경과는 stand_up 판단 근거 — 10초 단위로 뭉개 노이즈를 줄인다.
+        posture = self.posture if self.posture == "stand" else f"{self.posture}/{round(self.posture_s, -1):.0f}s"
+        events = (f" hit:{self.hit}" if self.hit else "") + (
+            f" talk:{self.talk}/{self.talk_with}" if self.talk else ""
         )
+        return (
+            f"[daily] pick:{slot}" + (f" chosen:{chosen}" if chosen else "") + f" | posture:{posture} "
+            f"hp:{self.hp} sta:{self.stamina}{events} player:{self.player_dist:.0f}m/{m.get('player_relation', '')} "
+            f"npc_near:{m.get('npc_near', 0)} last:{m.get('last_activity', '')} role:{self.role} "
+            f"traits:{','.join(sorted(self.traits))}" + (f" goal:{self.goal}" if self.goal else "")
+        )
+
+
+def _band(pct: float) -> str:
+    return "low" if pct < 0.3 else "mid" if pct < 0.7 else "high"
+
+
+def _ago(seconds: float) -> str:
+    """사건 경과 → recent(1분 안)/earlier(5분 안)/""(없음·오래됨)."""
+    return "" if seconds < 0 or seconds >= 300 else "recent" if seconds < 60 else "earlier"
 
 
 def activity_logit(activity: str, ctx: _DailyCtx) -> float:
@@ -370,6 +375,14 @@ def activity_logit(activity: str, ctx: _DailyCtx) -> float:
         v += 1.0 if any(r in ctx.role.lower() for r in _GUARD_ROLES) else -1.0
     if activity == ctx.metrics.get("last_activity"):
         v -= 1.5  # 반복 억제
+    if ctx.hp == "low":
+        v += {"use_item": 1.5, "rest": 0.8, "wander": -0.3}.get(activity, 0.0)
+    if ctx.stamina == "low":
+        v += {"rest": 1.0, "stay": 0.4, "wander": -0.5, "patrol": -0.5}.get(activity, 0.0)
+    if ctx.hit == "recent":  # 맞은 직후엔 경계
+        v += {"look_at": 1.0, "rest": -0.5, "emote": -0.5}.get(activity, 0.0)
+    if ctx.talk == "recent" and activity == "look_at":
+        v += 0.4
     return v
 
 
@@ -406,6 +419,8 @@ def slot_logit(activity: str, slot: str, cid: str, desc: str, ctx: _DailyCtx) ->
         return {"around": 0.2, "none": 0.3, "random": 0.0}[cid]
     d = desc.lower()
     v = -0.1 * _dist_m(d)
+    if ctx.talk_with and cid == ctx.talk_with:
+        v += 1.0  # 방금 대화한 상대
     if "friendly" in d:
         v += 1.0
     if "hostile" in d:
@@ -413,6 +428,58 @@ def slot_logit(activity: str, slot: str, cid: str, desc: str, ctx: _DailyCtx) ->
     if "near_player" in d and ctx.traits & {"gentle", "attentive", "soft-spoken"}:
         v += 0.5
     return v
+
+
+def option_text(cid: str, desc: str) -> str:
+    """모델이 보는 옵션 문자열. 판단 근거(관계·거리·빈자리)가 desc 에 있어 id 만으론 학습이 안 된다."""
+    return f"{cid}|{desc}" if desc and desc != cid else cid
+
+
+def run_daily_passes(
+    metrics: Dict[str, Any],
+    activities: List[str],
+    pools: Dict[str, Any],
+    persona: Dict[str, Any],
+    choose: Any,
+) -> Dict[str, Any]:
+    """활동 1패스 + 슬롯 순차 패스. 추론(evaluate_daily)과 학습 데이터 생성이 이 루프 하나를 공유한다.
+
+    choose(slot, context, option_texts, heuristic_logits) → (index, prob). slot 은 활동 패스면 "activity".
+    trace = 실제 추론한 패스들의 [(context, option_texts, index)] — 학습 JSONL 한 줄씩.
+    """
+    ctx = _DailyCtx(metrics, persona)
+    # 목록 밖·command 전용 활동은 버리고 stay 는 항상 넣는다(탈출구).
+    acts = [a for a in dict.fromkeys(activities) if a in ACTIVITY_SLOTS and a not in DAILY_BLOCKED]
+    if "stay" not in acts:
+        acts.append("stay")
+
+    trace: List[Tuple[str, List[str], int]] = []
+    if len(acts) == 1:
+        activity, confidence = acts[0], 1.0
+    else:
+        context = ctx.text("activity")
+        idx, confidence = choose("activity", context, acts, [activity_logit(a, ctx) for a in acts])
+        activity = acts[idx]
+        trace.append((context, acts, idx))
+
+    slots: Dict[str, str] = {}
+    ctx.chosen["activity"] = activity
+    for slot in ACTIVITY_SLOTS[activity]:
+        cands = slot_candidates(activity, slot, pools)
+        if len(cands) <= 1:  # 후보 0개 = default, 1개 = 그대로 — 추론 생략
+            value = cands[0][0] if cands else DEFAULT
+        else:
+            ids = [c[0] for c in cands] + [DEFAULT]
+            texts = [option_text(cid, desc) for cid, desc in cands] + [DEFAULT]
+            logits = [slot_logit(activity, slot, cid, desc, ctx) for cid, desc in cands] + [DEFAULT_LOGIT]
+            context = ctx.text(slot)
+            idx, _ = choose(slot, context, texts, logits)
+            value = ids[idx]
+            trace.append((context, texts, idx))
+        slots[slot] = value
+        ctx.chosen[slot] = value
+
+    return {"activity": activity, "slots": slots, "confidence": confidence, "passes": len(trace), "trace": trace}
 
 
 def _sample(probs: List[float], rng: Any) -> int:
