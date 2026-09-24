@@ -1,0 +1,6 @@
+# 파생물 — build·학습으로 재생성. 원본(LLM 라벨 combos_*·gold_scenarios·gold_sheet)만 추적.
+soft/
+clear/
+test.jsonl
+*.pt
+*.log
