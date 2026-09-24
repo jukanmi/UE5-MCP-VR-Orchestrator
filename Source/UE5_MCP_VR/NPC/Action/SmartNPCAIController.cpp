@@ -565,15 +565,22 @@ void ASmartNPCAIController::SendCombatJevRequest()
     AActor* Target = Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(Key_TargetActor)) : nullptr;
     const float DistanceM = Target ? FVector::Dist(OwnerLoc, Target->GetActorLocation()) / 100.f : 5.f;
 
-    // 현재 시야 안 적대 대상 수 + 포위 여부(두 적의 방향이 90° 이상 벌어지면 포위).
+    // 최근 JevHostileMemorySeconds 안에 본 적대 대상 수 + 포위 여부(두 적의 방향이 90° 이상 벌어지면 포위).
+    // "지금 시야 안" 만 세면 포위는 성립할 수 없다 — 첫 적을 보는 순간 몸을 돌려 반대편 적(90°+)이 시야 120° 밖으로 빠진다.
+    // ponytail: 기억 시간 고정 상수 — 전술 편향 튜닝이 필요해지면 UPROPERTY 로 노출.
+    constexpr float JevHostileMemorySeconds = 2.0f;
     TArray<FVector> HostileDirs;
     if (PerceptionComp)
     {
+        const FAISenseID SightID = UAISense::GetSenseID<UAISense_Sight>();
         TArray<AActor*> Perceived;
-        PerceptionComp->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), Perceived);
+        PerceptionComp->GetKnownPerceivedActors(UAISense_Sight::StaticClass(), Perceived);
         for (AActor* A : Perceived)
         {
             if (!A || A == NPC || IsTargetDead(A)) continue;
+            const FActorPerceptionInfo* Info = PerceptionComp->GetActorInfo(*A);
+            if (!Info || !Info->LastSensedStimuli.IsValidIndex(SightID.Index)
+                || Info->LastSensedStimuli[SightID.Index].GetAge() > JevHostileMemorySeconds) continue;
             if (A != Target && StateComp->GetRelation(ASmartNPC::PerceptionIdFor(A)) != ENPCRelation::Hostile) continue;
             HostileDirs.Add((A->GetActorLocation() - OwnerLoc).GetSafeNormal2D());
         }
