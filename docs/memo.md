@@ -14,7 +14,7 @@
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
 - [ ] **StateTree 에셋 바인딩(전투 전용)** — 일상은 큐 주입이라 무관. 전투 승수는 `SelectCombatAction` 이 캐시를 직접 읽으므로 ST 노드가 실제로 막을 상태가 있는지부터 판단(SPEC_jev_daily 미결).
 - [ ] **Phase 4 PIE 실측(전투)** — 적 조우, HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백. 폴백 검증은 휴리스틱만으로 가능.
-- [ ] **jevlike 설치·체크포인트 학습 = 일상 M2** — 2026-09-23 확인: 패키지 미설치, `app/models/jevlike_tactics.pt` 없음 → 휴리스틱만 동작. LLM 로그엔 일상 액션 3건뿐이라 합성 데이터 필요. 전투+일상 합쳐 체크포인트 1개.
+- [ ] **Jev M2 잔여** — ① 골드 시트 50건 사람 입력(`finetune/jev/data/gold_sheet.html` → `gold_answers.json`) 후 `eval` 로 사람·LLM 일치율 확인, 낮으면 31b 로 daily 재라벨 ② 체크포인트 git 추적 여부(현재 `**/models/*` ignore — 다른 PC 는 휴리스틱) ③ 헤드셋 없는 PIE 로 모델 경로 daily 관찰 ④ 골드셋이 look_at·stay 편중(24·15/50) — 활동별 상한 보완 시트.
 
 ### 척수반사 테이블 — 잔여 1건 (PR #23 Develop 머지 완료 2026-08-22)
 - [ ] **PIE 검증 5항목**(SPEC §7) — 학습 완료됨. 에디터 열고 검증 가능.
@@ -70,6 +70,8 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
+- [x] **Jev M2 학습 — soft 체크포인트 배포 (2026-09-24)** — `5a6a7b53`(입력 정비·C++ hp/stamina/hit/talk) · `d53793be`(데이터 도구·라벨). 전투 2000(31b)·daily 2000(26b) 합성,
+  soft 모델 활동 top-1 77.4%(휴리스틱 48.4%)·슬롯 69.6%(51.9%)·4패스 1.6ms. clear(명확만 학습)는 애매 상황 분포 오차 2배(TV 0.38 vs 0.18) → 기각. 상세 SPEC_jev_daily 구현 기록 M2.
 - [x] **Jev 일상 활동 매칭 M1 — PIE 검증 완료 (2026-09-24)** — `SPEC_jev_daily.md`. Python `b704d0a6`(테스트 15) · C++ `769bd13e` · `9b98ed7b`(기상 억제) ·
   `ca316c01`(POI 액터 3개). 완료 기준 1~15 전부 헤드셋 없는 PIE 확인.
 - [x] **BehaviorMode 6→2 축소 (2026-09-24)** — `13f94484`, `SPEC_behavior_mode_reduce.md`. Stage1 5턴 Mode∈{Common,Combat}. 고아 BP enum 삭제만 DoList 1-17.

@@ -2,7 +2,7 @@
 
 > 전투 편향기 SPEC(`docs/SPEC_jev_neuro_symbolic_st.md`)과 **문서는 분리**, 파이프라인은 **공유**.
 > 인터뷰 결정 2026-09-23. 개정 2026-09-23: 단일 선택 → **슬롯별 순차 선택**. 개정 2026-09-24: 활동 12개 통합·대분류 폐지·전투 척수 유지·POI 목업·D10.
-> 상태: **M1 완료(2026-09-24)** — `b704d0a6`(Python)·`769bd13e`(C++)·`9b98ed7b`·`ca316c01`. M2(학습) 남음.
+> 상태: **M1 완료(2026-09-24)** — `b704d0a6`(Python)·`769bd13e`(C++)·`9b98ed7b`·`ca316c01`. **M2 학습 완료(2026-09-24)** — `5a6a7b53`·`d53793be`, 기준 17~19 충족. 골드셋 사람 채점 남음.
 > 선행 SPEC: `docs/SPEC_behavior_mode_reduce.md`(BehaviorMode 6→2) — 완료 `13f94484`.
 
 ## 목표
@@ -337,6 +337,30 @@ Jev 효과:
 남은 것(M1 범위 밖):
 - 미결 "대화 중 판정": 플레이어 발화 송신 ~ LLM 응답 사이에 daily 가 끼는 것을 1회 실측(Moca Pray). 응답 도착 시 선점되므로 해는 작다. 게이트 추가는 보류.
 - `use_item` 이 스토리용 소비템(HealthPotion 등)을 자율 소비한다 — 인벤이 줄기만 한다. 소비 빈도·대상 제한은 튜닝 과제.
+
+### M2 (2026-09-24) — 완료 기준 17~19 충족
+
+| 기준 | 결과 |
+|---|---|
+| 17 | daily 2000 조합(gemma4:26b, 패스 ≈ 4,900) + combat 2000(gemma4:31b). 로드 로그 `[Jev] jevlike 로드 완료 device=cuda` |
+| 18 | test 595 패스, 정답 = LLM 등급 최대. 활동 77.4% vs 휴리스틱 48.4%(+29.0%p) · 슬롯 69.6% vs 51.9%(+17.8%p) · 전투 90.8% vs 87.7% |
+| 19 | 모델 경로 4패스 1.6ms(GPU, 100회 평균) |
+
+도구: `finetune/jev/jev_dataset.py`(gen-daily·gen-combat·build·eval·sheet). 배포 = soft 체크포인트를 `app/models/jevlike_tactics.pt` 로 복사(gitignore).
+
+설계·구현 중 바뀐 것:
+- **모델 옵션에 desc 포함**: 옵션 문자열이 id 만이라 관계·거리·빈자리 근거가 모델 입력에 없었다 → `id|desc`. 패스 루프는 `run_daily_passes` 하나로 추론과 데이터 생성이 공유.
+- **D3 입력 가산**(사용자 결정 2026-09-24, 신규 게임 시스템은 여전히 0): C++ metrics `hp_pct`·`stamina_pct`·`hit_s`·`talk_s`·`talk_with`. context 는 구간 문자열(`hp:low`, `hit:recent`, `talk:recent/Player`)·`goal`. 바이트 인코더가 뒤를 자르므로 `pick`·`chosen` 을 앞에(학습 `--context-tokens 320 --option-tokens 64`).
+- **라벨 = 후보별 등급 가중치**: 답 1개를 받으면 look_at 로 붕괴(10건 중 8). Ollama 스키마 출력에서 정수 필드는 전부 0 으로 붕괴 → enum 등급(very_likely 8·likely 5·possible 3·unlikely 1·never 0). `format:"json"` 자유형은 공백 무한 생성 → `num_predict` 상한.
+- **라벨 모델**: 12b 는 같은 상황에서 persona 10명 분포가 동일(구분 못 함) → 31b 는 구분됨(21s/호출) → 26b(MoE) 가 구분력 비슷·3.5s 라 daily 에 채택. combat 은 31b.
+- **soft vs clear**(사용자 제안 "애매한 건 빼고 명확한 것만 학습" 검증): soft = 가중치 비율로 줄 복제(패스당 8줄), clear = 1위가 두 등급 이상 앞선 패스만. soft 가 활동 77.4 vs 72.6, 애매 패스의 모델·LLM 분포 TV 0.18 vs 0.38. 명확한 것만 학습하면 애매한 입력에서 다양하게 반응하지 못한다 → **soft 채택**.
+- **골드셋**: 라벨 LLM 이 활동 1위를 명확히 고른 상황만(후보 139 중 50) HTML 시트로. 사람 답이 오면 `eval` 이 모델·휴리스틱·LLM 과의 일치율을 채점.
+
+남은 것:
+- 골드 시트 사람 입력 → 사람·LLM 일치율이 낮으면 31b 로 daily 재라벨.
+- 골드셋 편중(1위 look_at 24·stay 15/50) — emote·patrol·use_item 등 채점 불가. 활동별 상한 보완 시트.
+- item 슬롯 test 2건뿐(소비템·NPC 대상 조건이 드묾) — 판단 불가.
+- 전투 휴리스틱은 다른 세션이 같은 라벨로 피팅(`fit_combat_heuristic.py`) — 전투 비교치는 낙관적.
 
 - **D9 PickUp 대상 기반 전환 — 완료(2026-09-24, `f59fe0c8`)**. Simulate PIE: 지정 아이템만 습득(반경 100cm 안 다른 아이템 무시) ✅, 걷는 중 150cm 밖으로 옮기면 경고 후 생략 ✅.
 - 검증 중 발견한 기존 결함 3건:
