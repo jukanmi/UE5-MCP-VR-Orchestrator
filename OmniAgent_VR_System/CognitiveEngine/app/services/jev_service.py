@@ -27,7 +27,10 @@ OPTIONS: Tuple[str, str, str] = ("aggressive", "defensive", "flee")
 # UE5 EJevTacticalStance 문자열(C++ ParseJevStance 와 철자 일치 필수).
 STANCES: Tuple[str, str, str] = ("Aggressive", "Defensive", "Flee")
 
-DEFAULT_CHECKPOINT = os.environ.get("JEV_CHECKPOINT", "app/models/jevlike_tactics.pt")
+# 절대경로 필수 — README 대로 repo 루트에서 uvicorn 을 띄우면 cwd 상대경로는 못 찾고 조용히 휴리스틱으로 떨어진다(2026-09-24 실측).
+DEFAULT_CHECKPOINT = os.environ.get(
+    "JEV_CHECKPOINT", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "jevlike_tactics.pt")
+)
 
 
 def build_context(metrics: Dict[str, Any]) -> str:
