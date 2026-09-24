@@ -525,15 +525,33 @@ FJevDecision ASmartNPCAIController::GetFreshJevDecision() const
 
 void ASmartNPCAIController::RequestJevDecision()
 {
+    UWorld* World = GetWorld();
+    if (!World || bJevRequestPending) return; // 이미 예약됨 — 전송 시점에 최신 지표로 계산되므로 합쳐도 손실 없음
+
+    // 적 둘이 거의 동시에 보이면 첫 감지 순간엔 한 명만 인지된 상태다. 버리지 않고 예약해 두면
+    // 전송 시점엔 둘 다 반영된다. 같은 프레임 호출은 다음 틱 1건, 쿨다운 중이면 만료 시점 1건.
+    bJevRequestPending = true;
+    const double Wait = static_cast<double>(JevRequestCooldown) - (FPlatformTime::Seconds() - LastJevRequestTime);
+    if (Wait > 0.0)
+    {
+        World->GetTimerManager().SetTimer(JevPendingTimer, this, &ASmartNPCAIController::SendCombatJevRequest, static_cast<float>(Wait), false);
+    }
+    else
+    {
+        JevPendingTimer = World->GetTimerManager().SetTimerForNextTick(this, &ASmartNPCAIController::SendCombatJevRequest);
+    }
+}
+
+void ASmartNPCAIController::SendCombatJevRequest()
+{
+    bJevRequestPending = false;
     ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
     UWorld* World = GetWorld();
     if (!NPC || !World || !NPC->StateComponent) return;
 
-    // 쿨다운 1.0s + in-flight 1건 가드 — 감각 이벤트 폭주가 곧 요청 폭주가 되지 않게.
-    // 진행 중인 게 daily 면 전투가 끊고 들어간다(세대 증가로 daily 늦은 응답은 자동 폐기).
+    // 진행 중 요청(전투·daily)이 있어도 막지 않는다 — SendJevQuery 의 세대 증가로 이전 응답은 stale 폐기되고
+    // 워치독도 새로 걸린다. 최신 상황이 항상 이긴다.
     const double Now = FPlatformTime::Seconds();
-    const bool bBlockedByInFlight = bJevRequestInFlight && !bJevInFlightDaily;
-    if (bBlockedByInFlight || (Now - LastJevRequestTime) < static_cast<double>(JevRequestCooldown)) return;
 
     UNPCManager* Manager = UNPCManager::Get(this);
     if (!Manager || !Manager->IsServerConnected()) return; // 미연결 — 승수 1.0 중립 그대로
@@ -683,7 +701,7 @@ void ASmartNPCAIController::TickJevDaily()
         JevDailyIdleSince = Now;
         return;
     }
-    if (Now - JevDailyIdleSince < static_cast<double>(JevDailyIdleSeconds) || bJevRequestInFlight) return;
+    if (Now - JevDailyIdleSince < static_cast<double>(JevDailyIdleSeconds) || bJevRequestInFlight || bJevRequestPending) return;
 
     ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
     UNPCActionComponent* ActionComp = NPC ? NPC->GetActionComponent() : nullptr;

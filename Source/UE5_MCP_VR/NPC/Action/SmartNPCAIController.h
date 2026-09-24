@@ -141,7 +141,9 @@ public:
 	/** jevlike 승수 — TTL(JevDecisionTTL) 이내면 캐시, 만료·미수신이면 중립(1.0) 기본값. 셀렉터·EQS 공용 진입점. */
 	FJevDecision GetFreshJevDecision() const;
 
-	/** 감각 이벤트(시야 적대 감지·전투 소음·HP 25% 교차) 시 호출. 쿨다운 1.0s + in-flight 1건 가드, 세대 증가, 0.3s 워치독. */
+	/** 감각 이벤트(시야 적대 감지·전투 소음·HP 25% 교차) 시 호출. 버리지 않고 예약만 한다 — 같은 프레임 호출은 1건으로 묶고,
+	 *  쿨다운 중이면 만료 시점으로 미룬다. 전송은 SendCombatJevRequest 가 그 시점의 최신 지표로 하고,
+	 *  진행 중인 요청(전투·daily)은 세대 증가로 폐기·교체된다 — 동시 감지 시 첫 감지(count=1)만 남던 문제 해소. */
 	void RequestJevDecision();
 
 	/** Python jev_decision payload 처리 — 세대 불일치·타임아웃 후 도착은 폐기, Confidence < 0.5 는 중립 유지. */
@@ -164,6 +166,13 @@ protected:
 	double LastJevRequestTime = 0.0;
 	FTimerHandle JevTimeoutTimer;
 
+	/** 예약된 전투 요청이 있는지 — 같은 프레임·쿨다운 중 중복 호출을 1건으로 묶는다. */
+	bool bJevRequestPending = false;
+	FTimerHandle JevPendingTimer;
+
+	/** 예약된 전투 요청 실행 — 지표를 이 시점에 계산해 보낸다(진행 중 요청은 세대 증가로 교체). */
+	void SendCombatJevRequest();
+
 	/** 진행 중 요청이 daily 인지 — 응답 분기용. 전투 요청은 daily 를 끊고 들어간다. */
 	bool bJevInFlightDaily = false;
 
@@ -181,9 +190,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.0"))
 	float JevDailyAfterLLMSeconds = 15.0f;
 
-	/** 요청 최소 간격(초) — 매 프레임 폭주 방지. */
-	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.1"))
-	float JevRequestCooldown = 1.0f;
+	/** 전송 최소 간격(초) — 전투 소음 폭주 방지. 이 사이 호출은 버리지 않고 만료 시점에 최신 지표로 1건 보낸다. */
+	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.05"))
+	float JevRequestCooldown = 0.25f;
 
 	/** 응답 워치독(초) — 초과 시 늦은 패킷 폐기, 현재 C++ 액션 지속. */
 	UPROPERTY(EditDefaultsOnly, Category = "AI|Jev", meta = (ClampMin = "0.05"))
