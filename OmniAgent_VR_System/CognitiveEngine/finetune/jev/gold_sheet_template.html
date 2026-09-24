@@ -59,6 +59,8 @@
 <main>
   <p class="help">NPC 입장에서 지금 가장 자연스러운 활동 1개를 고르고(정답이 하나로 안 정해지면 <b>애매함 — 건너뜀</b>), 펼쳐지는 슬롯을 채운다(비워 두면 default = 게임이 결정).
     입력은 이 브라우저에 자동 저장된다. 끝나면 <b>JSON 저장</b> → <code>finetune/jev/data/gold_answers.json</code> 에 둔다.</p>
+  <p class="help" id="review-help" hidden><b>검수 모드</b> — 모델이 고른 활동·슬롯이 미리 채워져 있다. 자연스러우면 그대로 두고,
+    부자연스러우면 <b>부자연스러움</b>을 체크한 뒤 메모에 이유를 적는다(정답을 알면 활동·슬롯을 고쳐도 된다). 이미 직접 입력한 카드는 그대로 유지된다.</p>
   <div id="cards"></div>
 </main>
 <script>
@@ -66,11 +68,19 @@ const CARDS = /*CARDS*/[];
 const KEY = "jev-gold:" + (CARDS[0] ? CARDS[0].id.split("_")[0] : "");
 let answers = {};
 try { answers = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+// 검수형: 아직 답이 없는 카드만 모델 제안으로 채운다(직접 입력한 답은 건드리지 않음). suggest 는 채점에서 수정·부자연 판정 기준.
+const REVIEW = CARDS.some(c => c.suggest);
+for (const c of CARDS) {
+  if (c.suggest && !answers[c.id]) answers[c.id] = { activity: c.suggest.activity, slots: { ...c.suggest.slots }, suggest: c.suggest };
+}
 
 function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(answers)); } catch (e) {}
   const done = CARDS.filter(c => answers[c.id] && (answers[c.id].activity || answers[c.id].skip)).length;
-  document.getElementById("progress").textContent = `${done} / ${CARDS.length}`;
+  const flagged = CARDS.filter(c => answers[c.id] && answers[c.id].flag).length;
+  const changed = CARDS.filter(c => { const a = answers[c.id]; return a && a.suggest && a.activity !== a.suggest.activity; }).length;
+  document.getElementById("progress").textContent = REVIEW
+    ? `부자연 ${flagged} · 수정 ${changed} / ${CARDS.length}` : `${done} / ${CARDS.length}`;
 }
 
 function el(tag, attrs = {}, ...kids) {
@@ -107,7 +117,8 @@ function render() {
     const mark = () => {
       const a = answers[card.id] || {};
       art.classList.toggle("done", !!(a.activity || a.skip));
-      state.textContent = a.skip ? "건너뜀" : a.activity ? "완료" : "";
+      const edited = a.suggest && (a.activity !== a.suggest.activity || JSON.stringify(a.slots || {}) !== JSON.stringify(a.suggest.slots));
+      state.textContent = a.skip ? "건너뜀" : a.flag ? "부자연" : edited ? "수정" : a.suggest ? "모델 제안" : a.activity ? "완료" : "";
     };
     const acts = el("div", { className: "acts", role: "radiogroup" });
     for (const act of card.activities) {
@@ -119,15 +130,19 @@ function render() {
       };
       acts.append(el("label", { title: act.doc }, input, act.id));
     }
-    const note = el("textarea", { placeholder: "메모(선택) — 왜 이걸 골랐는지, 선택지에 없는 행동 등" });
+    const note = el("textarea", { placeholder: REVIEW ? "메모 — 어디가 부자연스러운지(선택지에 없는 행동이면 그것도)" : "메모(선택) — 왜 이걸 골랐는지, 선택지에 없는 행동 등" });
     note.value = (answers[card.id] && answers[card.id].note) || "";
     note.oninput = () => { answers[card.id] = { ...(answers[card.id] || {}), note: note.value }; persist(); };
     // 정답이 하나로 안 정해지는 상황은 채점에서 뺀다(억지로 고르면 골드셋이 오염된다).
     const skip = el("input", { type: "checkbox" });
     skip.checked = !!(answers[card.id] && answers[card.id].skip);
     skip.onchange = () => { answers[card.id] = { ...(answers[card.id] || {}), skip: skip.checked }; mark(); persist(); };
+    const flag = el("input", { type: "checkbox" });
+    flag.checked = !!(answers[card.id] && answers[card.id].flag);
+    flag.onchange = () => { answers[card.id] = { ...(answers[card.id] || {}), flag: flag.checked }; mark(); persist(); };
     art.append(el("h2", {}, `#${i + 1}`, state), el("pre", { textContent: card.situation.join("\n") }),
-               acts, slotBox, el("label", { className: "skip" }, skip, " 애매함 — 건너뜀"), note);
+               acts, slotBox, el("label", { className: "skip" }, flag, " 부자연스러움"),
+               el("label", { className: "skip" }, skip, " 애매함 — 건너뜀"), note);
     root.append(art);
     renderSlots(card, slotBox); mark();
   });
@@ -142,6 +157,7 @@ document.getElementById("save").onclick = () => {
 document.getElementById("copy").onclick = async () => {
   try { await navigator.clipboard.writeText(JSON.stringify(answers)); } catch (e) { alert("복사 실패 — JSON 저장을 쓰세요"); }
 };
+document.getElementById("review-help").hidden = !REVIEW;
 render();
 </script>
 </body>

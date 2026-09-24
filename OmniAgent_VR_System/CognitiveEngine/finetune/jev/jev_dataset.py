@@ -6,6 +6,7 @@
   build       조합을 상황 단위로 train/validation/test 분할 → 패스 단위 jevlike JSONL
   eval        test 에서 패스별 top-1 일치율(모델 vs 휴리스틱) + 4패스 지연 — 완료 기준 18·19
   sheet       사람 정답용 상황 시트(골드셋) 출력
+  review-sheet 같은 골드셋에 모델 선택을 채운 검수형 시트 — 사람은 부자연스러운 것만 표시·수정(LLM 재호출 없음)
 
 패스 context·옵션 문자열은 서비스의 run_daily_passes 를 그대로 써서 만든다 — 학습·추론 포맷이 어긋날 수 없다.
 gen-* 는 이어쓰기: 이미 있는 줄 수만큼 건너뛰고 같은 시드로 이어서 만든다.
@@ -39,6 +40,7 @@ from app.services.jev_service import (  # noqa: E402
     DEFAULT,
     OPTIONS,
     JevlikeService,
+    _softmax,
     build_context,
     heuristic_probs,
     run_daily_passes,
@@ -608,10 +610,19 @@ def gold(svc: JevlikeService) -> None:
         return
     answers = json.loads(path.read_text(encoding="utf-8"))
     stats: Dict[str, List[int]] = {}  # key → [n, model, heur, llm]
+    reviewed = flagged = changed = 0  # 검수형 카드(모델 제안을 미리 채운 것)
     for sc in _read(DATA / "gold_scenarios.jsonl"):
         a = answers.get(sc["id"]) or {}
         if a.get("skip") or not a.get("activity"):
             continue
+        sug = a.get("suggest")
+        if sug:
+            reviewed += 1
+            flagged += bool(a.get("flag"))
+            changed += a["activity"] != sug["activity"]
+            # 부자연 표시만 하고 고치지 않은 카드는 사람 정답이 없다 — 일치율에서 뺀다(오류율에만 셈).
+            if a.get("flag") and a["activity"] == sug["activity"] and a.get("slots") == sug["slots"]:
+                continue
         want = {"activity": a["activity"], **(a.get("slots") or {})}
         for r in _passes(sc, want, {}):
             if r["slot"] != "activity" and want.get(r["slot"], DEFAULT) == DEFAULT:
@@ -627,6 +638,9 @@ def gold(svc: JevlikeService) -> None:
     for k, (n, mh, hh, lh) in sorted(stats.items()):
         llm = f"  llm {lh / n:.1%}" if k == "activity" else ""
         print(f"골드 {k:<9} n={n:>3}  model {mh / n:.1%}  heur {hh / n:.1%}{llm}")
+    if reviewed:
+        # 검수형은 모델 제안이 먼저 보여 사람이 동의하기 쉽다(앵커링) → 위 model 일치율은 상향 편향, 이 오류율은 하한값.
+        print(f"검수 n={reviewed:>3}  부자연 {flagged / reviewed:.1%}  활동 수정 {changed / reviewed:.1%}  (앵커링: 일치율↑·오류율은 하한)")
 
 
 def sheet(n: int, seed: int, candidates: int) -> None:
@@ -655,6 +669,15 @@ def sheet(n: int, seed: int, candidates: int) -> None:
         sc["llm_weights"] = w
         scenarios.append(sc)
         print(f"{len(scenarios)}/{n} (후보 {k + 1})", flush=True)
+    with open(DATA / "gold_scenarios.jsonl", "w", encoding="utf-8") as g:
+        for sc in scenarios:
+            g.write(json.dumps(sc, ensure_ascii=False) + "\n")
+    _write_sheet(scenarios)
+
+
+def _write_sheet(scenarios: List[Dict[str, Any]], svc: Optional[JevlikeService] = None) -> None:
+    """골드 시트 HTML. svc 를 주면 검수형 — 모델의 최선 선택(argmax)을 카드에 채워 두고 사람은 부자연스러운 것만 표시한다."""
+    cards = []
     for sc in scenarios:
         acts = []
         for act in sc["activities"]:
@@ -664,15 +687,33 @@ def sheet(n: int, seed: int, candidates: int) -> None:
                 if len(cands) > 1:  # 1개 이하는 게임이 채운다
                     slots.append({"slot": slot, "doc": SLOT_DOC[slot], "options": [[c, d] for c, d in cands]})
             acts.append({"id": act, "doc": ACTIVITY_DOC[act], "slots": slots})
-        cards.append({"id": sc["id"], "situation": _situation(sc), "activities": acts})
-    with open(DATA / "gold_scenarios.jsonl", "w", encoding="utf-8") as g:
-        for sc in scenarios:
-            g.write(json.dumps(sc, ensure_ascii=False) + "\n")
+        card = {"id": sc["id"], "situation": _situation(sc), "activities": acts}
+        if svc is not None:
+            card["suggest"] = _model_pick(svc, sc)
+        cards.append(card)
     # 입력은 브라우저 localStorage 자동 저장 → "JSON 저장" 으로 gold_answers.json 을 받아 data/ 에 둔다.
     template = (Path(__file__).parent / "gold_sheet_template.html").read_text(encoding="utf-8")
     path = DATA / "gold_sheet.html"
     path.write_text(template.replace("/*CARDS*/[]", json.dumps(cards, ensure_ascii=False)), encoding="utf-8")
     print(path)
+
+
+def _model_pick(svc: JevlikeService, sc: Dict[str, Any]) -> Dict[str, Any]:
+    """게임과 같은 패스 루프에서 샘플링 대신 argmax — 검수자가 볼 '모델의 최선 선택'. 시트에 안 뜨는 슬롯(후보 ≤1)은 뺀다."""
+
+    def choose(_slot: str, context: str, texts: List[str], logits: List[float]) -> tuple:
+        probs = svc._model_probs(context, texts) or _softmax(logits)
+        i = max(range(len(probs)), key=probs.__getitem__)
+        return i, float(probs[i])
+
+    out = run_daily_passes(sc["metrics"], sc["activities"], sc["pools"], sc.get("persona") or {}, choose)
+    shown = {s for s in ACTIVITY_SLOTS[out["activity"]] if len(slot_candidates(out["activity"], s, sc["pools"])) > 1}
+    return {"activity": out["activity"], "slots": {k: v for k, v in out["slots"].items() if k in shown}}
+
+
+def review_sheet() -> None:
+    """기존 gold_scenarios.jsonl 로 검수형 시트 재생성 — LLM 재호출 없음. 이미 입력한 답(브라우저 저장분)은 유지된다."""
+    _write_sheet(list(_read(DATA / "gold_scenarios.jsonl")), JevlikeService())
 
 
 def main() -> None:
@@ -691,6 +732,7 @@ def main() -> None:
     p.add_argument("--n", type=int, default=50)
     p.add_argument("--candidates", type=int, default=300)
     p.add_argument("--seed", type=int, default=100)  # 99 = 필터 없던 옛 시트(브라우저 저장 키 분리)
+    sub.add_parser("review-sheet")
     a = ap.parse_args()
     if a.cmd == "gen-daily":
         gen_daily(a.count, a.seed, a.temperature)
@@ -700,6 +742,8 @@ def main() -> None:
         build()
     elif a.cmd == "eval":
         evaluate(a.checkpoint)
+    elif a.cmd == "review-sheet":
+        review_sheet()
     else:
         sheet(a.n, a.seed, a.candidates)
 
