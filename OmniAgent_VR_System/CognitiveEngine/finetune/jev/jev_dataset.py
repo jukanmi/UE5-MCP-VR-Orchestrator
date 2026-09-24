@@ -203,6 +203,42 @@ def make_daily_scenario(rng: random.Random) -> Dict[str, Any]:
     }
 
 
+def _near(desc: str, max_m: float) -> bool:
+    """풀 desc 의 거리(…|12m…)가 max_m 이하인지."""
+    for part in desc.split("|"):
+        if part.endswith("m") and part[:-1].replace(".", "").isdigit():
+            return float(part[:-1]) <= max_m
+    return False
+
+
+# 골드셋 동적 상황 — 활동마다 "그걸 할 뚜렷한 이유" 가 있는 상황만 고른다(기본 생성기 출력에서 거르기, 생성기 불변).
+# seed 100 골드셋은 평온한 상황이 대부분이라 LLM·모델 모두 look_at·stay 로 몰렸다(39/50).
+MOTIVES: Dict[str, Any] = {
+    "rest": lambda s: "rest" in s["activities"] and s["metrics"]["stamina_pct"] < 0.35,
+    "use_item": lambda s: "use_item" in s["activities"] and s["metrics"]["hp_pct"] < 0.45,
+    "pick_up": lambda s: "pick_up" in s["activities"] and any(_near(g["desc"], 4) for g in s["pools"]["ground_items"]),
+    "give_item": lambda s: "give_item" in s["activities"] and bool(s["metrics"]["goal"])
+    and any(a["desc"].startswith(("npc|friendly", "player|friendly")) and _near(a["desc"], 4) for a in s["pools"]["actors"]),
+    "patrol": lambda s: "patrol" in s["activities"] and any(w in s["metrics"]["goal"] for w in ("경고", "확보", "보호", "작전", "공략")),
+    "wander": lambda s: "wander" in s["activities"] and s["metrics"]["idle_s"] >= 45
+    and s["metrics"]["player_dist_m"] < 0 and s["metrics"]["npc_near"] == 0,
+    "emote": lambda s: "emote" in s["activities"] and 15 <= s["metrics"]["talk_s"] <= 60
+    and any(w in s["metrics"]["goal"] for w in ("격려", "환영", "과시", "감정")),
+    "stand_up": lambda s: "stand_up" in s["activities"] and s["metrics"]["posture_s"] >= 300,
+    "look_at": lambda s: s["metrics"]["player_relation"] == "friendly" and 0 <= s["metrics"]["player_dist_m"] <= 3
+    and s["metrics"]["talk_s"] < 0,
+}
+
+
+def make_motive_scenario(rng: random.Random, motive: str, tries: int = 20000) -> Dict[str, Any]:
+    """기본 생성기를 motive 조건이 맞을 때까지 돌린다 — LLM 호출 전이라 비용 없음."""
+    for _ in range(tries):
+        sc = make_daily_scenario(rng)
+        if MOTIVES[motive](sc):
+            return sc
+    raise RuntimeError(f"motive {motive} 조건 상황을 {tries}회 안에 못 만듦")
+
+
 def make_combat_metrics(rng: random.Random) -> Dict[str, Any]:
     count = rng.choices([1, 2, 3, 4, 5], [0.4, 0.25, 0.15, 0.1, 0.1])[0]
     return {
@@ -643,17 +679,23 @@ def gold(svc: JevlikeService) -> None:
         print(f"검수 n={reviewed:>3}  부자연 {flagged / reviewed:.1%}  활동 수정 {changed / reviewed:.1%}  (앵커링: 일치율↑·오류율은 하한)")
 
 
-def sheet(n: int, seed: int, candidates: int) -> None:
+def sheet(n: int, seed: int, candidates: int, dynamic: bool = False, cap: int = 0) -> None:
     """사람 정답용 골드셋. 라벨 LLM 이 활동 1위를 명확히 고른 상황만 싣는다(애매하면 사람도 정답을 못 고른다).
 
     LLM 가중치는 gold_scenarios.jsonl 에만 남기고 시트엔 안 보인다(사람 판단을 끌지 않게).
     """
     rng = random.Random(seed)
-    scenarios = []
+    scenarios: List[Dict[str, Any]] = []
+    top_count: Dict[str, int] = {}
+    motives = list(MOTIVES)
     for k in range(candidates):
         if len(scenarios) >= n:
             break
-        sc = {"id": f"g{seed}_{k}", **make_daily_scenario(rng)}
+        if dynamic:
+            motive = motives[k % len(motives)]
+            sc = {"id": f"g{seed}_{k}", "motive": motive, **make_motive_scenario(rng, motive)}
+        else:
+            sc = {"id": f"g{seed}_{k}", **make_daily_scenario(rng)}
         if len(sc["activities"]) < 2:
             continue
         order = sc["activities"][:]
@@ -666,9 +708,13 @@ def sheet(n: int, seed: int, candidates: int) -> None:
             continue
         if not is_clear([w.get(x, 0.0) for x in sc["activities"]]):
             continue
+        top = max(w, key=w.get)
+        if cap and top_count.get(top, 0) >= cap:  # 한 활동이 골드셋을 독점하지 않게(seed 100 은 look_at·stay 39/50)
+            continue
+        top_count[top] = top_count.get(top, 0) + 1
         sc["llm_weights"] = w
         scenarios.append(sc)
-        print(f"{len(scenarios)}/{n} (후보 {k + 1})", flush=True)
+        print(f"{len(scenarios)}/{n} (후보 {k + 1}) {sc.get('motive', '')}→{top}", flush=True)
     with open(DATA / "gold_scenarios.jsonl", "w", encoding="utf-8") as g:
         for sc in scenarios:
             g.write(json.dumps(sc, ensure_ascii=False) + "\n")
@@ -732,6 +778,8 @@ def main() -> None:
     p.add_argument("--n", type=int, default=50)
     p.add_argument("--candidates", type=int, default=300)
     p.add_argument("--seed", type=int, default=100)  # 99 = 필터 없던 옛 시트(브라우저 저장 키 분리)
+    p.add_argument("--dynamic", action="store_true", help="활동별 동기(motive) 상황만 — 정적 상황 편중 방지")
+    p.add_argument("--cap", type=int, default=0, help="LLM 1위 활동당 최대 건수(0 = 제한 없음)")
     sub.add_parser("review-sheet")
     a = ap.parse_args()
     if a.cmd == "gen-daily":
@@ -745,7 +793,7 @@ def main() -> None:
     elif a.cmd == "review-sheet":
         review_sheet()
     else:
-        sheet(a.n, a.seed, a.candidates)
+        sheet(a.n, a.seed, a.candidates, a.dynamic, a.cap)
 
 
 if __name__ == "__main__":
