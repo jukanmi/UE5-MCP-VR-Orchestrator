@@ -14,9 +14,11 @@
 | 층 | 파일 | 변경 |
 |---|---|---|
 | C++ | `Core/BP/VRPawn.{h,cpp}` | 좌/우 물리 손(손바닥 바디 + 손가락 캡슐) + `PhysicsConstraintComponent`. 목표 = 핸드트래킹 손목·관절 트랜스폼, 핸드트래킹 무효 시 `MotionControllerLeft/Right` 트랜스폼 |
+| C++ | `Core/BP/VRPawn.cpp` | `GetLeft/RightHandEffectorCS()`(FBIK 손 이펙터 입력)를 `MotionController` 대신 물리 손바닥 바디 트랜스폼으로 교체. 별도 손 메시는 없다 — 보이는 손은 몸 메시(X_Bot) FBIK 결과이고, 손에 든 아이템도 몸 메시 소켓에 붙어 있어 자동으로 따라온다 |
 | C++ | `Core/BP/VRPawn.cpp` | `GetHandLocation()` 이 물리 손 위치를 반환하도록 변경 |
+| C++ | `Core/BP/VRPawn.cpp` | 핸드트래킹 관절 읽기: `IXRTrackingSystem::GetHandTrackingState`(`FXRHandTrackingState`). UE 5.5 에서 `GetMotionControllerData` 는 deprecated |
 | C++ | 핀치·그립 제스처 판정(자리 미정) | 손가락 관절 거리로 핀치·주먹 판정 — 기존 `IA_Grab`/`IA_GrabLeft` 와 같은 잡기 경로로 합류(OR) |
-| 에셋 | `BP_VRPawn` | 보이는 손 메시를 물리 손에 부착 |
+| 에셋 | 플레이어 AnimBP / Control Rig | M3: 손가락 캡슐(= OpenXR 관절 26개) 트랜스폼을 X_Bot 손가락 본에 매핑. 그래프 편집이라 MCP 불가 → 사용자 작업(DoList). 컨트롤러일 때는 기존 손 포즈 유지 |
 
 영향받는 기존 호출자: `UI/Trade/TradeSessionActor.cpp:176`(손 근접 판정), `Core/BP/VRPawn.cpp:1703`(손 방향 계산).
 
@@ -46,7 +48,7 @@
 
 - **M1**: 입력 소스 선택(핸드트래킹 유효 시 손목, 아니면 컨트롤러) + 손바닥 바디 + Linear Drive, 벽 막힘만.
 - **M2**: Angular Drive + 이탈 복구 + `GetHandLocation()` 전환.
-- **M3**: 손가락 캡슐(관절별 추적) + 핀치·주먹 판정.
+- **M3**: 손가락 캡슐(관절별 추적) + 핀치·주먹 판정 + 관절→X_Bot 손가락 본 매핑(AnimBP, 사용자).
 
 ## 미결 사항
 

@@ -14,14 +14,14 @@
 | 층 | 파일 | 변경 |
 |---|---|---|
 | 에셋 | NPC AnimBP | 손에 든 아이템의 형상 유형별 손가락 포즈 레이어 |
-| C++ | `Inventory/Components/InventoryComponent.cpp` | `AttachItemToHand` 시 형상 유형을 AnimBP 에 전달(소켓 부착 자체는 기존 그대로) |
+| C++ | `Inventory/Components/InventoryComponent.cpp` | `AttachEquipmentMesh` 시 형상 유형을 AnimBP 에 전달(소켓 부착 자체는 기존 그대로). NPC 는 `ExecuteHandObject` → `EquipItem` → `AttachEquipmentMesh` 경로다. `AttachItemToHand` 는 플레이어 잡기·`TakeItemToHand` 전용이라 여기에 걸면 NPC 에선 안 불린다 |
 | C++ | `NPC/Struct/NPCActionTypes.h` 외 | 붙잡기 `EAction` 추가(4곳 규칙, `/add-eaction`) |
 | C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | `ReflexRules` 에 붙잡기 룰 추가, 액션 실행(손 IK 타깃 = `AVRPawn::GetHandLocation()`) |
 | C++ | `Core/BP/VRPawn.{h,cpp}` | 붙잡힘 상태: 스틱 이동·대시 잠금(`SeatedFurniture` 착석 패턴), 손 속도로 뿌리치기 판정 |
 
 ## 결정 사항
 
-- **물건 쥐기 = 손가락 포즈만**: 소켓 부착·오프셋(`AttachItemToHand`)은 이미 있다. 빠진 손가락 포즈만 추가한다. 형상 유형은 `SPEC_vr_grip_pose.md` 의 `FItemData` 유형 필드를 공유하고, 포즈도 같은 유형 분류(막대·박스·구·핀치)를 쓴다. 집어 드는 IK 모션은 범위 밖.
+- **물건 쥐기 = 손가락 포즈만**: 소켓 부착·오프셋(`EquipItem` → `AttachEquipmentMesh`)은 이미 있다. 빠진 손가락 포즈만 추가한다. 형상 유형은 `SPEC_vr_grip_pose.md` 의 `FItemData` 유형 필드를 공유하고, 포즈도 같은 유형 분류(막대·박스·구·핀치)를 쓴다. 집어 드는 IK 모션은 범위 밖.
 - **붙잡기 트리거 = 반사(reflex)**: LLM 을 거치지 않고 `ReflexRules` 조건(감각·관계·거리·위험도)으로 발동한다. 반사 룰은 `EAction` 가중치로 액션을 고르므로 `EAction` 추가는 필요하다.
 - **당기기 = 이동잠금 + 시각 연출만**: 플레이어 스틱 이동·대시만 막고 카메라는 움직이지 않는다. NPC 팔이 당기는 연출만 한다. 강제 이동은 VR 멀미 위험이라 하지 않는다. `SyncCapsuleToHMD` 때문에 애니메이션만으로는 구속이 안 되므로 `VRPawn` 에 별도 잠금 상태를 둔다.
 - **뿌리치기 = 손 속도 임계**: 잡힌 손의 물리 손 속도가 임계를 넘으면 풀린다.
