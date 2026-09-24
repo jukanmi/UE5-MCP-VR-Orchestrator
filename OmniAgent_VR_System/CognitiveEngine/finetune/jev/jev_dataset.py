@@ -66,12 +66,28 @@ FURNITURE = [
 ]
 # 실제 LLM Stage2 plan goal(train_logs 2026-09, 이름만 든 오류값 제외). C++ 는 40자로 잘라 보낸다.
 GOALS = [
-    "무기 구매 권유", "용 이야기 흘리기", "무기 추천하기", "용의 존재 암시", "플레이어 보호 및 안내",
-    "주인공 격려 및 합류 선언", "요새 공략 플랜 브리핑", "화력 지원 맹세", "플레이어의 상태 확인 및 안내",
-    "플레이어 격려", "전투 준비 과시", "성검 조각의 위치 안내", "성검 1차 복구 및 불안함 표출",
-    "마왕성 침투 작전 지시", "플레이어의 지식 수준을 평가하기", "플레이어의 존중을 요구하며 대립 태도 유지",
-    "플레이어에게 자신의 감정을 전달하기", "퇴로 확보", "파편의 위험성과 복잡성을 설명하기",
-    "유적의 마법 파편 연구 현황을 설명하기", "왕국 재건과 작별 인사", "영웅들의 귀환 환영",
+    "무기 구매 권유",
+    "용 이야기 흘리기",
+    "무기 추천하기",
+    "용의 존재 암시",
+    "플레이어 보호 및 안내",
+    "주인공 격려 및 합류 선언",
+    "요새 공략 플랜 브리핑",
+    "화력 지원 맹세",
+    "플레이어의 상태 확인 및 안내",
+    "플레이어 격려",
+    "전투 준비 과시",
+    "성검 조각의 위치 안내",
+    "성검 1차 복구 및 불안함 표출",
+    "마왕성 침투 작전 지시",
+    "플레이어의 지식 수준을 평가하기",
+    "플레이어의 존중을 요구하며 대립 태도 유지",
+    "플레이어에게 자신의 감정을 전달하기",
+    "퇴로 확보",
+    "파편의 위험성과 복잡성을 설명하기",
+    "유적의 마법 파편 연구 현황을 설명하기",
+    "왕국 재건과 작별 인사",
+    "영웅들의 귀환 환영",
     "성문 밖 위험 경고 및 무기 준비 권유",
 ]
 HOSTILE_NPCS = {"commander_vorg", "demonlord", "imp_fiend", "orc_vagron"}
@@ -173,7 +189,9 @@ def make_daily_scenario(rng: random.Random) -> Dict[str, Any]:
     last = "" if rng.random() < 0.4 else rng.choice(DAILY_ACTS)
 
     def pct() -> float:  # 대부분 멀쩡, 가끔 지침·부상
-        return round(rng.choices([rng.uniform(0.7, 1), rng.uniform(0.3, 0.7), rng.uniform(0.05, 0.3)], [0.72, 0.18, 0.1])[0], 2)
+        return round(
+            rng.choices([rng.uniform(0.7, 1), rng.uniform(0.3, 0.7), rng.uniform(0.05, 0.3)], [0.72, 0.18, 0.1])[0], 2
+        )
 
     talked = rng.random() < 0.5
     partners = [a["id"] for a in actors]
@@ -217,16 +235,34 @@ MOTIVES: Dict[str, Any] = {
     "rest": lambda s: "rest" in s["activities"] and s["metrics"]["stamina_pct"] < 0.35,
     "use_item": lambda s: "use_item" in s["activities"] and s["metrics"]["hp_pct"] < 0.45,
     "pick_up": lambda s: "pick_up" in s["activities"] and any(_near(g["desc"], 4) for g in s["pools"]["ground_items"]),
-    "give_item": lambda s: "give_item" in s["activities"] and bool(s["metrics"]["goal"])
-    and any(a["desc"].startswith(("npc|friendly", "player|friendly")) and _near(a["desc"], 4) for a in s["pools"]["actors"]),
-    "patrol": lambda s: "patrol" in s["activities"] and any(w in s["metrics"]["goal"] for w in ("경고", "확보", "보호", "작전", "공략")),
-    "wander": lambda s: "wander" in s["activities"] and s["metrics"]["idle_s"] >= 45
-    and s["metrics"]["player_dist_m"] < 0 and s["metrics"]["npc_near"] == 0,
-    "emote": lambda s: "emote" in s["activities"] and 15 <= s["metrics"]["talk_s"] <= 60
-    and any(w in s["metrics"]["goal"] for w in ("격려", "환영", "과시", "감정")),
+    "give_item": lambda s: (
+        "give_item" in s["activities"]
+        and bool(s["metrics"]["goal"])
+        and any(
+            a["desc"].startswith(("npc|friendly", "player|friendly")) and _near(a["desc"], 4)
+            for a in s["pools"]["actors"]
+        )
+    ),
+    "patrol": lambda s: (
+        "patrol" in s["activities"] and any(w in s["metrics"]["goal"] for w in ("경고", "확보", "보호", "작전", "공략"))
+    ),
+    "wander": lambda s: (
+        "wander" in s["activities"]
+        and s["metrics"]["idle_s"] >= 45
+        and s["metrics"]["player_dist_m"] < 0
+        and s["metrics"]["npc_near"] == 0
+    ),
+    "emote": lambda s: (
+        "emote" in s["activities"]
+        and 15 <= s["metrics"]["talk_s"] <= 60
+        and any(w in s["metrics"]["goal"] for w in ("격려", "환영", "과시", "감정"))
+    ),
     "stand_up": lambda s: "stand_up" in s["activities"] and s["metrics"]["posture_s"] >= 300,
-    "look_at": lambda s: s["metrics"]["player_relation"] == "friendly" and 0 <= s["metrics"]["player_dist_m"] <= 3
-    and s["metrics"]["talk_s"] < 0,
+    "look_at": lambda s: (
+        s["metrics"]["player_relation"] == "friendly"
+        and 0 <= s["metrics"]["player_dist_m"] <= 3
+        and s["metrics"]["talk_s"] < 0
+    ),
 }
 
 
@@ -336,7 +372,7 @@ def activity_prompt(sc: Dict[str, Any], order: List[str]) -> str:
         + "\n\nHow likely is this character to do each activity right now? Think about personality, posture, "
         "who is around and what was done just before. Real villagers vary: they rest, stroll, pray, sing, "
         "chat, look around, or simply stay put.\n"
-        'Answer JSON only: {"reason": "<one short sentence>", "weights": {"<activity>": ' + GRADE_HINT + ', ...}} '
+        'Answer JSON only: {"reason": "<one short sentence>", "weights": {"<activity>": ' + GRADE_HINT + ", ...}} "
         "covering every activity above."
     )
 
@@ -348,7 +384,7 @@ def slot_prompt(sc: Dict[str, Any], act: str) -> str:
         + "\n".join(_slot_lines(sc, act))
         + "\n\nFor each option line, rate how fitting each choice is for this character now. "
         "Pick a facial expression that matches your mood; use default only when nothing fits.\n"
-        'Answer JSON only: {"slots": {"<slot>": {"<option id>": ' + GRADE_HINT + ', ...}, ...}}'
+        'Answer JSON only: {"slots": {"<slot>": {"<option id>": ' + GRADE_HINT + ", ...}, ...}}"
     )
 
 
@@ -397,7 +433,9 @@ def label_daily(sc: Dict[str, Any], rng: random.Random, temperature: float) -> O
     """활동 가중치 1회 + 슬롯 가중치 1회. 학습 라벨 = 가중치 샘플, 평가 정답 = 가중치 최대(eval)."""
     order = sc["activities"][:]
     rng.shuffle(order)  # 나열 순서 편향 방지
-    ans = _chat(activity_prompt(sc, order), temperature, _schema({"reason": {"type": "string"}, "weights": _grade_map(order)}))
+    ans = _chat(
+        activity_prompt(sc, order), temperature, _schema({"reason": {"type": "string"}, "weights": _grade_map(order)})
+    )
     aw = _weights(ans.get("weights"), sc["activities"])
     if not any(v > 0 for v in aw.values()):
         return None
@@ -420,26 +458,35 @@ def label_daily(sc: Dict[str, Any], rng: random.Random, temperature: float) -> O
             w = _weights(raw.get(slot) if isinstance(raw, dict) else None, ids + [DEFAULT])
             sw[slot] = w
             slots[slot] = _pick(w, rng) if any(v > 0 for v in w.values()) else DEFAULT
-    return {"activity": act, "slots": slots, "reason": str(ans.get("reason", ""))[:200], "weights": aw, "slot_weights": sw}
+    return {
+        "activity": act,
+        "slots": slots,
+        "reason": str(ans.get("reason", ""))[:200],
+        "weights": aw,
+        "slot_weights": sw,
+    }
 
 
 def _resume(path: Path) -> int:
     return sum(1 for _ in open(path, encoding="utf-8")) if path.exists() else 0
 
 
-def gen_daily(count: int, seed: int, temperature: float) -> None:
-    out = DATA / "combos_daily.jsonl"
+def gen_daily(count: int, seed: int, temperature: float, dynamic: bool = False) -> None:
+    """dynamic = 활동별 동기(motive) 상황만 별도 파일로 — 기본 생성기 분포에서 드문 활동(give_item 1.5% 등)을 보강."""
+    out = DATA / ("combos_daily_dynamic.jsonl" if dynamic else "combos_daily.jsonl")
+    prefix = "m" if dynamic else "d"
+    motives = list(MOTIVES)
     DATA.mkdir(parents=True, exist_ok=True)
     done = _resume(out)
     i, t0, fails = done, time.time(), 0
     with open(out, "a", encoding="utf-8") as f:
         # 시드 = 시도 번호(실패 건은 건너뜀). 이어쓰기는 마지막 줄의 시도 번호 다음부터.
-        last = _read(out)[-1]["id"] if done else f"d{seed}_-1"
+        last = _read(out)[-1]["id"] if done else f"{prefix}{seed}_-1"
         attempt = int(last.rsplit("_", 1)[1]) + 1
         while i < count:
             rng = random.Random(seed * 1_000_003 + attempt)
             attempt += 1
-            sc = make_daily_scenario(rng)
+            sc = make_motive_scenario(rng, motives[attempt % len(motives)]) if dynamic else make_daily_scenario(rng)
             try:
                 label = label_daily(sc, rng, temperature)
             except Exception as e:  # 타임아웃·JSON 파손 — 건너뛴다
@@ -447,12 +494,17 @@ def gen_daily(count: int, seed: int, temperature: float) -> None:
                 print(f"[skip] {e}", flush=True)
             if label is None:
                 continue
-            f.write(json.dumps({"id": f"d{seed}_{attempt - 1}", **sc, "label": label}, ensure_ascii=False) + "\n")
+            f.write(
+                json.dumps({"id": f"{prefix}{seed}_{attempt - 1}", **sc, "label": label}, ensure_ascii=False) + "\n"
+            )
             f.flush()
             i += 1
             if i % 25 == 0:
                 rate = (i - done) / (time.time() - t0)
-                print(f"{i}/{count} {rate:.2f}/s eta {(count - i) / max(rate, 1e-6) / 60:.0f}min fails={fails}", flush=True)
+                print(
+                    f"{i}/{count} {rate:.2f}/s eta {(count - i) / max(rate, 1e-6) / 60:.0f}min fails={fails}",
+                    flush=True,
+                )
 
 
 COMBAT_BATCH = 20
@@ -528,7 +580,9 @@ def _passes(sc: Dict[str, Any], want: Dict[str, str], weights: Dict[str, Dict[st
 
 def label_passes(sc: Dict[str, Any]) -> List[Dict[str, Any]]:
     lab = sc["label"]
-    return _passes(sc, {"activity": lab["activity"], **lab["slots"]}, {"activity": lab["weights"], **lab["slot_weights"]})
+    return _passes(
+        sc, {"activity": lab["activity"], **lab["slots"]}, {"activity": lab["weights"], **lab["slot_weights"]}
+    )
 
 
 def combat_example(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -567,10 +621,45 @@ def train_rows(r: Dict[str, Any], mode: str) -> List[Dict[str, Any]]:
     return rows or [{**r, "label": w.index(max(w))}]
 
 
+BALANCE_MAX = 4.0  # 드문 활동 복제 상한 — √(최다/해당) 배. 과보정하면 흔한 상황에서도 드문 활동을 고른다.
+
+
+def balance_activities(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """학습 줄 중 활동 패스만 드문 활동을 복제해 균형을 맞춘다(슬롯·전투 패스는 그대로).
+
+    학습 라벨 1위가 look_at 26%·give_item 1.5% 로 치우쳐 모델 argmax 가 look_at 64% 로 증폭됐다(2026-09-25 골드셋 실측).
+    """
+
+    def act(r: Dict[str, Any]) -> str:
+        return r["options"][r["label"]].split("|", 1)[0]
+
+    counts: Dict[str, int] = {}
+    for r in rows:
+        if r["slot"] == "activity":
+            counts[act(r)] = counts.get(act(r), 0) + 1
+    if not counts:
+        return rows
+    top = max(counts.values())
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        k = 1 if r["slot"] != "activity" else max(1, round(min(BALANCE_MAX, (top / counts[act(r)]) ** 0.5)))
+        out.extend([r] * k)
+    after: Dict[str, int] = {}
+    for r in out:
+        if r["slot"] == "activity":
+            after[act(r)] = after.get(act(r), 0) + 1
+    print("활동 균형:", ", ".join(f"{a} {counts[a]}→{after[a]}" for a in sorted(counts, key=counts.get, reverse=True)))
+    return out
+
+
 def build() -> None:
-    """test 는 두 모드 공유(DATA/test.jsonl, 패스당 1줄). train·validation 은 DATA/<mode>/ 에 모드별로."""
+    """test 는 두 모드 공유(DATA/test.jsonl, 패스당 1줄). train·validation 은 DATA/<mode>/ 에 모드별로.
+
+    daily 라벨 = 기본 생성기(combos_daily) + 동기 상황(combos_daily_dynamic). train 만 활동 균형 복제,
+    validation·test 는 자연 분포 그대로(모델 선택·평가가 실제 분포를 보도록).
+    """
     splits: Dict[str, List[Dict[str, Any]]] = {"train": [], "validation": [], "test": []}
-    for sc in _read(DATA / "combos_daily.jsonl"):
+    for sc in _read(DATA / "combos_daily.jsonl") + _read(DATA / "combos_daily_dynamic.jsonl"):
         splits[_split(sc["id"])].extend(label_passes(sc))
     for row in _read(DATA / "combos_combat.jsonl"):
         splits[_split(row["id"])].append(combat_example(row))
@@ -586,7 +675,8 @@ def build() -> None:
     write(DATA / "test.jsonl", splits["test"])
     for mode in ("soft", "clear"):
         for name in ("train", "validation"):
-            write(DATA / mode / f"{name}.jsonl", [x for r in splits[name] for x in train_rows(r, mode)])
+            rows = [x for r in splits[name] for x in train_rows(r, mode)]
+            write(DATA / mode / f"{name}.jsonl", balance_activities(rows) if name == "train" else rows)
 
 
 def evaluate(checkpoint: str) -> None:
@@ -676,7 +766,9 @@ def gold(svc: JevlikeService) -> None:
         print(f"골드 {k:<9} n={n:>3}  model {mh / n:.1%}  heur {hh / n:.1%}{llm}")
     if reviewed:
         # 검수형은 모델 제안이 먼저 보여 사람이 동의하기 쉽다(앵커링) → 위 model 일치율은 상향 편향, 이 오류율은 하한값.
-        print(f"검수 n={reviewed:>3}  부자연 {flagged / reviewed:.1%}  활동 수정 {changed / reviewed:.1%}  (앵커링: 일치율↑·오류율은 하한)")
+        print(
+            f"검수 n={reviewed:>3}  부자연 {flagged / reviewed:.1%}  활동 수정 {changed / reviewed:.1%}  (앵커링: 일치율↑·오류율은 하한)"
+        )
 
 
 def sheet(n: int, seed: int, candidates: int, dynamic: bool = False, cap: int = 0) -> None:
@@ -771,6 +863,8 @@ def main() -> None:
         p.add_argument("--count", type=int, default=cnt)
         p.add_argument("--seed", type=int, default=1)
         p.add_argument("--temperature", type=float, default=0.8)
+        if name == "gen-daily":
+            p.add_argument("--dynamic", action="store_true", help="동기 상황만 combos_daily_dynamic.jsonl 로")
     sub.add_parser("build")
     p = sub.add_parser("eval")
     p.add_argument("--checkpoint", default=str(ROOT / "app/models/jevlike_tactics.pt"))
@@ -783,7 +877,7 @@ def main() -> None:
     sub.add_parser("review-sheet")
     a = ap.parse_args()
     if a.cmd == "gen-daily":
-        gen_daily(a.count, a.seed, a.temperature)
+        gen_daily(a.count, a.seed, a.temperature, a.dynamic)
     elif a.cmd == "gen-combat":
         gen_combat(a.count, a.seed, a.temperature)
     elif a.cmd == "build":
