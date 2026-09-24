@@ -13,7 +13,10 @@
 
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
 - [ ] **StateTree 에셋 바인딩(전투 전용)** — 일상은 큐 주입이라 무관. 전투 승수는 `SelectCombatAction` 이 캐시를 직접 읽으므로 ST 노드가 실제로 막을 상태가 있는지부터 판단(SPEC_jev_daily 미결).
-- [ ] **Phase 4 PIE 실측(전투)** — 적 조우, HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백. 폴백 검증은 휴리스틱만으로 가능.
+- [ ] **Phase 4 PIE 실측(전투)** — 2026-09-24 적 조우 판정·성격 보정은 확인(Done). 남은 것: 포위(`flanked=1`) 재현(Guard 가 돌진해 두 적이 동시에 시야 안 90°+ 로 안 잡힘), HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백, `BREAKTHROUGH_GAIN`(3.0) 체감 튜닝.
+- [ ] **동시 감지 과소 집계(C++, 수정 여부 결정)** — 적 둘이 거의 동시에 시야에 들어오면 첫 감지 순간 `count=1` 로 요청이 나가고 두 번째 감지는 쿨다운 1s·in-flight 가드에 막힌다 → 실전에서 적 수·포위가 과소 집계. 쿨다운 종료 후 1회 재요청 등.
+- [ ] **전투 라벨 재생성 여부** — agy 검토상 라벨러가 거리를 무시(구간별 분포 동일)하고 포위·적 4명·HP<25% 에서 aggressive 0%. 휴리스틱은 거리 항을 설계값 고정해 피했지만 **soft 모델은 같은 라벨로 학습돼 거리 무시를 그대로 물려받음** — 체크포인트가 켜진 지금 전투 판단은 모델 경로. 재생성 시: 프롬프트에 거리 전술 의미, HP×거리 3×3 층화 샘플링, 5단계 soft 등급(`GRADE_HINT` 재사용).
+- [ ] **SPEC_jev_neuro_symbolic_st 갱신** — 전투 지표 4개 → 6개(`aggression`·`bravery` 추가), 성격 돌파 항·피팅 휴리스틱 반영.
 - [ ] **Jev M2 잔여** — ① 골드 시트 50건 사람 입력(`finetune/jev/data/gold_sheet.html` → `gold_answers.json`) 후 `eval` 로 사람·LLM 일치율 확인, 낮으면 31b 로 daily 재라벨 ② 체크포인트 git 추적 여부(현재 `**/models/*` ignore — 다른 PC 는 휴리스틱) ③ 헤드셋 없는 PIE 로 모델 경로 daily 관찰 ④ 골드셋이 look_at·stay 편중(24·15/50) — 활동별 상한 보완 시트.
 
 ### 척수반사 테이블 — 잔여 1건 (PR #23 Develop 머지 완료 2026-08-22)
@@ -70,6 +73,14 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
+- [x] **Jev 전투 라벨 검토 → 휴리스틱 피팅 + 성격 돌파 (2026-09-24, `92027d4e`)** — Antigravity(`agy`) 검토 결과 판정 "재생성", 검증 후 재생성 대신 피팅 채택.
+  실제 라벨 노이즈는 9.7%(agy 의 33.6% 는 혼합 버킷 비율이라 과장). `finetune/jev/fit_combat_heuristic.py` 로 `heuristic_probs` 선형 로짓 재피팅(L2 0.003 — 0 이면 계수 ~15 로 aggressive 0% 재현,
+  거리 항은 설계값 고정): 홀드아웃 정확도 70.8%→84.5%, log-loss 0.688→0.429. M2 보고의 휴리스틱 87.7% 는 피팅 데이터 누수 — 실제 비교는 모델 90.8% vs 휴리스틱 84.5%.
+  성격 돌파 `apply_personality`: C++ 가 `aggression`·`bravery`(FBehavioralTraits/100) 전송, 포위·수적 열세 × HP 비례로 aggressive 가감, 성격 50·1:1 교전은 무효과, 모델·휴리스틱 공통.
+  오프라인(HP 100%, 성격 0/50/75/100): 적 2명 포위 4/43/77/94% · 적 4명 포위 0/1/4/14%. `test_jev_personality.py` 4건, `verify all` 클린·pytest 111.
+- [x] **Jev 체크포인트 경로 버그 수정 + 전투 PIE 실측 (2026-09-24, `0885b200`)** — README 대로 repo 루트에서 uvicorn 을 띄우면 상대경로 `app/models/jevlike_tactics.pt` 를 못 찾아
+  **조용히 휴리스틱 폴백**(배포 모델 미사용) → `DEFAULT_CHECKPOINT` 절대경로. PIE(헤드셋 없이, Guard vs Vorg·DemonLord, HP 100%): 적 2명 성격 100 → Aggressive conf 1.00 · 성격 0 → 0.91,
+  적 1명은 둘 다 0.97(설계대로 1:1 무효과). 라벨 생성 중엔 GPU 100%·VRAM 15.7/16.3GB 로 PIE 3fps → Jev 응답이 0.3s 워치독에 전부 폐기돼 시험 불가였음.
 - [x] **Jev M2 학습 — soft 체크포인트 배포 (2026-09-24)** — `5a6a7b53`(입력 정비·C++ hp/stamina/hit/talk) · `d53793be`(데이터 도구·라벨). 전투 2000(31b)·daily 2000(26b) 합성,
   soft 모델 활동 top-1 77.4%(휴리스틱 48.4%)·슬롯 69.6%(51.9%)·4패스 1.6ms. clear(명확만 학습)는 애매 상황 분포 오차 2배(TV 0.38 vs 0.18) → 기각. 상세 SPEC_jev_daily 구현 기록 M2.
 - [x] **Jev 일상 활동 매칭 M1 — PIE 검증 완료 (2026-09-24)** — `SPEC_jev_daily.md`. Python `b704d0a6`(테스트 15) · C++ `769bd13e` · `9b98ed7b`(기상 억제) ·
