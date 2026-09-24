@@ -12,11 +12,10 @@
 - [ ] **§3.1·3.3 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 남은 순서: Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0.
 
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
-- [ ] **StateTree 에셋 바인딩(전투 전용)** — 일상은 큐 주입이라 무관. 전투 승수는 `SelectCombatAction` 이 캐시를 직접 읽으므로 ST 노드가 실제로 막을 상태가 있는지부터 판단(SPEC_jev_daily 미결).
-- [ ] **Phase 4 PIE 실측(전투)** — 2026-09-24 적 조우 판정·성격 보정은 확인(Done). 남은 것: 포위(`flanked=1`) 재현(Guard 가 돌진해 두 적이 동시에 시야 안 90°+ 로 안 잡힘), HP 저하 시 Flee 배율로 거리 벌리기, 백엔드 단절 시 1.0 중립 폴백, `BREAKTHROUGH_GAIN`(3.0) 체감 튜닝.
-- [ ] **동시 감지 과소 집계(C++, 수정 여부 결정)** — 적 둘이 거의 동시에 시야에 들어오면 첫 감지 순간 `count=1` 로 요청이 나가고 두 번째 감지는 쿨다운 1s·in-flight 가드에 막힌다 → 실전에서 적 수·포위가 과소 집계. 쿨다운 종료 후 1회 재요청 등.
+- [ ] (보류) **StateTree 에셋 바인딩(전투 전용)** — 2026-09-24 판단: 붙여도 동작 변화 0. 전투 승수는 `SelectCombatAction`·`ComputeEQSWeights` 가 캐시를 직접 읽고, `FSTEvaluator_JevTactics`·`FSTCondition_NoulGuard` 는 코드 어디서도 안 쓰이며 `noul_harmful` 은 0.0 고정이라 가드가 막을 일이 없다. Noul(유해) 헤드를 학습할 때 재검토.
+- [ ] **`BREAKTHROUGH_GAIN`(3.0) 체감 튜닝(헤드셋)** — Phase 4 헤드셋 없는 PIE 는 전부 완료(아래 Done). 돌파 세기가 게임적으로 적당한지만 사용자 체감.
 - [ ] (선택) **전투 라벨 재생성 + 전투 모델 재학습** — 전투는 현재 휴리스틱 경로(A안, 아래 Done). 전투에도 모델을 쓰고 싶을 때만: soft 5단계 등급(`GRADE_HINT` 재사용)·프롬프트에 거리 전술 의미·HP×거리 3×3 층화 샘플링으로 재생성 → 재학습 → `evaluate_tactics` 를 `self._model_probs(context) or heuristic_probs(metrics)` 로 복귀.
-- [ ] **Jev M2 잔여** — ① 골드 시트 50건 사람 입력(`finetune/jev/data/gold_sheet.html` → `gold_answers.json`) 후 `eval` 로 사람·LLM 일치율 확인, 낮으면 31b 로 daily 재라벨 ② 체크포인트 git 추적 여부(현재 `**/models/*` ignore — 다른 PC 는 휴리스틱) ③ 헤드셋 없는 PIE 로 모델 경로 daily 관찰 ④ 골드셋이 look_at·stay 편중(24·15/50) — 활동별 상한 보완 시트.
+- [ ] **Jev M2 잔여** — ① 골드 시트 50건 사람 입력(`finetune/jev/data/gold_sheet.html` → `gold_answers.json`) 후 `eval` 로 사람·LLM 일치율 확인, 낮으면 31b 로 daily 재라벨 ② 체크포인트 git 추적 여부(현재 `**/models/*` ignore — 다른 PC 는 휴리스틱. 파일 0.19MB 라 추적 부담 없음, 공개 저장소 공개 여부만 결정) ~~③ 헤드셋 없는 PIE 로 모델 경로 daily 관찰~~(2026-09-24 서버 `jevlike 로드 완료 device=cuda` 후 PIE daily 판정 정상 유입 확인) ④ 골드셋이 look_at·stay 편중(24·15/50) — 활동별 상한 보완 시트.
 
 ### 척수반사 테이블 — 잔여 1건 (PR #23 Develop 머지 완료 2026-08-22)
 - [ ] **PIE 검증 5항목**(SPEC §7) — 학습 완료됨. 에디터 열고 검증 가능.
@@ -72,6 +71,10 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
+- [x] **Jev 동시 감지 교체 + 포위 집계 수정 + Phase 4 PIE 완료 (2026-09-24, `96669d5e`·`08ed190b`)** — 요청 가드(in-flight·쿨다운 1s 중 버림)를 예약으로: 같은 프레임 1건, 쿨다운(0.25s) 중이면
+  만료 시점 1건, 전송 시점 최신 지표, 진행 중 요청은 세대 증가로 교체. 적 집계는 '지금 시야' 대신 '최근 2초 안에 본 적' — 첫 적을 보면 몸을 돌려 90°+ 반대편 적이 시야 120° 밖으로 빠져 포위가 구조적으로 불가했다.
+  PIE(헤드셋 없이): count=1 요청이 0.25s 뒤 count=2 로 교체 · 처음으로 count=3 flanked=1 관측(성격 100 P(aggr) 0.127, 공식 일치) · 백엔드 단절 시 Jev 요청 0건·C++ 반사 공격 정상.
+  HP 25% 교차 트리거는 1:1 이면 분포가 평평(HP 25% 최대 0.38, 20% 0.48)해 확신도 0.5 미만 → 설계대로 중립. 적 2명 또는 HP ≲15% 에선 Flee ≥0.58 로 반영 — 실전은 피격 소음이 재요청하므로 곧 걸린다.
 - [x] **Jev 전투 = 휴리스틱 경로로 전환(A안) — 성격 돌파 복구 (2026-09-24)** — 배포 모델은 전투 라벨의 "포위 시 aggressive 0%" 를 극단 확률로 학습해 포위 시 P(aggr) 가 성격 0~100 전부 0%였다. `evaluate_tactics` 는 체크포인트가 있어도 전투는 피팅 휴리스틱만 쓰고 모델은 daily 전용. 회귀 테스트 `test_combat_ignores_model_even_when_loaded`, pytest 111+1.
   PIE(Guard, 적 2~3명, HP 100%) 값이 공식과 소수 둘째 자리까지 일치: 성격 100·32m 0.65 / 성격 0·31m 0.09, 성격 0·적3 0.01(같은 지표 성격 100 이면 0.82).
   함정: **에디터 창이 뒤에 있으면 `bThrottleCPUWhenNotForeground=false`·`t.IdleWhenNotForeground 0` 이어도 PIE 가 3fps(delta 0.333)** → Jev 응답 전부 0.3s 워치독 폐기. 창을 앞으로(`WScript.Shell.AppActivate`) 가져오면 120fps.
