@@ -71,6 +71,9 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
+- [x] **Jev daily sharpen 스윕 → v3 배포, Jev 일단 종료 (2026-09-25)** — 활동 패스 soft 목표 = LLM 가중치^sharpen(`build --sharpen`, 기본 3). `finetune/jev/sweep.py` 로 12설정(결과 `runs/sweep.tsv`, ignore).
+  5목표 전부 통과 0. 배포 = sharpen3·bmax4·width128·20에폭: 정답률 .742(v2c .762)·look_at 선택 .557(.75)·stay 단독1위 재현 .514(6/35)·골드 일치 .590(.59)·골드 look_at .410(.49).
+  정답률 −2%p 감수하고 편중 개선 채택. v2c 는 `app/models/jevlike_tactics_v2c.pt` 백업. 골드 시트 미리채움은 m2 모델 기준(look_at 25/39) — 재생성 안 함.
 - [x] **Jev daily 재학습 3회 — 목표 미달, 최선(v2c) 배포 (2026-09-25)** — look_at 편중·stay 미인식 개선 시도. 동적(동기) 라벨 500(`gen-daily --dynamic`) + 활동 균형.
   목표: 정답률 ≥75%·test look_at 선택 ≤60%·stay 단독1위 재현율 ≥40%·동적 골드 LLM 일치 ≥60%·골드 look_at ≤40%. 결과(기존 → v2a/v2b/v2c):
   정답률 77.5 → 39.3/76.6/**76.2** · look_at 선택 83% → 11/78/**75** · stay 2/35 → 6/7/**6** · 골드 일치 51% → 49/54/**59** · 골드 look_at 64% → 10/62/**49**.

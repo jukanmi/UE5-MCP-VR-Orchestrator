@@ -610,9 +610,17 @@ def is_clear(w: List[float]) -> bool:
     return s[0] >= 5 and (len(s) < 2 or s[1] <= s[0] - 3)
 
 
+SHARPEN = 3.0  # 활동 패스 soft 목표 = LLM 가중치^SHARPEN. 1 = 원래 비율, 클수록 1위에 몰림(build --sharpen)
+
+
 def train_rows(r: Dict[str, Any], mode: str) -> List[Dict[str, Any]]:
-    """평가용 패스 1개 → 학습 줄. soft = 가중치 비율 복제(애매하면 평평하게 배움), clear = 명확한 패스만 argmax."""
+    """평가용 패스 1개 → 학습 줄. soft = 가중치 비율 복제(애매하면 평평하게 배움), clear = 명확한 패스만 argmax.
+
+    활동 패스만 가중치를 SHARPEN 제곱 — stay 1위여도 비중이 평균 0.38 로 평평해 흔한 look_at 으로 쏠렸다.
+    """
     w = r.get("w")
+    if w and r.get("slot") == "activity" and SHARPEN != 1.0:
+        w = [v**SHARPEN for v in w]
     if not w or sum(w) <= 0:  # 전투(단일 답)·가중치 없음
         return [r] * (SOFT_ROWS if mode == "soft" else 1)
     if mode == "clear":
@@ -869,7 +877,9 @@ def main() -> None:
         p.add_argument("--temperature", type=float, default=0.8)
         if name == "gen-daily":
             p.add_argument("--dynamic", action="store_true", help="동기 상황만 combos_daily_dynamic.jsonl 로")
-    sub.add_parser("build")
+    p = sub.add_parser("build")
+    p.add_argument("--sharpen", type=float, default=3.0, help="활동 패스 soft 목표 = 가중치^sharpen")
+    p.add_argument("--balance-max", type=float, default=4.0, help="상황 균형 복제 상한(1 = 균형 없음)")
     p = sub.add_parser("eval")
     p.add_argument("--checkpoint", default=str(ROOT / "app/models/jevlike_tactics.pt"))
     p = sub.add_parser("sheet")
@@ -885,6 +895,8 @@ def main() -> None:
     elif a.cmd == "gen-combat":
         gen_combat(a.count, a.seed, a.temperature)
     elif a.cmd == "build":
+        global SHARPEN, BALANCE_MAX
+        SHARPEN, BALANCE_MAX = a.sharpen, a.balance_max
         build()
     elif a.cmd == "eval":
         evaluate(a.checkpoint)

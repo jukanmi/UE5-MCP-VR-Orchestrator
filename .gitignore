@@ -138,6 +138,7 @@ OmniAgent_VR_System/CognitiveEngine/finetune/data/processed/*.jsonl
 OmniAgent_VR_System/CognitiveEngine/finetune/eval/report/
 OmniAgent_VR_System/CognitiveEngine/finetune/**/checkpoints/
 OmniAgent_VR_System/CognitiveEngine/finetune/**/models/
+OmniAgent_VR_System/CognitiveEngine/finetune/jev/runs/
 OmniAgent_VR_System/CognitiveEngine/finetune/**/*.bin
 OmniAgent_VR_System/CognitiveEngine/finetune/**/*.safetensors
 OmniAgent_VR_System/CognitiveEngine/finetune/data/synth/generated/batches/
