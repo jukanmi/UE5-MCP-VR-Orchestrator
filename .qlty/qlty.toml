@@ -56,6 +56,25 @@ test_patterns = [
 [smells]
 mode = "comment"
 
+# ── 구조 스멜 임계 (2026-09-25) ─────────────────────────────────────────
+# UE C++ 는 가드 early-return·큰 컴포넌트 파일이 관용이라 기본값이면 PR 마다 수십 건이 붙어 진짜 지적이 묻힌다.
+# 파일 총복잡도는 끄고, 함수 단위만 "정말 쪼갤 만한" 수준에서 알린다.
+[smells.file_complexity]
+enabled = false
+
+[smells.function_complexity]
+threshold = 30
+
+[smells.return_statements]
+threshold = 10
+
+[smells.nested_control_flow]
+threshold = 6
+
+# UE 델리게이트 시그니처(OnComponentHit 8개 등)는 엔진이 정한다
+[smells.function_parameters]
+threshold = 9
+
 [[source]]
 name = "default"
 default = true
@@ -93,27 +112,42 @@ name = "trufflehog"
 [[plugin]]
 name = "zizmor"
 
-# ── 오탐 억제 (2026-09-13 전수 분석 결과 반영) ──────────────────────────
-# tests/ 의 assert 는 pytest 관용구
-[[ignore]]
-rules = ["bandit:B101"]
-file_patterns = ["**/tests/**"]
+# ── 오탐 억제 ─────────────────────────────────────────────────────────
+# [[ignore]] 는 qlty 0.6xx 에서 deprecated, file_patterns 없는 항목은 조용히 무시된다 → [[triage]] 로 이관.
+
+# tests/ 의 assert 는 pytest 관용구, 고정 토큰 문자열은 테스트용
+[[triage]]
+match.rules = ["bandit:B101", "bandit:B105", "bandit:B106", "bandit:B107"]
+match.file_patterns = ["**/tests/**"]
+set.ignored = true
 
 # random 은 NPC 확률 행동·데이터 셔플용, 암호 용도 아님
-[[ignore]]
-rules = ["bandit:B311"]
+[[triage]]
+match.rules = ["bandit:B311"]
+match.file_patterns = ["**"]
+set.ignored = true
 
-# finetune 스크립트의 urlopen 은 localhost Ollama 고정 URL
-[[ignore]]
-rules = ["bandit:B310"]
-file_patterns = ["**/finetune/**"]
+# tools/·finetune/ 는 개발자 로컬 CLI·오프라인 학습 도구 — subprocess 가 본업, assert 는 입력 확인,
+# urlopen 은 localhost Ollama 고정, md5 는 train/test 분할 해시(보안 용도 아님)
+[[triage]]
+match.rules = ["bandit:B101", "bandit:B310", "bandit:B324", "bandit:B404", "bandit:B603", "bandit:B607"]
+match.file_patterns = ["tools/**", "**/finetune/**"]
+set.ignored = true
 
-# 테스트 고정 토큰 문자열
-[[ignore]]
-rules = ["bandit:B105", "bandit:B106", "bandit:B107"]
-file_patterns = ["**/tests/**"]
+# trufflehog Lob(Lob.com API 키) 탐지기 — 이 프로젝트는 Lob 을 안 쓰고, 식별자 문자열에 오탐한다(PR #29)
+[[triage]]
+match.rules = ["trufflehog:Lob"]
+match.file_patterns = ["**"]
+set.ignored = true
 
-# tools/ 는 개발자 로컬 CLI — subprocess 호출이 본업
-[[ignore]]
-rules = ["bandit:B404", "bandit:B603", "bandit:B607"]
-file_patterns = ["tools/**"]
+# radarlint 인지 복잡도(S3776)는 smells.function_complexity 와 중복, 중첩 삼항(S3358)은 취향
+[[triage]]
+match.rules = ["radarlint-python:python:S3776", "radarlint-python:python:S3358"]
+match.file_patterns = ["**"]
+set.ignored = true
+
+# 테스트·학습 도구: 정확한 값 비교(S1244)는 의도, 리터럴 반복(S1192)·수식 변수명 X/D/P(S117)는 무해
+[[triage]]
+match.rules = ["radarlint-python:python:S1244", "radarlint-python:python:S1192", "radarlint-python:python:S117"]
+match.file_patterns = ["**/tests/**", "**/finetune/**"]
+set.ignored = true
