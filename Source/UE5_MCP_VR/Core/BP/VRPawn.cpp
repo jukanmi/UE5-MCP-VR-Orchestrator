@@ -4,6 +4,8 @@
 #include "MotionControllerComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Core/BP/KineticProjectile.h"
@@ -23,6 +25,7 @@
 #include "Engine/DamageEvents.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
+#include "IXRTrackingSystem.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
 #include "Utils/DiceSystem.h"
@@ -98,6 +101,43 @@ AVRPawn::AVRPawn()
     MeleeSphereRight->SetupAttachment(GetMesh(), TEXT("RightHand"));  // Mixamo X_Bot 본 이름
     MeleeSphereRight->InitSphereRadius(MeleeSphereRadius);
     MeleeSphereRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    // 고스트 핸드 — 앵커는 컨트롤러 Grip 포즈를 그대로 따라가는 목표점.
+    HandTrackingAnchorLeft = CreateDefaultSubobject<USceneComponent>(TEXT("HandTrackingAnchorLeft"));
+    HandTrackingAnchorLeft->SetupAttachment(MotionControllerLeft);
+    HandTrackingAnchorRight = CreateDefaultSubobject<USceneComponent>(TEXT("HandTrackingAnchorRight"));
+    HandTrackingAnchorRight->SetupAttachment(MotionControllerRight);
+
+    // 물리 손바닥 — 벽(WorldStatic/WorldDynamic)에만 막히고 나머지는 전부 무시한다.
+    // 자기 캡슐·NPC(Pawn)를 막으면 몸에 손이 걸리고, 드랍 아이템(PhysicsBody)을 막으면
+    // 쥐려고 손을 뻗는 순간 아이템을 밀쳐 낸다. Visibility 를 막으면 UI 포인터 광선을 가린다.
+    // 정육면체라 손 회전과 무관하게 같은 모양이다 — 회전은 제약으로 잠그고 Effector 는 앵커 회전을 쓴다.
+    auto MakePalm = [this](const TCHAR* Name)
+    {
+        UBoxComponent* Palm = CreateDefaultSubobject<UBoxComponent>(Name);
+        Palm->SetupAttachment(RootComponent);
+        Palm->InitBoxExtent(FVector(5.f));
+        Palm->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        Palm->SetCollisionObjectType(ECC_WorldDynamic);
+        Palm->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Palm->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+        Palm->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+        Palm->SetGenerateOverlapEvents(false);
+        Palm->SetEnableGravity(false);   // 드라이브가 중력을 이기느라 손이 처지지 않게
+        return Palm;
+    };
+    PhysicsPalmLeft  = MakePalm(TEXT("PhysicsPalmLeft"));
+    PhysicsPalmRight = MakePalm(TEXT("PhysicsPalmRight"));
+
+    // 제약은 손바닥 ↔ 월드. 월드 기준 프레임이 폰 이동에 끌려가지 않도록 절대 좌표로 둔다.
+    PalmConstraintLeft = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("PalmConstraintLeft"));
+    PalmConstraintLeft->SetupAttachment(RootComponent);
+    PalmConstraintLeft->SetUsingAbsoluteLocation(true);
+    PalmConstraintLeft->SetUsingAbsoluteRotation(true);
+    PalmConstraintRight = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("PalmConstraintRight"));
+    PalmConstraintRight->SetupAttachment(RootComponent);
+    PalmConstraintRight->SetUsingAbsoluteLocation(true);
+    PalmConstraintRight->SetUsingAbsoluteRotation(true);
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -304,6 +344,89 @@ void AVRPawn::BeginPlay()
     // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
     // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
     ApplyInventoryPresentation(false);
+
+    InitGhostHand(PhysicsPalmLeft,  HandTrackingAnchorLeft,  PalmConstraintLeft);
+    InitGhostHand(PhysicsPalmRight, HandTrackingAnchorRight, PalmConstraintRight);
+}
+
+// ============================================================================
+// 고스트 핸드 — 물리 손바닥이 선형 드라이브로 트래킹 앵커를 쫓는다
+// ============================================================================
+
+void AVRPawn::InitGhostHand(UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint)
+{
+    if (!Palm || !Anchor || !Constraint) return;
+
+    // 시뮬레이션 바디는 부모를 따라가면 안 된다 — 폰에서 떼어 앵커 위치에서 출발시킨다.
+    Palm->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+    Palm->SetWorldLocationAndRotation(Anchor->GetComponentLocation(), FQuat::Identity, false, nullptr, ETeleportType::TeleportPhysics);
+    Palm->SetSimulatePhysics(true);
+
+    // 선형 이동은 자유, 회전은 잠금 — 드라이브만이 손바닥을 앵커 쪽으로 당긴다.
+    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+    Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
+    Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
+    Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Locked, 0.f);
+
+    // 강성은 위치 드라이브, 감쇠는 속도 드라이브(목표 속도 0)에 걸리므로 둘 다 켠다.
+    Constraint->SetLinearPositionDrive(true, true, true);
+    Constraint->SetLinearVelocityDrive(true, true, true);
+    Constraint->SetLinearVelocityTarget(FVector::ZeroVector);
+    Constraint->SetLinearDriveParams(HandDriveStiffness, HandDriveDamping, HandDriveMaxForce);
+    Constraint->SetLinearPositionTarget(FVector::ZeroVector);
+
+    // 제약 프레임을 월드 축 정렬로 손바닥 중심에 두고 마지막에 연결한다. 월드 쪽 프레임은 이 순간의
+    // 제약 월드 변환으로 고정되므로, 드라이브 목표 = (앵커 월드 위치 − 제약 월드 위치) 로 곧장 쓸 수 있다.
+    Constraint->SetWorldLocationAndRotation(Palm->GetComponentLocation(), FQuat::Identity);
+    Constraint->SetConstrainedComponents(Palm, NAME_None, nullptr, NAME_None);
+}
+
+void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
+{
+    // 손바닥이 앵커에서 이 거리(cm) 이상 떨어지면 드라이브로 못 따라온다고 보고 앵커로 순간이동.
+    // 대쉬(0.15초에 300cm)·리스폰·착석 스냅 때 손이 뒤에 남거나 벽 뒤에 끼는 것을 막는다.
+    // ponytail: 벽 너머로 이 거리 이상 손을 밀어 넣으면 손바닥이 벽을 통과한다 — 막아야 하면 순간이동 전 스윕 검사 추가.
+    static constexpr float SnapDistance = 60.f;
+
+    auto UpdateHand = [this](UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint, EControllerHand Hand)
+    {
+        if (!Palm || !Anchor || !Constraint || !Palm->IsSimulatingPhysics()) return;
+
+        // 입력 소스 선택 — 앵커가 곧 "진짜 손" 이다. 핸드트래킹이 추적 중이면 손바닥 관절로 옮기고,
+        // 아니면(컨트롤러를 쥠·트래킹 소실) 컨트롤러 Grip 포즈로 되돌린다. 드라이브·Effector·순간이동이 전부 앵커를 읽는다.
+        // ponytail: 관절 회전 축이 컨트롤러 Grip 축과 달라 GripOffset 이 어긋날 수 있다 — 헤드셋 PIE 에서 확인 후 핸드트래킹용 오프셋 분리.
+        FXRHandTrackingState HandState;
+        if (GEngine && GEngine->XRSystem.IsValid())
+        {
+            GEngine->XRSystem->GetHandTrackingState(this, EXRSpaceType::UnrealWorldSpace, Hand, HandState);
+        }
+        const int32 PalmKey = static_cast<int32>(EHandKeypoint::Palm);
+        if (HandState.bValid && HandState.TrackingStatus == ETrackingStatus::Tracked
+            && HandState.HandKeyLocations.IsValidIndex(PalmKey) && HandState.HandKeyRotations.IsValidIndex(PalmKey))
+        {
+            Anchor->SetWorldLocationAndRotation(HandState.HandKeyLocations[PalmKey], HandState.HandKeyRotations[PalmKey]);
+        }
+        else
+        {
+            Anchor->SetRelativeTransform(FTransform::Identity);
+        }
+
+        const FVector Target = Anchor->GetComponentLocation();
+        if (FVector::DistSquared(Palm->GetComponentLocation(), Target) > FMath::Square(SnapDistance))
+        {
+            // ResetPhysics — 위치와 함께 잔류 속도도 비워 순간이동 직후 튕겨 나가지 않게 한다.
+            Palm->SetWorldLocation(Target, false, nullptr, ETeleportType::ResetPhysics);
+        }
+
+        // 튜닝 값을 PIE 중 Details 에서 바꿔도 바로 먹도록 매 틱 반영한다.
+        Constraint->SetLinearDriveParams(HandDriveStiffness, HandDriveDamping, HandDriveMaxForce);
+        Constraint->SetLinearPositionTarget(Target - Constraint->GetComponentLocation());
+    };
+
+    UpdateHand(PhysicsPalmLeft,  HandTrackingAnchorLeft,  PalmConstraintLeft,  EControllerHand::Left);
+    UpdateHand(PhysicsPalmRight, HandTrackingAnchorRight, PalmConstraintRight, EControllerHand::Right);
 }
 
 // ============================================================================
@@ -325,6 +448,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateItemTooltip();
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
+    UpdateGhostHandTracking(DeltaTime);
 
     // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
     // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -433,10 +557,14 @@ FTransform AVRPawn::GetHeadEffectorCS() const
     return T;
 }
 
+// 손 위치는 물리 손바닥(벽에 막힌 실제 위치), 회전은 트래킹 앵커(컨트롤러 Grip 포즈).
+// 손바닥은 회전이 잠긴 정육면체라 회전 정보가 없다. 시뮬레이션 전(에디터·BeginPlay 이전)엔 앵커 위치 그대로.
 FTransform AVRPawn::GetLeftHandEffectorCS() const
 {
-    if (!MotionControllerLeft || !GetMesh()) return FTransform::Identity;
-    FTransform T = MotionControllerLeft->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    if (!HandTrackingAnchorLeft || !GetMesh()) return FTransform::Identity;
+    FTransform W = HandTrackingAnchorLeft->GetComponentTransform();
+    if (PhysicsPalmLeft && PhysicsPalmLeft->IsSimulatingPhysics()) W.SetLocation(PhysicsPalmLeft->GetComponentLocation());
+    FTransform T = W.GetRelativeTransform(GetMesh()->GetComponentTransform());
     // 그립 축 보정을 손 로컬 공간에 적용(우측 곱) — 손이 회전해도 보정이 따라감.
     T.SetRotation(T.GetRotation() * LeftHandGripOffset.Quaternion());
     return T;
@@ -444,8 +572,10 @@ FTransform AVRPawn::GetLeftHandEffectorCS() const
 
 FTransform AVRPawn::GetRightHandEffectorCS() const
 {
-    if (!MotionControllerRight || !GetMesh()) return FTransform::Identity;
-    FTransform T = MotionControllerRight->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    if (!HandTrackingAnchorRight || !GetMesh()) return FTransform::Identity;
+    FTransform W = HandTrackingAnchorRight->GetComponentTransform();
+    if (PhysicsPalmRight && PhysicsPalmRight->IsSimulatingPhysics()) W.SetLocation(PhysicsPalmRight->GetComponentLocation());
+    FTransform T = W.GetRelativeTransform(GetMesh()->GetComponentTransform());
     T.SetRotation(T.GetRotation() * RightHandGripOffset.Quaternion());
     return T;
 }

@@ -21,6 +21,8 @@ class UInventoryComponent;
 class UPlayerHUDWidget;
 class UChatWidget;
 class USphereComponent;
+class UBoxComponent;
+class UPhysicsConstraintComponent;
 class AKineticProjectile;
 class UWidgetComponent;
 class UWidgetInteractionComponent;
@@ -109,6 +111,44 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereRight;
+
+    // ── 고스트 핸드 — 트래킹 목표(앵커)와 물리 손바닥을 분리해 벽에 손이 막히게 한다 ──
+    // 앵커는 컨트롤러를 그대로 따라가는 목표점, 손바닥은 제약 조건의 선형 드라이브로 앵커를
+    // 쫓는 물리 바디. 벽을 밀면 앵커만 벽 너머로 가고 손바닥은 표면에 멈춘다.
+    // FBIK 손 위치는 손바닥을 따르고, 잡기·던지기·거래 손 판정은 컨트롤러(앵커)를 그대로 쓴다.
+
+    /** 왼손 물리 손바닥. 게임 시작 시 물리 시뮬레이션으로 전환되어 부모를 떠난다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    UBoxComponent* PhysicsPalmLeft;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    UBoxComponent* PhysicsPalmRight;
+
+    /** 왼손 트래킹 목표 — 컨트롤러 Grip 포즈에 부착. 손바닥 드라이브의 목표 위치. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    USceneComponent* HandTrackingAnchorLeft;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    USceneComponent* HandTrackingAnchorRight;
+
+    /** 왼손 손바닥 ↔ 월드 제약. 선형 이동은 자유, 선형 드라이브가 앵커 쪽으로 끌어당긴다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    UPhysicsConstraintComponent* PalmConstraintLeft;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
+    UPhysicsConstraintComponent* PalmConstraintRight;
+
+    /** 선형 드라이브 강성 — 클수록 손바닥이 앵커에 빨리 붙는다. 너무 크면 벽에서 떨린다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandDriveStiffness = 3000.f;
+
+    /** 선형 드라이브 감쇠 — 앵커 도달 시 튕김(오버슈트) 억제. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandDriveDamping = 100.f;
+
+    /** 선형 드라이브 최대 힘 — 벽을 미는 힘의 상한. 작을수록 벽에서 손이 쉽게 멈춘다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandDriveMaxForce = 1500.f;
 
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
@@ -505,11 +545,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetHeadEffectorCS() const;
 
-    /** 왼손 컨트롤러를 몸체 메시 공간으로 변환한 Left Hand Effector Transform. */
+    /** 왼손 Effector — 위치는 물리 손바닥(벽에 막힘), 회전은 트래킹 앵커. 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetLeftHandEffectorCS() const;
 
-    /** 오른손 컨트롤러를 몸체 메시 공간으로 변환한 Right Hand Effector Transform. */
+    /** 오른손 Effector — 위치는 물리 손바닥(벽에 막힘), 회전은 트래킹 앵커. 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetRightHandEffectorCS() const;
 
@@ -606,6 +646,13 @@ private:
 
     /** 매 Tick — 대쉬 잔여 시간 소진 시 StopDash */
     void UpdateDash(float DeltaTime);
+
+    // --- 고스트 핸드 ---
+    /** BeginPlay — 손바닥을 앵커 위치로 옮기고 물리 시뮬레이션 + 월드 제약 선형 드라이브를 건다. */
+    void InitGhostHand(UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint);
+
+    /** 매 Tick — 앵커 위치를 드라이브 목표로 갱신. 손바닥이 너무 멀어지면(대쉬·리스폰) 앵커로 순간이동. */
+    void UpdateGhostHandTracking(float DeltaTime);
 
     /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
     void StopDash();
