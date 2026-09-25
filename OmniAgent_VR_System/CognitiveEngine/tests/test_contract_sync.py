@@ -14,7 +14,7 @@ import pytest
 
 from app.schemas.actions import (
     ACTION_REQUIRED_PARAMS,
-    CATEGORY_ACTION_MAP,
+    COMBAT_ACTIONS,
     DIALOGUE_ACTION_FIELD_MAP,
     DialogueActionItem,
     EAction,
@@ -80,11 +80,10 @@ def test_facial_state_matches_cpp():
     assert cpp == py, f"FacialState 불일치 — C++ 에만: {sorted(cpp - py)} / Python 에만: {sorted(py - cpp)}"
 
 
-def test_category_map_covers_all_actions():
-    """CATEGORY_ACTION_MAP 합집합 == EAction — 카테고리 미배정 액션은 Rules Mode 보정 누락."""
-    mapped = set().union(*CATEGORY_ACTION_MAP.values())
-    py = set(get_args(EAction))
-    assert mapped == py, f"카테고리 미배정: {sorted(py - mapped)} / EAction 에 없는 항목: {sorted(mapped - py)}"
+def test_combat_actions_are_known_actions():
+    """COMBAT_ACTIONS ⊂ EAction — 오타·삭제된 액션이면 Rules 의 Combat 보정이 무음으로 빠진다."""
+    unknown = COMBAT_ACTIONS - set(get_args(EAction))
+    assert not unknown, f"COMBAT_ACTIONS 에 EAction 아닌 항목: {sorted(unknown)}"
 
 
 def test_required_params_only_known_actions():

@@ -44,4 +44,8 @@ protected:
 private:
     float Damage = 10.f;
     TWeakObjectPtr<AActor> Shooter;
+
+    // 진행 방향 NPC 에게 회피 반사 통지(0.1s 간격, NPC 당 1회) — UNPCActionComponent::WarnIncomingProjectile.
+    FTimerHandle WarnTimer;
+    TSet<const AActor*> WarnedNPCs;
 };

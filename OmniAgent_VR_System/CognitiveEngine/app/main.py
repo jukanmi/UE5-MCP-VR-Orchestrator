@@ -20,7 +20,10 @@ from .schemas.envelope import (
     PromptPayload,
     LocationDecisionPayload,
     EmergencyReportPayload,
+    JevQueryPayload,
 )
+from .services.jev_service import get_jev_service
+from .agents.subgraphs.dialogue import load_persona
 from .schemas.vr_context import GesPrompt
 from .schemas.actions import ModeActionRequest, NPCBehaviorMode
 from .agents.state import AgentState
@@ -252,6 +255,9 @@ async def _process_llm_message(raw_data: str) -> str:
         elif envelope.type == EEnvelopeType.STORY_EVENT:
             return await _handle_story_event(envelope)
 
+        elif envelope.type == EEnvelopeType.JEV_QUERY:
+            return _handle_jev_query(envelope)
+
         else:
             logger.error(f"[Main] 알 수 없는 메시지 타입: {envelope.type}")
             return json.dumps({"error": f"Unknown message type: {envelope.type}"})
@@ -380,6 +386,12 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         # 다음 replan 이 "아직 아무것도 안 했다" 전제로 중복 지시를 내리는 것을 막는 것뿐.
         if payload.reflex_action:
             _record_reflex_memory(payload.agent_id, payload.reflex_action)
+
+        # ── 감각 융합 문맥 기록 ─────────────────────────────────────────
+        # "소리 듣고 돌아봤더니 누가 있었다" 는 친화 대상이어도 기억 가치가 있다 — danger 게이트 앞.
+        for p in payload.perceptions:
+            if p.context:
+                _record_event_memory_bg(payload.agent_id, f"{payload.agent_id}: {p.context}", "fusion-memory")
 
         # ── danger 게이트 ──────────────────────────────────────────────
         # 임계 미만이면 호감도 감점 대상도 아니다(_apply_hostile_affinity 자체가 danger>=0.5 필터).
@@ -700,6 +712,70 @@ async def _handle_location_decision(envelope: MessageEnvelope) -> str:
     except Exception as e:
         logger.error(f"[LocationDecision] 오류: {e}\n{traceback.format_exc()}")
         return _location_decision_fast_path(payload_raw, "exception")
+
+
+def _handle_jev_query(envelope: MessageEnvelope) -> str:
+    """jev_query → jev_decision. 로컬 jevlike(또는 휴리스틱) 동기 추론 5~20ms — LLM 미경유.
+
+    동기 함수인 이유: 추론이 ms 단위라 await 포인트가 불필요하고, 이벤트루프 양보 없이
+    바로 회신해야 UE5 0.3s 워치독 안에 든다. 어떤 예외든 중립 응답(confidence 0.0 →
+    UE5 가 승수 1.0 유지)으로 돌려 무음 드랍을 막는다. generation 은 그대로 echo.
+    """
+    payload_raw = envelope.payload if isinstance(envelope.payload, dict) else {}
+    npc_id = str(payload_raw.get("npc_id", "unknown"))
+    try:
+        generation = int(payload_raw.get("generation", 0))
+    except (TypeError, ValueError):
+        generation = 0
+
+    if payload_raw.get("domain") == "daily":
+        return _handle_jev_daily(npc_id, generation, payload_raw)
+
+    try:
+        payload = JevQueryPayload(**payload_raw)
+        decision = get_jev_service().evaluate_tactics(payload.metrics)
+    except Exception as e:
+        logger.warning(f"[Jev] 평가 실패 npc={npc_id} → 중립 응답: {e}")
+        decision = {
+            "stance": "Default",
+            "confidence": 0.0,
+            "score_aggression": 1.0,
+            "score_caution": 1.0,
+            "noul_harmful": 0.0,
+        }
+
+    logger.info(f"[Jev] {npc_id} gen={generation} → {decision['stance']} conf={decision['confidence']:.2f}")
+    return json.dumps(
+        {
+            "type": EEnvelopeType.JEV_DECISION.value,
+            "payload": {"npc_id": npc_id, "generation": generation, **decision},
+        }
+    )
+
+
+def _handle_jev_daily(npc_id: str, generation: int, payload_raw: dict) -> str:
+    """daily jev_query → 활동+슬롯. persona(role·traits)는 서버만 알아서 여기서 붙인다(C++ 는 모름).
+    어떤 실패든 stay(= 현행 Idle)로 회신 — 장애가 나도 지금보다 나빠지지 않는다."""
+    try:
+        payload = JevQueryPayload(**payload_raw)
+        try:
+            persona = load_persona(npc_id) or {}
+        except Exception as e:  # persona 없이도 휴리스틱은 돈다
+            logger.debug(f"[Jev] persona 로드 실패 npc={npc_id}: {e}")
+            persona = {}
+        decision = get_jev_service().evaluate_daily(payload.metrics, payload.activities, payload.pools, persona)
+    except Exception as e:
+        logger.warning(f"[Jev] daily 평가 실패 npc={npc_id} → stay: {e}")
+        decision = {"activity": "stay", "slots": {}, "confidence": 0.0, "passes": 0}
+
+    logger.info(f"[Jev] {npc_id} daily → {decision['activity']} {decision['slots']} passes={decision['passes']}")
+    return json.dumps(
+        {
+            "type": EEnvelopeType.JEV_DECISION.value,
+            "payload": {"npc_id": npc_id, "generation": generation, "domain": "daily", **decision},
+        },
+        ensure_ascii=False,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

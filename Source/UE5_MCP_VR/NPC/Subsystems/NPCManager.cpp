@@ -5,6 +5,7 @@
 #include "Network/MCPJsonUtils.h"
 #include "Network/EnvelopeBuilder.h"
 #include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "Story/StorySubsystem.h"
@@ -14,6 +15,10 @@
 #include "Core/Utils/SubsystemUtils.h"
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Inventory/BP/DroppedItemBase.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISense_Sight.h"
+#include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
 
 
 UNPCManager* UNPCManager::Get(const UObject* WorldContext)
@@ -267,21 +272,25 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
                 Payload->SetObjectField(TEXT("current_plan"), CurrentPlanJson);
             }
         }
+    }
 
-        // ── NPC 인벤토리 동봉 — npc_inventory: { npc_id: [items] } (Python PromptPayload 정합).
-        // 아이템 획득/소모가 즉시 반영되도록 매 prompt 마다 동적 전송. LLM 이 보유 아이템만 GiveItem.
-        if (UNPCInventoryComponent* InvComp = TargetNPC->GetInventoryComponent())
-        {
-            const FString InvJson = InvComp->GetInventoryJson();  // "[{id,name,...}, ...]"
-            TArray<TSharedPtr<FJsonValue>> InvArr;
-            const TSharedRef<TJsonReader<>> InvReader = TJsonReaderFactory<>::Create(InvJson);
-            if (FJsonSerializer::Deserialize(InvReader, InvArr))
-            {
-                const TSharedRef<FJsonObject> InvObj = MakeShared<FJsonObject>();
-                InvObj->SetArrayField(TargetNpcId, InvArr);
-                Payload->SetObjectField(TEXT("npc_inventory"), InvObj);
-            }
-        }
+    // 주변 인지 — Jev daily 와 같은 수집 함수. JSON 키·값은 추출 전과 동일(인벤 category 만 가산).
+    ASmartNPC* TargetNPC = GetNPCById(TargetNpcId);
+
+    // 응답 대사를 할 때 말을 건 플레이어를 바라보게(비전투 — BaseDialogue).
+    if (TargetNPC && TargetNPC->GetActionComponent())
+    {
+        TargetNPC->GetActionComponent()->SetDialoguePartner(UGameplayStatics::GetPlayerPawn(TargetNPC, 0));
+    }
+    const FNPCNearbyContext Ctx = TargetNPC ? CollectNearbyContext(TargetNPC) : FNPCNearbyContext();
+
+    // ── NPC 인벤토리 동봉 — npc_inventory: { npc_id: [items] } (Python PromptPayload 정합).
+    // 아이템 획득/소모가 즉시 반영되도록 매 prompt 마다 동적 전송. LLM 이 보유 아이템만 GiveItem.
+    if (TargetNPC && TargetNPC->GetInventoryComponent())
+    {
+        const TSharedRef<FJsonObject> InvObj = MakeShared<FJsonObject>();
+        InvObj->SetArrayField(TargetNpcId, Ctx.Inventory);
+        Payload->SetObjectField(TEXT("npc_inventory"), InvObj);
     }
 
     // ── 유효 타깃 vocabulary — valid_targets: [키워드/AgentID/가구ID] (Python PromptPayload 정합).
@@ -302,81 +311,40 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         //   valid_targets: 빈 가구만 합류 — 점유·원거리 가구 지정을 enum 차원에서 원천 차단.
         //   nearby_furniture: 점유 포함 전부 — "자리가 없네요" 류 대사 근거.
         // 무타겟 Sit/Sleep 은 C++(ExecuteLifestyleAction)가 무동작 방어 — 여기 노출이 유일한 착석 경로.
-        if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(this))
+        TArray<TSharedPtr<FJsonValue>> FurnitureArr;
+        for (const FNPCNearbyContext::FEntry& F : Ctx.Furniture)
         {
-            if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
+            if (!F.bOccupied)
             {
-                const FVector NpcLoc = TargetNPC->GetActorLocation();
-                TArray<TSharedPtr<FJsonValue>> FurnitureArr;
-
-                for (const TPair<FString, AFurnitureActor*>& Pair : FurnMgr->GetActiveFurniture())
-                {
-                    AFurnitureActor* Furniture = Pair.Value;
-                    if (!IsValid(Furniture)) continue;
-
-                    const float Dist = FVector::Dist2D(Furniture->GetActorLocation(), NpcLoc);
-                    if (Dist > FurnitureContextRange) continue;
-
-                    const bool bOccupied = Furniture->IsOccupied();
-                    if (!bOccupied)
-                    {
-                        TargetsArr.Add(MakeShared<FJsonValueString>(Pair.Key));
-                    }
-
-                    // enum 접두("EFurnitureType::") 없는 짧은 타입명 — 프롬프트 가독성.
-                    FString TypeStr;
-                    switch (Furniture->FurnitureType)
-                    {
-                        case EFurnitureType::Seat:     TypeStr = TEXT("Seat"); break;
-                        case EFurnitureType::Bed:      TypeStr = TEXT("Bed"); break;
-                        default:                       TypeStr = TEXT("Unknown"); break;
-                    }
-
-                    TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
-                    Item->SetStringField(TEXT("id"), Pair.Key);
-                    Item->SetStringField(TEXT("type"), TypeStr);
-                    Item->SetBoolField(TEXT("occupied"), bOccupied);
-                    Item->SetNumberField(TEXT("dist_m"), FMath::RoundToFloat(Dist) / 100.f); // cm → m, 소수 2자리 내
-                    FurnitureArr.Add(MakeShared<FJsonValueObject>(Item));
-                }
-
-                if (FurnitureArr.Num() > 0)
-                {
-                    Payload->SetArrayField(TEXT("nearby_furniture"), FurnitureArr);
-                }
+                TargetsArr.Add(MakeShared<FJsonValueString>(F.Id));
             }
+            TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
+            Item->SetStringField(TEXT("id"), F.Id);
+            Item->SetStringField(TEXT("type"), F.Type);
+            Item->SetBoolField(TEXT("occupied"), F.bOccupied);
+            Item->SetNumberField(TEXT("dist_m"), F.DistM);
+            FurnitureArr.Add(MakeShared<FJsonValueObject>(Item));
+        }
+        if (FurnitureArr.Num() > 0)
+        {
+            Payload->SetArrayField(TEXT("nearby_furniture"), FurnitureArr);
         }
 
-
-        // 주변 바닥에 떨어진 아이템 인지 (반경 5m)
-        if (UItemManager* ItemMgr = UItemManager::Get(this))
+        // 주변 바닥에 떨어진 아이템 인지 (반경 FurnitureContextRange = 15m)
+        TArray<TSharedPtr<FJsonValue>> ItemsArr;
+        for (const FNPCNearbyContext::FEntry& G : Ctx.GroundItems)
         {
-            if (ASmartNPC* TargetNPC = GetNPCById(TargetNpcId))
-            {
-                const FVector NpcLoc = TargetNPC->GetActorLocation();
-                TArray<ADroppedItemBase*> NearbyItems = ItemMgr->GetItemsInRange(NpcLoc, FurnitureContextRange);
-                
-                TArray<TSharedPtr<FJsonValue>> ItemsArr;
-                for (ADroppedItemBase* ItemActor : NearbyItems)
-                {
-                    if (!IsValid(ItemActor)) continue;
-                    
-                    const float Dist = FVector::Dist2D(ItemActor->GetActorLocation(), NpcLoc);
-                    
-                    TSharedPtr<FJsonObject> ItemObj = MakeShared<FJsonObject>();
-                    ItemObj->SetStringField(TEXT("id"), ItemActor->ItemData.ItemInstanceID);
-                    ItemObj->SetStringField(TEXT("template_id"), ItemActor->ItemData.ItemTemplateID);
-                    ItemObj->SetNumberField(TEXT("dist_m"), FMath::RoundToFloat(Dist) / 100.f);
-                    ItemsArr.Add(MakeShared<FJsonValueObject>(ItemObj));
-                    
-                    TargetsArr.Add(MakeShared<FJsonValueString>(ItemActor->ItemData.ItemInstanceID));
-                }
-                
-                if (ItemsArr.Num() > 0)
-                {
-                    Payload->SetArrayField(TEXT("nearby_items"), ItemsArr);
-                }
-            }
+            TSharedPtr<FJsonObject> ItemObj = MakeShared<FJsonObject>();
+            ItemObj->SetStringField(TEXT("id"), G.Id);
+            ItemObj->SetStringField(TEXT("template_id"), G.Type);
+            ItemObj->SetNumberField(TEXT("dist_m"), G.DistM);
+            ItemsArr.Add(MakeShared<FJsonValueObject>(ItemObj));
+
+            TargetsArr.Add(MakeShared<FJsonValueString>(G.Id));
+        }
+        if (ItemsArr.Num() > 0)
+        {
+            Payload->SetArrayField(TEXT("nearby_items"), ItemsArr);
         }
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
@@ -387,6 +355,127 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
     SendEnvelopePromptToLLM(Envelope);
 
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] 플레이어 발화 전송 — %s → %s: \"%s\""), *PlayerID, *TargetNpcId, *Text);
+}
+
+FNPCNearbyContext UNPCManager::CollectNearbyContext(const ASmartNPC* NPC)
+{
+    FNPCNearbyContext Ctx;
+    if (!IsValid(NPC)) return Ctx;
+
+    const FVector NpcLoc = NPC->GetActorLocation();
+    // dist_m 은 cm 반올림 후 m — 기존 LLM 페이로드와 같은 값.
+    auto DistM = [&NpcLoc](const FVector& L) { return FMath::RoundToFloat(FVector::Dist2D(L, NpcLoc)) / 100.f; };
+
+    if (UNPCInventoryComponent* InvComp = NPC->GetInventoryComponent())
+    {
+        const TSharedRef<TJsonReader<>> InvReader = TJsonReaderFactory<>::Create(InvComp->GetInventoryJson());
+        FJsonSerializer::Deserialize(InvReader, Ctx.Inventory);
+    }
+
+    if (UFurnitureManager* FurnMgr = UFurnitureManager::Get(this))
+    {
+        for (const TPair<FString, AFurnitureActor*>& Pair : FurnMgr->GetActiveFurniture())
+        {
+            AFurnitureActor* Furniture = Pair.Value;
+            if (!IsValid(Furniture)) continue;
+            if (FVector::Dist2D(Furniture->GetActorLocation(), NpcLoc) > FurnitureContextRange) continue;
+
+            FNPCNearbyContext::FEntry& E = Ctx.Furniture.AddDefaulted_GetRef();
+            E.Id = Pair.Key;
+            // enum 접두("EFurnitureType::") 없는 짧은 타입명 — 프롬프트 가독성.
+            switch (Furniture->FurnitureType)
+            {
+                case EFurnitureType::Seat: E.Type = TEXT("Seat"); break;
+                case EFurnitureType::Bed:  E.Type = TEXT("Bed"); break;
+                default:                   E.Type = TEXT("Unknown"); break;
+            }
+            E.bOccupied = Furniture->IsOccupied();
+            E.Location = Furniture->GetActorLocation();
+            E.DistM = DistM(E.Location);
+        }
+    }
+
+    if (UItemManager* ItemMgr = UItemManager::Get(this))
+    {
+        for (ADroppedItemBase* ItemActor : ItemMgr->GetItemsInRange(NpcLoc, FurnitureContextRange))
+        {
+            if (!IsValid(ItemActor)) continue;
+            FNPCNearbyContext::FEntry& E = Ctx.GroundItems.AddDefaulted_GetRef();
+            E.Id = ItemActor->ItemData.ItemInstanceID;
+            E.Type = ItemActor->ItemData.ItemTemplateID;
+            E.Location = ItemActor->GetActorLocation();
+            E.DistM = DistM(E.Location);
+        }
+    }
+
+    ScanPois();
+    for (const TPair<FString, TWeakObjectPtr<AActor>>& Pair : PoiActors)
+    {
+        const AActor* Poi = Pair.Value.Get();
+        if (!Poi || FVector::Dist2D(Poi->GetActorLocation(), NpcLoc) > FurnitureContextRange) continue;
+        FNPCNearbyContext::FEntry& E = Ctx.Pois.AddDefaulted_GetRef();
+        E.Id = Pair.Key;
+        E.Type = Pair.Key.RightChop(4); // "POI_" 뒤 이름
+        E.Location = Poi->GetActorLocation();
+        E.DistM = DistM(E.Location);
+    }
+
+    // 인물 — 전투 Jev 와 같은 소스(시야 퍼셉션). ResolveActionTarget 이 해석 가능한 플레이어·등록 NPC 만.
+    const UAIPerceptionComponent* Perception = NPC->GetController()
+        ? NPC->GetController()->FindComponentByClass<UAIPerceptionComponent>() : nullptr;
+    const UNPCStateComponent* StateComp = NPC->StateComponent;
+    if (Perception && StateComp)
+    {
+        TArray<AActor*> Perceived;
+        Perception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), Perceived);
+        for (AActor* A : Perceived)
+        {
+            if (!IsValid(A) || A == NPC || ASmartNPCAIController::IsTargetDead(A)) continue;
+            const FString Id = ASmartNPC::PerceptionIdFor(A);
+            const bool bPlayer = Id == TEXT("Player");
+            if (!bPlayer && !ActiveNPCs.Contains(Id)) continue;
+
+            FNPCNearbyContext::FEntry& E = Ctx.PerceivedActors.AddDefaulted_GetRef();
+            E.Id = Id;
+            E.Type = bPlayer ? TEXT("player") : TEXT("npc");
+            switch (StateComp->GetRelation(Id))
+            {
+                case ENPCRelation::Friendly: E.Relation = TEXT("friendly"); break;
+                case ENPCRelation::Hostile:  E.Relation = TEXT("hostile"); break;
+                default:                     E.Relation = TEXT("neutral"); break;
+            }
+            E.Location = A->GetActorLocation();
+            E.DistM = DistM(E.Location);
+        }
+    }
+    return Ctx;
+}
+
+void UNPCManager::ScanPois()
+{
+    if (bPoiScanned) return;
+    UWorld* World = GetWorld();
+    if (!World) return;
+    bPoiScanned = true;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        for (const FName& Tag : It->Tags)
+        {
+            const FString TagStr = Tag.ToString();
+            if (TagStr.StartsWith(TEXT("POI_")))
+            {
+                PoiActors.Add(TagStr, *It);
+            }
+        }
+    }
+    UE_LOG(LogTemp, Log, TEXT("[NPCManager] POI 목업 %d개 수집(POI_ 태그)"), PoiActors.Num());
+}
+
+AActor* UNPCManager::FindPoi(const FString& PoiId)
+{
+    ScanPois();
+    const TWeakObjectPtr<AActor>* Found = PoiActors.Find(PoiId);
+    return Found ? Found->Get() : nullptr;
 }
 
 void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
@@ -458,6 +547,27 @@ void UNPCManager::OnLLMMessageReceived(const FString& JsonMessage)
                                 DebugNpcId, DebugText);
                         }
                     });
+            }
+            return;
+        }
+    }
+
+    // jev_decision — jevlike 전술 편향 회신. 캐시·세대 판정은 컨트롤러가 독점(BB/ST 쓰기 단일 진입점).
+    {
+        FString TypeStr;
+        if (Root->TryGetStringField(TEXT("type"), TypeStr) && TypeStr == TEXT("jev_decision"))
+        {
+            const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
+            FString NpcId;
+            if (Root->TryGetObjectField(TEXT("payload"), PayloadObj) && (*PayloadObj)->TryGetStringField(TEXT("npc_id"), NpcId))
+            {
+                if (ASmartNPC* NPC = GetNPCById(NpcId))
+                {
+                    if (ASmartNPCAIController* AIC = Cast<ASmartNPCAIController>(NPC->GetController()))
+                    {
+                        AIC->HandleJevDecisionResponse(*PayloadObj);
+                    }
+                }
             }
             return;
         }

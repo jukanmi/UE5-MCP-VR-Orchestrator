@@ -1,5 +1,6 @@
 #include "NPC/Components/NPCStateComponent.h"
 #include "NPC/Action/NPCActionComponent.h"
+#include "NPC/Action/SmartNPCAIController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "NPC/BP/SmartNPC.h"
@@ -102,11 +103,33 @@ float UNPCStateComponent::ApplyDamage(float DamageAmount, float Multiplier)
 {
     FNPCAttributes& Attrs = GetMutableAttributes();
     float EffectiveDamage = FMath::Max(0.0f, DamageAmount - Attrs.Combat.Defense) * Multiplier;
+    const float HpPctBefore = Attrs.Resources.GetHealthPercent();
     Attrs.Resources.Health -= EffectiveDamage;
 
     if (UWorld* World = GetWorld())
     {
         LastHitTime = World->GetTimeSeconds();
+    }
+
+    // 맞으면 따라가기(Track)를 멈춘다 — 피격 중에도 대상 뒤를 쫓는 건 부자연스럽다.
+    if (ASmartNPC* OwnerNPC = Cast<ASmartNPC>(GetOwner()))
+    {
+        if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
+        {
+            ActionComp->StopTracking();
+        }
+    }
+
+    // HP 25% 하향 교차 — jevlike 전술 재평가 트리거(매 피격 요청 금지, 임계 교차 1회만).
+    if (HpPctBefore >= JevLowHpThreshold && Attrs.Resources.GetHealthPercent() < JevLowHpThreshold && Attrs.Resources.IsAlive())
+    {
+        if (APawn* Pawn = Cast<APawn>(GetOwner()))
+        {
+            if (ASmartNPCAIController* AIC = Cast<ASmartNPCAIController>(Pawn->GetController()))
+            {
+                AIC->RequestJevDecision();
+            }
+        }
     }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCState] Damage Applied: %.1f (Raw: %.1f, Defense: %.1f, x%.2f). HP: %.0f/%.0f"),

@@ -4,6 +4,7 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
+#include "NPC/Action/NPCActionComponent.h"
 
 AKineticProjectile::AKineticProjectile()
 {
@@ -44,12 +45,18 @@ void AKineticProjectile::BeginPlay()
         MoveComp->MaxSpeed = ProjectileSpeed;
         MoveComp->Velocity = GetActorForwardVector() * ProjectileSpeed;
     }
+    GetWorldTimerManager().SetTimer(WarnTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+    {
+        UNPCActionComponent::WarnIncomingProjectile(this, MoveComp ? MoveComp->Velocity : FVector::ZeroVector,
+                                                    ShooterActor.Get(), WarnedNPCs);
+    }), 0.1f, true, 0.f);
 }
 
 void AKineticProjectile::InitProjectile(AActor* Shooter, float InDamageScale, float InMaxDamage)
 {
     DamageScale = InDamageScale;
     MaxDamage = InMaxDamage;
+    ShooterActor = Shooter;
     if (Shooter && CollisionComp)
     {
         // 발사 순간 자기 손/몸에 닿아 즉시 터지는 것 방지.

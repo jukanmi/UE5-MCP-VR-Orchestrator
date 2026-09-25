@@ -2,12 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Any, List, Literal, Dict, Optional
 
 NPCBehaviorMode = Literal[
-    "Combat",  # 전투 모드
-    "Social",  # 사교 모드
-    "Task",  # 상호작용/작업 모드
-    "Investigation",  # 탐색/조사 모드
-    "Lifestyle",  # 생활/대기 모드
-    "Common",  # 공용/기본 액션 모드 (기본값)
+    "Combat",  # 전투 모드 — C++ 전투 셀렉터가 돈다
+    "Common",  # 비전투 (기본값)
 ]
 
 NPCFacialState = Literal[
@@ -157,7 +153,7 @@ class DialogueResponse(BaseModel):
     내고 빠져나가 speech·actions 가 비는 문제(실측 확인) 방지. 직렬화 후 기존
     [Mode:][Facial:]"speech"[Action:] 텍스트로 재생 → 다운스트림 무변경."""
 
-    mode: NPCBehaviorMode = Field(description="Behavior mode for this turn")
+    mode: NPCBehaviorMode = Field(description="Combat if fighting this turn, otherwise Common")
     facial: NPCFacialState = Field(description="Facial expression")
     speech: str = Field(description="What the NPC says out loud, 1-3 sentences, in character; never empty")
     tone: str = Field(default="", description="Emotional tone of speech, e.g. furiously")
@@ -222,32 +218,8 @@ WORLD_CONSTANTS = {
     "MAX_HEALTH": 300,  # C++ FGameResources 3배(2026-09-18)와 정합. 소비처 없음
 }
 
-# BT 카테고리 분류맵
-CATEGORY_ACTION_MAP = {
-    "Common": {
-        "Idle",
-        "Move",
-        "Follow",
-        "Wait",
-        "Dialogue",
-        "TurnTo",
-        "Stop",
-        "Scan",
-        "UseItem",
-        "Equip",
-        "Unequip",
-    },
-    "Combat": {"Attack", "Block", "Dodge", "Flee", "SignalAllies"},
-    "Social": {"Trade", "Emote", "GiveItem", "Comfort", "HandObject"},
-    # "Repair" 제거됨 — 모루 같은 설비 없이 몽타주만 재생하던 구현이라 C++ EAction 에서 빠짐
-    "Task": {"PickUp", "Drop", "Craft"},
-    "Investigation": {"Investigate", "Track", "Scout"},
-    # "Clean" 제거됨 — EAction Literal/C++ enum 에 없는 죽은 항목이었음
-    "Lifestyle": {"Sit", "Sleep", "StandUp", "Read", "Pray", "Dance", "Sing"},
-}
-
-# 액션 → 카테고리 역조회 맵 (Rules 의 Mode 보정용)
-ACTION_CATEGORY: Dict[str, str] = {action: cat for cat, actions in CATEGORY_ACTION_MAP.items() for action in actions}
+# 전투 액션 — 배치에 하나라도 있으면 Rules 가 Mode 를 Combat 으로 보정한다
+COMBAT_ACTIONS = frozenset({"Attack", "Block", "Dodge", "Flee", "SignalAllies"})
 
 # 액션별 필수 파라미터 — C++ ExecuteInteraction(NPCActionComponent.cpp) 동작 기준.
 # 누락 시 C++ 가 무음 no-op 하거나(Follow/Attack/Track 등 if(!Target) return),
@@ -269,13 +241,14 @@ ACTION_REQUIRED_PARAMS: Dict[str, list] = {
     "GiveItem": [("target_id",), ("give_item_id", "item")],
     "Comfort": [("target_id",)],
     "HandObject": [("item", "target_id")],
-    "PickUp": [("target_loc",)],
+    # target_id = 바닥 아이템 instance id(valid_targets 에 실림) — C++ 가 그 아이템까지 걸어가 그것만 줍는다.
+    "PickUp": [("target_id", "target_loc")],
     "Drop": [("item", "target_id")],
     "Craft": [("item_ids", "item", "target_id")],
     "Investigate": [("target_loc",)],
     "Track": [("target_id",)],
     # target_loc 있으면 두 그룹 모두 충족, 없으면 start+end 둘 다 필요
     "Scout": [("target_loc", "start_location"), ("target_loc", "end_location")],
-    # Idle/Move/Wait/Stop/Scan/Block/Dodge/Flee/SignalAllies/Emote/Lifestyle 류는
+    # Idle/Move/Wait/Stop/Scan/Block/Dodge/Flee/SignalAllies/Emote/Sit·Pray·Dance 류는
     # C++ 폴백이 견고(EQS/기본방향/무대상 허용)하므로 필수 없음 — 등재 금지.
 }

@@ -23,3 +23,6 @@ sentence-transformers<5.0,>=3.0
 
 # sentence-transformers·finetune 공용. 5.x 는 API 변경 — 검증 전까지 4.x 고정.
 transformers<5.0,>=4.46
+
+# Jev 편향기(전투 승수·daily 활동). PyPI 미등록 — 커밋 고정. 미설치여도 서버는 휴리스틱으로 동작.
+jevlike @ git+https://github.com/vinnylarouge/jevlike@94f5fd1b0b11d52bbdfdf4e0ee6aa96b568f8452

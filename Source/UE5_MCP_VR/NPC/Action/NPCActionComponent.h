@@ -37,8 +37,11 @@ enum class ETacticalMoveState : uint8
 };
 
 class ASmartNPCAIController;
+struct FNPCNearbyContext;
+class FJsonObject;
 class AAIController;
 class AFurnitureActor;
+class ADroppedItemBase;
 class UNPCActionDataAsset;
 class UNPCStateComponent;
 class UNPCInventoryComponent;
@@ -115,8 +118,12 @@ public:
     // --- Action Queue State ---
     TQueue<FGameAction> ActionQueue;
 
-    // 마지막으로 큐에 들어간 액션 타입 — 동일 타입 연속 중복 추가 방지용
-    EAction LastQueuedActionType = EAction::Idle;
+    // 마지막으로 큐에 들어간 액션의 (타입+대상) 키 — 같은 액션 연속 중복 추가 방지용.
+    // 타입만 보면 서로 다른 대상의 같은 액션(아이템 A·B PickUp)까지 삼킨다.
+    FString LastQueuedKey;
+
+    /** 중복 판정 키 — 타입·target_id·target_loc·item·style. */
+    static FString QueueKey(const FGameAction& Action);
 
     // 현재 진행 중인 액션 캐싱 (STTask 등에서 참조)
     FGameAction CurrentAction;
@@ -171,6 +178,31 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "NPC|Action")
     void AbortCurrentAction();
+
+    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸·피격 공통 경로. */
+    void StopTracking();
+
+    /** Track 지속 추적 중인지 — 액션은 즉시 완료되지만 따라가는 중이라 Idle 이 아니다. */
+    bool IsTracking() const { return TrackedTarget.IsValid(); }
+
+    // ============================================================================
+    // Jev daily — 비전투 일상 활동 (SPEC_jev_daily). 요청·세대·워치독은 컨트롤러, 풀·조립·주입·선점은 여기.
+    // ============================================================================
+
+    /** daily jev_query 의 metrics·activities·pools 를 채운다. activities 는 지금 실행 가능한 것만. */
+    void BuildJevDailyQuery(const FNPCNearbyContext& Ctx, float IdleSeconds, FJsonObject& OutPayload) const;
+
+    /** jev_decision(daily) → FGameAction 조립·주입(최하위 우선순위). 무효 슬롯은 그 슬롯만 default 로 치환. */
+    void ApplyJevDaily(const FJsonObject& Payload);
+
+    /** 다른 출처(LLM 배치·척수반사·전투 셀렉터)가 액션을 넣기 직전 — 진행·대기 중인 Jev 활동을 끊는다. */
+    void PreemptJevActivity();
+
+    /** 마지막 LLM 배치(액션 ≥1) 수신 시각(FPlatformTime) — daily 가 대화 직후 끼어들지 않게. */
+    double GetLastLLMBatchTime() const { return LastLLMBatchTime; }
+
+    /** 비전투에서 대사할 때 바라볼 상대 — 플레이어 발화 송신 시 NPCManager 가 세팅. */
+    void SetDialoguePartner(AActor* Partner) { DialoguePartner = Partner; }
 
 protected:
     virtual void BeginPlay() override;
@@ -284,9 +316,6 @@ private:
 
     /** TrackTimer 콜백: 대상이 유효하면 MoveToActor 재발행, 아니면 타이머 정지. */
     void UpdateTrackPosition();
-
-    /** 추적 해제 — 타이머 정지 + 대상 리셋. 정지·중단·새 명령·대상 소멸 공통 경로. */
-    void StopTracking();
 
     /** 이동 공통 전처리 — MaxWalkSpeed 반영, PathFollowing 완료 콜백 바인딩, 비동기 대기 플래그.
      *  반환된 컨트롤러로 MoveToLocation/MoveToActor 를 발행하고 HandleImmediateMoveResult 로 넘긴다. 컨트롤러 없으면 nullptr. */
@@ -423,9 +452,17 @@ public:
      *  검사하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다. */
     bool bPendingPickup = false;
 
-    /** OnMoveActionCompleted 도착 처리에서 실제 탐색·습득을 수행한다(bPendingPickup 소비).
-     *  범위 내 여러 개가 있어도 액션 1회당 1개 묶음만 줍는다. */
-    void PerformPickupAtDestination();
+    /** 지정 아이템 픽업의 대상 — 있으면 도착 후 이 아이템만 줍는다. 없으면 도착 지점 반경 탐색(좌표 경로).
+     *  약참조: 걷는 동안 플레이어가 먼저 줍거나 파괴될 수 있다. 이동 중단 시 ClearActiveActionState 가 리셋. */
+    TWeakObjectPtr<ADroppedItemBase> PendingPickupItem;
+
+    /** 지정 아이템이 도착 지점에서 이만큼 넘게 떨어져 있으면(걷는 동안 누가 옮김) 줍지 않는다. 추격하지 않는다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Pickup", meta = (ClampMin = "50.0"))
+    float PickupReach = 150.f;
+
+    /** OnMoveActionCompleted 도착 처리에서 실제 습득을 수행한다(bPendingPickup 소비).
+     *  지정 아이템이 있으면 그것만, 없으면 범위 내 첫 1개 묶음만 줍는다. 실제로 주웠으면 true. */
+    bool PerformPickupAtDestination();
 
     /** BaseMove의 MoveTo 완료 콜백(OnRequestFinished 바인딩).
      *  PendingMoveMediaKey가 있으면 도착 후 몽타주 재생(완료는 몽타주 종료가 처리),
@@ -581,6 +618,33 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
     float SpacingIdealRange = 500.f;
 
+    /** 풋워크 Strafe — 링 안(Min~Max)에서 Ideal 링을 따라 옆으로 도는 가중치(× Agility/Norm). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Strafe = 0.6f;
+
+    /** Strafe 한 번에 도는 각도(도, 좌우 랜덤). 500cm 링에서 35° ≈ 305cm. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "5.0", ClampMax = "90.0"))
+    float StrafeArcDeg = 35.f;
+
+    /** 풋워크 Disengage — 직전 선택이 Attack 이면 이 가중치, 아니면 _Idle(예측 불가성용 소량). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Disengage = 1.2f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_DisengageIdle = 0.15f;
+
+    /** Disengage 목적지 = Ideal 링 × 이 배율(기본 700cm — Max 900 안이라 다음 틱 접근 욕구가 안 튄다). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "3.0"))
+    float DisengageRangeMul = 1.4f;
+
+    /** 저HP 후퇴·회복 연쇄 임계(HP 비율). 이하 ∧ 회복 소비템 보유면 셀렉터 대신 [후퇴 → 회복] 을 전투당 1회. */
+    UPROPERTY(EditDefaultsOnly, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LowHpRetreatThreshold = 0.3f;
+
+    /** 저HP 후퇴 거리(cm) — 타겟 반대 방향 직선, NavMesh 투영. */
+    UPROPERTY(EditDefaultsOnly, Category = "MCP|CombatSelector", meta = (ClampMin = "300.0"))
+    float LowHpRetreatDistance = 1500.f;
+
     /** Flee 선택 시 배짱 주사위 난이도 — CheckReflex(Bravery, 이 값) 성공하면 도주 취소 후 재선택.
      *  1 = Bravery% 확률로 버팀(용감한 놈 끝까지, 겁쟁이 일찍 도망). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
@@ -629,7 +693,61 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "30.0"))
     float ReflexGlobalCooldown = 1.5f;
 
+    /** 투사체 회피 주사위 난이도 — CheckReflex(Agility, 이 값) = Agility/이 값 %. 기본 Agility 10 이면 5%. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 ProjectileDodgeDifficulty = 2;
+
+    /** 청각→시각 융합 창(초) — 소리 반사로 돌아본 뒤 이 안에 자극 근처 대상을 보면 문맥을 묶어 보낸다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+    float FusionWindow = 0.5f;
+
+    /** 융합 반경(cm) — 소음 위치 오차 + 대상 이동. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0"))
+    float FusionRadius = 400.f;
+
+    /** 소리 반사 직후 창 안에서 소음 근처 대상을 봤으면 문맥 문자열을 돌려주고 창을 닫는다. */
+    bool TryConsumeFusion(const FVector& SeenLoc, const FString& SeenID, FString& OutContext);
+
+    /** 투사체가 0.1s 마다 호출 — 진행 방향 앞에서 투사체를 보고 있는 SmartNPC 에게 회피 반사를 건다.
+     *  Warned 는 투사체별 통지 기록(NPC 당 1회). 투사체 두 종이 같은 규칙을 쓰도록 여기 한 곳에 둔다. */
+    static void WarnIncomingProjectile(const AActor* Projectile, const FVector& Velocity, const AActor* Shooter,
+                                       TSet<const AActor*>& Warned);
+
 private:
+    // --- 감각 융합 창(TryReflexReact 가 소리 반사 시 연다) ---
+    FString FusionEvent;
+    FVector FusionLoc = FVector::ZeroVector;
+    float FusionDist = 0.f;
+    float FusionUntil = -1.f;
+
+    /** Strafe/Disengage 가 SetFocus 를 걸었는지 — ClearActiveActionState 가 풀어준다. */
+    bool bFootworkFocus = false;
+
+    /** 저HP 후퇴·회복 연쇄를 이번 전투에서 이미 썼는지(ResetCombatSelectorState 가 초기화). */
+    bool bLowHpRetreatUsed = false;
+
+    /** 저HP 연쇄 — 조건 맞으면 [후퇴 Move → UseItem] 을 큐에 넣고 true. */
+    bool TryLowHpRetreat(AActor* TargetActor);
+
+    // --- Jev daily 상태 ---
+    double LastLLMBatchTime = -1000.0;
+    TWeakObjectPtr<AActor> DialoguePartner;
+    /** 큐에 Jev 액션이 대기 중 — 빈 큐에만 1건 주입하므로 큐 전체가 Jev 몫이다. */
+    bool bJevActionQueued = false;
+    /** 지금 실행 중인 액션이 Jev 출처인지(ProcessNextAction 이 넘겨받음). */
+    bool bCurrentActionFromJev = false;
+    /** 직전 Jev 활동 id — 반복 억제 지표(last_activity). */
+    FString LastJevActivity;
+    /** 자세(앉기·눕기) 진입 시각(FPlatformTime) — posture_s 지표. */
+    double PostureSince = 0.0;
+
+    /** 활동+슬롯 → FGameAction. stay·조립 불가면 false. 무효 슬롯은 Slots 를 default 로 고쳐 쓴다(로그용). */
+    bool BuildJevDailyAction(const FString& Activity, TMap<FString, FString>& Slots,
+                             const FNPCNearbyContext& Ctx, FGameAction& Out) const;
+
+    /** DA_NPC_Actions 에서 표현 계열(Emote·Pray·Dance·Sing) 미디어 키 수집. bSeated 면 Emote 계열만. */
+    TArray<FString> CollectExpressionMediaKeys(bool bSeated) const;
+
     /** 룰별 마지막 발동 시각. ReflexRules 와 인덱스 정합(첫 호출 시 크기 맞춤). */
     TArray<float> ReflexRuleLastFireTime;
 
@@ -673,8 +791,10 @@ public:
     // ----------------------------------------------------------------------------
     // [4] Task Behaviors
     // ----------------------------------------------------------------------------
+    /** 대상 아이템이 있으면 그 아이템까지 걸어가 그것만 줍는다(Sit/Sleep 가구 경로와 같은 방식 — 호출자는 "무엇을"만 고른다).
+     *  대상이 없으면 Location 까지 걸어가 반경 내 첫 아이템을 줍는다(좌표만 주는 기존 호출 호환). */
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
-    void ExecutePickUp(FVector Location);
+    void ExecutePickUp(ADroppedItemBase* TargetItem, FVector Location);
     
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteDrop(const FString& ItemID, int32 Amount);

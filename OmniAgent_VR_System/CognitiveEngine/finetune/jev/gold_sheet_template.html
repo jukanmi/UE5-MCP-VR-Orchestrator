@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev 골드셋</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+    --accent: #2f6f5e; --accent-soft: #e3efeb; --done: #2f6f5e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --card: #1f1f1d; --ink: #ecebe6; --muted: #9a9892; --line: #33322f;
+      --accent: #7cc4ad; --accent-soft: #23332e; --done: #7cc4ad;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 system-ui, "Malgun Gothic", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+           padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; flex: 1 1 auto; }
+  #progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+  button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--bg);
+           border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  .help { color: var(--muted); margin: 0 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  .card.done { border-left: 4px solid var(--done); }
+  .card h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; }
+  .card h2 .state { color: var(--muted); font-weight: normal; font-size: 13px; }
+  pre { white-space: pre-wrap; margin: 0 0 12px; font: 13px/1.5 ui-monospace, Consolas, monospace;
+        color: var(--ink); background: var(--bg); padding: 10px; border-radius: 6px; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .acts label { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .acts input { position: absolute; opacity: 0; pointer-events: none; }
+  .acts label:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .acts label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .doc { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .slot { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .slot span { color: var(--muted); font-size: 13px; }
+  select, textarea { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+                     border-radius: 6px; padding: 5px 8px; width: 100%; min-width: 0; }
+  .skip { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  textarea { margin-top: 6px; min-height: 38px; resize: vertical; }
+  @media (max-width: 520px) { .slot { grid-template-columns: 1fr; gap: 2px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Jev daily 골드셋</h1>
+  <span id="progress"></span>
+  <button class="ghost" id="copy">복사</button>
+  <button id="save">JSON 저장</button>
+</header>
+<main>
+  <p class="help">NPC 입장에서 지금 가장 자연스러운 활동 1개를 고르고(정답이 하나로 안 정해지면 <b>애매함 — 건너뜀</b>), 펼쳐지는 슬롯을 채운다(비워 두면 default = 게임이 결정).
+    입력은 이 브라우저에 자동 저장된다. 끝나면 <b>JSON 저장</b> → <code>finetune/jev/data/gold_answers.json</code> 에 둔다.</p>
+  <p class="help" id="review-help" hidden><b>검수 모드</b> — 모델이 고른 활동·슬롯이 미리 채워져 있다. 자연스러우면 그대로 두고,
+    부자연스러우면 <b>부자연스러움</b>을 체크한 뒤 메모에 이유를 적는다(정답을 알면 활동·슬롯을 고쳐도 된다). 이미 직접 입력한 카드는 그대로 유지된다.</p>
+  <div id="cards"></div>
+</main>
+<script>
+const CARDS = /*CARDS*/[];
+const KEY = "jev-gold:" + (CARDS[0] ? CARDS[0].id.split("_")[0] : "");
+let answers = {};
+try { answers = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+// 검수형: 아직 답이 없는 카드만 모델 제안으로 채운다(직접 입력한 답은 건드리지 않음). suggest 는 채점에서 수정·부자연 판정 기준.
+const REVIEW = CARDS.some(c => c.suggest);
+for (const c of CARDS) {
+  if (c.suggest && !answers[c.id]) answers[c.id] = { activity: c.suggest.activity, slots: { ...c.suggest.slots }, suggest: c.suggest };
+}
+
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify(answers)); } catch (e) {}
+  const done = CARDS.filter(c => answers[c.id] && (answers[c.id].activity || answers[c.id].skip)).length;
+  const flagged = CARDS.filter(c => answers[c.id] && answers[c.id].flag).length;
+  const changed = CARDS.filter(c => { const a = answers[c.id]; return a && a.suggest && a.activity !== a.suggest.activity; }).length;
+  document.getElementById("progress").textContent = REVIEW
+    ? `부자연 ${flagged} · 수정 ${changed} / ${CARDS.length}` : `${done} / ${CARDS.length}`;
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e[k] = v;
+  e.append(...kids);
+  return e;
+}
+
+function renderSlots(card, box) {
+  const a = answers[card.id] || {};
+  box.replaceChildren();
+  const act = card.activities.find(x => x.id === a.activity);
+  if (!act) return;
+  box.append(el("p", { className: "doc", textContent: act.doc }));
+  for (const s of act.slots) {
+    const sel = el("select", { ariaLabel: s.slot });
+    sel.append(el("option", { value: "default", textContent: "default (게임이 결정)" }));
+    for (const [id, desc] of s.options) {
+      sel.append(el("option", { value: id, textContent: desc && desc !== id ? `${id} — ${desc}` : id }));
+    }
+    sel.value = (a.slots && a.slots[s.slot]) || "default";
+    sel.onchange = () => { a.slots = { ...(a.slots || {}), [s.slot]: sel.value }; persist(); };
+    box.append(el("label", { className: "slot" }, el("span", { textContent: `${s.slot} · ${s.doc}` }), sel));
+  }
+}
+
+function render() {
+  const root = document.getElementById("cards");
+  CARDS.forEach((card, i) => {
+    const slotBox = el("div");
+    const art = el("section", { className: "card" });
+    const state = el("span", { className: "state" });
+    const mark = () => {
+      const a = answers[card.id] || {};
+      art.classList.toggle("done", !!(a.activity || a.skip));
+      const edited = a.suggest && (a.activity !== a.suggest.activity || JSON.stringify(a.slots || {}) !== JSON.stringify(a.suggest.slots));
+      state.textContent = a.skip ? "건너뜀" : a.flag ? "부자연" : edited ? "수정" : a.suggest ? "모델 제안" : a.activity ? "완료" : "";
+    };
+    const acts = el("div", { className: "acts", role: "radiogroup" });
+    for (const act of card.activities) {
+      const input = el("input", { type: "radio", name: card.id, value: act.id });
+      input.checked = answers[card.id] && answers[card.id].activity === act.id;
+      input.onchange = () => {
+        answers[card.id] = { ...(answers[card.id] || {}), activity: act.id, slots: {} };
+        renderSlots(card, slotBox); mark(); persist();
+      };
+      acts.append(el("label", { title: act.doc }, input, act.id));
+    }
+    const note = el("textarea", { placeholder: REVIEW ? "메모 — 어디가 부자연스러운지(선택지에 없는 행동이면 그것도)" : "메모(선택) — 왜 이걸 골랐는지, 선택지에 없는 행동 등" });
+    note.value = (answers[card.id] && answers[card.id].note) || "";
+    note.oninput = () => { answers[card.id] = { ...(answers[card.id] || {}), note: note.value }; persist(); };
+    // 정답이 하나로 안 정해지는 상황은 채점에서 뺀다(억지로 고르면 골드셋이 오염된다).
+    const skip = el("input", { type: "checkbox" });
+    skip.checked = !!(answers[card.id] && answers[card.id].skip);
+    skip.onchange = () => { answers[card.id] = { ...(answers[card.id] || {}), skip: skip.checked }; mark(); persist(); };
+    const flag = el("input", { type: "checkbox" });
+    flag.checked = !!(answers[card.id] && answers[card.id].flag);
+    flag.onchange = () => { answers[card.id] = { ...(answers[card.id] || {}), flag: flag.checked }; mark(); persist(); };
+    art.append(el("h2", {}, `#${i + 1}`, state), el("pre", { textContent: card.situation.join("\n") }),
+               acts, slotBox, el("label", { className: "skip" }, flag, " 부자연스러움"),
+               el("label", { className: "skip" }, skip, " 애매함 — 건너뜀"), note);
+    root.append(art);
+    renderSlots(card, slotBox); mark();
+  });
+  persist();
+}
+
+document.getElementById("save").onclick = () => {
+  const blob = new Blob([JSON.stringify(answers, null, 1)], { type: "application/json" });
+  const a = el("a", { href: URL.createObjectURL(blob), download: "gold_answers.json" });
+  document.body.append(a); a.click(); a.remove();
+};
+document.getElementById("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(JSON.stringify(answers)); } catch (e) { alert("복사 실패 — JSON 저장을 쓰세요"); }
+};
+document.getElementById("review-help").hidden = !REVIEW;
+render();
+</script>
+</body>
+</html>

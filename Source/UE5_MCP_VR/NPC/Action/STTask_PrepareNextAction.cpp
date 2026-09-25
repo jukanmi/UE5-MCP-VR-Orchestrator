@@ -55,11 +55,16 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
     }
 
     // 이전 액션 진행 중이면 대기 — OnActionCompleted가 bIsBusy=false로 풀어줄 때까지.
-    if (ActionComp->bIsBusy) return EStateTreeRunStatus::Running;
+    if (ActionComp->bIsBusy)
+    {
+        AICon.ResetJevDailyIdle();
+        return EStateTreeRunStatus::Running;
+    }
 
     // 큐에 액션 있으면 Dequeue → 다음 State로
     if (ActionComp->ProcessNextAction())
     {
+        AICon.ResetJevDailyIdle();
         const FGameAction& Action = ActionComp->GetCurrentAction();
         Data.bHasAction = true;
         Data.SubAction = Action.ActionType;
@@ -76,12 +81,23 @@ EStateTreeRunStatus FSTTask_PrepareNextAction::Tick(FStateTreeExecutionContext& 
     }
 
     // 큐 비어있음 — 자율 행동 주입 정책:
-    //   비전투(2026-05-16 결정 유지): 자동 Track 없음. LLM 명시 액션 없으면 Idle 유지.
+    //   비전투(2026-09-24 변경, 05-16 결정 번복): Idle 이 JevDailyIdleSeconds 이어지면 Jev daily 가
+    //   일상 활동 1개를 고른다. 최하위 우선순위 — 다른 출처 액션이 오면 컴포넌트가 선점한다.
     //   Combat(2026-07-11 변경): Attack 고정 자동주입 → C++ 척수 셀렉터. 가중치·주사위로
     //   Attack/Dodge/Block/거리조절/Flee/SignalAllies 를 주입하고 페이싱 간격도 셀렉터가 관리.
     if (CombatTarget)
     {
+        AICon.ResetJevDailyIdle();
         ActionComp->SelectCombatAction(CombatTarget);
+    }
+    else if (ActionComp->GetBehaviorMode() != ENPCBehaviorMode::Combat && !ActionComp->IsTracking())
+    {
+        // 따라가는 중(Track)은 Idle 이 아니다 — daily 가 끼면 새 액션 시작이 추적을 끊는다.
+        AICon.TickJevDaily();
+    }
+    else
+    {
+        AICon.ResetJevDailyIdle();
     }
 
     return EStateTreeRunStatus::Running;

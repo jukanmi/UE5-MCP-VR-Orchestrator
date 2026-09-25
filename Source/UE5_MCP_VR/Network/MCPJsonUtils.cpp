@@ -145,6 +145,7 @@ TSharedRef<FJsonObject> UMCPJsonUtils::BuildPerceptionReport(const FString& Agen
         EventObj->SetObjectField(TEXT("location"), ConvertLocationToJson(Event.Location));
         EventObj->SetNumberField(TEXT("distance"), Event.Distance);
         EventObj->SetNumberField(TEXT("danger_score"), FMath::Clamp(Event.DangerScore, 0.f, 1.f));
+        if (!Event.Context.IsEmpty()) EventObj->SetStringField(TEXT("context"), Event.Context);
 
         EventValues.Add(MakeShared<FJsonValueObject>(EventObj));
     }

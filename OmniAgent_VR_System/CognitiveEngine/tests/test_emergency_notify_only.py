@@ -101,3 +101,13 @@ def test_no_reflex_action_no_memory_write():
         _run(_envelope(danger=0.1))
 
     recorder.assert_not_called()
+
+
+def test_fusion_context_recorded_to_memory():
+    """청각→시각 융합 문맥은 저위험(게이트 미달)이어도 기억에 남는다."""
+    env = _envelope(danger=0.1)
+    env.payload["perceptions"][0]["context"] = "heard Drop 320cm, turned, saw Player"
+    with patch("app.main._record_event_memory_bg") as recorder:
+        _run(env)
+
+    recorder.assert_called_once_with("Moca", "Moca: heard Drop 320cm, turned, saw Player", "fusion-memory")

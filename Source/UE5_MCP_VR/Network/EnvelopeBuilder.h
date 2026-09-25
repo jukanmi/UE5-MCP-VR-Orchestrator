@@ -27,6 +27,8 @@ enum class EEnvelopeType : uint8
     EmergencyReport,// "emergency_report" - 대규모 피격 등 긴급 상황 보고 (N:1)
     LocationDecision,// "location_decision" - EQS 후보 → LLM 전술 위치 결정 요청
     StoryEvent,     // "story_event" - 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거. 송신 코드는 Phase B
+    JevQuery,       // "jev_query"   - 정규화 전투 지표 → 로컬 jevlike 전술 편향 요청
+    JevDecision,    // "jev_decision" - Python → UE5 전술 편향 회신. 수신 전용(송신 빌더 없음) — 문자열 계약 동기화용
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder
@@ -72,6 +74,13 @@ public:
      * @param Payload - {event, name, agent_id?} FJsonObject (Python StoryEventPayload 와 1:1)
      */
     static FString BuildStoryEvent(const TSharedRef<FJsonObject>& Payload);
+
+    /**
+     * jev_query Envelope 생성. 컨트롤러가 사전 정규화한 전투 지표를 jevlike 전술 편향기로 보낸다.
+     * @param Payload - {npc_id, generation, metrics, domain?, activities?, pools?} (Python JevQueryPayload 와 1:1).
+     *                  domain 누락 = combat(metrics: hp_pct·distance_m·enemy_count·is_flanked), daily 는 SPEC_jev_daily D3·D5
+     */
+    static FString BuildJevQuery(const TSharedRef<FJsonObject>& Payload);
 
 private:
     // ─────────────────────────────────────────────────────────────────────

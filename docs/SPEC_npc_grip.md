@@ -1,0 +1,50 @@
+# SPEC: npc-grip — NPC 물건 쥐기 포즈·플레이어 붙잡기
+
+> 상태: **인터뷰 완료(2026-09-24)**. 근거: `docs/DESIGN_vr_physics_grip.md` + 손 트래킹 연구 노트.
+> 케이스 4(NPC 물건 쥐기) + 5(NPC 가 플레이어 잡기)를 묶음.
+> 선행: 케이스 4 는 `SPEC_vr_grip_pose.md` M1(`FItemData` 형상 유형 필드). 케이스 5 뿌리치기는 `SPEC_vr_ghost_hand.md` M2(물리 손 속도).
+
+## 목표
+
+1. **NPC 물건 쥐기**: NPC 가 손에 든 아이템을 형상 유형에 맞는 손가락 포즈로 쥔다.
+2. **NPC 가 플레이어 붙잡기**: 조건이 맞으면 NPC 가 반사적으로 플레이어 손을 붙잡는다. 잡힌 동안 플레이어 이동이 막히고, 손을 세게 휘두르면 풀린다.
+
+## 범위 (변경 파일·시스템)
+
+| 층 | 파일 | 변경 |
+|---|---|---|
+| 에셋 | NPC AnimBP | 손에 든 아이템의 형상 유형별 손가락 포즈 레이어 |
+| C++ | `Inventory/Components/InventoryComponent.cpp` | `AttachEquipmentMesh` 시 형상 유형을 AnimBP 에 전달(소켓 부착 자체는 기존 그대로). NPC 는 `ExecuteHandObject` → `EquipItem` → `AttachEquipmentMesh` 경로다. `AttachItemToHand` 는 플레이어 잡기·`TakeItemToHand` 전용이라 여기에 걸면 NPC 에선 안 불린다 |
+| C++ | `NPC/Struct/NPCActionTypes.h` 외 | 붙잡기 `EAction` 추가(4곳 규칙, `/add-eaction`) |
+| C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | `ReflexRules` 에 붙잡기 룰 추가, 액션 실행(손 IK 타깃 = `AVRPawn::GetHandLocation()`) |
+| C++ | `Core/BP/VRPawn.{h,cpp}` | 붙잡힘 상태: 스틱 이동·대시 잠금(`SeatedFurniture` 착석 패턴), 손 속도로 뿌리치기 판정 |
+
+## 결정 사항
+
+- **물건 쥐기 = 손가락 포즈만**: 소켓 부착·오프셋(`EquipItem` → `AttachEquipmentMesh`)은 이미 있다. 빠진 손가락 포즈만 추가한다. 형상 유형은 `SPEC_vr_grip_pose.md` 의 `FItemData` 유형 필드를 공유하고, 포즈도 같은 유형 분류(막대·박스·구·핀치)를 쓴다. 집어 드는 IK 모션은 범위 밖.
+- **붙잡기 트리거 = 반사(reflex)**: LLM 을 거치지 않고 `ReflexRules` 조건(감각·관계·거리·위험도)으로 발동한다. 반사 룰은 `EAction` 가중치로 액션을 고르므로 `EAction` 추가는 필요하다.
+- **당기기 = 이동잠금 + 시각 연출만**: 플레이어 스틱 이동·대시만 막고 카메라는 움직이지 않는다. NPC 팔이 당기는 연출만 한다. 강제 이동은 VR 멀미 위험이라 하지 않는다. `SyncCapsuleToHMD` 때문에 애니메이션만으로는 구속이 안 되므로 `VRPawn` 에 별도 잠금 상태를 둔다.
+- **뿌리치기 = 손 속도 임계**: 잡힌 손의 물리 손 속도가 임계를 넘으면 풀린다.
+- **BB 쓰기 규칙 유지**: 붙잡기 상태를 BB 에 써야 하면 `SmartNPCAIController` 핸들러만 쓴다.
+
+## 완료 기준
+
+- NPC 가 막대형(무기)·박스형·구형 아이템을 들 때 손가락이 유형에 맞게 쥔다.
+- 반사 조건이 맞으면 NPC 가 플레이어 손을 잡고, NPC 손이 플레이어 손을 따라간다.
+- 잡힌 동안 스틱 이동·대시가 안 되고, 머리 회전·실제 걷기(룸스케일)는 멀미 없이 된다.
+- 손을 세게 휘두르면 풀리고 이동이 복구된다. 안 휘둘러도 시간 제한 후 풀린다.
+- 기존 반사 룰(Flee 등)·아이템 장착 회귀 없음.
+
+## 단계
+
+- **M1**: NPC 형상 유형별 손가락 포즈(`vr_grip_pose` M1 이후).
+- **M2**: 붙잡기 `EAction` + 반사 룰 + NPC 손 IK 로 플레이어 손 추적(시각만).
+- **M3**: `VRPawn` 이동잠금 + 뿌리치기 + 시간 제한 해제.
+
+## 미결 사항
+
+1. 붙잡기 `EAction` 을 LLM 선택지에서 뺄지. 반사 전용이면 Python 쪽 액션 목록에 노출하지 않는 게 맞지만, 4곳 규칙상 Python 동기화 여부를 `/add-eaction` 에서 확인.
+2. 반사 룰 발동 조건: 어떤 자극(예: 적대 관계 + 근거리 + 도주 중인 플레이어)인지.
+3. 룸스케일로 실제 걸어서 벗어나는 경우 처리: 잠금은 스틱 이동만 막으므로 실제 걷기로 멀어질 수 있다. 거리 초과 시 자동 해제할지.
+4. 뿌리치기 손 속도 임계, 붙잡기 최대 지속 시간: PIE 튜닝.
+5. 컨트롤러 입력일 때 잡힌 손: 물리 손은 컨트롤러 위치를 따르므로 동일하게 동작하는지 PIE 확인.

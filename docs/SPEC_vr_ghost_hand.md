@@ -1,0 +1,60 @@
+# SPEC: vr-ghost-hand — 물리 손(ghost hand)
+
+> 상태: **인터뷰 완료(2026-09-24)**, 착수 가능. 미결 3~6 은 구현·PIE 튜닝 중 결정. 근거: `docs/DESIGN_vr_physics_grip.md` + 손 트래킹 연구 노트.
+> 후속 SPEC 전부의 기반: `SPEC_vr_grip_pose.md`(2·3), `SPEC_npc_lift_throw.md`(6).
+
+## 목표
+
+트래킹되는 실제 손과 화면에 보이는 손을 분리한다.
+보이는 손은 물리 바디로 실제 손을 따라가되, 벽이나 무거운 물체에 막히면 멈춘다.
+촉감(햅틱)이 없는 VR 에서 "손이 벽을 뚫는" 몰입 파괴를 막는다.
+
+## 범위 (변경 파일·시스템)
+
+| 층 | 파일 | 변경 |
+|---|---|---|
+| C++ | `Core/BP/VRPawn.{h,cpp}` | 좌/우 물리 손(손바닥 바디 + 손가락 캡슐) + `PhysicsConstraintComponent`. 목표 = 핸드트래킹 손목·관절 트랜스폼, 핸드트래킹 무효 시 `MotionControllerLeft/Right` 트랜스폼 |
+| C++ | `Core/BP/VRPawn.cpp` | `GetLeft/RightHandEffectorCS()`(FBIK 손 이펙터 입력)를 `MotionController` 대신 물리 손바닥 바디 트랜스폼으로 교체. 별도 손 메시는 없다 — 보이는 손은 몸 메시(X_Bot) FBIK 결과이고, 손에 든 아이템도 몸 메시 소켓에 붙어 있어 자동으로 따라온다 |
+| C++ | `Core/BP/VRPawn.cpp` | `GetHandLocation()` 이 물리 손 위치를 반환하도록 변경 |
+| C++ | `Core/BP/VRPawn.cpp` | 핸드트래킹 관절 읽기: `IXRTrackingSystem::GetHandTrackingState`(`FXRHandTrackingState`). UE 5.5 에서 `GetMotionControllerData` 는 deprecated |
+| C++ | 핀치·그립 제스처 판정(자리 미정) | 손가락 관절 거리로 핀치·주먹 판정 — 기존 `IA_Grab`/`IA_GrabLeft` 와 같은 잡기 경로로 합류(OR) |
+| 에셋 | 플레이어 AnimBP / Control Rig | M3: 손가락 캡슐(= OpenXR 관절 26개) 트랜스폼을 X_Bot 손가락 본에 매핑. 그래프 편집이라 MCP 불가 → 사용자 작업(DoList). 컨트롤러일 때는 기존 손 포즈 유지 |
+
+영향받는 기존 호출자: `UI/Trade/TradeSessionActor.cpp:176`(손 근접 판정), `Core/BP/VRPawn.cpp:1703`(손 방향 계산).
+
+## 결정 사항
+
+- **입력 = 핸드트래킹 + 컨트롤러 병행**: 순정 OpenXR `OpenXRHandTracking`(이미 켜짐) 관절 데이터가 유효하면 그걸로, 무효(컨트롤러를 쥠·트래킹 소실)면 기존 `MotionController` 트랜스폼으로 물리 손을 구동한다. 기존 입력 액션 8개는 그대로 유지.
+- **핸드트래킹 잡기**: Quest 는 `XR_EXT_hand_interaction` 미지원이라 핀치·주먹 판정은 손가락 관절 거리로 직접 구현한다. 판정 결과는 `IA_Grab`/`IA_GrabLeft` 와 같은 잡기 처리로 들어간다. Meta XR 플러그인(`OculusXR`)은 계속 끈다.
+- **컨트롤러일 때 손가락**: 관절 데이터가 없으므로 손가락 캡슐은 기존 손 애니메이션 포즈를 따른다.
+- **`GetHandLocation()` = 물리 손 위치**: 보이는 손과 판정 손을 일치시킨다. 벽 너머로 넣은 실제 손으로는 거래·잡기 판정이 안 된다.
+- **콜리전 형상 = 손바닥 + 손가락 캡슐**: 처음부터 손가락별 캡슐. 동적 바디에 Complex Collision 금지.
+- **충돌 대상 = 월드 정적·동적 물체, NPC 몸, 반대쪽 물리 손**. 플레이어 자기 캡슐은 제외.
+- **구동 방식**: `PhysicsConstraintComponent` Linear/Angular Drive 로 추적. Max Force 제한으로 무거운 물체는 손이 못 밀고 표면에 막힌다.
+- **충돌 판정은 Chaos 에 맡김**: broad phase(AABB 트리)·narrow phase(GJK/EPA)는 엔진 내장. 직접 구현 없음.
+- **이탈 복구**: 실제 손과 물리 손 거리가 임계를 넘으면 물리 손을 트래킹 위치로 순간이동.
+
+## 완료 기준
+
+- 헤드셋 PIE(핸드트래킹·컨트롤러 각각): 벽·책상에 손을 밀어 넣으면 보이는 손과 손가락이 표면에서 멈춘다.
+- 가벼운 물체는 밀리고, 무거운 물체(질량 임계 이상)는 손이 막힌다.
+- 손으로 NPC 를 밀 수 있다. 양손이 서로 부딪힌다.
+- 벽 너머로 손을 넣었다 빼면 떨림이나 끼임 없이 복귀한다.
+- 핀치·주먹 제스처로 잡기가 동작하고, 컨트롤러 그립 버튼 잡기도 그대로 동작한다.
+- 컨트롤러를 내려놓거나 집어 들면 입력 소스가 끊김 없이 전환된다.
+- 거래(`TradeSessionActor`) 손 근접 판정이 물리 손 기준으로 동작한다.
+
+## 단계
+
+- **M1**: 입력 소스 선택(핸드트래킹 유효 시 손목, 아니면 컨트롤러) + 손바닥 바디 + Linear Drive, 벽 막힘만.
+- **M2**: Angular Drive + 이탈 복구 + `GetHandLocation()` 전환.
+- **M3**: 손가락 캡슐(관절별 추적) + 핀치·주먹 판정 + 관절→X_Bot 손가락 본 매핑(AnimBP, 사용자).
+
+## 미결 사항
+
+1. **입력 병행 확정(2026-09-24)** — 핸드트래킹 + 컨트롤러 병행. 입력 액션 8개 중 잡기만 제스처 경로 추가, 나머지 6개는 컨트롤러 유지. 나머지 제스처화는 필요해질 때 별도 SPEC.
+2. **자기 캡슐 제외 확정(2026-09-24)** — `SyncCapsuleToHMD` 로 HMD 아래 붙는 캡슐에 손이 막히고 플레이어가 밀리는 문제 회피.
+3. Drive Stiffness·Damping·Max Force 초기값: 헤드셋 PIE 에서 튜닝(보정 노브로 노출).
+4. 이탈 복구 거리 임계값.
+5. 핸드트래킹 소실 + 컨트롤러도 없음(손이 시야 밖·가려짐) 시 물리 손 처리: 마지막 위치 고정, 숨김 중 선택.
+6. 핀치·주먹 판정 임계(관절 거리)와 히스테리시스.
