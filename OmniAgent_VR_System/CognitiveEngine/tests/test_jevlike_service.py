@@ -215,11 +215,14 @@ def test_daily_blocks_command_only_activities(service: JevlikeService) -> None:
 
 def test_daily_give_item_never_targets_player_or_ground(service: JevlikeService) -> None:
     pools = dict(POOLS, actors=POOLS["actors"] + [{"id": "ground", "desc": "ground"}])
+    hits = 0
     for seed in range(200):
         out = _daily(service, activities=["give_item"], pools=pools, seed=seed)
         if out["activity"] == "give_item":
+            hits += 1
             assert out["slots"]["target"] not in ("Player", "ground")
             assert out["slots"]["item"] != "Seal"  # 퀘스트템 제외
+    assert hits > 0, "give_item 이 한 번도 안 뽑혀 검증이 비었다"
 
 
 def test_daily_emote_style_candidates_are_media_pool() -> None:

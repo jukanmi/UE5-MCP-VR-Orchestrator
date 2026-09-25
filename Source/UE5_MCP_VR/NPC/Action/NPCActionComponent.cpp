@@ -768,6 +768,17 @@ void UNPCActionComponent::HandleImmediateMoveResult(AAIController* AIController,
     }
     bActionAwaitingAsync = false;
 
+    // 발밑 아이템 — 이동 없이 도착이라 OnMoveActionCompleted 가 안 온다. 습득을 여기서 동기로 한다.
+    // PickUp 몽타주 재생 성공 시 bActionAwaitingAsync 가 서서 종료 콜백이 완료, 아니면 ExecuteInteraction 말미가 완료.
+    if (bPendingPickup)
+    {
+        bPendingPickup = false;
+        const bool bPicked = MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && PerformPickupAtDestination();
+        PendingPickupItem.Reset();
+        if (bPicked) PlayActionMediaWithPosture(TEXT("PickUp"));
+        return;
+    }
+
     const FString MediaKey = PendingMoveMediaKey;
     PendingMoveMediaKey.Reset();
     if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal && !MediaKey.IsEmpty())
@@ -926,9 +937,9 @@ bool UNPCActionComponent::BasePlayActionMedia(const FString& AssetID)
                     }
                     // 워치독은 액션 시작부터 센다 — 걸어간 뒤 재생하는 긴 몽타주(AM_Pickup 9.6s 등)가
                     // 종료 전에 강제 완료되지 않게 몽타주 길이+여유로 연장한다. 줄이지는 않는다(반복 몽타주 기존 동작 유지).
-                    if (bIsBusy)
+                    if (UWorld* World = GetWorld(); bIsBusy && World)
                     {
-                        FTimerManager& TM = GetWorld()->GetTimerManager();
+                        FTimerManager& TM = World->GetTimerManager();
                         const float Needed = Length + 2.f;
                         if (TM.GetTimerRemaining(ActionWatchdogTimer) < Needed)
                         {
@@ -2403,6 +2414,12 @@ void UNPCActionComponent::ExecutePickUp(ADroppedItemBase* TargetItem, FVector Lo
     // 습득은 도착 후 OnMoveActionCompleted → PerformPickupAtDestination 이 수행한다.
     // 여기서 즉시 하면 아직 출발지에 서 있는 채로 판정돼 목적지 근처 아이템을 놓친다.
     // BaseMove 가 AlreadyAtGoal 을 동기 처리할 수 있으므로 상태는 반드시 BaseMove 전에 세팅.
+    // 대상 아이템이 사라졌는데(ID 미해석 → null) 좌표도 없으면 월드 원점으로 걸어가 거기 물건을 줍게 된다 — 즉시 종료.
+    if (!IsValid(TargetItem) && Location.IsNearlyZero())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: PickUp 대상 없음(사라짐) — 건너뜀"), *GetOwnerAgentID());
+        return;
+    }
     PendingPickupItem = TargetItem;
     bPendingPickup = true;
     BaseMove(IsValid(TargetItem) ? TargetItem->GetActorLocation() : Location, EMoveType::Walk);
