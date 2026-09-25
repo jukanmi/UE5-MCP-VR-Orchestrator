@@ -53,4 +53,9 @@ private:
     // VRPawn 주입값 — 근접과 동일한 J→HP 환산·상한 사용(전투 일관성).
     float DamageScale = 1.0f;
     float MaxDamage = 100.f;
+
+    // 진행 방향 NPC 에게 회피 반사 통지(0.1s 간격, NPC 당 1회) — UNPCActionComponent::WarnIncomingProjectile.
+    TWeakObjectPtr<AActor> ShooterActor;
+    FTimerHandle WarnTimer;
+    TSet<const AActor*> WarnedNPCs;
 };

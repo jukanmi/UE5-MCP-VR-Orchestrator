@@ -7,10 +7,6 @@
 
 ## Todo
 
-### 전투 SPEC 잔여 — `docs/SPEC_realistic_combat.md` (§3.2·§2.3 완료 2026-09-21, §3.5 공격토큰 중앙화는 2026-09-22 폐기 — 필드 몹 `MaxAttackers=2` 로 충분, 나머지 3개 보류)
-- [ ] **저HP 자동 후퇴·회복 연쇄(척수)** — 2026-09-24 결정. Combat ∧ HP ≤ 0.3 ∧ 회복 Consumable 보유 → 주사위 없이 [EQS 후퇴 → UseItem] 결정론 주입, 전투당 1회. 회복템 없으면 기존 Flee 램프. 상세 `SPEC_jev_daily.md` 비고 B.1. 전투 브랜치에서 구현.
-- [ ] **§3.1·3.3 구현** — 설계 확정 `SPEC_realistic_combat.md` §5(2026-09-22). 남은 순서: Footwork(Strafe/Disengage, `Key_Style` 변형, EQS 안 씀) → Startle 룰 → 투사체 회피 → 청각→시각 융합(`FPerceptionData.Context` + Python `context` 1필드). 새 EAction·컴포넌트 0.
-
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
 - [ ] (보류) **StateTree 에셋 바인딩(전투 전용)** — 2026-09-24 판단: 붙여도 동작 변화 0. 전투 승수는 `SelectCombatAction`·`ComputeEQSWeights` 가 캐시를 직접 읽고, `FSTEvaluator_JevTactics`·`FSTCondition_NoulGuard` 는 코드 어디서도 안 쓰이며 `noul_harmful` 은 0.0 고정이라 가드가 막을 일이 없다. Noul(유해) 헤드를 학습할 때 재검토.
 - [ ] **`BREAKTHROUGH_GAIN`(3.0) 체감 튜닝(헤드셋)** — Phase 4 헤드셋 없는 PIE 는 전부 완료(아래 Done). 돌파 세기가 게임적으로 적당한지만 사용자 체감.
@@ -71,6 +67,11 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
+- [x] **전투 SPEC 잔여 구현 — 풋워크·깜짝 놀람·투사체 회피·감각 융합·저HP 후퇴 연쇄 (2026-09-25)** — `SPEC_realistic_combat.md` §5.1·5.2 + `SPEC_jev_daily.md` B.1. 새 EAction·컴포넌트 0, `verify all` 클린·pytest 113.
+  헤드셋 없는 PIE: Disengage = 공격 직후 가중치 1.2 로 선택, 187→613cm 뒷걸음 동안 타겟 주시(faceDot 1.00·이동 반대) · Strafe = 링 안에서 선택·이동(317→438cm) · 깜짝 놀람 = 150cm 첫 포착 → 정확히 뒤로 Dodge(dot −1.0), 실전 경로에서도 Guard·Skadi 발동 ·
+  투사체 = 룰→주사위 경로(실패 로그), 공격 중엔 거부 · 융합 = Drop 소음 0.39s 뒤 `heard Drop 300cm, turned, saw Player` → Python 기억 기록 · 저HP(15%) = 후퇴 3.6s → 회복템 사용(+15HP).
+  편차: 저HP 후퇴는 EQS 대신 타겟 반대 직선 1500cm(EQS 는 비동기라 도착 뒤 회복 순서를 못 보장). 깜짝 놀람은 적대 근접 즉시 공격 **아래**(적대면 공격이 우선).
+  **밸런스 주의**: 기본 Agility 10 이라 `CheckReflex(Agility, 2)` 투사체 회피 = 5%(스펙 가정은 Agility 50 → 25%). 기존 패링도 같은 불일치. 헤드셋 체감 후 결정 — DoList 1-18.
 - [x] **Jev daily sharpen 스윕 → v3 배포, Jev 일단 종료 (2026-09-25)** — 활동 패스 soft 목표 = LLM 가중치^sharpen(`build --sharpen`, 기본 3). `finetune/jev/sweep.py` 로 12설정(결과 `runs/sweep.tsv`, ignore).
   5목표 전부 통과 0. 배포 = sharpen3·bmax4·width128·20에폭: 정답률 .742(v2c .762)·look_at 선택 .557(.75)·stay 단독1위 재현 .514(6/35)·골드 일치 .590(.59)·골드 look_at .410(.49).
   정답률 −2%p 감수하고 편중 개선 채택. v2c 는 `app/models/jevlike_tactics_v2c.pt` 백업. 골드 시트 미리채움은 m2 모델 기준(look_at 25/39) — 재생성 안 함.

@@ -5,9 +5,9 @@
 > | 섹션 | 상태 | 비고 |
 > |---|---|---|
 > | §2.3 emergency_report(패링 인지) | **완료** | `SmartNPC` 패링 성공 시 `RequestEventCognition` 큐잉 |
-> | §3.1 Footwork & Spacing | 부분구현 | `SpacingIdealRange` 링 지점 직선 이동만, EQS(`TacticalPositionsQuery`) 미경유. Strafing/Disengage 없음 |
+> | §3.1 Footwork & Spacing | **완료(2026-09-25)** | 셀렉터 후보 Strafe(링 안 ±35°)·Disengage(공격 직후, 링×1.4). `Move`+`Key_Style` 변형, 이동 중 `SetFocus` 로 타겟 주시 |
 > | §3.2 RNG Parry & Detection | **완료** | `AVRPawn::TryMeleeHits` → `ASmartNPC` 타겟에 `UDiceSystem::CheckReflex(Agility, ParryDifficulty)`. Guard Zone 별도 형상 없이 기존 근접 오버랩에 편승(최소 구현) |
-> | §3.3 복합 감각 척수 반사 | 부분구현 | Sight/Hearing 개별 반사(`TryReflexReact`)는 있으나 청각→시야 스캔 융합, 투사체 회피, Startle 없음 |
+> | §3.3 복합 감각 척수 반사 | **완료(2026-09-25)** | Startle 룰(180cm, 적대 즉시 공격 아래) · 투사체 회피(투사체가 0.1s 통지, 이동·둘러보기 선점) · 청각→시각 융합(`FPerceptionData.Context` → Python 기억). 저HP 후퇴·회복 연쇄도 셀렉터에 추가 |
 > | §3.4 Progressive Hit Reactions | 부분구현 | Flinch/Knockdown 2단계만(`NPCRagdollComponent::ReactToHit`, 임계 40). 방향성 Stumble 중간 단계 없음(스태거 몽타주 에셋 부재) |
 > | §3.5 Attack Tokens | **폐기(2026-09-22)** | 필드 몹 `AEnemyAIController::MaxAttackers=2`+`HoldDistance` 포위 링으로 린치 방지는 이미 됨. SmartNPC 는 다수가 동시에 플레이어를 치는 상황 자체가 없어(아군/중립) 중앙 매니저 불필요 |
 >

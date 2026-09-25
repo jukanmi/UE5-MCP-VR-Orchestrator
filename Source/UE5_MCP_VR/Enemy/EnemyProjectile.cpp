@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Engine/DamageEvents.h"
+#include "NPC/Action/NPCActionComponent.h"
 
 AEnemyProjectile::AEnemyProjectile()
 {
@@ -39,6 +40,11 @@ void AEnemyProjectile::BeginPlay()
         MoveComp->MaxSpeed = ProjectileSpeed;
         MoveComp->Velocity = GetActorForwardVector() * ProjectileSpeed;
     }
+    GetWorldTimerManager().SetTimer(WarnTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+    {
+        UNPCActionComponent::WarnIncomingProjectile(this, MoveComp ? MoveComp->Velocity : FVector::ZeroVector,
+                                                    Shooter.Get(), WarnedNPCs);
+    }), 0.1f, true, 0.f);
 }
 
 void AEnemyProjectile::InitProjectile(AActor* InShooter, float InDamage)

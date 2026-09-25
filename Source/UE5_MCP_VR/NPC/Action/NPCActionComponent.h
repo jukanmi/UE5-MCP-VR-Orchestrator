@@ -618,6 +618,33 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "100.0"))
     float SpacingIdealRange = 500.f;
 
+    /** 풋워크 Strafe — 링 안(Min~Max)에서 Ideal 링을 따라 옆으로 도는 가중치(× Agility/Norm). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Strafe = 0.6f;
+
+    /** Strafe 한 번에 도는 각도(도, 좌우 랜덤). 500cm 링에서 35° ≈ 305cm. */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "5.0", ClampMax = "90.0"))
+    float StrafeArcDeg = 35.f;
+
+    /** 풋워크 Disengage — 직전 선택이 Attack 이면 이 가중치, 아니면 _Idle(예측 불가성용 소량). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_Disengage = 1.2f;
+
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector")
+    float CombatWeight_DisengageIdle = 0.15f;
+
+    /** Disengage 목적지 = Ideal 링 × 이 배율(기본 700cm — Max 900 안이라 다음 틱 접근 욕구가 안 튄다). */
+    UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1.0", ClampMax = "3.0"))
+    float DisengageRangeMul = 1.4f;
+
+    /** 저HP 후퇴·회복 연쇄 임계(HP 비율). 이하 ∧ 회복 소비템 보유면 셀렉터 대신 [후퇴 → 회복] 을 전투당 1회. */
+    UPROPERTY(EditDefaultsOnly, Category = "MCP|CombatSelector", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LowHpRetreatThreshold = 0.3f;
+
+    /** 저HP 후퇴 거리(cm) — 타겟 반대 방향 직선, NavMesh 투영. */
+    UPROPERTY(EditDefaultsOnly, Category = "MCP|CombatSelector", meta = (ClampMin = "300.0"))
+    float LowHpRetreatDistance = 1500.f;
+
     /** Flee 선택 시 배짱 주사위 난이도 — CheckReflex(Bravery, 이 값) 성공하면 도주 취소 후 재선택.
      *  1 = Bravery% 확률로 버팀(용감한 놈 끝까지, 겁쟁이 일찍 도망). */
     UPROPERTY(EditAnywhere, Category = "MCP|CombatSelector", meta = (ClampMin = "1", ClampMax = "10"))
@@ -666,7 +693,42 @@ public:
     UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "30.0"))
     float ReflexGlobalCooldown = 1.5f;
 
+    /** 투사체 회피 주사위 난이도 — CheckReflex(Agility, 이 값) = Agility/이 값 %. 기본 Agility 10 이면 5%. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "1", ClampMax = "10"))
+    int32 ProjectileDodgeDifficulty = 2;
+
+    /** 청각→시각 융합 창(초) — 소리 반사로 돌아본 뒤 이 안에 자극 근처 대상을 보면 문맥을 묶어 보낸다. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+    float FusionWindow = 0.5f;
+
+    /** 융합 반경(cm) — 소음 위치 오차 + 대상 이동. */
+    UPROPERTY(EditAnywhere, Category = "MCP|Reflex", meta = (ClampMin = "0.0"))
+    float FusionRadius = 400.f;
+
+    /** 소리 반사 직후 창 안에서 소음 근처 대상을 봤으면 문맥 문자열을 돌려주고 창을 닫는다. */
+    bool TryConsumeFusion(const FVector& SeenLoc, const FString& SeenID, FString& OutContext);
+
+    /** 투사체가 0.1s 마다 호출 — 진행 방향 앞에서 투사체를 보고 있는 SmartNPC 에게 회피 반사를 건다.
+     *  Warned 는 투사체별 통지 기록(NPC 당 1회). 투사체 두 종이 같은 규칙을 쓰도록 여기 한 곳에 둔다. */
+    static void WarnIncomingProjectile(const AActor* Projectile, const FVector& Velocity, const AActor* Shooter,
+                                       TSet<const AActor*>& Warned);
+
 private:
+    // --- 감각 융합 창(TryReflexReact 가 소리 반사 시 연다) ---
+    FString FusionEvent;
+    FVector FusionLoc = FVector::ZeroVector;
+    float FusionDist = 0.f;
+    float FusionUntil = -1.f;
+
+    /** Strafe/Disengage 가 SetFocus 를 걸었는지 — ClearActiveActionState 가 풀어준다. */
+    bool bFootworkFocus = false;
+
+    /** 저HP 후퇴·회복 연쇄를 이번 전투에서 이미 썼는지(ResetCombatSelectorState 가 초기화). */
+    bool bLowHpRetreatUsed = false;
+
+    /** 저HP 연쇄 — 조건 맞으면 [후퇴 Move → UseItem] 을 큐에 넣고 true. */
+    bool TryLowHpRetreat(AActor* TargetActor);
+
     // --- Jev daily 상태 ---
     double LastLLMBatchTime = -1000.0;
     TWeakObjectPtr<AActor> DialoguePartner;

@@ -12,12 +12,17 @@
 > 공통: 가구 BP 는 이벤트 그래프 노드 **0개** — 부모 `FurnitureActor`, 컴포넌트·프로퍼티 설정만.
 > 절차 상세는 `주간기록/2026-W29` BP_Chair 항목 참조(동일 패턴).
 
+### 1-18. 전투 풋워크·반사 체감 (2026-09-25 구현, `SPEC_realistic_combat.md` §5.1·5.2 — 헤드셋 없는 PIE 는 완료)
+- [ ] NPC 와 교전하며 Strafe(링 따라 옆걸음)·Disengage(공격 뒤 뒷걸음)가 타겟을 보며 움직이는지, 너무 잦거나 드물지 않은지.
+- [ ] 투척물을 NPC 정면으로 던져 회피 빈도 확인 — 기본 Agility 10 이라 현재 5%(패링도 같은 공식). 너무 낮으면 난이도 공식 조정 결정.
+- [ ] 코앞에 불쑥 나타났을 때 흠칫 뒤로 물러나는 연출이 자연스러운지.
+
 ### 1-17. 고아 BP enum 에셋 삭제 (2026-09-24, `SPEC_behavior_mode_reduce.md` D4)
 
 > 시도: MCP 로 AssetRegistry referencers 조회 → **0건** 확인. `EditorAssetLibrary.delete_asset` 호출은
 > 클로드 자동 모드 권한 분류기가 "되돌릴 수 없는 삭제"로 차단. C++ enum 은 이미 2값으로 줄었고 이 에셋은 아무도 안 씀.
 
-- [ ] 콘텐츠 브라우저에서 `/Game/Core/AI/ENPCBehaviorMode`(BP enum, 값에 `LifeStyle` 오타) 삭제 → 에디터 재시작 시 로드 에러 0 확인.
+- [X] 콘텐츠 브라우저에서 `/Game/Core/AI/ENPCBehaviorMode`(BP enum, 값에 `LifeStyle` 오타) 삭제 → 에디터 재시작 시 로드 에러 0 확인.
   같은 이름 C++ enum 과 혼동 방지용. 끝나면 `Content/Core/AI/ENPCBehaviorMode.uasset` 삭제를 커밋.
 
 ### 1-15. 대화창 UI 분리 — 헤드셋 육안만 남음 (2026-09-21 구현, MCP 로 에셋·배선·PIE 완료)

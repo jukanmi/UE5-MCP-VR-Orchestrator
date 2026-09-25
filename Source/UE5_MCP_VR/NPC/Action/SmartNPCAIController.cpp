@@ -320,16 +320,25 @@ void ASmartNPCAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus
                     // 호감도 기반 최종 위협도 1회 계산 — RequestEventCognition + EQS 게이트 공유.
                     const float FinalDanger = StateComp->ComputePerceptionDanger(SightBaseDanger, TargetID);
 
-                    const FPerceptionData Perception(TargetID, ESenseType::Sight, Actor->GetActorLocation(),
-                                                     OwnerNPC->GetActorLocation(), FinalDanger);
+                    FPerceptionData Perception(TargetID, ESenseType::Sight, Actor->GetActorLocation(),
+                                               OwnerNPC->GetActorLocation(), FinalDanger);
 
                     // 척수반사 — Python 왕복 없이 즉시 반응(SPEC_reflex_table).
                     // danger 게이트 **밖**에서 부른다: 친화 인사처럼 게이트를 못 넘는 자극이
                     // 반사의 주 대상이기 때문. 관계·거리 판정은 룰이 직접 한다.
+                    // 이 경로는 시야 획득(재획득 포함) 때만 오므로 "FirstSight" — 깜짝 놀람 룰이 이걸 본다.
                     if (UNPCActionComponent* ActionComp = OwnerNPC->GetActionComponent())
                     {
-                        ActionComp->TryReflexReact(ESenseType::Sight, FString(), TargetID,
+                        ActionComp->TryReflexReact(ESenseType::Sight, TEXT("FirstSight"), TargetID,
                             SightBaseDanger, Perception.Distance, Actor->GetActorLocation());
+                        // 방금 소리 쪽을 돌아봤다면 "듣고 돌아봤더니 누가 있었다" 문맥을 실어 보낸다.
+                        ActionComp->TryConsumeFusion(Actor->GetActorLocation(), TargetID, Perception.Context);
+                    }
+
+                    // 융합 문맥은 위협이 아니어도 기억 가치가 있다 — 게이트 밖에서 통보만(Python 이 기억에 기록).
+                    if (FinalDanger < CombatDangerThreshold && !Perception.Context.IsEmpty())
+                    {
+                        StateComp->RequestEventCognition(Perception);
                     }
 
                     // 적대 위협(FinalDanger >= CombatDangerThreshold)일 때만 emergency report·EQS.

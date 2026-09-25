@@ -49,7 +49,7 @@ class PerceptionData(BaseModel):
     distance: float
     danger_score: float = 0.0  # C++ FPerceptionData.DangerScore 대응
     location: Dict[str, float]  # {"x", "y", "z"}
-
+    context: str = ""  # 청각→시각 융합 문맥(FPerceptionData.Context). 비면 C++ 가 필드 생략
 
 class StateUpdatePayload(BaseModel):
     """

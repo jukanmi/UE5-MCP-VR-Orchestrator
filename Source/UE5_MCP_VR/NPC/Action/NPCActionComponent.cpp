@@ -58,6 +58,16 @@ UNPCActionComponent::UNPCActionComponent()
     // 위에서부터 처음 맞는 하나만 발동한다 — 좁은 조건이 먼저.
     // 거리 상한은 감지 반경(SightRadius 3000 / HearingRange 3000) 안에서만 의미가 있다.
     {
+        // 투사체가 직접 알린다(WarnIncomingProjectile). 관계 무관 — 아군이 던진 물건도 움찔 피한다.
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("투사체 회피");
+        R.Sense = ESenseType::Sight;
+        R.EventTypeContains = TEXT("Projectile");
+        R.MaxDistance = 800.f;
+        R.Cooldown = 0.5f;
+        R.ActionWeights.Add(EAction::Dodge, 100.f);
+    }
+    {
         FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
         R.RuleName = TEXT("적대·근접 즉시 공격");
         R.Sense = ESenseType::Sight;
@@ -66,6 +76,17 @@ UNPCActionComponent::UNPCActionComponent()
         R.Cooldown = 3.f;
         R.bEnterCombat = true;
         R.ActionWeights.Add(EAction::Attack, 100.f);
+    }
+    {
+        // 코앞에서 처음 포착 → 뒤로 흠칫. 적대 근접은 위 즉시 공격이 먼저 가져간다(전투 진입 보장).
+        // 컨트롤러는 시야 획득(재획득 포함) 때만 Sight 를 넘기므로 EventType 이 곧 "처음 봄"이다.
+        FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
+        R.RuleName = TEXT("근거리 깜짝 놀람");
+        R.Sense = ESenseType::Sight;
+        R.EventTypeContains = TEXT("FirstSight");
+        R.MaxDistance = 180.f;
+        R.Cooldown = 15.f;
+        R.ActionWeights.Add(EAction::Dodge, 100.f);
     }
     {
         FReflexRule& R = ReflexRules.AddDefaulted_GetRef();
@@ -160,12 +181,25 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
     UWorld* World = GetWorld();
     if (!World || !StateComponent || ReflexRules.Num() == 0) return false;
 
+    // 투사체는 기다려 주지 않는다 — 이동·둘러보기 중이면 끊고 피한다. 공격·방어 중엔 모션 충돌이라 맞는다.
+    const bool bProjectile = EventType == TEXT("Projectile");
+    if (bProjectile)
+    {
+        if (bIsBusy)
+        {
+            switch (CurrentAction.ActionType)
+            {
+            case EAction::Move: case EAction::Idle: case EAction::Scan: case EAction::TurnTo: break;
+            default: return false;
+            }
+        }
+    }
     // 진행 중 액션·대기 큐가 있으면 개입하지 않는다(셀렉터와 동일 규율).
     // 단 Jev 일상 활동은 전투 진입 반사가 끊고 들어간다(아래 룰 매칭 후 판정).
-    if ((bIsBusy && !bCurrentActionFromJev) || (!ActionQueue.IsEmpty() && !bJevActionQueued)) return false;
+    else if ((bIsBusy && !bCurrentActionFromJev) || (!ActionQueue.IsEmpty() && !bJevActionQueued)) return false;
 
     const float Now = World->GetTimeSeconds();
-    if (Now - LastReflexTime < ReflexGlobalCooldown) return false;
+    if (!bProjectile && Now - LastReflexTime < ReflexGlobalCooldown) return false;
 
     // 룰별 쿨다운 배열을 테이블 크기에 맞춘다(에디터에서 룰을 늘렸을 수 있음).
     if (ReflexRuleLastFireTime.Num() != ReflexRules.Num())
@@ -186,11 +220,11 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
 
         // 대화 직후엔 비전투 반사(주변 경계 Scan 등)로 고개를 돌리지 않는다 — 말한 상대를 보는 중(D10).
         // ponytail: 8초 고정. 대사 길이에 맞추려면 TTS·자막 종료 이벤트로 교체.
-        if (!Rule.bEnterCombat && FPlatformTime::Seconds() - LastLLMBatchTime < 8.0) return false;
+        if (!bProjectile && !Rule.bEnterCombat && FPlatformTime::Seconds() - LastLLMBatchTime < 8.0) return false;
 
         // Jev 일상 활동은 전투 진입 반사만 끊는다. 비전투 반사(중립 경계 Scan 등)까지 끊게 하면
         // 마을 주민을 볼 때마다(쿨다운 10s) 앉기·산책이 시작 직후 잘린다(2026-09-24 Simulate 실측).
-        if ((bIsBusy || bJevActionQueued) && !Rule.bEnterCombat) return false;
+        if (!bProjectile && (bIsBusy || bJevActionQueued) && !Rule.bEnterCombat) return false;
 
         const TArray<TPair<EAction, float>> WeightPairs = Rule.ActionWeights.Array();
         const int32 Idx = PickWeightedIndex(WeightPairs.Num(), [&WeightPairs](int32 j) { return WeightPairs[j].Value; });
@@ -222,16 +256,56 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
             Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, StimulusLoc.ToString());
             break;
 
+        case EAction::Dodge:
+        {
+            // 투사체 = 진행 방향 수직(좌우 랜덤), 깜짝 놀람 = 자극 반대(뒤로 흠칫).
+            const AActor* Owner = GetOwner();
+            FVector Away = Owner ? (Owner->GetActorLocation() - StimulusLoc).GetSafeNormal2D() : FVector::ZeroVector;
+            if (Away.IsNearlyZero() && Owner) Away = -Owner->GetActorForwardVector();
+            if (bProjectile)
+            {
+                FDiceResult DodgeRoll;
+                const float Agility = StateComponent->GetAttributes().BaseStats.Agility;
+                if (!UDiceSystem::CheckReflex(Agility, ProjectileDodgeDifficulty, DodgeRoll))
+                {
+                    UE_LOG(LogTemp, Log, TEXT("[Reflex] %s: 투사체 회피 실패(roll %.0f ≥ %.0f)"),
+                        *GetOwnerAgentID(), DodgeRoll.RollValue, DodgeRoll.TargetValue);
+                    return false;
+                }
+                Away = FVector::CrossProduct(Away, FVector::UpVector) * (FMath::RandBool() ? 1.f : -1.f);
+            }
+            Action.FacialState = EFacialState::Surprised;
+            Action.Parameters.Add(NPCActionKeys::Key_Direction, Away.ToString());
+            break;
+        }
+
         default:
             break;
         }
 
+        if (bProjectile)
+        {
+            // 선점 — 위에서 허용한(이동·둘러보기) 진행 액션과 대기 큐를 비우고 바로 피한다.
+            if (bIsBusy) AbortCurrentAction();
+            ActionQueue.Empty();
+            bJevActionQueued = false;
+        }
         PreemptJevActivity();
         ActionQueue.Enqueue(Action);
         LastQueuedKey = QueueKey(Action);
 
         ReflexRuleLastFireTime[i] = Now;
         LastReflexTime = Now;
+
+        // 소리 쪽을 돌아보는 반사면 융합 창을 연다 — 창 안에 거기서 누굴 보면 컨트롤러가 문맥을 묶어 보낸다.
+        if (Sense == ESenseType::Hearing
+            && (Chosen == EAction::TurnTo || Chosen == EAction::Investigate || Chosen == EAction::Scan))
+        {
+            FusionEvent = EventType;
+            FusionLoc = StimulusLoc;
+            FusionDist = Distance;
+            FusionUntil = Now + FusionWindow;
+        }
 
         // Combat 진입 — 반사가 SLM 을 대체하면서 Mode 를 올릴 주체도 여기로 옮겨왔다.
         if (Rule.bEnterCombat && StateComponent->GetBehaviorMode() != ENPCBehaviorMode::Combat)
@@ -250,6 +324,49 @@ bool UNPCActionComponent::TryReflexReact(ESenseType Sense, const FString& EventT
     }
 
     return false;
+}
+
+bool UNPCActionComponent::TryConsumeFusion(const FVector& SeenLoc, const FString& SeenID, FString& OutContext)
+{
+    const UWorld* World = GetWorld();
+    if (!World || World->GetTimeSeconds() > FusionUntil) return false;
+    if (FVector::Dist(SeenLoc, FusionLoc) > FusionRadius) return false;
+
+    // 영문 — SLM 프롬프트가 영문이라 기억 Event 도 같은 언어로 둔다.
+    OutContext = FString::Printf(TEXT("heard %s %.0fcm, turned, saw %s"), *FusionEvent, FusionDist, *SeenID);
+    FusionUntil = -1.f;
+    UE_LOG(LogTemp, Log, TEXT("[Reflex] %s: 감각 융합 — %s"), *GetOwnerAgentID(), *OutContext);
+    return true;
+}
+
+void UNPCActionComponent::WarnIncomingProjectile(const AActor* Projectile, const FVector& Velocity, const AActor* Shooter,
+                                                 TSet<const AActor*>& Warned)
+{
+    constexpr float WarnRange = 800.f;   // 반사 룰 MaxDistance 와 같게
+    constexpr float AimDot = 0.9f;       // 진행 방향 ±25° 안
+    constexpr float SeeDot = 0.3f;       // NPC 가 투사체 쪽을 보고 있어야(±72°) 피한다
+    if (!Projectile || Velocity.IsNearlyZero()) return;
+    UNPCManager* Mgr = UNPCManager::Get(Projectile);
+    if (!Mgr) return;
+
+    const FVector Loc = Projectile->GetActorLocation();
+    const FVector Dir = Velocity.GetSafeNormal();
+    const FString ShooterID = Shooter ? ASmartNPC::PerceptionIdFor(Shooter) : FString();
+    for (const auto& Pair : Mgr->GetActiveNPCs())
+    {
+        ASmartNPC* NPC = Pair.Value;
+        if (!NPC || NPC->bIsDead || NPC == Shooter || Warned.Contains(NPC)) continue;
+        const FVector ToNPC = NPC->GetActorLocation() - Loc;
+        const float Dist = ToNPC.Size();
+        if (Dist < 1.f || Dist > WarnRange) continue;
+        if (FVector::DotProduct(Dir, ToNPC / Dist) < AimDot) continue;
+        if (FVector::DotProduct(NPC->GetActorForwardVector(), -ToNPC / Dist) < SeeDot) continue;
+        if (UNPCActionComponent* AC = NPC->GetActionComponent())
+        {
+            Warned.Add(NPC);
+            AC->TryReflexReact(ESenseType::Sight, TEXT("Projectile"), ShooterID, 1.f, Dist, Loc);
+        }
+    }
 }
 
 void UNPCActionComponent::BeginPlay()
@@ -458,6 +575,13 @@ void UNPCActionComponent::ClearActiveActionState()
     PendingPickupItem.Reset();
     PendingFurnitureTarget.Reset(); // 이동 중단 시 스테일 가구 목적지 방지 — 점유 전이라 Release 불필요
     StopDodgeMove(); // Dodge 마찰·제동 원복 — 정상 종료·중단·워치독 공통 경로
+    if (bFootworkFocus)
+    {
+        // Strafe/Disengage 의 타겟 주시 해제 — 완료·중단·워치독 세 경로가 전부 여기로 모인다.
+        // 회전 모드(bOrientRotationToMovement)는 다음 이동의 PrepareMove 가 되돌린다.
+        bFootworkFocus = false;
+        if (AAIController* AIC = GetOwnerAIController()) AIC->ClearFocus(EAIFocusPriority::Gameplay);
+    }
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(ActionWatchdogTimer);
@@ -894,7 +1018,29 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     switch (ActionType)
     {
     case EAction::Idle:         ExecuteIdle(); break;
-    case EAction::Move:         ExecuteMove(Location, TargetActor, ParseMoveStyle(StyleStr)); break;
+    case EAction::Move:
+    {
+        // 전투 풋워크(셀렉터 전용 style) — 달리면서 타겟을 계속 본다(옆걸음·뒷걸음). 새 EAction 대신 style 변형.
+        const bool bFootwork = TargetActor && (StyleStr == TEXT("Strafe") || StyleStr == TEXT("Disengage"));
+        ExecuteMove(Location, TargetActor, bFootwork ? EMoveType::Run : ParseMoveStyle(StyleStr));
+        if (bFootwork && bActionAwaitingAsync)
+        {
+            if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+            {
+                if (UCharacterMovementComponent* CMC = OwnerChar->GetCharacterMovement())
+                {
+                    CMC->bOrientRotationToMovement = false;
+                    CMC->bUseControllerDesiredRotation = true;
+                }
+            }
+            if (AAIController* AIC = GetOwnerAIController())
+            {
+                AIC->SetFocus(TargetActor, EAIFocusPriority::Gameplay);
+                bFootworkFocus = true;
+            }
+        }
+        break;
+    }
     case EAction::Follow:       ExecuteFollow(TargetActor, ParseMoveStyle(StyleStr)); break;
     case EAction::Dialogue:     ExecuteDialogue(TextBody, EFacialState::Neutral); break;
     case EAction::TurnTo:       ExecuteTurnTo(Location, TargetActor); break;
@@ -1818,6 +1964,46 @@ void UNPCActionComponent::ResetCombatSelectorState()
     ConsecutiveCombatChoiceCount = 0;
     LastCombatSelectTime = -1000.f;
     bSignaledAlliesThisCombat = false;
+    bLowHpRetreatUsed = false;
+}
+
+bool UNPCActionComponent::TryLowHpRetreat(AActor* TargetActor)
+{
+    AActor* Owner = GetOwner();
+    if (bLowHpRetreatUsed || !InventoryComponent || !Owner || !TargetActor) return false;
+    if (StateComponent->GetAttributes().Resources.GetHealthPercent() > LowHpRetreatThreshold) return false;
+
+    // 회복량이 가장 큰 소비템 — 없으면 기존 Flee 램프·주사위로 넘긴다.
+    const FItemData* Best = nullptr;
+    for (const FInventorySlot& Slot : InventoryComponent->InventorySlots)
+    {
+        if (Slot.IsEmpty() || Slot.ItemData.ItemType != EItemType::Consumable || Slot.ItemData.HealthRestore <= 0.f) continue;
+        if (!Best || Slot.ItemData.HealthRestore > Best->HealthRestore) Best = &Slot.ItemData;
+    }
+    if (!Best) return false;
+
+    // ponytail: 후퇴 지점은 타겟 반대 직선(NavMesh 투영은 BaseMove). EQS 후퇴는 비동기라 도착 뒤 회복 순서를 못 보장한다.
+    FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
+    if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
+
+    FGameAction Retreat;
+    Retreat.ActionType = EAction::Move;
+    Retreat.FacialState = EFacialState::Fear;
+    Retreat.Parameters.Add(NPCActionKeys::Key_TargetLoc, (Owner->GetActorLocation() + AwayDir * LowHpRetreatDistance).ToString());
+    Retreat.Parameters.Add(NPCActionKeys::Key_Style, TEXT("Run"));
+
+    // 이동 완료는 성공·실패 무관하게 큐를 풀므로 도착 여부와 상관없이 회복이 이어진다.
+    FGameAction Heal;
+    Heal.ActionType = EAction::UseItem;
+    Heal.Parameters.Add(NPCActionKeys::Key_Item, Best->ItemID);
+
+    PreemptJevActivity();
+    ActionQueue.Enqueue(Retreat);
+    ActionQueue.Enqueue(Heal);
+    bLowHpRetreatUsed = true;
+    UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s: 저HP 후퇴·회복 연쇄 → %s (+%.0f HP)"),
+        *GetOwnerAgentID(), *Best->ItemID, Best->HealthRestore);
+    return true;
 }
 
 bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
@@ -1830,6 +2016,13 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
     const float Now = World->GetTimeSeconds();
     if (Now - LastCombatSelectTime < CombatActionInterval) return false;
 
+    // 저HP·회복템 보유면 주사위·가중치 없이 [후퇴 → 회복] 결정론 연쇄(전투당 1회).
+    if (TryLowHpRetreat(TargetActor))
+    {
+        LastCombatSelectTime = Now;
+        return true;
+    }
+
     const FNPCAttributes Attr = StateComponent->GetAttributes();
     const float Dist = FVector::Dist(Owner->GetActorLocation(), TargetActor->GetActorLocation());
     const float HPLoss = 1.f - FMath::Clamp(Attr.Resources.GetHealthPercent(), 0.f, 1.f);
@@ -1841,8 +2034,9 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
     // 방어 행동은 근접에서만 유의미 — 밖이면 급감.
     const float DefenseRangeFactor = (Dist <= DefenseReactRange) ? 1.f : 0.1f;
 
-    struct FCombatCandidate { EAction Action; float Weight; };
-    TArray<FCombatCandidate, TInlineAllocator<6>> Candidates;
+    // Style — Move 변형(풋워크) 구분용. 연속성·Jev 승수는 Action 단위로 본다.
+    struct FCombatCandidate { EAction Action; float Weight; const TCHAR* Style = nullptr; FVector Dest = FVector::ZeroVector; };
+    TArray<FCombatCandidate, TInlineAllocator<8>> Candidates;
 
     // Attack — Strength 파생. 연속 상한 도달 시 0(다른 행동 강제).
     {
@@ -1874,6 +2068,43 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
         }
         Candidates.Add({ EAction::Move,
             CombatWeight_Spacing * (Attr.BaseStats.Agility / CombatStatNorm) * SpacingUrge });
+    }
+
+    // 풋워크 — 링 위 지점은 삼각함수 한 줄(EQS 불필요). NavMesh 에 못 올리면 이번 틱 불참.
+    {
+        UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+        auto OnNav = [NavSys](FVector& P) {
+            FNavLocation NavLoc;
+            if (!NavSys || !NavSys->ProjectPointToNavigation(P, NavLoc, FVector(200.f, 200.f, 300.f))) return false;
+            P = NavLoc.Location;
+            return true;
+        };
+        const FVector TargetLoc = TargetActor->GetActorLocation();
+        FVector AwayDir = (Owner->GetActorLocation() - TargetLoc).GetSafeNormal2D();
+        if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
+
+        // Strafe — 링 안(상호 배타: 링 밖은 위 거리조절 담당)에서 ±StrafeArcDeg 회전한 Ideal 링 지점.
+        if (Dist >= SpacingMinRange && Dist <= SpacingMaxRange)
+        {
+            FVector Dest = TargetLoc + AwayDir.RotateAngleAxis(StrafeArcDeg * (FMath::RandBool() ? 1.f : -1.f), FVector::UpVector)
+                                       * SpacingIdealRange;
+            if (OnNav(Dest))
+            {
+                Candidates.Add({ EAction::Move, CombatWeight_Strafe * (Attr.BaseStats.Agility / CombatStatNorm), TEXT("Strafe"), Dest });
+            }
+        }
+
+        // Disengage — 공격 직후 링 바깥으로 빠지기(주 용도). 이미 그 밖이면 불참.
+        const float DisengageRange = SpacingIdealRange * DisengageRangeMul;
+        if (Dist < DisengageRange)
+        {
+            FVector Dest = TargetLoc + AwayDir * DisengageRange;
+            if (OnNav(Dest))
+            {
+                const float W = LastCombatChoice == EAction::Attack ? CombatWeight_Disengage : CombatWeight_DisengageIdle;
+                Candidates.Add({ EAction::Move, W, TEXT("Disengage"), Dest });
+            }
+        }
     }
 
     // Flee — 저HP 제곱 램프 × 겁 성향(Fear↑·Bravery↓ → 0~2). 만HP≈0(가중치 급증은 저HP에서만).
@@ -1945,6 +2176,7 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
     }
 
     const EAction Chosen = Candidates[ChosenIdx].Action;
+    const TCHAR* ChosenStyle = Candidates[ChosenIdx].Style;
 
     FGameAction Action;
     Action.ActionType = Chosen;
@@ -1971,6 +2203,14 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
 
     case EAction::Move:
     {
+        if (ChosenStyle)
+        {
+            // 풋워크 — 목적지는 후보 계산 때 확정. target_id 는 이동 중 주시 대상.
+            Action.Parameters.Add(NPCActionKeys::Key_TargetLoc, Candidates[ChosenIdx].Dest.ToString());
+            Action.Parameters.Add(NPCActionKeys::Key_Style, ChosenStyle);
+            Action.Parameters.Add(NPCActionKeys::Key_TargetID, TargetActor->GetName());
+            break;
+        }
         // 계산 목적지로 BaseMove 직접(EQS 미사용) — 타겟 기준 자기쪽 Ideal 링 위 지점.
         FVector AwayDir = (Owner->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
         if (AwayDir.IsNearlyZero()) AwayDir = -Owner->GetActorForwardVector();
@@ -2015,10 +2255,11 @@ bool UNPCActionComponent::SelectCombatAction(AActor* TargetActor)
     FString WeightStr;
     for (const FCombatCandidate& C : Candidates)
     {
-        WeightStr += FString::Printf(TEXT("%s=%.2f "), *UEnum::GetValueAsString(C.Action), C.Weight);
+        WeightStr += FString::Printf(TEXT("%s=%.2f "), C.Style ? C.Style : *UEnum::GetValueAsString(C.Action), C.Weight);
     }
     UE_LOG(LogTemp, Log, TEXT("[CombatSelector] %s → %s (dist=%.0f hpLoss=%.0f%% recentHit=%d) W[ %s]"),
-        *GetOwnerAgentID(), *UEnum::GetValueAsString(Chosen), Dist, HPLoss * 100.f, bRecentlyHit ? 1 : 0, *WeightStr);
+        *GetOwnerAgentID(), ChosenStyle ? ChosenStyle : *UEnum::GetValueAsString(Chosen), Dist, HPLoss * 100.f,
+        bRecentlyHit ? 1 : 0, *WeightStr);
 
     return true;
 }

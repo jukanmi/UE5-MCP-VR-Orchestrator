@@ -387,6 +387,12 @@ async def _handle_emergency_report(envelope: MessageEnvelope) -> str:
         if payload.reflex_action:
             _record_reflex_memory(payload.agent_id, payload.reflex_action)
 
+        # ── 감각 융합 문맥 기록 ─────────────────────────────────────────
+        # "소리 듣고 돌아봤더니 누가 있었다" 는 친화 대상이어도 기억 가치가 있다 — danger 게이트 앞.
+        for p in payload.perceptions:
+            if p.context:
+                _record_event_memory_bg(payload.agent_id, f"{payload.agent_id}: {p.context}", "fusion-memory")
+
         # ── danger 게이트 ──────────────────────────────────────────────
         # 임계 미만이면 호감도 감점 대상도 아니다(_apply_hostile_affinity 자체가 danger>=0.5 필터).
         max_danger = max((p.danger_score for p in payload.perceptions), default=0.0)
