@@ -11,6 +11,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "NativeGameplayTags.h"
 #include "Core/Types/PlayerGameplayTags.h"
+#include "HeadMountedDisplayTypes.h"
 #include "VRPawn.generated.h"
 
 class UCameraComponent;
@@ -44,6 +45,7 @@ enum class EVRPosture : uint8
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVRPostureChanged, EVRPosture, NewPosture);
 
 class AFurnitureActor;
+class UCapsuleComponent;
 
 /**
  * Meta Quest 3S 전용 VR 폰.
@@ -113,9 +115,9 @@ public:
     USphereComponent* MeleeSphereRight;
 
     // ── 고스트 핸드 — 트래킹 목표(앵커)와 물리 손바닥을 분리해 벽에 손이 막히게 한다 ──
-    // 앵커는 컨트롤러를 그대로 따라가는 목표점, 손바닥은 제약 조건의 선형 드라이브로 앵커를
-    // 쫓는 물리 바디. 벽을 밀면 앵커만 벽 너머로 가고 손바닥은 표면에 멈춘다.
-    // FBIK 손 위치는 손바닥을 따르고, 잡기·던지기·거래 손 판정은 컨트롤러(앵커)를 그대로 쓴다.
+    // 앵커는 컨트롤러·핸드트래킹을 그대로 따라가는 목표점, 손바닥은 제약 조건의 선형·회전 드라이브로
+    // 앵커를 쫓는 물리 바디. 벽을 밀면 앵커만 벽 너머로 가고 손바닥은 표면에 멈춘다.
+    // FBIK 손과 GetHandLocation(거래·막기 판정)은 손바닥을 따르고, 잡기·던지기는 컨트롤러(앵커)를 그대로 쓴다.
 
     /** 왼손 물리 손바닥. 게임 시작 시 물리 시뮬레이션으로 전환되어 부모를 떠난다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
@@ -149,6 +151,33 @@ public:
     /** 선형 드라이브 최대 힘 — 벽을 미는 힘의 상한. 작을수록 벽에서 손이 쉽게 멈춘다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandDriveMaxForce = 1500.f;
+
+    /** 회전 드라이브 강성 — 손바닥이 손 회전을 따라가는 속도. 가속도 모드라 질량 무관. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandAngularStiffness = 1500.f;
+
+    /** 회전 드라이브 감쇠 — 임계감쇠 ≈ 2√강성. 작으면 손목이 흔들린다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandAngularDamping = 80.f;
+
+    /** 회전 드라이브 최대 토크. 0 = 제한 없음. 벽에 댄 손이 표면을 따라 비틀려야 하면 낮춘다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandAngularMaxForce = 0.f;
+
+    /** 손바닥이 목표에서 이만큼(cm) 밀려나면 반대 손 충돌을 잠시 끈다(손끝은 절반). 양손이 반대편에 끼는 교착을 푼다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    float HandPassThroughDistance = 6.f;
+
+    /** 손 콜라이더 두께 배율 — 손끝 캡슐 반지름·손바닥 두께에 곱한다. 치수 자체는 보이는 손 메시 정점에 맞춘 값.
+     *  메시가 파묻히면 올리고, 닿기 전에 막히면 내린다. PIE 중 바로 반영. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand", meta = (ClampMin = "0.1"))
+    float HandColliderRadiusScale = 1.f;
+
+    /** 이번 틱 핸드트래킹 관절 상태. 추적 중이 아니면 bValid=false. */
+    const FXRHandTrackingState& GetHandTrackState(EControllerHand Hand) const
+    {
+        return Hand == EControllerHand::Left ? HandTrackStateLeft : HandTrackStateRight;
+    }
 
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
@@ -545,11 +574,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetHeadEffectorCS() const;
 
-    /** 왼손 Effector — 위치는 물리 손바닥(벽에 막힘), 회전은 트래킹 앵커. 몸체 메시 공간. */
+    /** 왼손 Effector — 위치·회전 모두 물리 손바닥(벽에 막힘). 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetLeftHandEffectorCS() const;
 
-    /** 오른손 Effector — 위치는 물리 손바닥(벽에 막힘), 회전은 트래킹 앵커. 몸체 메시 공간. */
+    /** 오른손 Effector — 위치·회전 모두 물리 손바닥(벽에 막힘). 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetRightHandEffectorCS() const;
 
@@ -648,11 +677,48 @@ private:
     void UpdateDash(float DeltaTime);
 
     // --- 고스트 핸드 ---
-    /** BeginPlay — 손바닥을 앵커 위치로 옮기고 물리 시뮬레이션 + 월드 제약 선형 드라이브를 건다. */
-    void InitGhostHand(UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint);
+    /** BeginPlay — 바디(손바닥·손끝)를 시작 위치로 옮기고 물리 시뮬레이션 + 월드 제약 선형·회전 드라이브를 건다. */
+    void InitGhostBody(UPrimitiveComponent* Body, const FVector& Start, UPhysicsConstraintComponent* Constraint);
 
-    /** 매 Tick — 앵커 위치를 드라이브 목표로 갱신. 손바닥이 너무 멀어지면(대쉬·리스폰) 앵커로 순간이동. */
+    /** 바디를 목표 위치·회전으로 끄는 드라이브 목표 갱신(목표 속도 앞먹임 포함). 너무 멀어지면(대쉬·리스폰) 목표로 순간이동.
+     *  @return 갱신 전 바디↔목표 거리(cm) */
+    float DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime);
+
+    /** 목표에서 Threshold 넘게 밀려난 바디는 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
+    void UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold);
+
+    /** 바디별 직전 틱 목표 위치 — 목표 속도 계산용. */
+    TMap<const UPrimitiveComponent*, FVector> GhostPrevTargets;
+
+    /** 매 Tick — 입력 소스(핸드트래킹/컨트롤러)로 앵커를 옮기고 손바닥·손끝 바디 드라이브 목표를 갱신. */
     void UpdateGhostHandTracking(float DeltaTime);
+
+    /** 손바닥에 용접된 손끝 모양 5개를 메시 손가락 끝마디로 옮긴다. 핸드트래킹이 아니면 충돌을 끄고 손바닥 안에 둔다. */
+    void UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm);
+
+    /** 손바닥 상자·손끝 캡슐 치수를 손 메시에 맞춘 값 × 두께 배율로 적용. 배율이 바뀔 때만 다시 적용. */
+    void ApplyHandColliderSizes();
+    float AppliedHandColliderScale = -1.f;
+
+    /** 손바닥에 용접된 손끝 캡슐(손당 5개, 왼손 0~4·오른손 5~9). BeginPlay 에 생성. */
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UCapsuleComponent>> FingertipBodies;
+
+    /** 손바닥 바디에 용접된 손바닥 모양(왼손 0·오른손 1) — 메시 손바닥 실제 중심에 놓는다. 바디 자체는 작은 핵. */
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UBoxComponent>> PalmShapes;
+
+    /** 손바닥 모양의 손바닥 바디 기준 상대 변환. 핸드트래킹이면 손목 관절 오프셋, 컨트롤러면 그립 보정 기준. */
+    FTransform ComputePalmShapeRelative(EControllerHand Hand) const;
+
+    /** 손끝 캡슐 충돌이 켜져 있는가(왼손 0·오른손 1). 켜고 끌 때만 충돌 설정을 바꾼다. */
+    bool bFingertipsActive[2] = { false, false };
+
+    /** 손 이펙터 공통 — 핸드트래킹 중이면 손목 관절 위치·손바닥 관절 보정, 아니면 컨트롤러 그립 보정. */
+    FTransform MakeHandEffectorCS(EControllerHand Hand, const USceneComponent* Anchor, const UBoxComponent* Palm, const FRotator& GripOffset) const;
+
+    FXRHandTrackingState HandTrackStateLeft;
+    FXRHandTrackingState HandTrackStateRight;
 
     /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
     void StopDash();
@@ -848,7 +914,7 @@ private:
     bool bPointerWasHitting = false;
 
 public:
-    /** 손(모션 컨트롤러) 월드 위치. 거래 패널의 물리 버튼처럼 외부에서 손 근접을 재는 곳이 쓴다. */
+    /** 보이는 손(물리 손바닥) 월드 위치. 시뮬레이션 전엔 모션 컨트롤러. 거래 패널 물리 버튼 등 손 근접 판정용. */
     UFUNCTION(BlueprintPure, Category = "VR")
     FVector GetHandLocation(bool bRightHand) const;
 
