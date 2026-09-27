@@ -710,7 +710,10 @@ private:
 
     /** 바디를 목표 위치·회전으로 끄는 드라이브 목표 갱신(목표 속도 앞먹임 포함). 너무 멀어지면(대쉬·리스폰) 목표로 순간이동.
      *  @return 갱신 전 바디↔목표 거리(cm) */
-    float DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime);
+    float DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime, float MassScale = 1.f);
+
+    /** 쥔 물건 몫까지 드라이브를 키우는 배율 = (손바닥 + min(쥔 물건, MaxCarryMass)) / 손바닥. 빈손이면 1. */
+    float HeldMassScale(int32 HandIndex) const;
 
     /** 목표에서 Threshold 넘게 밀려난 바디는 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
     void UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold);
@@ -842,6 +845,19 @@ private:
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "5.0", ClampMax = "100.0"))
     float GrabRadius = 40.f;
 
+    /** 물리 쥐기 제약이 끊어지는 힘(kg·cm/s²). 무거운 물건·세게 흔들면 놓친다. 1.2kg 물건의 무게 ≈ 1,180.
+     *  ponytail: 전역값 하나 — 물건별로 달라야 하면 FItemData 에 오버라이드 추가(SPEC_vr_grip_pose 미결). */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+    float GrabBreakForce = 6000.f;
+
+    /** 물리 쥐기 제약이 끊어지는 토크(kg·cm²/s²). 긴 물건 끝을 한 손으로 들면 무게 × 손~무게중심 거리가 이를 넘어 놓친다. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+    float GrabBreakTorque = 30000.f;
+
+    /** 손 드라이브가 온전히 받쳐 주는 쥔 물건 질량 상한(kg). 이보다 무거우면 힘이 모자라 잘 안 들린다. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+    float MaxCarryMass = 5.f;
+
     /** 던질 때 손 속도에 곱하는 배율. 1 = 실제 손 속도. VR 은 팔 스윙이 짧아 살짝 키우는 편이 자연스럽다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", ClampMax = "5.0"))
     float ThrowVelocityScale = 1.3f;
@@ -878,6 +894,24 @@ private:
 
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
+
+    /** 물리 손 바디 ↔ 아이템을 끊어지는 제약으로 잇는다. 물리 손이 아직 없으면(시뮬레이션 전) false. */
+    bool GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft);
+
+    /** 쥐기 제약을 푼다(놓을 때). 끊김 이벤트는 나가지 않는다. */
+    void ReleaseGrabConstraint(int32 HandIndex);
+
+    /** 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. */
+    void SyncGrabConstraints();
+
+    /** 힘·토크 임계를 넘어 제약이 끊겼다 = 놓쳤다. 던지지 않고 그 자리에 떨어뜨린다. */
+    UFUNCTION()
+    void OnGrabConstraintBroken(int32 ConstraintIndex);
+
+    /** 물리 쥐기 제약(왼손 0·오른손 1)과 제약으로 쥔 아이템. BeginPlay 에 생성. */
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UPhysicsConstraintComponent>> GrabConstraints;
+    TWeakObjectPtr<ADroppedItemBase> GrabbedItems[2];
 
     /** 잡기 입력 = 컨트롤러 그립 OR 손 제스처. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
      *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */

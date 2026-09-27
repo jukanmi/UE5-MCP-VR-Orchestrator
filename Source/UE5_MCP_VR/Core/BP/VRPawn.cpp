@@ -398,6 +398,24 @@ void AVRPawn::BeginPlay()
         Tip->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
         FingertipBodies.Add(Tip);
     }
+
+    // 물리 쥐기 제약 — 잡을 때 손 바디와 아이템을 잇는다. 이동·회전 전부 잠그고, 힘·토크 임계를 넘으면
+    // 엔진이 끊는다(무게중심에서 먼 곳을 잡으면 토크가 커져 놓친다). 손과 쥔 물건끼리는 부딪히지 않게.
+    for (int32 h = 0; h < 2; ++h)
+    {
+        UPhysicsConstraintComponent* Grab = NewObject<UPhysicsConstraintComponent>(this, h == 0 ? TEXT("GrabConstraintLeft") : TEXT("GrabConstraintRight"));
+        Grab->RegisterComponent();
+        Grab->SetLinearXLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
+        Grab->SetLinearYLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
+        Grab->SetLinearZLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
+        Grab->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
+        Grab->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
+        Grab->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Locked, 0.f);
+        Grab->SetDisableCollision(true);
+        Grab->ConstraintInstance.ConstraintIndex = h;   // 끊김 이벤트에서 어느 손인지 가린다
+        Grab->OnConstraintBroken.AddDynamic(this, &AVRPawn::OnGrabConstraintBroken);
+        GrabConstraints.Add(Grab);
+    }
 }
 
 // ============================================================================
@@ -452,7 +470,7 @@ void AVRPawn::InitGhostBody(UPrimitiveComponent* Body, const FVector& Start, UPh
     Constraint->SetConstrainedComponents(Body, NAME_None, nullptr, NAME_None);
 }
 
-float AVRPawn::DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime)
+float AVRPawn::DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime, float MassScale)
 {
     // 잠든 바디는 드라이브 목표가 바뀌어도 깨어나지 않는다 — 손을 잠시 멈췄다 움직이면 제자리에 남는다.
     if (!Body->IsAnyRigidBodyAwake()) Body->WakeAllRigidBodies();
@@ -479,10 +497,13 @@ float AVRPawn::DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintCompo
     GhostPrevTargets.Add(Body, Location);
 
     // 튜닝 값을 PIE 중 Details 에서 바꿔도 바로 먹도록 매 틱 반영한다.
-    Constraint->SetLinearDriveParams(HandDriveStiffness, HandDriveDamping, HandDriveMaxForce);
+    // 드라이브는 가속도 모드라 힘 = 이 바디 질량 × 가속도 — 제약으로 매단 물건의 질량은 모른다.
+    // 쥐고 있으면 MassScale 만큼 키워야 빈손과 같은 반응으로 따라오고 물건 무게를 받친다.
+    // ponytail: 회전도 같은 배율 — 긴 물건(관성 m·r²)은 실제보다 덜 무겁게 돈다. 필요하면 관성비로 따로.
+    Constraint->SetLinearDriveParams(HandDriveStiffness * MassScale, HandDriveDamping * MassScale, HandDriveMaxForce * MassScale);
     Constraint->SetLinearPositionTarget(Location - Constraint->GetComponentLocation());
     Constraint->SetLinearVelocityTarget(TargetVelocity);
-    Constraint->SetAngularDriveParams(HandAngularStiffness, HandAngularDamping, HandAngularMaxForce);
+    Constraint->SetAngularDriveParams(HandAngularStiffness * MassScale, HandAngularDamping * MassScale, HandAngularMaxForce * MassScale);
     Constraint->SetAngularOrientationTarget(Rotation.Rotator());
     return Error;
 }
@@ -526,7 +547,8 @@ void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
             Anchor->SetRelativeTransform(FTransform::Identity);
         }
 
-        const float PalmError = DriveGhostBody(Palm, Constraint, Anchor->GetComponentLocation(), Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid), DeltaTime);
+        const float PalmError = DriveGhostBody(Palm, Constraint, Anchor->GetComponentLocation(), Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid), DeltaTime,
+                                               HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
         UpdateHandPassThrough(Palm, Hand == EControllerHand::Left, PalmError, HandPassThroughDistance);
         UpdateFingertipShapes(Hand, Palm);
     };
@@ -691,6 +713,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateDash(DeltaTime);
     UpdateGhostHandTracking(DeltaTime);
     UpdateHandGestures();
+    SyncGrabConstraints();
 
     // 동역학 근접 — 실제 손(트래킹 앵커) 속도 추적. ½mv² 의 v, 던지기 속도, 패링 판정이 같이 쓴다.
     // 앵커는 kinematic 이라 GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -1829,7 +1852,11 @@ void AVRPawn::HandleGrabStart(bool bLeft)
         if (!Stall || !Stall->TryPurchase(Nearest, Inventory)) return;
     }
 
-    Inventory->AttachItemToHand(Nearest, HandSlot);
+    // 물리 손이 있으면 제약으로 쥔다(무게·토크를 엔진이 계산). 시뮬레이션 전이면 예전처럼 손 본 소켓에 붙인다.
+    if (!GrabItemWithPhysics(Nearest, bLeft))
+    {
+        Inventory->AttachItemToHand(Nearest, HandSlot);
+    }
     UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
 }
 
@@ -1931,9 +1958,79 @@ void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, f
     if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
 }
 
+bool AVRPawn::GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft)
+{
+    const int32 h = bLeft ? 0 : 1;
+    UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
+    UPhysicsConstraintComponent* Grab = GrabConstraints.IsValidIndex(h) ? GrabConstraints[h].Get() : nullptr;
+    if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !IsValid(Palm) || !Palm->IsSimulatingPhysics() || !IsValid(Grab) || !Inventory)
+    {
+        return false;
+    }
+
+    // 진열품은 구매 직후라 물리가 꺼져 있을 수 있다 — 제약은 시뮬레이션 바디끼리만 걸린다.
+    if (!Item->ItemMesh->IsSimulatingPhysics()) Item->SetPhysicsFrozen(false);
+
+    // 제약 기준점 = 손 위치 — 아이템은 잡은 자리 그대로 매달리고, 무게중심이 손에서 멀수록 토크가 커진다.
+    Grab->SetLinearBreakable(true, GrabBreakForce);
+    Grab->SetAngularBreakable(true, GrabBreakTorque);
+    Grab->SetWorldLocationAndRotation(Palm->GetComponentLocation(), Palm->GetComponentQuat());
+    Grab->SetConstrainedComponents(Palm, NAME_None, Item->ItemMesh, NAME_None);
+
+    Inventory->HoldItem(Item, bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
+    GrabbedItems[h] = Item;
+    return true;
+}
+
+float AVRPawn::HeldMassScale(int32 HandIndex) const
+{
+    const ADroppedItemBase* Held = GrabbedItems[HandIndex].Get();
+    const UBoxComponent* Palm = HandIndex == 0 ? PhysicsPalmLeft : PhysicsPalmRight;
+    if (!IsValid(Held) || !IsValid(Held->ItemMesh) || !IsValid(Palm)) return 1.f;
+    const float PalmMass = FMath::Max(Palm->GetMass(), KINDA_SMALL_NUMBER);
+    return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass)) / PalmMass;
+}
+
+void AVRPawn::ReleaseGrabConstraint(int32 HandIndex)
+{
+    // 기록을 먼저 지운다 — 물리가 끊은 이벤트는 한 프레임 늦게 올 수 있어, 그 사이 다른 물건을 쥐었으면
+    // OnGrabConstraintBroken 이 새 물건을 떨어뜨린다. 기록이 없으면 그 이벤트는 무시된다.
+    GrabbedItems[HandIndex].Reset();
+    if (GrabConstraints.IsValidIndex(HandIndex) && IsValid(GrabConstraints[HandIndex]))
+    {
+        GrabConstraints[HandIndex]->BreakConstraint();   // TermConstraint 만 — 끊김 이벤트는 나가지 않는다
+    }
+}
+
+void AVRPawn::SyncGrabConstraints()
+{
+    if (!Inventory) return;
+    for (int32 h = 0; h < 2; ++h)
+    {
+        if (!GrabbedItems[h].IsValid()) continue;
+        const EEquipmentSlot HandSlot = h == 0 ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+        if (Inventory->GetHeldItem(HandSlot) != GrabbedItems[h].Get()) ReleaseGrabConstraint(h);
+    }
+}
+
+void AVRPawn::OnGrabConstraintBroken(int32 ConstraintIndex)
+{
+    // 이미 놓았거나(ReleaseGrabConstraint 가 기록을 지움) 쥔 물건이 바뀌었으면 늦게 온 이벤트다 — 무시.
+    if (ConstraintIndex < 0 || ConstraintIndex > 1 || !Inventory || !GrabbedItems[ConstraintIndex].IsValid()) return;
+    const EEquipmentSlot HandSlot = ConstraintIndex == 0 ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+    if (Inventory->GetHeldItem(HandSlot) != GrabbedItems[ConstraintIndex].Get()) return;
+    GrabbedItems[ConstraintIndex].Reset();
+    // 놓친 것 — 던지기·건네기 분기 없이 그 자리에서 떨어진다(ReleaseHeldItem 이 물리를 되살린다).
+    if (ADroppedItemBase* Dropped = Inventory->ReleaseHeldItem(HandSlot))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 놓침(제약 끊김): %s"), *Dropped->ItemData.ItemTemplateID);
+    }
+}
+
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+    ReleaseGrabConstraint(bLeft ? 0 : 1);
     if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.

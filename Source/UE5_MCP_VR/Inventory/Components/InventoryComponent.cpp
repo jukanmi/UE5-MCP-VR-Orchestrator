@@ -814,6 +814,13 @@ void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlo
     HeldItems.Add(HandSlot, Item);
 }
 
+void UInventoryComponent::HoldItem(ADroppedItemBase* Item, EEquipmentSlot HandSlot)
+{
+    if (!IsValid(Item)) return;
+    if (Item->InteractionSphere) Item->InteractionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    HeldItems.Add(HandSlot, Item);
+}
+
 ADroppedItemBase* UInventoryComponent::ReleaseHeldItem(EEquipmentSlot HandSlot)
 {
     ADroppedItemBase* Item = GetHeldItem(HandSlot);
