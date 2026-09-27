@@ -41,25 +41,6 @@ public:
     /** 손바닥 상자 중심 — 손 본 원점(손목) 기준, 손바닥 관절 축. */
     FVector GetPalmBoxCenter(EControllerHand Hand) const { return RigOf(Hand).PalmBoxCenter; }
 
-    /** FBIK 뒤 손 본 위치를 콜라이더 기준(이펙터 목표)으로 강제할지. PIE 중 즉시 반영. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
-    bool bSnapHandPosition = true;
-
-    /** FBIK 뒤 손 본 회전을 콜라이더 기준(이펙터 목표)으로 강제할지. FBIK 가 회전은 0.2° 안으로 맞추므로 기본 끔 —
-     *  켜면 강제된 손에서 다음 프레임 FBIK 가 출발해 팔이 비틀린 해로 풀릴 수 있다(헤드셋에서 손목 꺾임 확인). PIE 중 즉시 반영. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
-    bool bSnapHandRotation = false;
-
-    // 진단용 — 강제 전 FBIK 손 본이 이펙터 목표에서 벗어난 정도(워커 스레드가 매 평가 기록). 왼손·오른손.
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "VR|HandTracking")
-    float FbikHandPosErrorLeft = 0.f;
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "VR|HandTracking")
-    float FbikHandAngleErrorLeft = 0.f;
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "VR|HandTracking")
-    float FbikHandPosErrorRight = 0.f;
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "VR|HandTracking")
-    float FbikHandAngleErrorRight = 0.f;
-
 protected:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
@@ -90,9 +71,6 @@ private:
         bool bTipTargets = false;
         /** 이번 프레임 관절 월드 회전(EHandKeypoint 순). 비어 있으면 미추적 — 그래프 포즈 그대로 둔다. */
         TArray<FQuat> KeyRotations;
-        /** 손 본을 강제로 둘 컴포넌트 공간 변환(= 물리 손바닥이 가리키는 이펙터 목표). bForceHand 일 때만 적용. */
-        FTransform HandTargetCS;
-        bool bForceHand = false;
         bool bReady = false;
     };
 

@@ -1,12 +1,10 @@
 #include "Core/BP/VRPawnAnimInstance.h"
 #include "Core/BP/VRPawn.h"
 #include "AnimationRuntime.h"
-#include "BonePose.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "HeadMountedDisplayTypes.h"
 #include "Rendering/SkeletalMeshRenderData.h"
-#include "HeadMountedDisplayFunctionLibrary.h"
 #include "Rendering/SkeletalMeshLODRenderData.h"
 
 namespace
@@ -238,17 +236,11 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     // 관절 데이터는 게임 스레드에서 복사해 두고, 워커 스레드 평가(프록시)는 이 복사본만 읽는다.
     // 손끝이 표면에 막히는 건 손바닥에 용접된 손끝 모양이 물리로 처리한다(손 전체가 멈추거나 들림) — 여기선 트래킹 그대로.
     const AVRPawn* Pawn = Cast<AVRPawn>(TryGetPawnOwner());
-    // 손 본은 FBIK 결과 대신 물리 손바닥이 가리키는 이펙터 목표에 강제로 둔다 — FBIK 가 목표에 딱 닿지 않으면
-    // 보이는 손과 콜라이더(같은 목표 기준으로 계산)가 몇 cm 어긋나, 벽에 닿기 전에 멈춘 것처럼 보인다.
-    // 헤드셋이 없으면 FBIK 가 돌지 않아 손만 팔에서 떨어져 보이므로 HMD 가 켜졌을 때만.
-    const bool bForceHands = Pawn && UHeadMountedDisplayFunctionLibrary::IsHeadMountedDisplayEnabled();
     for (int32 h = 0; h < 2; ++h)
     {
         FHandRig& Rig = Hands[h];
         Rig.KeyRotations.Reset();
         Rig.bTipTargets = false;
-        Rig.bForceHand = bForceHands && Rig.bReady;
-        if (Rig.bForceHand) Rig.HandTargetCS = h == 0 ? Pawn->GetLeftHandEffectorCS() : Pawn->GetRightHandEffectorCS();
         if (!Pawn || !Rig.bReady) continue;
 
         const FXRHandTrackingState& State = Pawn->GetHandTrackState(h == 0 ? EControllerHand::Left : EControllerHand::Right);
@@ -287,38 +279,6 @@ bool FVRPawnAnimInstanceProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode
     if (!Instance || InRootNode != GetRootNode()) return true;
 
     const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
-
-    // 손 본을 목표 컴포넌트 공간 변환에 맞춘다 — 로컬 = 목표 × 부모(팔뚝) 컴포넌트 공간⁻¹. 손가락 로컬은 그대로라 같이 따라온다.
-    if (Instance->Hands[0].bForceHand || Instance->Hands[1].bForceHand)
-    {
-        UVRPawnAnimInstance* Diag = const_cast<UVRPawnAnimInstance*>(Instance);
-        FCSPose<FCompactPose> CSPose;
-        CSPose.InitPose(Output.Pose);
-        for (int32 h = 0; h < 2; ++h)
-        {
-            const UVRPawnAnimInstance::FHandRig& Rig = Instance->Hands[h];
-            if (!Rig.bForceHand) continue;
-            const int32 MeshIndex = Bones.GetPoseBoneIndexForBoneName(Rig.HandBone);
-            if (MeshIndex == INDEX_NONE) continue;
-            const FCompactPoseBoneIndex HandIndex = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
-            if (!HandIndex.IsValid()) continue;
-            const FCompactPoseBoneIndex ParentIndex = Bones.GetParentBoneIndex(HandIndex);
-            if (!ParentIndex.IsValid()) continue;
-
-            const FTransform Fbik = CSPose.GetComponentSpaceTransform(HandIndex);
-            const float PosError = FVector::Dist(Fbik.GetLocation(), Rig.HandTargetCS.GetLocation());
-            const float AngleError = FMath::RadiansToDegrees(Fbik.GetRotation().AngularDistance(Rig.HandTargetCS.GetRotation()));
-            (h == 0 ? Diag->FbikHandPosErrorLeft : Diag->FbikHandPosErrorRight) = PosError;
-            (h == 0 ? Diag->FbikHandAngleErrorLeft : Diag->FbikHandAngleErrorRight) = AngleError;
-
-            FTransform Target = Fbik;
-            if (Instance->bSnapHandPosition) Target.SetLocation(Rig.HandTargetCS.GetLocation());
-            if (Instance->bSnapHandRotation) Target.SetRotation(Rig.HandTargetCS.GetRotation());
-            FTransform Local = Target.GetRelativeTransform(CSPose.GetComponentSpaceTransform(ParentIndex));
-            Local.SetScale3D(Output.Pose[HandIndex].GetScale3D());
-            Output.Pose[HandIndex] = Local;
-        }
-    }
 
     for (const UVRPawnAnimInstance::FHandRig& Rig : Instance->Hands)
     {
