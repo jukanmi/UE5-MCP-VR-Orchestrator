@@ -88,11 +88,7 @@
   - 아무것도 안 하면: 다음에 새 플러그인이 켜질 때마다(VS 뿐 아니라 다른 경로로도) 같은 클래스 버그 재발 가능.
 
 
-- [ ] **로드맵 스펙 ↔ 구현 정렬 결정** (`SPEC_story_progression_roadmap.md` §3.1·§3.3 vs 실제) — 어느 쪽을 고칠지:
-  BP 이름 `BP_Bandit/OrcVagron/KnightWraith`(구현) vs `BP_Enemy_Bandit/OrcVagron/Wraith`(스펙) ·
-  flag `forest_raiders_cleared`/`wraiths_purified`(구현) vs `flag_forest_raiders_cleared`/`flag_dead_wraiths_cleared`(스펙 §3.1, §2 는 또 다름) ·
-  스폰 주기 30/60/40s·망령 3/5킬(구현) vs 15s·2/4킬(스펙) · 도적 위치 숲길 외곽(구현) vs FOREST 중심(스펙) ·
-  HP 240/600/300(구현) vs 50/180/80(스펙 — 공식 하한 165 라 불가, 플레이어 스윙 상한 100 이면 원샷). 클로드 추천: 이름·주기는 스펙, 위치·HP 는 구현.
+- [X] ~~**로드맵 스펙 ↔ 구현 정렬 결정** (`SPEC_story_progression_roadmap.md` §3.1·§3.3 vs 실제)~~ (2026-09-27) — 사용자 결정: 코드는 유지하고 문서(스펙)를 실제 구현(플래그명 `forest_raiders_cleared`/`wraiths_purified`, HP 240~600, 스포너 주기, `WBP_PlayerHUD` 연동 등)에 맞추어 최신화 완료 후 `docs/done/`으로 이관.
 - [ ] **디렉터 타임아웃 5s → 8~10s?** — 첫 전이마다 폴백(`ReadTimeout`). 대사엔 영향 없고 quest_log 각색만 빠짐. 올리면 그 턴 NPC 응답이 그만큼 늦어짐.
 - [ ] **VRAM 16GB OOM 대책 결정** — 12B+e4b+PIE 동시 부하 시 Ollama 500/ReadTimeout. TTS GPU 폐기(2026-09-12) 후 재현되는지 먼저 확인, 재현 시 `num_ctx` 축소. KV 양자화는 크래시 불가(pitfalls.md A)
 

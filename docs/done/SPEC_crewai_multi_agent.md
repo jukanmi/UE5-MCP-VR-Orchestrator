@@ -1,10 +1,11 @@
-# SPEC: 멀티 LLM 연합(Gemini Master - Claude Dev - Codex QA) 자율형 다중 에이전트 오케스트레이션 시스템
+# SPEC: 멀티 LLM 연합(Gemini Master - Claude Dev - Codex/Gemini QA) 자율형 다중 에이전트 오케스트레이션 시스템
 
-> **상태**: 기획 승인 및 역할 재정의 완료 (2026-09-19)  
-> **문서 버전**: v2.0 (멀티 LLM 플랫폼 쿼터 분산 연합 모델)  
+> **상태**: 구현 및 파일럿 실전 검증 완료 (2026-09-27)  
+> **문서 버전**: v2.1 (Multi-LLM Federated Orchestrator 실전 배포)  
+> **실제 산출물**: `tools/federated_orchestrator.py`  
 > **대상 플랫폼**: Unreal Engine 5.5 (C++ / Chaos / StateTree) + Python 3.10+ (FastAPI / LangGraph)  
 > **핵심 하네스**: NVIDIA SoL-Pi (Action Fusion & Phase Detection)  
-> **연합 모델**: **Gemini (Master PM) + Claude Code (Dev) + Codex CLI (QA)**
+> **연합 모델**: **Gemini / agy (Master PM & Reviewer) + Claude Code CLI (Dev) + SoL-Pi & Codex/Gemini CLI (QA)**
 
 ---
 
@@ -183,10 +184,25 @@ def run_codex_qa(diff_context: str) -> bool:
 - [x] Gemini(Master) - Claude Code(Dev) - Codex(QA) 3사 연합 아키텍처 SPEC 확립 (`docs/SPEC_crewai_multi_agent.md`).
 - [x] `docs/Memo.md` 반영 완료.
 
-### Phase 2: 연합 오케스트레이터 러너 구축 (`tools/federated_orchestrator.py`)
-- [ ] Claude Code CLI 및 Codex CLI 비대화형 호출 래퍼 작성.
-- [ ] SoL-Pi 하네스 연동 및 Pydantic 계약 모델 바인딩.
+### Phase 2: 연합 오케스트레이터 러너 구축 (`tools/federated_orchestrator.py`) — 완료 (2026-09-27)
+- [x] Claude Code CLI 및 Codex CLI 비대화형 호출 래퍼 작성.
+- [x] Antigravity CLI(`agy`) 연동 (`gemini-3.1-pro-high` 기반 작업 계획 및 최종 승인 판정).
+- [x] 코드 리뷰어 선택 지원 (`--review none|codex|gemini`).
+- [x] SoL-Pi 하네스 연동 및 Pydantic 계약 모델 바인딩 (`TaskSpecification`, `DevExecutionReport`, `QAReceipt`).
 
-### Phase 3: 파일럿 실전 투입 및 검증
-- [ ] 파일럿 과제: `docs/Memo.md` 백로그인 **`[갭 5] 방어 및 패링 (Block / Parry)`** 물리 판정 구현에 3사 연합 파이프라인 가동.
-- [ ] Claude Code(C++ 작성) $\rightarrow$ Codex(SoL-Pi 검증) $\rightarrow$ Gemini(최종 승인) 실측.
+### Phase 3: 파일럿 실전 투입 및 검증 — 완료 (2026-09-27)
+- [x] 실전 과제: `SPEC_vr_ghost_hand` M3(손가락 핀치·주먹 판정 `9433069e`) 및 `SPEC_vr_grip_pose` M2(PhysicsConstraint 쥐기) 구현에 3사 연합 파이프라인 가동.
+- [x] Gemini(계획) $\rightarrow$ Claude Code(C++ 구현) $\rightarrow$ SoL-Pi / Gemini(리뷰) $\rightarrow$ Gemini(최종 승인) 실전 주행 및 `verify all` 클린 통과.
+
+---
+
+## 7. 실전 주행 발굴 함정 및 운영 보강 (Operational Notes)
+
+1. **리뷰어 CLI 빈 응답 가드**:
+   - Codex 미연결 시 빈 응답을 `REJECTED`로 오인하여 무한 반려 루프에 빠지는 현상 방어 (`--review gemini` 모드 도입).
+2. **diff 전달 방식 (`Saved/fed_review.diff`)**:
+   - Gemini(`agy`)에 "git diff 직접 읽어라"라고 지시하면 셸 명령 거부로 빈 응답이 반환됨 $\rightarrow$ diff를 `Saved/fed_review.diff` 파일로 물리 저장 후 프롬프트 경로로 전달하도록 개선.
+3. **워크트리 가상환경 분리 (`uv`)**:
+   - 신규 워크트리에서 pytest 실행 시 `uv`가 빈 `.venv`를 생성하여 실패 $\rightarrow$ `UV_PROJECT_ENVIRONMENT=메인 .venv` 및 `UV_NO_SYNC=1` 설정 필요.
+4. **UAT 맵 수정 격리**:
+   - UAT 테스트가 `NewProjectTest.umap`을 자동 저장하여 `git add -A`에 혼입되는 현상 주의.
