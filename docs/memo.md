@@ -1,4 +1,4 @@
-# Session Memo
+﻿# Session Memo
 
 세션 간 인수인계 단일 소스.
 형식: `## Todo` (미완) · `## Done` (날짜 필수, 주간기록 이관 전 임시 적재). 함정·제약은 `.agents/rules/pitfalls.md`, 미구현 설계 논의는 `docs/DESIGN_*.md`.
@@ -74,79 +74,3 @@
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
 **W39(09-21~27) 항목은 2026-09-24 에 1~2줄로 압축했다. 압축 전 원문(커밋 해시·수치·함정 전체)은 `git show 5abfccca:docs/memo.md` — `/week-end` 이관 때 이걸 소스로 쓸 것.**
 
-- [x] **핸드트래킹 손가락·손목 관절 매핑 (2026-09-27, fed/vr_ghost_hand 워크트리, 미커밋)** — `UVRPawnAnimInstance`(ABP_VRPawn 부모 교체) 프록시가 그래프 평가 뒤 손가락 15본×2 로컬 회전을 OpenXR 관절로 덮어씀. 보정 = 레퍼런스 포즈에서 자동(본→자식=손끝, +Z=손등). 이펙터는 추적 중 손목 관절 위치 + 손바닥 보정. 두 손바닥 충돌은 자유 제약(DisableCollision)으로 끔. 헤드셋 PIE 검증 완료.
-  폐기: 실측 캘리브레이션(펴도 손가락 롤·벌어짐이 메시와 달라 굽힘 축이 돌아감 → 주먹 시 새끼가 손바닥 중심), 중수골 기준 부모(Quest 새끼 중수골이 손바닥 대비 29° 고정 → 축 기울어짐).
-- [x] **SPEC_vr_ghost_hand M2 (2026-09-27, 같은 워크트리, 미커밋)** — 손바닥 = 손 모양 상자(4.5×4.25×1.5 half, Z=손바닥 법선) + SLERP 회전 드라이브(가속도 모드 1500/80, 노브 노출). 컨트롤러일 땐 그립 포즈 손바닥 법선이 Y 라 상자를 X 축 90° 보정. 이펙터 위치·회전 = 물리 손바닥, `GetHandLocation()` = 물리 손바닥(거래·막기). 헤드셋 없는 PIE 에서 양손 3축 복합 회전 추종 오차 0.00°·0.00cm.
-  함정: 헤드셋 없으면 컨트롤러가 바닥 높이라 손바닥이 바닥에 걸려 회전 안 함 — 테스트 시 MotionController 상대 위치를 z=120 으로 올릴 것.
-- [x] **SPEC_vr_ghost_hand M3 충돌부 (2026-09-27, 같은 워크트리, 미커밋)** — 손끝마디 캡슐 5개/손을 **손바닥 바디에 용접**(AttachToComponent weld). 매 틱 메시 끝마디로 옮김 — 트래킹 관절 + 본 길이로 **손바닥 기준 상대 FK**(0.2cm·2° 미만 생략, 옮길 때마다 엔진이 UnWeld→Weld). 메시 손(FBIK, 1프레임 늦음) 기준으로 월드 FK 하면 손이 밀릴 때 손끝이 손바닥 기준으로 흔들려 접촉 시 달달 떨림(헤드셋 확인). 어느 손끝이 닿든 Chaos 가 손 전체를 한 덩어리로 멈춤, 손가락을 표면 안으로 굽히면 손이 들림. 핸드트래킹 중에만 충돌.
-  콜라이더 치수는 보이는 손 메시 정점에 맞춤(메시 교체 대비): 정점마다 가장 크게 묶인 본으로 분류 → 끝마디 본 정점으로 캡슐(축 범위=길이, 축 거리 95%=반지름; X_Bot r0.84~0.93·hh1.49~1.79), 손 본 정점으로 손바닥 상자(손바닥 관절 축, 축별 5~95%; 반치수 5.78×3.75×2.82, 중심 손목에서 4.24). 손바닥 바디는 1cm 핵, 상자는 용접된 PalmShape 로 메시 손바닥 중심에 둠. 정점 CPU 사본 없으면(패키지) 본 간격 근사. 두께 배율 `HandColliderRadiusScale`(PIE 즉시 반영, 용접 모양은 떼고 크기 바꾼 뒤 재용접).
-  메시↔콜라이더 일치: FBIK 뒤 손 본을 이펙터 목표로 강제하는 방식을 시도했다가 **되돌림** — FBIK 가 목표에서 ~5cm 못 미치는 걸 손만 끌어오니 팔뚝과 손 사이 손목이 꺾여 보임(헤드셋, 사용자 결정). 회전 강제는 다음 프레임 FBIK 를 120° 비틀린 해로 몰았음. 메시는 FBIK 결과 그대로, 남는 콜라이더↔메시 차이는 FBIK 도달 오차.
-  함정: 이펙터가 애님의 '이번 프레임 관절 복사됨'(IsHandDriven)에 기대서, 애님이 관절 복사 전에 이펙터를 읽으면 손목 오프셋(≈5cm)이 빠짐 → 메시만 5cm 뒤, 손끝 캡슐 5개가 전부 손 방향 +5cm 어긋남(헤드셋 실측), FBIK 목표와 강제 목표도 달라 FBIK 120° 비틀림. 이펙터는 트래킹 유효·리그 준비만 보게 수정.
-  충돌 채널 HandLeft/HandRight(GameTraceChannel1/2, 기본 Block) — 같은 손끼리 무시·반대 손 막음. 헤드리스 PIE: 양손 겹치면 두께만큼 맞닿아 정지 · 손바닥 바닥 누름 반두께에서 정지 · 손끝 1개를 손바닥 15cm 아래 두고 누르면 손바닥 z 16.01(15+반지름) 정지·속도 0 · 손끝을 프레임당 0.3cm 로 5cm 더 누르면 손바닥 5.02cm 들림(단조).
-  폐기(순서대로): ① 손끝을 독립 바디+월드 제약으로 → 손끝만 막히고 손바닥은 계속 전진 ② 캡슐 위치에 손가락 맞추는 IK → 조준축이 굽힘 평면에 안 묶여 손가락 비틀림 ③ 막히면 손가락 자세 고정 → 손바닥이 계속 들어가 같이 파묻힘 ④ 손끝 침투 깊이만큼 손바닥 목표 되돌림(로직) → 박힘↔되돌림 반복. 로직 대신 엔진 충돌(용접)로 해결.
-  함정(수정 완료): 맞닿아 멈추면 바디가 잠들어 드라이브 목표 변경으론 안 깨어남 → 매 틱 깨움 · 양손이 서로 반대편에 끼면 교착 → 목표에서 6cm 밀려난 손만 반대 손 충돌 잠시 끔(용접 손끝도 손바닥 응답을 따라감) · 지연 제거용 속도 앞먹임이 막힌 상태에서도 밀어 지형을 뚫음 → 오차 2cm 넘으면 앞먹임 끔·5m/s 상한 · 두께 없는 지형은 모양을 한 번에 수 cm 박으면 아래로 빠짐(실제 손가락 속도에선 문제없음).
-- [x] **SPEC_vr_grip_pose M2 — 끊어지는 PhysicsConstraint 쥐기 (2026-09-27, 같은 워크트리)** — 잡으면 손 바디↔아이템을 이동·회전 잠금 제약으로 잇고(기준점 = 손, 손↔쥔 물건 충돌 끔), 힘 `GrabBreakForce`(6000)·토크 `GrabBreakTorque`(30000) 넘으면 엔진이 끊어 놓침(던지기 없이 떨어짐). `InventoryComponent::HoldItem` = 부착 없이 HeldItems 등록(상호작용 구체만 끔), 놓기 분기 유지. 인벤토리에서 꺼내는 `TakeItemToHand` 는 소켓 스냅 그대로.
-  함정: 손바닥 드라이브가 가속도 모드라 힘 = 손바닥 질량(0.73kg) × 가속도 — 제약으로 매단 물건 질량을 몰라 1.2kg 도 못 들었음 → 쥐는 동안 강성·감쇠·최대 힘에 (손바닥+min(물건, `MaxCarryMass` 5kg))/손바닥 배율. 헤드리스 PIE 에서 손바닥이 30cm 들림 확인, 헤드셋에서 쥐어짐 확인.
-  Gemini 3.1 Pro 리뷰 REJECTED 의 핵심("BreakConstraint 가 끊김 이벤트를 동기 방송")은 엔진 소스로 반박(TermConstraint 만, 방송은 물리 래퍼 2곳뿐). 다만 늦게 도착한 끊김 이벤트가 새로 쥔 물건을 떨어뜨리는 경합 방어는 채택(기록 먼저 삭제 + 이벤트 첫 줄 가드).
-- [x] **SPEC_vr_grip_pose M1 — 손↔아이템 Chaos 접촉 (2026-09-27, 같은 워크트리)** — 손 채널(손바닥·손바닥 모양·손끝)이 PhysicsBody(드랍 아이템·NPC 래그돌) Block. 아이템 72종 모두 볼록 Hull 1~8개라 에셋 수정 없음. 헤드리스: 손바닥 0.6m/s 통과 시 아이템 26cm 밀림, 헤드셋: 잘 밀림. 함정: 손바닥 충돌 설정은 생성자라 Live Coding 으로 안 바뀜(에디터 재시작 필요).
-- [x] **SPEC_vr_grip_pose M0 — 핸드트래킹 잡기 실동작 (2026-09-27, 같은 워크트리)** — 잡기 판정 원점(`FindNearestItemNearHand`)과 손 속도(던지기·½mv² 근접·패링)를 컨트롤러 → 트래킹 앵커(`HandTrackingAnchorLeft/Right`) 기준으로. M3 핀치·주먹은 판정만 붙고 잡기 내부가 컨트롤러 기준이라 핸드트래킹 중엔 내려놓은 컨트롤러 주변을 찾고 던지기 속도 0 이었음. 빌드 반영. SPEC_vr_grip_pose 는 같은 날 'Chaos 내장 우선'으로 방향 수정(접촉=Chaos, 들어올리기 후보 A~D 미결).
-- [x] **SPEC_vr_ghost_hand M3 핀치·주먹 잡기 (2026-09-27, federated: Gemini 계획·리뷰·승인 / Claude 구현)** — `UpdateHandGestures`: 엄지끝↔검지끝 < `PinchDistanceThreshold`(3cm) 또는 중지·약지·새끼 끝이 모두 손바닥 < `FistDistanceThreshold`(5cm), 놓기는 +`PinchHysteresis`(1cm). `UpdateGrabInput` 이 컨트롤러 그립 OR 제스처를 합쳐 바뀔 때만 HandleGrabStart/Release. verify all 통과(빌드·pytest 113·UAT). 헤드셋에서 임계값 확인 필요.
-  오케스트레이터 운영 함정: Codex 미연결이면 빈 응답을 REJECTED 로 처리해 무한 반려 → `--review gemini` 추가 · agy 에 "git diff 직접 읽어라"라고 하면 셸 거부로 빈 응답 → diff 를 Saved/fed_review.diff 로 넘김(리뷰·승인 둘 다) · 워크트리 pytest 는 uv 가 빈 .venv 를 만들어 실패 → `UV_PROJECT_ENVIRONMENT=메인 .venv` + `UV_NO_SYNC=1`(UV_FROZEN 은 lock 의 python>=3.14 와 충돌) · UAT 가 NewProjectTest.umap 을 저장해 git add -A 에 섞임.
-- [x] **몸 메시 배치 교정 (2026-09-27, 같은 워크트리, 미커밋)** — 헤드셋 실측(왼손으로 오른 팔꿈치 감싸기·컨트롤러로 어깨): 메시 팔꿈치 17cm, 어깨 18cm 낮고 7cm 앞, 머리 본이 눈보다 15cm 앞. 원인 ① 캡슐이 HMD 높이로 줄면(앉기) 메시가 기본 캡슐 기준 상대 위치(−88) 그대로라 **발이 바닥 아래 22cm** ② 메시가 눈(HMD) 아래 수평을 따라 고개 숙이면 몸 전체가 앞으로 끌림 ③ 머리 이펙터로 눈 위치를 넘겨 척추가 앞으로 당김. 수정: `UpdateBodyPlacement`(메시 Z = 기본 + 캡슐 줄어든 만큼, 수평 = 눈 + 머리회전×`EyeToNeckOffset`(−10,0,−20) 아래), 머리 이펙터 = 눈 + 머리회전×`EyeToHeadOffset`(−9,0,−10). 헤드리스: 발 z = 바닥, 메시가 눈 10cm 뒤. 헤드셋 재측정(서서): 팔꿈치 오차 앞 +9·바깥 +16·위 +3.5(높이 해결, 남은 건 FBIK 팔꿈치 벌림) → 팔꿈치 방향 보정(어깨→손 축 회전)을 시도했다가 **되돌림** — 남은 오차는 X_Bot 과 사용자 팔 길이 차이로 판단(사용자 결정). 혼자 팔꿈치 측정은 왼손이 가려져 추적이 자주 끊겨 자동 측정기(추적+정지 1초+근접 게이트)가 필요했음.
-  M3 핀치·주먹 잡기 완료(아래 항목). 컨트롤러일 땐 손끝 캡슐 꺼 둠(ponytail).
-
-- [x] **전투 SPEC 잔여 구현 — 풋워크·깜짝 놀람·투사체 회피·감각 융합·저HP 후퇴 연쇄 (2026-09-25)** — `SPEC_realistic_combat.md` §5.1·5.2 + `SPEC_jev_daily.md` B.1. 새 EAction·컴포넌트 0, `verify all` 클린·pytest 113.
-  헤드셋 없는 PIE: Disengage = 공격 직후 가중치 1.2 로 선택, 187→613cm 뒷걸음 동안 타겟 주시(faceDot 1.00·이동 반대) · Strafe = 링 안에서 선택·이동(317→438cm) · 깜짝 놀람 = 150cm 첫 포착 → 정확히 뒤로 Dodge(dot −1.0), 실전 경로에서도 Guard·Skadi 발동 ·
-  투사체 = 룰→주사위 경로(실패 로그), 공격 중엔 거부 · 융합 = Drop 소음 0.39s 뒤 `heard Drop 300cm, turned, saw Player` → Python 기억 기록 · 저HP(15%) = 후퇴 3.6s → 회복템 사용(+15HP).
-  편차: 저HP 후퇴는 EQS 대신 타겟 반대 직선 1500cm(EQS 는 비동기라 도착 뒤 회복 순서를 못 보장). 깜짝 놀람은 적대 근접 즉시 공격 **아래**(적대면 공격이 우선).
-  **밸런스 주의**: 기본 Agility 10 이라 `CheckReflex(Agility, 2)` 투사체 회피 = 5%(스펙 가정은 Agility 50 → 25%). 기존 패링도 같은 불일치. 헤드셋 체감 후 결정 — DoList 1-18.
-- [x] **Jev daily sharpen 스윕 → v3 배포, Jev 일단 종료 (2026-09-25)** — 활동 패스 soft 목표 = LLM 가중치^sharpen(`build --sharpen`, 기본 3). `finetune/jev/sweep.py` 로 12설정(결과 `runs/sweep.tsv`, ignore).
-  5목표 전부 통과 0. 배포 = sharpen3·bmax4·width128·20에폭: 정답률 .742(v2c .762)·look_at 선택 .557(.75)·stay 단독1위 재현 .514(6/35)·골드 일치 .590(.59)·골드 look_at .410(.49).
-  정답률 −2%p 감수하고 편중 개선 채택. v2c 는 `app/models/jevlike_tactics_v2c.pt` 백업. 골드 시트 미리채움은 m2 모델 기준(look_at 25/39) — 재생성 안 함.
-- [x] **Jev daily 재학습 3회 — 목표 미달, 최선(v2c) 배포 (2026-09-25)** — look_at 편중·stay 미인식 개선 시도. 동적(동기) 라벨 500(`gen-daily --dynamic`) + 활동 균형.
-  목표: 정답률 ≥75%·test look_at 선택 ≤60%·stay 단독1위 재현율 ≥40%·동적 골드 LLM 일치 ≥60%·골드 look_at ≤40%. 결과(기존 → v2a/v2b/v2c):
-  정답률 77.5 → 39.3/76.6/**76.2** · look_at 선택 83% → 11/78/**75** · stay 2/35 → 6/7/**6** · 골드 일치 51% → 49/54/**59** · 골드 look_at 64% → 10/62/**49**.
-  v2a = soft 로 편 **줄 단위** 균형 → 상황 내 LLM 분포 왜곡으로 붕괴. v2b = **상황(패스) 단위** 균형(펴기 전 복제). v2c = v2b 데이터 + width·rank 128·20 에폭.
-  v2c 배포(`app/models/jevlike_tactics.pt`, 기존은 `jevlike_tactics_m2.pt` 백업): 편중 지표 전부 개선·정답률 −1.3%p·슬롯 69.1%(기존 69.6)·TV 애매 0.185(0.18)·4패스 1.36ms·pytest 112.
-  **원인**: ① 과소적합이 아니라 **라벨 자체가 흐림** — 용량 2배에도 val NLL 1.13 그대로. stay 1위 90건 중 55건이 look_at 과 동률, stay 단독 1위여도 가중치 비중 평균 0.38 → soft 목표가 평평해 argmax 가 흔한 look_at 으로 감.
-  ② 라벨 LLM(gemma4:26b) 자체가 동기 상황에서도 look_at 133·stay 122/500 을 고름 — 동적 상황이 라벨 편중을 못 뚫음. ③ 측정 함정: 재현율을 동률 1위 포함으로 세면 옵션 맨 앞(stay)만 정답 취급돼 왜곡 → 단독 1위만 세야 함.
-  **다음 수단**(미실행): soft 목표 날카롭게(가중치 제곱·온도), 활동 패스만 clear(1위 argmax) 혼합, daily 라벨을 31b 로(12b 는 persona 구분 불가, 26b 는 선택 편중), 사람 골드(검수형 시트 `gold_sheet.html` 39건)로 LLM 라벨 자체 검증.
-- [x] **Jev 동시 감지 교체 + 포위 집계 수정 + Phase 4 PIE 완료 (2026-09-24, `96669d5e`·`08ed190b`)** — 요청 가드(in-flight·쿨다운 1s 중 버림)를 예약으로: 같은 프레임 1건, 쿨다운(0.25s) 중이면
-  만료 시점 1건, 전송 시점 최신 지표, 진행 중 요청은 세대 증가로 교체. 적 집계는 '지금 시야' 대신 '최근 2초 안에 본 적' — 첫 적을 보면 몸을 돌려 90°+ 반대편 적이 시야 120° 밖으로 빠져 포위가 구조적으로 불가했다.
-  PIE(헤드셋 없이): count=1 요청이 0.25s 뒤 count=2 로 교체 · 처음으로 count=3 flanked=1 관측(성격 100 P(aggr) 0.127, 공식 일치) · 백엔드 단절 시 Jev 요청 0건·C++ 반사 공격 정상.
-  HP 25% 교차 트리거는 1:1 이면 분포가 평평(HP 25% 최대 0.38, 20% 0.48)해 확신도 0.5 미만 → 설계대로 중립. 적 2명 또는 HP ≲15% 에선 Flee ≥0.58 로 반영 — 실전은 피격 소음이 재요청하므로 곧 걸린다.
-- [x] **Jev 전투 = 휴리스틱 경로로 전환(A안) — 성격 돌파 복구 (2026-09-24)** — 배포 모델은 전투 라벨의 "포위 시 aggressive 0%" 를 극단 확률로 학습해 포위 시 P(aggr) 가 성격 0~100 전부 0%였다. `evaluate_tactics` 는 체크포인트가 있어도 전투는 피팅 휴리스틱만 쓰고 모델은 daily 전용. 회귀 테스트 `test_combat_ignores_model_even_when_loaded`, pytest 111+1.
-  PIE(Guard, 적 2~3명, HP 100%) 값이 공식과 소수 둘째 자리까지 일치: 성격 100·32m 0.65 / 성격 0·31m 0.09, 성격 0·적3 0.01(같은 지표 성격 100 이면 0.82).
-  함정: **에디터 창이 뒤에 있으면 `bThrottleCPUWhenNotForeground=false`·`t.IdleWhenNotForeground 0` 이어도 PIE 가 3fps(delta 0.333)** → Jev 응답 전부 0.3s 워치독 폐기. 창을 앞으로(`WScript.Shell.AppActivate`) 가져오면 120fps.
-- [x] **SPEC_jev_neuro_symbolic_st 갱신 (2026-09-24)** — 전투 지표 6개(§4.1·§5.2), §7.2 피팅·성격 돌파 신설, §9 Phase 2 완료·Phase 4 조우 테스트 체크.
-- [x] **Jev 전투 라벨 검토 → 휴리스틱 피팅 + 성격 돌파 (2026-09-24, `92027d4e`)** — Antigravity(`agy`) 검토 결과 판정 "재생성", 검증 후 재생성 대신 피팅 채택.
-  실제 라벨 노이즈는 9.7%(agy 의 33.6% 는 혼합 버킷 비율이라 과장). `finetune/jev/fit_combat_heuristic.py` 로 `heuristic_probs` 선형 로짓 재피팅(L2 0.003 — 0 이면 계수 ~15 로 aggressive 0% 재현,
-  거리 항은 설계값 고정): 홀드아웃 정확도 70.8%→84.5%, log-loss 0.688→0.429. M2 보고의 휴리스틱 87.7% 는 피팅 데이터 누수 — 실제 비교는 모델 90.8% vs 휴리스틱 84.5%.
-  성격 돌파 `apply_personality`: C++ 가 `aggression`·`bravery`(FBehavioralTraits/100) 전송, 포위·수적 열세 × HP 비례로 aggressive 가감, 성격 50·1:1 교전은 무효과, 모델·휴리스틱 공통.
-  오프라인(HP 100%, 성격 0/50/75/100): 적 2명 포위 4/43/77/94% · 적 4명 포위 0/1/4/14%. `test_jev_personality.py` 4건, `verify all` 클린·pytest 111.
-- [x] **Jev 체크포인트 경로 버그 수정 + 전투 PIE 실측 (2026-09-24, `0885b200`)** — README 대로 repo 루트에서 uvicorn 을 띄우면 상대경로 `app/models/jevlike_tactics.pt` 를 못 찾아
-  **조용히 휴리스틱 폴백**(배포 모델 미사용) → `DEFAULT_CHECKPOINT` 절대경로. PIE(헤드셋 없이, Guard vs Vorg·DemonLord, HP 100%): 적 2명 성격 100 → Aggressive conf 1.00 · 성격 0 → 0.91,
-  적 1명은 둘 다 0.97(설계대로 1:1 무효과). 라벨 생성 중엔 GPU 100%·VRAM 15.7/16.3GB 로 PIE 3fps → Jev 응답이 0.3s 워치독에 전부 폐기돼 시험 불가였음.
-- [x] **Jev M2 학습 — soft 체크포인트 배포 (2026-09-24)** — `5a6a7b53`(입력 정비·C++ hp/stamina/hit/talk) · `d53793be`(데이터 도구·라벨). 전투 2000(31b)·daily 2000(26b) 합성,
-  soft 모델 활동 top-1 77.4%(휴리스틱 48.4%)·슬롯 69.6%(51.9%)·4패스 1.6ms. clear(명확만 학습)는 애매 상황 분포 오차 2배(TV 0.38 vs 0.18) → 기각. 상세 SPEC_jev_daily 구현 기록 M2.
-- [x] **Jev 일상 활동 매칭 M1 — PIE 검증 완료 (2026-09-24)** — `SPEC_jev_daily.md`. Python `b704d0a6`(테스트 15) · C++ `769bd13e` · `9b98ed7b`(기상 억제) ·
-  `ca316c01`(POI 액터 3개). 완료 기준 1~15 전부 헤드셋 없는 PIE 확인.
-- [x] **BehaviorMode 6→2 축소 (2026-09-24)** — `13f94484`, `SPEC_behavior_mode_reduce.md`. Stage1 5턴 Mode∈{Common,Combat}. 고아 BP enum 삭제만 DoList 1-17.
-- [x] **Stumble 3분기 + 4방향 몽타주 — 헤드셋 검증 완료 (2026-09-23)** — `SPEC_realistic_combat.md` §5.3. `NPCRagdollComponent` 만 수정:
-  Knockdown ≥40 / Stumble ≥20 / Flinch, Block 중 강타는 가드 브레이크(Stumble). 방향 부호: `LastHitDirection` 은 가해자→대상이라 정면 피격이 로컬 X 음수.
-- [x] **Stumble "제자리 밀림"·스냅백 — 루트 모션으로 해결 (2026-09-23)** — 원인·정답은 pitfalls.md D(Mixamo 루트 모션·`MaxWalkSpeed=0`). 이동 잠금 코드 전부 제거.
-- [x] **1-16 임포트 뒤처리 (2026-09-23)** — AnimSequence 0개 상태를 `Downloads` 폴더 FBX 4개로 재임포트, `AS_Hit_*`·`AM_Stumble_*` 4개 생성, 잔재 21개 삭제. 함정은 pitfalls.md D(FBX take 2개).
-- [x] **1-14 패링·퀘스트 SFX 검증 (2026-09-23)** — 패링 헤드셋 체감 OK, `CheckReflex` 4000회 24.7%(기대 25%). `S_Hit_Metal_0` 음색 교체 미정. 퀘스트 갱신음 실청만 DoList 1-14.
-- [x] **`.claude/skills/` 9개 디렉터리 형식 전환 (2026-09-23)** — 평면 `.md` 라 한 번도 로드된 적 없었음(pitfalls.md D). 잔여였던 gstack `spec` 이름 충돌은 `feature-spec` 리네임으로 해소(2026-09-24).
-- [x] **세션·주 마감 스킬 정비 (2026-09-23)** — `session-end` 에 DoList 이관 단계, 신규 `week-end`(Done→주간기록 이관, git log `--all` 이 뼈대). 발견: INDEX 표가 W23 에서 멈춤.
-- [x] **Jevlike 전술 편향기 파이프라인 구현 (2026-09-22)** — `SPEC_jev_neuro_symbolic_st.md` §5~7. `JEV_QUERY`/`JEV_DECISION`·`JevlikeService`(휴리스틱 폴백 <1ms)·
-  Controller 캐시·0.3s 워치독·`FSTEvaluator_JevTactics`·`FSTCondition_NoulGuard`·승수 Clamp. `verify all` 클린, pytest 83. 설계 근거는 pitfalls.md J.
-- [x] **Jevlike SPEC 수립 (2026-09-22)** — 클라우드 Jev 대신 오픈소스 `vinnylarouge/jevlike` 로컬 채택, State 선택기 → 전술 가중치 편향기로 재정의(pitfalls.md J).
-- [x] **대화창 UI 분리 — 손 패널 → 카메라 고정 패널 (2026-09-21)** — `05d610b0`. `UChatWidget` 신설·`VRCamera` 부착 `ChatWidgetComp`, 포커스 잃으면 숨김.
-  WBP_Chat·BP_VRPawn 배선·PIE 전부 MCP(새 WBP 는 루트 없이 생성 → 기존 WBP 복제+reparent 가 유일한 길). 헤드셋 육안만 DoList 1-15.
-- [x] **엔진 빌드 봉쇄 해소 (2026-09-21)** — `.uproject` `VisualStudioTools.Enabled=false` 한 줄. 경위는 pitfalls.md U-2.
-- [x] **`git checkout main` 으로 ignore 파일 6개 파괴 → 복구 (2026-09-21)** — 경위·복구 소스는 pitfalls.md U-1.
-- [x] **전투 SPEC 잔여 + 로드맵 Phase4-5 (2026-09-21)** — §3.2 NPC RNG 패링(`ESenseType::Parried`)·§2.3 패링 리포트·퀘스트 SFX(햅틱은 폐기)·
-  서브퀘스트 5종 E2E(`TryPickupInto` 가 줍기 검증 진입점). 플레이어 Block/Parry 는 `dfb16ab2`(09-18)로 이미 완료돼 있었음.
-- [x] **스토리 디렉터 PIE 검증 완료 (2026-09-21, `SPEC_story_director.md`)** — b1→end 7비트 전이를 MCP 로 실제 게임 경로 재현. 전투는 반드시
-  `GameplayStatics.apply_damage`(`ApplyDamage` 직접 호출은 HandleDeath 안 탐), 대화는 `/api/debug/say`. DoList 1-12 전항목 완료. Phase A~C 는 W38 기록.
