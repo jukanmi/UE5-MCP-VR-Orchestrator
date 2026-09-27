@@ -55,10 +55,10 @@ namespace
     constexpr ECollisionChannel ECC_HandLeft  = ECC_GameTraceChannel1;
     constexpr ECollisionChannel ECC_HandRight = ECC_GameTraceChannel2;
 
-    // 손 바디는 벽(WorldStatic/WorldDynamic)과 반대쪽 손에만 막히고 나머지는 전부 무시한다.
+    // 손 바디는 벽(WorldStatic/WorldDynamic)·물리 물체(PhysicsBody — 드랍 아이템·래그돌)·반대쪽 손에 막히고 나머지는 무시한다.
+    // 아이템과의 접촉(밀기·받치기·쳐내기)은 Chaos 가 벽과 같은 규칙으로 푼다 — 들고 있는 아이템은 QueryOnly 라 손과 안 부딪힌다.
     // 같은 손 채널을 무시해야 주먹(손끝↔손바닥)·핀치(손끝↔손끝)가 자기 몸체에 걸리지 않는다.
-    // 자기 캡슐·NPC(Pawn)를 막으면 몸에 손이 걸리고, 드랍 아이템(PhysicsBody)을 막으면
-    // 쥐려고 손을 뻗는 순간 아이템을 밀쳐 낸다. Visibility 를 막으면 UI 포인터 광선을 가린다.
+    // 자기 캡슐·NPC(Pawn)를 막으면 몸에 손이 걸린다. Visibility 를 막으면 UI 포인터 광선을 가린다.
     void SetupHandBodyCollision(UPrimitiveComponent* Body, bool bLeft)
     {
         Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -66,6 +66,7 @@ namespace
         Body->SetCollisionResponseToAllChannels(ECR_Ignore);
         Body->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
         Body->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+        Body->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
         Body->SetCollisionResponseToChannel(bLeft ? ECC_HandRight : ECC_HandLeft, ECR_Block);
         Body->SetGenerateOverlapEvents(false);
         Body->SetEnableGravity(false);   // 드라이브가 중력을 이기느라 손이 처지지 않게
