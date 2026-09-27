@@ -689,6 +689,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
     UpdateGhostHandTracking(DeltaTime);
+    UpdateHandGestures();
 
     // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
     // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
@@ -1733,10 +1734,54 @@ void AVRPawn::StandUpFromFurniture()
 // 물리 손 쥐기 — 그립으로 월드 아이템을 직접 쥐고, 놓으면 던지거나 NPC 에게 건넨다.
 // ============================================================================
 
-void AVRPawn::OnGrabStartRight(const FInputActionValue& /*Value*/) { HandleGrabStart(/*bLeft=*/false); }
-void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)  { HandleGrabStart(/*bLeft=*/true); }
-void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { HandleGrabRelease(/*bLeft=*/false); }
-void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { HandleGrabRelease(/*bLeft=*/true); }
+void AVRPawn::OnGrabStartRight(const FInputActionValue& /*Value*/)   { bGripHeld[1] = true;  UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)    { bGripHeld[0] = true;  UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { bGripHeld[1] = false; UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { bGripHeld[0] = false; UpdateGrabInput(/*bLeft=*/true); }
+
+void AVRPawn::UpdateGrabInput(bool bLeft)
+{
+    const int32 h = bLeft ? 0 : 1;
+    const bool bHeld = bGripHeld[h] || (bLeft ? bIsPinchingLeft : bIsPinchingRight);
+    if (bHeld == bGrabInputActive[h]) return;
+    bGrabInputActive[h] = bHeld;
+    if (bHeld) HandleGrabStart(bLeft);
+    else       HandleGrabRelease(bLeft);
+}
+
+void AVRPawn::UpdateHandGestures()
+{
+    // 슈미트 트리거 — 잡은 뒤엔 임계 + 여유를 넘어야 놓는다. 트래킹이 끊기면 제스처는 풀린다(그립이 없으면 놓는다).
+    auto Evaluate = [this](EControllerHand Hand, bool bWas)
+    {
+        const FXRHandTrackingState& S = GetHandTrackState(Hand);
+        if (!S.bValid) return false;
+        auto Dist = [&S](EHandKeypoint A, EHandKeypoint B)
+        {
+            return FVector::Dist(S.HandKeyLocations[static_cast<int32>(A)], S.HandKeyLocations[static_cast<int32>(B)]);
+        };
+        const float Slack = bWas ? PinchHysteresis : 0.f;
+        const bool bPinch = Dist(EHandKeypoint::ThumbTip, EHandKeypoint::IndexTip) < PinchDistanceThreshold + Slack;
+        // 주먹은 엄지·검지 위치가 사람마다 달라 중지·약지·새끼 끝이 모두 손바닥에 붙었는지만 본다.
+        const float FistDist = FMath::Max3(Dist(EHandKeypoint::MiddleTip, EHandKeypoint::Palm),
+                                           Dist(EHandKeypoint::RingTip,   EHandKeypoint::Palm),
+                                           Dist(EHandKeypoint::LittleTip, EHandKeypoint::Palm));
+        return bPinch || FistDist < FistDistanceThreshold + Slack;
+    };
+
+    const bool bLeft = Evaluate(EControllerHand::Left, bIsPinchingLeft);
+    if (bLeft != bIsPinchingLeft)
+    {
+        bIsPinchingLeft = bLeft;
+        UpdateGrabInput(/*bLeft=*/true);
+    }
+    const bool bRight = Evaluate(EControllerHand::Right, bIsPinchingRight);
+    if (bRight != bIsPinchingRight)
+    {
+        bIsPinchingRight = bRight;
+        UpdateGrabInput(/*bLeft=*/false);
+    }
+}
 
 void AVRPawn::HandleGrabStart(bool bLeft)
 {

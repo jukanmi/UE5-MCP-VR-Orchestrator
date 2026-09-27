@@ -173,6 +173,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand", meta = (ClampMin = "0.1"))
     float HandColliderRadiusScale = 1.f;
 
+    // ── 핸드트래킹 제스처 — 핀치·주먹을 컨트롤러 그립과 같은 잡기 입력으로 쓴다 ──
+
+    /** 핀치 판정 거리(cm) — 엄지 끝↔검지 끝이 이보다 가까우면 잡는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
+    float PinchDistanceThreshold = 3.f;
+
+    /** 해제 여유(cm) — 잡은 뒤엔 임계 + 이 값을 넘어야 놓는다. 트래킹 떨림에 잡기/놓기가 반복되지 않게. 주먹 판정에도 같이 쓴다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
+    float PinchHysteresis = 1.f;
+
+    /** 주먹 판정 거리(cm) — 중지·약지·새끼 끝이 모두 손바닥 관절에서 이보다 가까우면 잡는다(편 손은 약 9cm). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
+    float FistDistanceThreshold = 5.f;
+
+    /** 이번 틱 손별 잡기 제스처(핀치 또는 주먹) 상태. 트래킹이 끊기면 false. */
+    bool bIsPinchingLeft = false;
+    bool bIsPinchingRight = false;
+
     /** 이번 틱 핸드트래킹 관절 상태. 추적 중이 아니면 bValid=false. */
     const FXRHandTrackingState& GetHandTrackState(EControllerHand Hand) const
     {
@@ -703,6 +721,9 @@ private:
     /** 매 Tick — 입력 소스(핸드트래킹/컨트롤러)로 앵커를 옮기고 손바닥·손끝 바디 드라이브 목표를 갱신. */
     void UpdateGhostHandTracking(float DeltaTime);
 
+    /** 매 Tick(UpdateGhostHandTracking 뒤) — 관절 거리로 핀치·주먹을 판정하고, 바뀌면 잡기 입력을 갱신한다. */
+    void UpdateHandGestures();
+
     /** 손바닥에 용접된 손끝 모양 5개를 메시 손가락 끝마디로 옮긴다. 핸드트래킹이 아니면 충돌을 끄고 손바닥 안에 둔다. */
     void UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm);
 
@@ -857,6 +878,16 @@ private:
 
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
+
+    /** 잡기 입력 = 컨트롤러 그립 OR 손 제스처. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
+     *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */
+    void UpdateGrabInput(bool bLeft);
+
+    /** 컨트롤러 그립 누름 상태(왼손 0·오른손 1). */
+    bool bGripHeld[2] = { false, false };
+
+    /** 합친 잡기 입력의 직전 값(왼손 0·오른손 1). */
+    bool bGrabInputActive[2] = { false, false };
 
     /** 오른손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
     ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;
