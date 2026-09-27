@@ -7,6 +7,14 @@
 
 ## Todo
 
+### VR 손 — `SPEC_vr_ghost_hand.md` · `SPEC_vr_grip_pose.md` 진행 상황 (브랜치 `fed/vr_ghost_hand-09252306`, 워크트리 `C:\github\UE5_MCP_VR_wt_vr_ghost_hand-09252306`, 2026-09-27 기준)
+- **ghost_hand**: M1·M2 완료. M3 = 손가락 본 매핑·손끝 캡슐(메시 정점 맞춤, 손바닥 용접)·양손 충돌 완료, 핀치·주먹 판정 완료(`9433069e`). 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
+  미충족 완료 기준: "손으로 NPC 를 밀 수 있다"(손 채널이 Pawn 무시) · 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
+- **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). 다음 M1(손↔아이템 Chaos 접촉) → M2(들어올리기 방식 A~D 결정) → M3(컨트롤러 그립 포즈).
+- [ ] **grip_pose M1** — 손 채널 PhysicsBody Block + 아이템 단순 콜리전 점검. 손을 뻗을 때 아이템을 밀쳐 내는지(잡기 반경 40cm 가 먼저 걸리는지) 헤드셋 확인.
+- [ ] (보류) **한 손 컨트롤러 + 한 손 실제 손 동시 사용** — 코드는 손마다 이미 독립 판단. Quest 런타임이 컨트롤러가 켜져 있으면 핸드트래킹을 안 넘김(실측: 오른 컨트롤러 내려놓고 5초간 손 추적 0/300). Link 런타임은 `XR_META_simultaneous_hands_and_controllers` 지원(시작 로그), UE 5.5 OpenXR(헤더 1.0.27)은 미사용·미정의. 하려면 `PostConfigInit` 프로젝트 플러그인(IOpenXRExtensionPlugin)으로 확장 요청 + 세션 후 `xrResumeSimultaneousHandsAndControllersTrackingMETA`. 값: `XR_TYPE_SYSTEM_SIMULTANEOUS_HANDS_AND_CONTROLLERS_PROPERTIES_META=1000532001`·`..._TRACKING_RESUME_INFO_META=1000532002`·`..._PAUSE_INFO_META=1000532003`(Khronos openxr.h 대조).
+- [ ] **federated_orchestrator 운영 보강 반영** — 메인 트리 `tools/federated_orchestrator.py`(미추적)에 `--review gemini`·diff 파일 전달·빈 응답 가드 반영됨. 남은 것: 워크트리 pytest 용 `UV_PROJECT_ENVIRONMENT`·`UV_NO_SYNC` 를 스크립트가 직접 설정, UAT 가 `NewProjectTest.umap` 을 저장해 `git add -A` 에 섞이는 문제. 스크립트 자체의 git 추적 여부도 결정 필요.
+
 ### Jevlike 잔여 — 전투 `docs/SPEC_jev_neuro_symbolic_st.md` §9 (Phase 1~3 코드 완료 2026-09-22) · 일상 `docs/SPEC_jev_daily.md` (2026-09-23 신설)
 - [ ] (보류) **StateTree 에셋 바인딩(전투 전용)** — 2026-09-24 판단: 붙여도 동작 변화 0. 전투 승수는 `SelectCombatAction`·`ComputeEQSWeights` 가 캐시를 직접 읽고, `FSTEvaluator_JevTactics`·`FSTCondition_NoulGuard` 는 코드 어디서도 안 쓰이며 `noul_harmful` 은 0.0 고정이라 가드가 막을 일이 없다. Noul(유해) 헤드를 학습할 때 재검토.
 - [ ] **`BREAKTHROUGH_GAIN`(3.0) 체감 튜닝(헤드셋)** — Phase 4 헤드셋 없는 PIE 는 전부 완료(아래 Done). 돌파 세기가 게임적으로 적당한지만 사용자 체감.
@@ -78,6 +86,7 @@
   충돌 채널 HandLeft/HandRight(GameTraceChannel1/2, 기본 Block) — 같은 손끼리 무시·반대 손 막음. 헤드리스 PIE: 양손 겹치면 두께만큼 맞닿아 정지 · 손바닥 바닥 누름 반두께에서 정지 · 손끝 1개를 손바닥 15cm 아래 두고 누르면 손바닥 z 16.01(15+반지름) 정지·속도 0 · 손끝을 프레임당 0.3cm 로 5cm 더 누르면 손바닥 5.02cm 들림(단조).
   폐기(순서대로): ① 손끝을 독립 바디+월드 제약으로 → 손끝만 막히고 손바닥은 계속 전진 ② 캡슐 위치에 손가락 맞추는 IK → 조준축이 굽힘 평면에 안 묶여 손가락 비틀림 ③ 막히면 손가락 자세 고정 → 손바닥이 계속 들어가 같이 파묻힘 ④ 손끝 침투 깊이만큼 손바닥 목표 되돌림(로직) → 박힘↔되돌림 반복. 로직 대신 엔진 충돌(용접)로 해결.
   함정(수정 완료): 맞닿아 멈추면 바디가 잠들어 드라이브 목표 변경으론 안 깨어남 → 매 틱 깨움 · 양손이 서로 반대편에 끼면 교착 → 목표에서 6cm 밀려난 손만 반대 손 충돌 잠시 끔(용접 손끝도 손바닥 응답을 따라감) · 지연 제거용 속도 앞먹임이 막힌 상태에서도 밀어 지형을 뚫음 → 오차 2cm 넘으면 앞먹임 끔·5m/s 상한 · 두께 없는 지형은 모양을 한 번에 수 cm 박으면 아래로 빠짐(실제 손가락 속도에선 문제없음).
+- [x] **SPEC_vr_grip_pose M0 — 핸드트래킹 잡기 실동작 (2026-09-27, 같은 워크트리)** — 잡기 판정 원점(`FindNearestItemNearHand`)과 손 속도(던지기·½mv² 근접·패링)를 컨트롤러 → 트래킹 앵커(`HandTrackingAnchorLeft/Right`) 기준으로. M3 핀치·주먹은 판정만 붙고 잡기 내부가 컨트롤러 기준이라 핸드트래킹 중엔 내려놓은 컨트롤러 주변을 찾고 던지기 속도 0 이었음. 빌드 반영. SPEC_vr_grip_pose 는 같은 날 'Chaos 내장 우선'으로 방향 수정(접촉=Chaos, 들어올리기 후보 A~D 미결).
 - [x] **SPEC_vr_ghost_hand M3 핀치·주먹 잡기 (2026-09-27, federated: Gemini 계획·리뷰·승인 / Claude 구현)** — `UpdateHandGestures`: 엄지끝↔검지끝 < `PinchDistanceThreshold`(3cm) 또는 중지·약지·새끼 끝이 모두 손바닥 < `FistDistanceThreshold`(5cm), 놓기는 +`PinchHysteresis`(1cm). `UpdateGrabInput` 이 컨트롤러 그립 OR 제스처를 합쳐 바뀔 때만 HandleGrabStart/Release. verify all 통과(빌드·pytest 113·UAT). 헤드셋에서 임계값 확인 필요.
   오케스트레이터 운영 함정: Codex 미연결이면 빈 응답을 REJECTED 로 처리해 무한 반려 → `--review gemini` 추가 · agy 에 "git diff 직접 읽어라"라고 하면 셸 거부로 빈 응답 → diff 를 Saved/fed_review.diff 로 넘김(리뷰·승인 둘 다) · 워크트리 pytest 는 uv 가 빈 .venv 를 만들어 실패 → `UV_PROJECT_ENVIRONMENT=메인 .venv` + `UV_NO_SYNC=1`(UV_FROZEN 은 lock 의 python>=3.14 와 충돌) · UAT 가 NewProjectTest.umap 을 저장해 git add -A 에 섞임.
 - [x] **몸 메시 배치 교정 (2026-09-27, 같은 워크트리, 미커밋)** — 헤드셋 실측(왼손으로 오른 팔꿈치 감싸기·컨트롤러로 어깨): 메시 팔꿈치 17cm, 어깨 18cm 낮고 7cm 앞, 머리 본이 눈보다 15cm 앞. 원인 ① 캡슐이 HMD 높이로 줄면(앉기) 메시가 기본 캡슐 기준 상대 위치(−88) 그대로라 **발이 바닥 아래 22cm** ② 메시가 눈(HMD) 아래 수평을 따라 고개 숙이면 몸 전체가 앞으로 끌림 ③ 머리 이펙터로 눈 위치를 넘겨 척추가 앞으로 당김. 수정: `UpdateBodyPlacement`(메시 Z = 기본 + 캡슐 줄어든 만큼, 수평 = 눈 + 머리회전×`EyeToNeckOffset`(−10,0,−20) 아래), 머리 이펙터 = 눈 + 머리회전×`EyeToHeadOffset`(−9,0,−10). 헤드리스: 발 z = 바닥, 메시가 눈 10cm 뒤. 헤드셋 재측정(서서): 팔꿈치 오차 앞 +9·바깥 +16·위 +3.5(높이 해결, 남은 건 FBIK 팔꿈치 벌림) → 팔꿈치 방향 보정(어깨→손 축 회전)을 시도했다가 **되돌림** — 남은 오차는 X_Bot 과 사용자 팔 길이 차이로 판단(사용자 결정). 혼자 팔꿈치 측정은 왼손이 가려져 추적이 자주 끊겨 자동 측정기(추적+정지 1초+근접 게이트)가 필요했음.

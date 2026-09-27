@@ -691,12 +691,13 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateGhostHandTracking(DeltaTime);
     UpdateHandGestures();
 
-    // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
-    // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
-    if (DeltaTime > KINDA_SMALL_NUMBER && MotionControllerLeft && MotionControllerRight)
+    // 동역학 근접 — 실제 손(트래킹 앵커) 속도 추적. ½mv² 의 v, 던지기 속도, 패링 판정이 같이 쓴다.
+    // 앵커는 kinematic 이라 GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
+    // 컨트롤러 위치를 쓰면 핸드트래킹 중엔 내려놓은 컨트롤러라 속도가 0 — 던지면 떨어지고 타격이 안 들어간다.
+    if (DeltaTime > KINDA_SMALL_NUMBER && IsValid(HandTrackingAnchorLeft) && IsValid(HandTrackingAnchorRight))
     {
-        const FVector CurL = MotionControllerLeft->GetComponentLocation();
-        const FVector CurR = MotionControllerRight->GetComponentLocation();
+        const FVector CurL = HandTrackingAnchorLeft->GetComponentLocation();
+        const FVector CurR = HandTrackingAnchorRight->GetComponentLocation();
         if (bHandVelInit)
         {
             // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
@@ -708,7 +709,7 @@ void AVRPawn::Tick(float DeltaTime)
             HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
             HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
 
-            // 근접 타격 — 컨트롤러 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
+            // 근접 타격 — 실제 손 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
             TryMeleeHits(CurR, HandVelRight, /*bRightHand=*/true);
             TryMeleeHits(CurL, HandVelLeft,  /*bRightHand=*/false);
         }
@@ -1833,11 +1834,13 @@ void AVRPawn::HandleGrabStart(bool bLeft)
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
 {
-    const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
-    if (!HandController) return nullptr;
+    const USceneComponent* Anchor = bLeft ? HandTrackingAnchorLeft : HandTrackingAnchorRight;
+    if (!IsValid(Anchor)) return nullptr;
 
-    // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    return FindNearestItem(HandController->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
+    // 판정 원점은 폰이 아니라 실제 손(트래킹 앵커) — 손을 뻗은 곳에 있는 것만 걸려야 한다.
+    // 앵커는 핸드트래킹이면 손바닥 관절, 컨트롤러를 쥐면 그립 포즈를 따른다. 컨트롤러 위치를 쓰면
+    // 핸드트래킹 중엔 내려놓은 컨트롤러 주변을 찾아 손 근처 아이템을 못 잡는다.
+    return FindNearestItem(Anchor->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
 }
 
 void AVRPawn::UpdateItemTooltip()
