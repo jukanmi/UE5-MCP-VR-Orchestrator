@@ -361,6 +361,8 @@ void AVRPawn::BeginPlay()
     // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
     ApplyInventoryPresentation(false);
 
+    if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+
     if (HandTrackingAnchorLeft)  InitGhostBody(PhysicsPalmLeft,  HandTrackingAnchorLeft->GetComponentLocation(),  PalmConstraintLeft);
     if (HandTrackingAnchorRight) InitGhostBody(PhysicsPalmRight, HandTrackingAnchorRight->GetComponentLocation(), PalmConstraintRight);
 
@@ -678,6 +680,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateBodyRotation(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
+    UpdateBodyPlacement();
     UpdateHUDPanelFacing();
     UpdateHUDPanelGaze(DeltaTime);
     UpdateChatPanelVisibility();
@@ -788,7 +791,10 @@ float AVRPawn::GetCurrentHMDHeight() const
 FTransform AVRPawn::GetHeadEffectorCS() const
 {
     if (!VRCamera || !GetMesh()) return FTransform::Identity;
-    FTransform T = VRCamera->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    // 위치는 눈이 아니라 머리 본 자리(눈 뒤·아래) — 눈 위치를 넘기면 FBIK 가 척추를 앞으로 당겨 몸이 쏠린다.
+    FTransform Head = VRCamera->GetComponentTransform();
+    Head.AddToTranslation(Head.GetRotation().RotateVector(EyeToHeadOffset));
+    FTransform T = Head.GetRelativeTransform(GetMesh()->GetComponentTransform());
     // 머리 본 축 보정을 로컬 공간에 적용(우측 곱).
     T.SetRotation(T.GetRotation() * HeadEffectorOffset.Quaternion());
     return T;
@@ -888,6 +894,24 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
            *UEnum::GetValueAsString(CurrentPosture));
 
     OnPostureChanged.Broadcast(CurrentPosture);
+}
+
+void AVRPawn::UpdateBodyPlacement()
+{
+    USkeletalMeshComponent* Body = GetMesh();
+    if (!Body || !VRCamera || Body->IsSimulatingPhysics()) return;   // 래그돌 중엔 물리가 메시를 움직인다
+
+    // 발: 메시는 기본 캡슐 높이 기준으로 붙어 있다. 캡슐이 HMD 높이에 맞춰 줄면(앉기·숙이기) 그만큼 올려 발을 바닥에 둔다 —
+    // 안 올리면 몸 전체가 바닥 아래로 가라앉아 어깨·팔꿈치가 실제보다 낮아진다(앉은 자세 실측 약 20cm). 몸 낮추기는 FBIK 가 무릎·허리로.
+    Body->SetRelativeLocation(FVector(MeshBaseRelativeLocation.X, MeshBaseRelativeLocation.Y,
+                                      MeshBaseRelativeLocation.Z + (BaseCapsuleHalfHeight - InterpedCapsuleHalfHeight)));
+
+    // 수평: 캡슐은 충돌용으로 HMD(눈) 아래를 따르지만, 몸 메시는 목 아래에 둔다(착석 중엔 의자 배치 유지).
+    if (SeatedFurniture.IsValid()) return;
+    const FTransform Eye = VRCamera->GetComponentTransform();
+    const FVector Neck = Eye.GetLocation() + Eye.GetRotation().RotateVector(EyeToNeckOffset);
+    const FVector Current = Body->GetComponentLocation();
+    Body->SetWorldLocation(FVector(Neck.X, Neck.Y, Current.Z));
 }
 
 void AVRPawn::UpdateDynamicCapsule(float DeltaTime)

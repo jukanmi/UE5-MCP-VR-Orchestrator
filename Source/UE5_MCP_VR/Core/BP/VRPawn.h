@@ -559,6 +559,16 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
 
+    /** 눈(HMD) → 머리 본 위치 오프셋(HMD 로컬, X=앞 Z=위, cm). 머리 이펙터 위치 = HMD + 머리 회전 × 이 값.
+     *  머리 본은 눈보다 뒤·아래(목 위)에 있다 — 눈 위치를 그대로 넘기면 FBIK 가 척추를 앞으로 당긴다. PIE 중 즉시 반영. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    FVector EyeToHeadOffset = FVector(-9.f, 0.f, -10.f);
+
+    /** 눈(HMD) → 목 위치 오프셋(HMD 로컬, cm). 몸 메시를 눈이 아니라 이 목 위치 아래에 놓는다 —
+     *  고개를 숙이거나 돌리면 눈은 앞으로 나가지만 몸통은 제자리라, 눈 아래에 두면 몸 전체가 끌려간다. PIE 중 즉시 반영. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
+    FVector EyeToNeckOffset = FVector(-10.f, 0.f, -20.f);
+
     /** 메시 정면 보정 오프셋 (Mixamo X_Bot 등 표준 스켈레탈 메시는 -90도 회전 시 캐릭터 전방 정렬). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
     float BodyMeshYawOffset = -90.f;
@@ -763,6 +773,12 @@ private:
 
     /** 매 Tick — 동적 캡슐 리사이즈 + Rising Floor 역보정 (VInterp 스무딩) */
     void UpdateDynamicCapsule(float DeltaTime);
+
+    /** 매 Tick — 몸 메시를 발은 바닥에, 수평은 목 아래에 둔다. 캡슐이 줄어도 메시가 바닥 아래로 가라앉지 않게. */
+    void UpdateBodyPlacement();
+
+    /** BeginPlay 시점 메시 상대 위치(기본 캡슐 높이 기준). 캡슐 높이 변화만큼 Z 를 보정한다. */
+    FVector MeshBaseRelativeLocation = FVector::ZeroVector;
 
     // --- NPC 상호작용 ---
     void DetectNearbyNPC();
