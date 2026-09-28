@@ -8,7 +8,7 @@
 ## Todo
 
 ### VR 손 — `SPEC_vr_ghost_hand.md` · `SPEC_vr_grip_pose.md` 진행 상황 (브랜치 `fed/vr_ghost_hand-09252306`, 워크트리 `C:\github\UE5_MCP_VR_wt_vr_ghost_hand-09252306`, 2026-09-27 기준)
-- **ghost_hand**: M1·M2 완료. M3 = 손가락 본 매핑·손끝 캡슐(메시 정점 맞춤, 손바닥 용접)·양손 충돌 완료, 핀치·주먹 판정 완료(`9433069e`). 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
+- **ghost_hand**: M1·M2 완료. M3 = 손끝 캡슐(콜리전, 메시 정점 맞춤·손바닥 용접)·양손 충돌·핀치·주먹 판정 완료(`9433069e`). 관절→X_Bot AnimBP/Control Rig **비주얼** 매핑은 그래프 작업이라 미완 — DoList 1-19 등록. 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
   미충족 완료 기준: "손으로 NPC 를 밀 수 있다"(손 채널이 Pawn 무시) · 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
 - **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). M1 완료(손 채널 PhysicsBody Block, 헤드셋에서 잘 밀림). M2 = 후보 A(끊어지는 PhysicsConstraint) 구현·헤드셋에서 쥐어짐 확인. 다음 M3 = 손이 물건을 감싸는 비주얼(제안: 고정 포즈 대신 '닿을 때까지 굽히기' 절차적 감싸기, 미결정).
 - [ ] (보류) **한 손 컨트롤러 + 한 손 실제 손 동시 사용** — 코드는 손마다 이미 독립 판단. Quest 런타임이 컨트롤러가 켜져 있으면 핸드트래킹을 안 넘김(실측: 오른 컨트롤러 내려놓고 5초간 손 추적 0/300). Link 런타임은 `XR_META_simultaneous_hands_and_controllers` 지원(시작 로그), UE 5.5 OpenXR(헤더 1.0.27)은 미사용·미정의. 하려면 `PostConfigInit` 프로젝트 플러그인(IOpenXRExtensionPlugin)으로 확장 요청 + 세션 후 `xrResumeSimultaneousHandsAndControllersTrackingMETA`. 값: `XR_TYPE_SYSTEM_SIMULTANEOUS_HANDS_AND_CONTROLLERS_PROPERTIES_META=1000532001`·`..._TRACKING_RESUME_INFO_META=1000532002`·`..._PAUSE_INFO_META=1000532003`(Khronos openxr.h 대조).
