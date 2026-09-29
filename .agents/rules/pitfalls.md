@@ -133,5 +133,11 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
   code-review-graph(`uvx code-review-graph serve`) 3개 정의. 파일이 살아 있어도 세션 내 재연결은 안 됨(`/mcp` 또는 새 세션).
   ue5 서버가 붙으려면 에디터가 떠 있어야 하고(Remote Control `:30010` 응답이 준비 신호), 에디터가 떠 있어도 이 파일이 없으면
   도구 목록에 안 뜬다. `sol_pi.py` 는 에디터 켜진 상태에서 Build.bat 을 돌리면 Live Coding 충돌로 실패 — `quit_editor` 먼저.
+- **U-5. Live Coding "Live coding failed, please see Live console" 인데 .lib 는 만들어졌다 = 링크 실패** — 원인은 Live Coding 콘솔 창에만
+  나와 로그로 못 본다. 새 엔진 클래스를 쓰면서 모듈 의존성이 빠진 경우가 흔했다(`UPhysicalMaterial` → `PhysicsCore`,
+  `AnimationCore::SolveTwoBoneIK` → `AnimationCore`). 에디터를 닫고 Build.bat 을 돌리면 `LNK2019` 로 바로 보인다.
+- **U-6. 워크트리에서 `sol_pi verify all` 의 Python 16 error 는 환경 문제** — `uv run` 이 시스템 Python(옛 pydantic)을 잡는다.
+  `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
+  UAT 는 `Content/Maps/NewProjectTest.umap` 을 저장한다 — 사용자 테스트 편집이 섞였을 수 있으니 되돌리기 전에 검증 전 상태와 비교하고 물을 것.
 - **U-4. `sol_pi.py build` 워치독 300초** — 룰 캐시 재생성처럼 오래 걸리는 빌드는 중간에 죽고 `cl.exe` 만 taskkill 됨
   (`dotnet.exe` 호스트는 안 죽음). 워치독에 끊긴 뒤 재실행하면 이미 컴파일된 `.obj` 는 재사용되니 그냥 다시 돌리면 된다.

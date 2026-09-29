@@ -24,9 +24,6 @@
 - [ ] 코앞에 불쑥 나타났을 때 흠칫 뒤로 물러나는 연출이 자연스러운지.
 
 
-- [X] 콘텐츠 브라우저에서 `/Game/Core/AI/ENPCBehaviorMode`(BP enum, 값에 `LifeStyle` 오타) 삭제 → 에디터 재시작 시 로드 에러 0 확인.
-  같은 이름 C++ enum 과 혼동 방지용. 끝나면 `Content/Core/AI/ENPCBehaviorMode.uasset` 삭제를 커밋.
-
 ### 1-15. 대화창 UI 분리 — 헤드셋 육안만 남음 (2026-09-21 구현, MCP 로 에셋·배선·PIE 완료)
 
 > `WBP_Chat` 생성·`BP_VRPawn.ChatWidgetClass` 배선·헤드셋 없는 PIE 검증은 전부 클로드가 MCP 로 끝냄
@@ -79,9 +76,6 @@
 ## 3. GitHub / 운영 결정
 
 
-- [X] ~~**Visual Studio 미사용 전환 결정**~~ (2026-09-21, 2026-09-28 완료) — VisualStudioTools.Enabled=false(W39 조치 완료). 앞으로 VS 로 .uproject 열지 않음. 빌드는 Build.bat, 코드 열람은 VS Code.
-
-- [X] ~~**로드맵 스펙 ↔ 구현 정렬 결정** (`SPEC_story_progression_roadmap.md` §3.1·§3.3 vs 실제)~~ (2026-09-27) — 사용자 결정: 코드는 유지하고 문서(스펙)를 실제 구현(플래그명 `forest_raiders_cleared`/`wraiths_purified`, HP 240~600, 스포너 주기, `WBP_PlayerHUD` 연동 등)에 맞추어 최신화 완료 후 `docs/done/`으로 이관.
 - [ ] **디렉터 타임아웃 5s → 8~10s?** — 첫 전이마다 폴백(`ReadTimeout`). 대사엔 영향 없고 quest_log 각색만 빠짐. 올리면 그 턴 NPC 응답이 그만큼 늦어짐.
 - [ ] **VRAM 16GB OOM 대책 결정** — 12B+e4b+PIE 동시 부하 시 Ollama 500/ReadTimeout. TTS GPU 폐기(2026-09-12) 후 재현되는지 먼저 확인, 재현 시 `num_ctx` 축소. KV 양자화는 크래시 불가(pitfalls.md A)
 
@@ -90,3 +84,7 @@
 ## Done
 
 완료 항목은 해당 주차 `docs/주간기록/2026-W##` 의 "사용자 작업" 절로 이관한다(2026-09-13 W29~W37 이관 완료 — 비어 있음).
+
+- [X] ~~ENPCBehaviorMode BP enum 삭제~~ (사용자 완료, 2026-09-30 세션 정리 때 이동) — `/Game/Core/AI/ENPCBehaviorMode`(값에 `LifeStyle` 오타) 삭제, 재시작 시 로드 에러 0. 같은 이름 C++ enum 과 혼동 방지.
+- [X] ~~3. Visual Studio 미사용 전환 결정~~ (2026-09-21 결정, 2026-09-28 완료) — VisualStudioTools.Enabled=false. 빌드는 Build.bat, 코드 열람은 VS Code.
+- [X] ~~3. 로드맵 스펙 ↔ 구현 정렬 결정~~ (2026-09-27 사용자 결정) — 코드는 유지, `SPEC_story_progression_roadmap.md` 를 실제 구현(플래그명 `forest_raiders_cleared`/`wraiths_purified`, HP 240~600, 스포너 주기, `WBP_PlayerHUD` 연동)에 맞춰 최신화 후 `docs/done/` 이관.
