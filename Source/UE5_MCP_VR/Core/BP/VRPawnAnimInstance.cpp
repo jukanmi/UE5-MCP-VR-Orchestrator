@@ -1,6 +1,9 @@
 #include "Core/BP/VRPawnAnimInstance.h"
 #include "Core/BP/VRPawn.h"
 #include "AnimationRuntime.h"
+#include "TwoBoneIK.h"
+#include "CollisionShape.h"
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "HeadMountedDisplayTypes.h"
@@ -56,6 +59,8 @@ void UVRPawnAnimInstance::BuildHandRig(FHandRig& Rig, const TCHAR* Side)
     };
 
     Rig.HandBone = FName(FString::Printf(TEXT("%sHand"), Side));
+    Rig.UpperArmBone = FName(FString::Printf(TEXT("%sArm"), Side));
+    Rig.ForeArmBone = FName(FString::Printf(TEXT("%sForeArm"), Side));
     FTransform HandCS, MiddleCS, IndexCS, PinkyCS;
     if (!RefCS(Rig.HandBone, HandCS)
         || !RefCS(FName(FString::Printf(TEXT("%sHandMiddle1"), Side)), MiddleCS)
@@ -203,28 +208,79 @@ bool UVRPawnAnimInstance::FitHandShapesToMesh(FHandRig& Rig)
     return true;
 }
 
-void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State)
+void UVRPawnAnimInstance::FingerTipFK(const FHandRig& Rig, const FVector& HandPos, int32 Finger, const FQuat Rel[3], FVector& OutCenter, FQuat& OutRotation)
+{
+    FVector Pos = HandPos;
+    FQuat Rot = Rig.PalmToBone;
+    for (int32 Segment = 0; Segment < 3; ++Segment)
+    {
+        const int32 i = Finger * 3 + Segment;
+        Pos += Rot.RotateVector(Rig.RefLocalPos[i]);
+        Rot = Rel[Segment] * Rig.JointToBone[i];
+    }
+    // 여기서 Pos·Rot = 끝마디 본. 캡슐 중심·축은 그 본 로컬 값(메시 정점에 맞춘 것)을 옮긴다.
+    OutCenter = Pos + Rot.RotateVector(Rig.TipShapeCenter[Finger]);
+    OutRotation = FRotationMatrix::MakeFromZ(Rot.RotateVector(Rig.TipShapeAxis[Finger])).ToQuat();
+}
+
+void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, const UPrimitiveComponent* HeldItem, const FTransform& PalmWorld)
 {
     // 손바닥 관절 기준(= 손바닥 바디 기준) 상대 좌표로 메시 손가락을 FK 한다. 트래킹 관절만 쓰고 메시·물리 결과는 안 쓴다 —
     // 메시 손(FBIK, 한 프레임 늦음)에서 출발하면 손이 밀릴 때 손끝 모양이 손바닥 기준으로 흔들려 표면에 박혔다 빠졌다 떤다.
     // 손 본 = 손목 관절 위치(이펙터와 같은 오프셋) + 손바닥 보정 회전, 손가락 = 레퍼런스 본 길이 + 트래킹 회전.
     // ponytail: 메시 컴포넌트 스케일 1 가정 — 몸 메시를 키우면 본 길이에 스케일을 곱할 것.
-    const FQuat PalmInverse = State.HandKeyRotations[static_cast<int32>(EHandKeypoint::Palm)].Inverse();
+    const FQuat PalmKey = State.HandKeyRotations[static_cast<int32>(EHandKeypoint::Palm)];
+    const FQuat PalmInverse = PalmKey.Inverse();
     const FVector HandPos = PalmInverse.RotateVector(State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Wrist)]
                                                    - State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Palm)]);
     for (int32 Finger = 0; Finger < 5; ++Finger)
     {
-        FVector Pos = HandPos;
-        FQuat Rot = Rig.PalmToBone;
-        for (int32 Segment = 0; Segment < 3; ++Segment)
+        FQuat Rel[3];
+        for (int32 Segment = 0; Segment < 3; ++Segment) Rel[Segment] = PalmInverse * State.HandKeyRotations[KeyIndex(Finger, Segment)];
+        FingerTipFK(Rig, HandPos, Finger, Rel, Rig.TipCenter[Finger], Rig.TipRotation[Finger]);
+        if (!HeldItem) continue;
+
+        // 감싸기 — 쥐기 제약이 손 바디 ↔ 쥔 물건 충돌을 꺼 두어 손가락이 물건을 그대로 뚫는다. 그래서 굽힘을 줄여 손끝을 표면에 멈춘다.
+        // 굽힘 t = 관절마다 부모 대비 회전을 t 만큼(0 = 편 손가락, 1 = 트래킹 그대로). 손끝이 겹치면 안 겹치는 가장 큰 t 를 이분 탐색.
+        // 엄지 첫 관절(중수골)은 굽힘이 아니라 손바닥 대비 자리라 그대로 둔다.
+        // ponytail: 끝마디 캡슐만 검사 — 굵은 물건이면 가운데 마디가 파고들 수 있다. 필요하면 마디별 캡슐을 메시에 맞춰 추가.
+        const FCollisionShape TipShape = FCollisionShape::MakeCapsule(Rig.TipRadius[Finger], Rig.TipHalfHeight[Finger]);
+        auto Hits = [&](const FVector& Center, const FQuat& Rotation)
         {
-            const int32 i = Finger * 3 + Segment;
-            Pos += Rot.RotateVector(Rig.RefLocalPos[i]);
-            Rot = PalmInverse * State.HandKeyRotations[KeyIndex(Finger, Segment)] * Rig.JointToBone[i];
+            return HeldItem->OverlapComponent(PalmWorld.TransformPosition(Center), PalmWorld.GetRotation() * Rotation, TipShape);
+        };
+        if (!Hits(Rig.TipCenter[Finger], Rig.TipRotation[Finger])) continue;
+
+        FQuat Curled[3];
+        FVector Center;
+        FQuat Rotation;
+        auto Curl = [&](float t)
+        {
+            FQuat Parent = FQuat::Identity;
+            FQuat CurledParent = FQuat::Identity;
+            for (int32 Segment = 0; Segment < 3; ++Segment)
+            {
+                const FQuat Local = Parent.Inverse() * Rel[Segment];
+                const bool bKeep = Finger == 0 && Segment == 0;
+                Curled[Segment] = CurledParent * (bKeep ? Local : FQuat::Slerp(FQuat::Identity, Local, t));
+                Parent = Rel[Segment];
+                CurledParent = Curled[Segment];
+            }
+            FingerTipFK(Rig, HandPos, Finger, Curled, Center, Rotation);
+            return Hits(Center, Rotation);
+        };
+        // 편 손가락도 겹치면(물건이 손가락 밑에 깔림) 굽힘으로 못 푼다 — 트래킹 그대로 둔다.
+        if (Curl(0.f)) continue;
+        float Lo = 0.f, Hi = 1.f;
+        for (int32 Step = 0; Step < 6; ++Step)   // 1/64 단위
+        {
+            const float Mid = (Lo + Hi) * 0.5f;
+            (Curl(Mid) ? Hi : Lo) = Mid;
         }
-        // 여기서 Pos·Rot = 끝마디 본. 캡슐 중심·축은 그 본 로컬 값(메시 정점에 맞춘 것)을 옮긴다.
-        Rig.TipCenter[Finger] = Pos + Rot.RotateVector(Rig.TipShapeCenter[Finger]);
-        Rig.TipRotation[Finger] = FRotationMatrix::MakeFromZ(Rot.RotateVector(Rig.TipShapeAxis[Finger])).ToQuat();
+        Curl(Lo);
+        Rig.TipCenter[Finger] = Center;
+        Rig.TipRotation[Finger] = Rotation;
+        for (int32 Segment = 0; Segment < 3; ++Segment) Rig.KeyRotations[KeyIndex(Finger, Segment)] = PalmKey * Curled[Segment];
     }
     Rig.bTipTargets = true;
 }
@@ -235,19 +291,28 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     // 관절 데이터는 게임 스레드에서 복사해 두고, 워커 스레드 평가(프록시)는 이 복사본만 읽는다.
     // 손끝이 표면에 막히는 건 손바닥에 용접된 손끝 모양이 물리로 처리한다(손 전체가 멈추거나 들림) — 여기선 트래킹 그대로.
+    // 예외는 쥔 물건 — 제약이 충돌을 꺼 두므로 여기서 손가락 굽힘을 줄여 표면에 멈춘다.
     const AVRPawn* Pawn = Cast<AVRPawn>(TryGetPawnOwner());
     for (int32 h = 0; h < 2; ++h)
     {
         FHandRig& Rig = Hands[h];
         Rig.KeyRotations.Reset();
         Rig.bTipTargets = false;
+        Rig.bEffector = false;
         if (!Pawn || !Rig.bReady) continue;
 
-        const FXRHandTrackingState& State = Pawn->GetHandTrackState(h == 0 ? EControllerHand::Left : EControllerHand::Right);
+        // 팔 IK 목표 — 핸드트래킹·컨트롤러 공통(이펙터는 둘 다 물리 손바닥을 따른다).
+        Rig.EffectorCS = h == 0 ? Pawn->GetLeftHandEffectorCS() : Pawn->GetRightHandEffectorCS();
+        Rig.bEffector = true;
+
+        const EControllerHand Hand = h == 0 ? EControllerHand::Left : EControllerHand::Right;
+        const FXRHandTrackingState& State = Pawn->GetHandTrackState(Hand);
         if (!State.bValid || State.HandKeyRotations.Num() != EHandKeypointCount) continue;
 
+        const UBoxComponent* Palm = h == 0 ? Pawn->PhysicsPalmLeft : Pawn->PhysicsPalmRight;
+        const UPrimitiveComponent* HeldItem = IsValid(Palm) ? Pawn->GetGrabbedItemMesh(Hand) : nullptr;
         Rig.KeyRotations = State.HandKeyRotations;
-        UpdateFingertipTargets(Rig, State);
+        UpdateFingertipTargets(Rig, State, HeldItem, HeldItem ? Palm->GetComponentTransform() : FTransform::Identity);
     }
 }
 
@@ -279,6 +344,44 @@ bool FVRPawnAnimInstanceProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode
     if (!Instance || InRootNode != GetRootNode()) return true;
 
     const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
+    auto PoseIndexOf = [&Bones](const FName& Name)
+    {
+        const int32 MeshIndex = Bones.GetPoseBoneIndexForBoneName(Name);
+        return MeshIndex == INDEX_NONE ? FCompactPoseBoneIndex(INDEX_NONE) : Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
+    };
+
+    // 팔 3관절 IK — FBIK 는 머리·양손·양발 목표를 절충하는 풀이라 손을 이펙터에 정확히 못 붙인다(반복 60 에서 평균 1cm,
+    // 팔을 뻗으면 6~8cm). 그만큼 손 콜라이더(물리 손바닥)와 보이는 손이 어긋나므로 어깨~손목을 다시 풀어 손을 목표에 붙인다.
+    // 팔꿈치 방향은 FBIK 결과를 극점으로 그대로 쓴다. 손 본만 옮기면 아래팔과 손 사이에서 손목이 꺾여 보였다.
+    {
+        FCSPose<FCompactPose> CSPose;
+        CSPose.InitPose(Output.Pose);
+        TArray<FBoneTransform> Arms;
+        for (const UVRPawnAnimInstance::FHandRig& Rig : Instance->Hands)
+        {
+            if (!Rig.bEffector) continue;
+            const FCompactPoseBoneIndex Upper = PoseIndexOf(Rig.UpperArmBone);
+            const FCompactPoseBoneIndex Fore = PoseIndexOf(Rig.ForeArmBone);
+            const FCompactPoseBoneIndex Hand = PoseIndexOf(Rig.HandBone);
+            if (!Upper.IsValid() || !Fore.IsValid() || !Hand.IsValid()) continue;
+
+            FTransform UpperCS = CSPose.GetComponentSpaceTransform(Upper);
+            FTransform ForeCS = CSPose.GetComponentSpaceTransform(Fore);
+            FTransform HandCS = CSPose.GetComponentSpaceTransform(Hand);
+            AnimationCore::SolveTwoBoneIK(UpperCS, ForeCS, HandCS, ForeCS.GetLocation(), Rig.EffectorCS.GetLocation(),
+                                          /*bAllowStretching=*/false, 1.0, 1.0);
+            HandCS.SetRotation(Rig.EffectorCS.GetRotation());
+            Arms.Add(FBoneTransform(Upper, UpperCS));
+            Arms.Add(FBoneTransform(Fore, ForeCS));
+            Arms.Add(FBoneTransform(Hand, HandCS));
+        }
+        if (Arms.Num() > 0)
+        {
+            Arms.Sort([](const FBoneTransform& A, const FBoneTransform& B) { return A.BoneIndex < B.BoneIndex; });
+            CSPose.SafeSetCSBoneTransforms(Arms);
+            FCSPose<FCompactPose>::ConvertComponentPosesToLocalPoses(MoveTemp(CSPose), Output.Pose);
+        }
+    }
 
     for (const UVRPawnAnimInstance::FHandRig& Rig : Instance->Hands)
     {

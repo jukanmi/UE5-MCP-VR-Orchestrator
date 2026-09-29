@@ -51,6 +51,8 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **월드 아이템 = `ADroppedItemBase` 하나** — `ItemManager` 등록 풀을 NPC 탐지가 본다. 별도 픽업 클래스를 만들면 NPC 가 인지 못 하는 두 번째 계통이 생긴다. Deferred 스폰으로 `FinishSpawning` 전에 `ItemTemplateID` 를 넣을 것(늦으면 `BeginPlay` 가 `DefaultEntity_Unknown` 으로 등록).
 - **HandObject 는 소유권 이전 없음** — 제시(손에 들기) 연출 전용, 실제 이전은 GiveItem. 플레이어 인벤에 넣으면 복제.
 - **손 쥐기 규칙(최종, 사용자 지정 2026-09-07)**: 손에 쥐는 모든 것은 물리 액터. 그립 홀드(`Started` 쥠 / `Completed`·`Canceled` 놓음). 뗄 때 **인벤토리 열림 = 회수 / 닫힘 = 거래접시→NPC 건네기→던지기**. 시간 가드 없음. 장착 무기는 `AttachedMeshes` 라 `HeldItems` 가 아님 — 그립을 누르면 `OnGrabStart` 가 물리 쥐기로 전환해야 던지기 경로를 탄다. 이 규칙 밖의 조작 기능 임의 추가 금지(당일 두 번 뒤집힌 원인).
+  갱신(2026-09-30): 핸드트래킹은 그립 대신 **접촉 쥐기**(엄지+다른 손끝 사이에 물건이 끼면 쥠, 손끝이 떨어지면 놓음 — `UpdateContactGrab`). 핀치·주먹 제스처로 쥐면 손가락이 이미 물건 속이라 막혀 있던 물리 손이 튀며 제약이 끊긴다. 놓을 때 분기는 동일.
+- **FBIK(PBIK)는 손을 이펙터에 정확히 못 붙인다** — 여러 목표 절충이라 반복 20 에서 5~7cm 남았다(손 콜라이더와 메시 어긋남). 반복 60 + 애님 프록시의 팔 2본 IK 로 0.2cm. 손 본만 옮기면 손목이 꺾인다 — 팔꿈치까지 같이 풀 것.
 - **BP 오버라이드가 C++ 기본값을 이긴다** — 상시 켜야 하는 것은 `BeginPlay` 에서 강제하거나 에셋 재직렬화 확인(`HUDWidgetComp` 가시성 사례). `BP_VRPawn::CameraHeightOffset` = **0 필수**(-30 이면 HMD 높이 역산 오염 → 캡슐 30cm 단축). 머리 본 위치는 `HeadEffectorOffset`/FBIK 로, 카메라 오프셋 금지.
 - **VR 아바타 1:1 고정** — 키 비율 스케일 삭제(FBIK 하에서 '서면 머리 낮음' 만 유발). `CalibratedStandingHeight` 는 자세판정용만. 몸통은 HMD Yaw 1:1 추종(`BodyMeshYawOffset=-90`), 착석 시 의자 방향 고정.
 - **PostProcess 는 이 렌더 경로(`r.ForwardShading`+`vr.InstancedStereo`+`vr.MobileMultiView`)에서 화면 전체 검정** — 비네트·터널 효과 불가. 시각 피드백은 HUD.

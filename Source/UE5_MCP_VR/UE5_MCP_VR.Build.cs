@@ -12,7 +12,7 @@ public class UE5_MCP_VR : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "AIModule", "GameplayTasks", "NavigationSystem", "HTTP", "GameplayTags", "StateTreeModule", "GameplayStateTreeModule", "HeadMountedDisplay", "XRBase", "DeveloperSettings" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "JsonUtilities" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "JsonUtilities", "AnimationCore" });
 
 		// Uncomment if you are using Slate UI
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -71,6 +71,11 @@ private:
         bool bTipTargets = false;
         /** 이번 프레임 관절 월드 회전(EHandKeypoint 순). 비어 있으면 미추적 — 그래프 포즈 그대로 둔다. */
         TArray<FQuat> KeyRotations;
+        /** 팔 3관절 IK — 위팔·아래팔 본과 이번 프레임 손 이펙터(몸 메시 공간, FBIK 에 넣는 것과 같은 값). */
+        FName UpperArmBone;
+        FName ForeArmBone;
+        FTransform EffectorCS;
+        bool bEffector = false;
         bool bReady = false;
     };
 
@@ -81,8 +86,13 @@ private:
 
     const FHandRig& RigOf(EControllerHand Hand) const { return Hands[Hand == EControllerHand::Left ? 0 : 1]; }
 
-    /** 트래킹 관절만으로 손바닥 기준 메시 손가락을 FK 해 끝마디 목표를 채운다. */
-    void UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State);
+    /** 트래킹 관절만으로 손바닥 기준 메시 손가락을 FK 해 끝마디 목표를 채운다.
+     *  HeldItem 이 있으면 손끝이 그 표면을 뚫지 않을 만큼만 손가락을 굽힌다(감싸기) — Rig.KeyRotations 도 그 자세로 바꾼다.
+     *  PalmWorld = 손바닥 바디 월드 변환(손끝 모양이 붙는 기준). */
+    void UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, const UPrimitiveComponent* HeldItem, const FTransform& PalmWorld);
+
+    /** 손가락 하나 FK — Rel = 관절 3개의 손바닥 관절 기준 회전, HandPos = 손바닥 관절 기준 손 본 위치. 끝마디 캡슐 중점·회전(손바닥 기준)을 낸다. */
+    static void FingerTipFK(const FHandRig& Rig, const FVector& HandPos, int32 Finger, const FQuat Rel[3], FVector& OutCenter, FQuat& OutRotation);
 
     FHandRig Hands[2];
 };

@@ -197,6 +197,9 @@ public:
         return Hand == EControllerHand::Left ? HandTrackStateLeft : HandTrackStateRight;
     }
 
+    /** 물리 제약으로 쥐고 있는 아이템의 메시. 빈손이면 null. 손가락 감싸기(애님 인스턴스)가 접촉 판정에 쓴다. */
+    const UPrimitiveComponent* GetGrabbedItemMesh(EControllerHand Hand) const;
+
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     UInventoryComponent* Inventory;
@@ -850,9 +853,18 @@ private:
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
     float GrabBreakForce = 6000.f;
 
-    /** 물리 쥐기 제약이 끊어지는 토크(kg·cm²/s²). 긴 물건 끝을 한 손으로 들면 무게 × 손~무게중심 거리가 이를 넘어 놓친다. */
+    /** 물리 쥐기 제약이 끊어지는 토크(kg·cm²/s²). 긴 물건 끝을 한 손으로 들면 무게 × 손~무게중심 거리가 이를 넘어 놓친다.
+     *  60,000 = 2.5kg 양동이를 손잡이(무게중심 위 17cm, 약 41,700)로 들면 버티고, 2.5kg 을 25cm 넘게 떨어진 끝으로 들면 놓친다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float GrabBreakTorque = 30000.f;
+    float GrabBreakTorque = 60000.f;
+
+    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손끝 캡슐이 이 거리(cm) 안으로 같은 물건에 닿고, 둘 사이에 물건이 있으면 쥔다. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+    float ContactGrabMargin = 0.5f;
+
+    /** 접촉 쥐기 놓기 — 엄지나 짝 손끝이 표면에서 이 거리(cm) 넘게 떨어지면 놓는다. 쥐기 여유보다 커야 트래킹 떨림에 안 흔들린다. */
+    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+    float ContactReleaseMargin = 1.5f;
 
     /** 손 드라이브가 온전히 받쳐 주는 쥔 물건 질량 상한(kg). 이보다 무거우면 힘이 모자라 잘 안 들린다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
@@ -870,8 +882,9 @@ private:
     void OnGrabStartRight(const FInputActionValue& Value);
     void OnGrabStartLeft(const FInputActionValue& Value);
 
-    /** 그립 누름 본체. 왼손이면 OffHand, 오른손이면 MainHand 슬롯을 대상으로 같은 일을 한다. */
-    void HandleGrabStart(bool bLeft);
+    /** 그립 누름 본체. 왼손이면 OffHand, 오른손이면 MainHand 슬롯을 대상으로 같은 일을 한다.
+     *  Target 이 있으면(접촉 쥐기) 그 아이템을, 없으면 손 근처 최근접 아이템을 쥔다. */
+    void HandleGrabStart(bool bLeft, ADroppedItemBase* Target = nullptr);
 
     /** 인벤토리 열림 중 오른손 스틱 = 슬롯 이동. 한 번 기울일 때 한 칸만 가고,
      *  중립으로 돌아와야 다시 먹는다(계속 기울이면 목록이 순식간에 흘러가 버린다). */
@@ -888,6 +901,10 @@ private:
     UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
     bool bDebugInventorySelection = true;
 
+    /** PIE 시작 때 콜리전 표시(show collision)를 켠다 — 손 콜라이더와 메시 맞춤을 볼 때 매번 콘솔에 치지 않게. 개발용. */
+    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
+    bool bShowCollisionOnStart = false;
+
     /** 그립 뗌 — 인벤토리가 열려 있으면 회수, 닫혀 있으면 거래 접시·NPC 를 차례로 보고 던진다. */
     void OnGrabReleaseRight(const FInputActionValue& Value);
     void OnGrabReleaseLeft(const FInputActionValue& Value);
@@ -895,8 +912,23 @@ private:
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
 
-    /** 물리 손 바디 ↔ 아이템을 끊어지는 제약으로 잇는다. 물리 손이 아직 없으면(시뮬레이션 전) false. */
-    bool GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft);
+    /** 물리 손 바디 ↔ 아이템을 끊어지는 제약으로 잇는다. 물리 손이 아직 없으면(시뮬레이션 전) false.
+     *  bKeepCollision = 손과 쥔 물건의 충돌을 유지(접촉 쥐기 — 닿은 순간이라 겹침이 없다). 컨트롤러 쥐기는 손이 물건에 박혀 있을 수 있어 끈다. */
+    bool GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft, bool bKeepCollision = false);
+
+    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손끝 사이에 물건이 끼면 쥐고, 둘 중 하나가 표면에서 떨어지면 놓는다. */
+    void UpdateContactGrab();
+
+    /** 엄지 캡슐과 다른 손끝 캡슐이 함께 닿아 있고 둘을 잇는 선이 지나는 아이템. OutPartner = 짝 손가락(1~4). */
+    ADroppedItemBase* FindPinchedItem(bool bLeft, int32& OutPartner) const;
+
+    /** 손끝 캡슐 하나가 물건 표면에서 Margin(cm) 안에 있는지. */
+    bool IsFingertipTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const;
+
+    /** 접촉 쥐기 상태(왼손 0·오른손 1), 엄지 사이에 낀 아이템과 짝 손가락. 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
+    bool bContactHeld[2] = { false, false };
+    TWeakObjectPtr<ADroppedItemBase> ContactItem[2];
+    int32 ContactPartner[2] = { INDEX_NONE, INDEX_NONE };
 
     /** 쥐기 제약을 푼다(놓을 때). 끊김 이벤트는 나가지 않는다. */
     void ReleaseGrabConstraint(int32 HandIndex);
@@ -913,9 +945,9 @@ private:
     TArray<TObjectPtr<UPhysicsConstraintComponent>> GrabConstraints;
     TWeakObjectPtr<ADroppedItemBase> GrabbedItems[2];
 
-    /** 잡기 입력 = 컨트롤러 그립 OR 손 제스처. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
+    /** 잡기 입력 = 컨트롤러 그립 OR 접촉 쥐기. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
      *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */
-    void UpdateGrabInput(bool bLeft);
+    void UpdateGrabInput(bool bLeft, ADroppedItemBase* Target = nullptr);
 
     /** 컨트롤러 그립 누름 상태(왼손 0·오른손 1). */
     bool bGripHeld[2] = { false, false };

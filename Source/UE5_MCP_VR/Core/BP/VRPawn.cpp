@@ -32,6 +32,7 @@
 #include "Utils/DiceSystem.h"
 #include "Villager/VillagerCharacter.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "Inventory/Components/InventoryComponent.h"
@@ -400,7 +401,7 @@ void AVRPawn::BeginPlay()
     }
 
     // 물리 쥐기 제약 — 잡을 때 손 바디와 아이템을 잇는다. 이동·회전 전부 잠그고, 힘·토크 임계를 넘으면
-    // 엔진이 끊는다(무게중심에서 먼 곳을 잡으면 토크가 커져 놓친다). 손과 쥔 물건끼리는 부딪히지 않게.
+    // 엔진이 끊는다(무게중심에서 먼 곳을 잡으면 토크가 커져 놓친다). 손 ↔ 쥔 물건 충돌 여부는 쥘 때 방식별로 정한다.
     for (int32 h = 0; h < 2; ++h)
     {
         UPhysicsConstraintComponent* Grab = NewObject<UPhysicsConstraintComponent>(this, h == 0 ? TEXT("GrabConstraintLeft") : TEXT("GrabConstraintRight"));
@@ -411,11 +412,23 @@ void AVRPawn::BeginPlay()
         Grab->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
         Grab->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
         Grab->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Locked, 0.f);
-        Grab->SetDisableCollision(true);
         Grab->ConstraintInstance.ConstraintIndex = h;   // 끊김 이벤트에서 어느 손인지 가린다
         Grab->OnConstraintBroken.AddDynamic(this, &AVRPawn::OnGrabConstraintBroken);
         GrabConstraints.Add(Grab);
     }
+
+    // 몸 메시 애니메이션은 물리 뒤에 — 손 이펙터가 물리 손바닥 위치를 읽는데, 물리 전(기본값)에 돌면 지난 프레임 위치로
+    // 손을 그려 같은 프레임 물리로 움직인 쥔 물건보다 한 프레임 뒤처진다(이동 중 3m/s 면 약 3cm 어긋남).
+    // 폰 틱(손끝 모양 배치)은 애님이 채운 손끝 목표를 한 프레임 늦게 읽게 되지만, 목표가 손바닥 기준 상대값이라 영향이 작다.
+    if (GetMesh()) GetMesh()->SetTickGroup(TG_PostPhysics);
+
+#if !UE_BUILD_SHIPPING
+    // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
+    if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
+    {
+        GetWorld()->GetGameViewport()->ConsoleCommand(TEXT("show collision"));
+    }
+#endif
 }
 
 // ============================================================================
@@ -713,6 +726,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateDash(DeltaTime);
     UpdateGhostHandTracking(DeltaTime);
     UpdateHandGestures();
+    UpdateContactGrab();
     SyncGrabConstraints();
 
     // 동역학 근접 — 실제 손(트래킹 앵커) 속도 추적. ½mv² 의 v, 던지기 속도, 패링 판정이 같이 쓴다.
@@ -1764,14 +1778,95 @@ void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)    { bGripHeld
 void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { bGripHeld[1] = false; UpdateGrabInput(/*bLeft=*/false); }
 void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { bGripHeld[0] = false; UpdateGrabInput(/*bLeft=*/true); }
 
-void AVRPawn::UpdateGrabInput(bool bLeft)
+void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
 {
     const int32 h = bLeft ? 0 : 1;
-    const bool bHeld = bGripHeld[h] || (bLeft ? bIsPinchingLeft : bIsPinchingRight);
+    // 핸드트래킹 핀치·주먹은 인벤토리가 열렸을 때 슬롯 발동에만 쓴다 — 월드 아이템은 접촉 쥐기(UpdateContactGrab)가 맡는다.
+    // 제스처는 손가락이 이미 물건 속에 들어간 뒤에야 성립해, 그때 쥐면 밀려난 손이 튀며 제약이 끊겼다.
+    const bool bGesture = bInventoryOpen && (bLeft ? bIsPinchingLeft : bIsPinchingRight);
+    const bool bHeld = bGripHeld[h] || bContactHeld[h] || bGesture;
     if (bHeld == bGrabInputActive[h]) return;
     bGrabInputActive[h] = bHeld;
-    if (bHeld) HandleGrabStart(bLeft);
+    if (bHeld) HandleGrabStart(bLeft, Target);
     else       HandleGrabRelease(bLeft);
+}
+
+void AVRPawn::UpdateContactGrab()
+{
+    for (int32 h = 0; h < 2; ++h)
+    {
+        const bool bLeft = h == 0;
+        const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+        bool bHeld = false;
+        if (bFingertipsActive[h] && GetHandTrackState(bLeft ? EControllerHand::Left : EControllerHand::Right).bValid)
+        {
+            if (bContactHeld[h])
+            {
+                // 엄지나 짝 손끝이 표면에서 떨어지면(손을 폄) 놓는다. 쥔 동안은 감싸기가 손끝을 표면에 멈춰 두어 닿아 있다.
+                const ADroppedItemBase* Item = ContactItem[h].Get();
+                bHeld = IsValid(Item) && IsFingertipTouching(bLeft, 0, Item->ItemMesh, ContactReleaseMargin)
+                     && IsFingertipTouching(bLeft, ContactPartner[h], Item->ItemMesh, ContactReleaseMargin);
+            }
+            else if (!bInventoryOpen && Inventory && !Inventory->GetHeldItem(HandSlot))
+            {
+                int32 Partner = INDEX_NONE;
+                if (ADroppedItemBase* Item = FindPinchedItem(bLeft, Partner))
+                {
+                    ContactItem[h] = Item;
+                    ContactPartner[h] = Partner;
+                    bHeld = true;
+                }
+            }
+        }
+        if (bHeld == bContactHeld[h]) continue;
+        bContactHeld[h] = bHeld;
+        UpdateGrabInput(bLeft, bHeld ? ContactItem[h].Get() : nullptr);
+        if (!bHeld)
+        {
+            ContactItem[h].Reset();
+            ContactPartner[h] = INDEX_NONE;
+        }
+    }
+}
+
+bool AVRPawn::IsFingertipTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const
+{
+    const int32 i = (bLeft ? 0 : 5) + Finger;
+    const UCapsuleComponent* Tip = (Finger >= 0 && Finger < 5 && FingertipBodies.IsValidIndex(i)) ? FingertipBodies[i].Get() : nullptr;
+    if (!Tip || !IsValid(Item)) return false;
+    return Item->OverlapComponent(Tip->GetComponentLocation(), Tip->GetComponentQuat(),
+                                  FCollisionShape::MakeCapsule(Tip->GetScaledCapsuleRadius() + Margin, Tip->GetScaledCapsuleHalfHeight() + Margin));
+}
+
+ADroppedItemBase* AVRPawn::FindPinchedItem(bool bLeft, int32& OutPartner) const
+{
+    const int32 Base = bLeft ? 0 : 5;
+    const UCapsuleComponent* Thumb = FingertipBodies.IsValidIndex(Base) ? FingertipBodies[Base].Get() : nullptr;
+    UWorld* World = GetWorld();
+    if (!Thumb || !World) return nullptr;
+
+    // 엄지에 닿은 드랍 아이템이 후보. 짝 손끝도 같은 아이템에 닿고, 두 손끝을 잇는 선이 아이템을 지나야 "사이에 끼었다" —
+    // 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
+    // ponytail: 엄지 기준만 — 엄지 없이 손가락·손바닥으로 감싸거나 손바닥에 올려 받치는 쥐기는 안 걸린다.
+    TArray<FOverlapResult> Overlaps;
+    World->OverlapMultiByObjectType(Overlaps, Thumb->GetComponentLocation(), Thumb->GetComponentQuat(), FCollisionObjectQueryParams(ECC_PhysicsBody),
+        FCollisionShape::MakeCapsule(Thumb->GetScaledCapsuleRadius() + ContactGrabMargin, Thumb->GetScaledCapsuleHalfHeight() + ContactGrabMargin));
+    for (const FOverlapResult& Overlap : Overlaps)
+    {
+        ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
+        if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
+        if (Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Item || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Item)) continue;
+        for (int32 f = 1; f < 5; ++f)
+        {
+            const UCapsuleComponent* Tip = FingertipBodies.IsValidIndex(Base + f) ? FingertipBodies[Base + f].Get() : nullptr;
+            if (!Tip || !IsFingertipTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin)) continue;
+            FHitResult Hit;
+            if (!Item->ItemMesh->LineTraceComponent(Hit, Thumb->GetComponentLocation(), Tip->GetComponentLocation(), FCollisionQueryParams(SCENE_QUERY_STAT(PinchTrace), false))) continue;
+            OutPartner = f;
+            return Item;
+        }
+    }
+    return nullptr;
 }
 
 void AVRPawn::UpdateHandGestures()
@@ -1808,7 +1903,7 @@ void AVRPawn::UpdateHandGestures()
     }
 }
 
-void AVRPawn::HandleGrabStart(bool bLeft)
+void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
     UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
@@ -1841,7 +1936,7 @@ void AVRPawn::HandleGrabStart(bool bLeft)
         return;
     }
 
-    ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius, bLeft);
+    ADroppedItemBase* Nearest = Target ? Target : FindNearestItemNearHand(GrabRadius, bLeft);
     if (!Nearest) return;
 
     // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
@@ -1853,7 +1948,7 @@ void AVRPawn::HandleGrabStart(bool bLeft)
     }
 
     // 물리 손이 있으면 제약으로 쥔다(무게·토크를 엔진이 계산). 시뮬레이션 전이면 예전처럼 손 본 소켓에 붙인다.
-    if (!GrabItemWithPhysics(Nearest, bLeft))
+    if (!GrabItemWithPhysics(Nearest, bLeft, /*bKeepCollision=*/Target != nullptr))
     {
         Inventory->AttachItemToHand(Nearest, HandSlot);
     }
@@ -1958,7 +2053,7 @@ void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, f
     if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
 }
 
-bool AVRPawn::GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft)
+bool AVRPawn::GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft, bool bKeepCollision)
 {
     const int32 h = bLeft ? 0 : 1;
     UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
@@ -1975,7 +2070,14 @@ bool AVRPawn::GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft)
     Grab->SetLinearBreakable(true, GrabBreakForce);
     Grab->SetAngularBreakable(true, GrabBreakTorque);
     Grab->SetWorldLocationAndRotation(Palm->GetComponentLocation(), Palm->GetComponentQuat());
+    Grab->SetDisableCollision(!bKeepCollision);
     Grab->SetConstrainedComponents(Palm, NAME_None, Item->ItemMesh, NAME_None);
+
+    // 튜닝용 — 쥘 때 물리 손이 실제 손에서 밀려난 거리(쥔 직후 이만큼 끌려가며 충격), 질량, 손~무게중심 거리(토크 팔).
+    const USceneComponent* Anchor = bLeft ? HandTrackingAnchorLeft : HandTrackingAnchorRight;
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠 상세: %s 손 어긋남 %.1fcm, 질량 %.2fkg, 무게중심 거리 %.1fcm, 충돌 %s"),
+           *Item->ItemData.ItemTemplateID, Anchor ? FVector::Dist(Anchor->GetComponentLocation(), Palm->GetComponentLocation()) : -1.f,
+           Item->ItemMesh->GetMass(), FVector::Dist(Palm->GetComponentLocation(), Item->ItemMesh->GetCenterOfMass()), bKeepCollision ? TEXT("유지") : TEXT("끔"));
 
     Inventory->HoldItem(Item, bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
     GrabbedItems[h] = Item;
@@ -1989,6 +2091,12 @@ float AVRPawn::HeldMassScale(int32 HandIndex) const
     if (!IsValid(Held) || !IsValid(Held->ItemMesh) || !IsValid(Palm)) return 1.f;
     const float PalmMass = FMath::Max(Palm->GetMass(), KINDA_SMALL_NUMBER);
     return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass)) / PalmMass;
+}
+
+const UPrimitiveComponent* AVRPawn::GetGrabbedItemMesh(EControllerHand Hand) const
+{
+    const ADroppedItemBase* Held = GrabbedItems[Hand == EControllerHand::Left ? 0 : 1].Get();
+    return IsValid(Held) ? Held->ItemMesh : nullptr;
 }
 
 void AVRPawn::ReleaseGrabConstraint(int32 HandIndex)

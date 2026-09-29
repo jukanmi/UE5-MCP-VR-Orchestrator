@@ -10,7 +10,7 @@
 ### VR 손 — `SPEC_vr_ghost_hand.md` · `SPEC_vr_grip_pose.md` 진행 상황 (브랜치 `fed/vr_ghost_hand-09252306`, 워크트리 `C:\github\UE5_MCP_VR_wt_vr_ghost_hand-09252306`, 2026-09-27 기준)
 - **ghost_hand**: M1·M2 완료. M3 = 손끝 캡슐(콜리전, 메시 정점 맞춤·손바닥 용접)·양손 충돌·핀치·주먹 판정 완료(`9433069e`). 관절→X_Bot AnimBP/Control Rig **비주얼** 매핑은 그래프 작업이라 미완 — DoList 1-19 등록. 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
   미충족 완료 기준: "손으로 NPC 를 밀 수 있다"(손 채널이 Pawn 무시) · 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
-- **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). M1 완료(손 채널 PhysicsBody Block, 헤드셋에서 잘 밀림). M2 = 후보 A(끊어지는 PhysicsConstraint) 구현·헤드셋에서 쥐어짐 확인. 다음 M3 = 손이 물건을 감싸는 비주얼(제안: 고정 포즈 대신 '닿을 때까지 굽히기' 절차적 감싸기, 미결정).
+- **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). M1 완료(손 채널 PhysicsBody Block, 헤드셋에서 잘 밀림). M2 = 후보 A(끊어지는 PhysicsConstraint) 구현·헤드셋에서 쥐어짐 확인. M3 완료(2026-09-30, 헤드셋 확인) — 닿을 때까지 굽히기 + 접촉 쥐기 + 팔 IK 로 손 메시↔콜라이더 일치. 남은 것: 컨트롤러 감싸기(듀얼 입력과 함께)·물건별 끊김 임계.
 - [ ] (보류) **한 손 컨트롤러 + 한 손 실제 손 동시 사용** — 코드는 손마다 이미 독립 판단. Quest 런타임이 컨트롤러가 켜져 있으면 핸드트래킹을 안 넘김(실측: 오른 컨트롤러 내려놓고 5초간 손 추적 0/300). Link 런타임은 `XR_META_simultaneous_hands_and_controllers` 지원(시작 로그), UE 5.5 OpenXR(헤더 1.0.27)은 미사용·미정의. 하려면 `PostConfigInit` 프로젝트 플러그인(IOpenXRExtensionPlugin)으로 확장 요청 + 세션 후 `xrResumeSimultaneousHandsAndControllersTrackingMETA`. 값: `XR_TYPE_SYSTEM_SIMULTANEOUS_HANDS_AND_CONTROLLERS_PROPERTIES_META=1000532001`·`..._TRACKING_RESUME_INFO_META=1000532002`·`..._PAUSE_INFO_META=1000532003`(Khronos openxr.h 대조).
 - [ ] **federated_orchestrator 운영 보강 반영** — 메인 트리 `tools/federated_orchestrator.py`(미추적)에 `--review gemini`·diff 파일 전달·빈 응답 가드 반영됨. 남은 것: 워크트리 pytest 용 `UV_PROJECT_ENVIRONMENT`·`UV_NO_SYNC` 를 스크립트가 직접 설정, UAT 가 `NewProjectTest.umap` 을 저장해 `git add -A` 에 섞이는 문제. 스크립트 자체의 git 추적 여부도 결정 필요.
 
@@ -69,6 +69,8 @@
 ---
 
 ## Done
+
+- [x] **SPEC_vr_grip_pose M3 + 접촉 쥐기 + 손 메시 일치 (2026-09-30, 헤드셋 확인)** — ① 감싸기: 쥔 물건이 있으면 손가락 굽힘을 줄여 끝마디 캡슐이 표면에서 멈춤(이분 탐색, `OverlapComponent`). ② 접촉 쥐기(핸드트래킹): 엄지+다른 손끝이 같은 물건에 0.5cm 안으로 닿고 두 캡슐을 잇는 선이 물건을 지나면 쥠, 1.5cm 떨어지면 놓음, 손↔쥔 물건 충돌 유지. 핀치·주먹은 인벤토리 슬롯 발동에만. 이유: 제스처는 손가락이 물건 속에 들어간 뒤 성립 → 막혀 있던 물리 손이 쥐는 순간 튀어 제약이 즉시 끊겼다(로그 10/10). ③ 토크 임계 30,000→60,000(2.5kg 양동이 손잡이 ≈ 41,700). ④ 손 메시↔콜라이더 5~7.6cm 어긋남: FBIK(PBIK) 반복 20 → 60 으로 평균 1cm, 이어 애님 프록시에서 팔 2본 IK(`AnimationCore::SolveTwoBoneIK`, 극점 = FBIK 팔꿈치)로 평균 0.2cm. 몸 메시 틱 = `TG_PostPhysics`(물리 손바닥 이번 프레임 위치로 그림). ⑤ WaterBucket 충돌 모양 8헐(속을 채움) → 자동 분해 20헐(벽 48방향 폐쇄·속 비움 수치 검증). ⑥ `bShowCollisionOnStart`(BP_VRPawn 켬). C 실험(마찰만 들기)은 아이템 사용 키 불가로 폐기 — SPEC 기록.
 
 완료 항목은 날짜와 함께 여기 적고, 주가 바뀌면 `docs/주간기록/2026-W##_주제.md` 로 옮기고 여기서 **삭제**한다. 비어 있는 것이 정상.
 주간기록·Memo·DoList 는 2026-09-21 부터 git 추적(`docs/` ignore 해제 — 그날 checkout 사고로 Memo 가 날아간 뒤 결정. git 경로는 소문자 `docs/memo.md`). 세션 간 유일한 서사 기록 — 커밋 해시·수치·함정을 반드시 같이 남길 것. `docs/.obsidian/`·`*.canvas`·`*.txt` 는 여전히 ignore. 주차 목록은 폴더 `ls`, 결정 이력은 `주간기록/_결정원장.md`.
