@@ -72,6 +72,15 @@ namespace
         Body->SetGenerateOverlapEvents(false);
         Body->SetEnableGravity(false);   // 드라이브가 중력을 이기느라 손이 처지지 않게
     }
+
+    // 손가락 캡슐 배열 위치 — 왼손 먼저, 손 안에서는 애님 인스턴스의 ShapeIndex(손가락, 마디) 순.
+    int32 FingerBodyIndex(bool bLeft, int32 Finger, int32 Shape)
+    {
+        return (bLeft ? 0 : UVRPawnAnimInstance::NumFingerShapes) + UVRPawnAnimInstance::ShapeIndex(Finger, Shape);
+    }
+
+    // 접촉 쥐기 짝 값 — 1~4 = 엄지의 짝 손가락(핀치), 이 값 = 손바닥과 손가락들로 감싸 쥠(주먹).
+    constexpr int32 PalmGripPartner = 5;
 }
 
 // ============================================================================
@@ -382,22 +391,26 @@ void AVRPawn::BeginPlay()
         PalmShapes.Add(Shape);
     }
 
-    // 손끝 캡슐 — 손가락 끝마디(Distal→Tip)만. 따로 움직이는 바디가 아니라 손바닥 바디에 용접된 모양이라,
-    // 어느 손끝이 닿든 엔진이 손 전체를 한 덩어리로 멈춘다. 핸드트래킹이 잡히기 전엔 충돌을 끄고 손바닥 안에 둔다.
-    for (int32 i = 0; i < 10; ++i)
+    // 손가락 캡슐 — 손가락마다 가운데 마디·끝마디(엄지는 첫 마디·끝마디). 첫 마디는 손바닥 상자와 겹쳐 두지 않는다.
+    // 따로 움직이는 바디가 아니라 손바닥 바디에 용접된 모양이라, 어느 마디가 닿든 엔진이 손 전체를 한 덩어리로 멈춘다.
+    // 핸드트래킹이 잡히기 전엔 충돌을 끄고 손바닥 안에 둔다.
+    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
+    for (int32 i = 0; i < 2 * PerHand; ++i)
     {
-        const bool bLeft = i < 5;
+        const bool bLeft = i < PerHand;
         UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
-        if (!Palm) continue;
+        if (!Palm) { FingerBodies.Add(nullptr); continue; }   // 자리를 비워 두어야 FingerBodyIndex 가 맞는다
 
-        UCapsuleComponent* Tip = NewObject<UCapsuleComponent>(this, *FString::Printf(TEXT("Fingertip%s%d"), bLeft ? TEXT("Left") : TEXT("Right"), i % 5));
-        Tip->InitCapsuleSize(1.f, 2.f);   // 실제 치수는 애님 인스턴스가 본에서 뽑은 뒤 ApplyHandColliderSizes 가 넣는다
-        SetupHandBodyCollision(Tip, bLeft);
-        Tip->SetCollisionResponseToAllChannels(ECR_Ignore);
-        Tip->SetWorldLocation(Palm->GetComponentLocation());
-        Tip->RegisterComponent();
-        Tip->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-        FingertipBodies.Add(Tip);
+        const int32 j = i % PerHand;
+        UCapsuleComponent* Body = NewObject<UCapsuleComponent>(this, *FString::Printf(TEXT("Finger%s%d_%d"), bLeft ? TEXT("Left") : TEXT("Right"),
+                                                                                    j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger));
+        Body->InitCapsuleSize(1.f, 2.f);   // 실제 치수는 애님 인스턴스가 메시에서 뽑은 뒤 ApplyHandColliderSizes 가 넣는다
+        SetupHandBodyCollision(Body, bLeft);
+        Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Body->SetWorldLocation(Palm->GetComponentLocation());
+        Body->RegisterComponent();
+        Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
+        FingerBodies.Add(Body);
     }
 
     // 물리 쥐기 제약 — 잡을 때 손 바디와 아이템을 잇는다. 이동·회전 전부 잠그고, 힘·토크 임계를 넘으면
@@ -578,9 +591,9 @@ void AVRPawn::ApplyHandColliderSizes()
     if (!Anim || !Anim->HasHandShapes() || AppliedHandColliderScale == HandColliderRadiusScale) return;
     AppliedHandColliderScale = HandColliderRadiusScale;
 
-    for (UCapsuleComponent* Tip : FingertipBodies)
+    for (UCapsuleComponent* Body : FingerBodies)
     {
-        if (Tip) Tip->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        if (Body) Body->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
     }
     for (UBoxComponent* Shape : PalmShapes)
     {
@@ -605,11 +618,15 @@ void AVRPawn::ApplyHandColliderSizes()
 
         for (int32 f = 0; f < 5; ++f)
         {
-            UCapsuleComponent* Tip = FingertipBodies.IsValidIndex(h * 5 + f) ? FingertipBodies[h * 5 + f].Get() : nullptr;
-            if (!Tip) continue;
-            const float Radius = Anim->GetTipRadius(Hand, f) * HandColliderRadiusScale;
-            Tip->SetCapsuleSize(Radius, FMath::Max(Anim->GetTipHalfHeight(Hand, f), Radius));
-            Tip->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
+            for (int32 s = 0; s < UVRPawnAnimInstance::ShapesPerFinger; ++s)
+            {
+                const int32 i = FingerBodyIndex(h == 0, f, s);
+                UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
+                if (!Body) continue;
+                const float Radius = Anim->GetShapeRadius(Hand, f, s) * HandColliderRadiusScale;
+                Body->SetCapsuleSize(Radius, FMath::Max(Anim->GetShapeHalfHeight(Hand, f, s), Radius));
+                Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
+            }
         }
     }
 }
@@ -640,7 +657,8 @@ void AVRPawn::UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm)
 {
     const bool bLeft = Hand == EControllerHand::Left;
     const int32 HandIndex = bLeft ? 0 : 1;
-    if (FingertipBodies.Num() != 10) return;
+    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
+    if (FingerBodies.Num() != 2 * PerHand) return;
     ApplyHandColliderSizes();
 
     // ponytail: 컨트롤러일 땐 관절이 없어 손끝 모양의 충돌을 끄고 손바닥 안에 둔다 — 컨트롤러 손가락도 막아야 하면 애니 포즈 손끝을 목표로.
@@ -662,15 +680,15 @@ void AVRPawn::UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm)
     if (bTracked != bFingertipsActive[HandIndex])
     {
         bFingertipsActive[HandIndex] = bTracked;
-        for (int32 f = 0; f < 5; ++f)
+        for (int32 j = 0; j < PerHand; ++j)
         {
-            UCapsuleComponent* Tip = FingertipBodies[HandIndex * 5 + f];
-            if (!Tip) continue;
-            if (bTracked) SetupHandBodyCollision(Tip, bLeft);
+            UCapsuleComponent* Body = FingerBodies[HandIndex * PerHand + j];
+            if (!Body) continue;
+            if (bTracked) SetupHandBodyCollision(Body, bLeft);
             else
             {
-                Tip->SetCollisionResponseToAllChannels(ECR_Ignore);
-                Tip->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
+                Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+                Body->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
             }
         }
     }
@@ -679,23 +697,23 @@ void AVRPawn::UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm)
     // 양손 끼임 해소(UpdateHandPassThrough)는 손바닥에 걸리므로, 용접된 손끝 모양도 반대 손 응답을 손바닥과 맞춘다.
     const ECollisionChannel OtherHand = bLeft ? ECC_HandRight : ECC_HandLeft;
     const ECollisionResponse OtherResponse = Palm->GetCollisionResponseToChannel(OtherHand);
-    for (int32 f = 0; f < 5; ++f)
+    for (int32 j = 0; j < PerHand; ++j)
     {
-        UCapsuleComponent* Tip = FingertipBodies[HandIndex * 5 + f];
-        if (Tip && Tip->GetCollisionResponseToChannel(OtherHand) != OtherResponse) Tip->SetCollisionResponseToChannel(OtherHand, OtherResponse);
+        UCapsuleComponent* Body = FingerBodies[HandIndex * PerHand + j];
+        if (Body && Body->GetCollisionResponseToChannel(OtherHand) != OtherResponse) Body->SetCollisionResponseToChannel(OtherHand, OtherResponse);
     }
 
-    // 손끝 모양 = 보이는 메시 손가락의 끝마디 구간(애님 인스턴스가 트래킹 관절 + 본 길이로 손바닥 기준 FK).
+    // 손가락 캡슐 = 보이는 메시 손가락의 가운데·끝마디 구간(애님 인스턴스가 트래킹 관절 + 본 길이로 손바닥 기준 FK).
     // 용접된 모양을 옮기면 엔진이 손바닥 바디의 모양을 다시 붙인다(UnWeld→Weld).
     // 손가락을 표면 안으로 굽히면 모양이 표면에 박히고, 엔진이 손 전체를 밀어내 손이 들린다.
     const UVRPawnAnimInstance* Anim = GetMesh() ? Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
     if (!Anim) return;
-    for (int32 f = 0; f < 5; ++f)
+    for (int32 j = 0; j < PerHand; ++j)
     {
-        UCapsuleComponent* Tip = FingertipBodies[HandIndex * 5 + f];
+        UCapsuleComponent* Tip = FingerBodies[HandIndex * PerHand + j];
         FVector Center;
         FQuat Rotation;
-        if (!Tip || !Anim->GetFingertipTarget(Hand, f, Center, Rotation)) continue;
+        if (!Tip || !Anim->GetFingerShapeTarget(Hand, j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger, Center, Rotation)) continue;
         // 목표는 손바닥 기준 상대값 — 손이 밀려도 변하지 않고 손가락이 실제로 움직일 때만 바뀐다.
         // 트래킹 미세 떨림(수 mm)마다 다시 붙이지 않도록 0.2cm·2° 미만 변화는 무시.
         if (FVector::DistSquared(Tip->GetRelativeLocation(), Center) < FMath::Square(0.2f)
@@ -1802,15 +1820,26 @@ void AVRPawn::UpdateContactGrab()
         {
             if (bContactHeld[h])
             {
-                // 엄지나 짝 손끝이 표면에서 떨어지면(손을 폄) 놓는다. 쥔 동안은 감싸기가 손끝을 표면에 멈춰 두어 닿아 있다.
+                // 짝이 표면에서 떨어지면(손을 폄) 놓는다. 쥔 동안은 감싸기가 마디를 표면에 멈춰 두어 닿아 있다.
+                // 핀치 = 엄지와 짝 손가락 둘 다, 주먹 = 손바닥과 손가락 하나 이상이 닿아 있어야 유지.
                 const ADroppedItemBase* Item = ContactItem[h].Get();
-                bHeld = IsValid(Item) && IsFingertipTouching(bLeft, 0, Item->ItemMesh, ContactReleaseMargin)
-                     && IsFingertipTouching(bLeft, ContactPartner[h], Item->ItemMesh, ContactReleaseMargin);
+                const UPrimitiveComponent* HeldMesh = IsValid(Item) ? Item->ItemMesh : nullptr;
+                if (ContactPartner[h] == PalmGripPartner)
+                {
+                    bHeld = IsPalmTouching(bLeft, HeldMesh, ContactReleaseMargin);
+                    bool bAnyFinger = false;
+                    for (int32 f = 1; f < 5 && bHeld && !bAnyFinger; ++f) bAnyFinger = FingerTouching(bLeft, f, HeldMesh, ContactReleaseMargin) != nullptr;
+                    bHeld = bHeld && bAnyFinger;
+                }
+                else
+                {
+                    bHeld = FingerTouching(bLeft, 0, HeldMesh, ContactReleaseMargin) && FingerTouching(bLeft, ContactPartner[h], HeldMesh, ContactReleaseMargin);
+                }
             }
             else if (!bInventoryOpen && Inventory && !Inventory->GetHeldItem(HandSlot))
             {
                 int32 Partner = INDEX_NONE;
-                if (ADroppedItemBase* Item = FindPinchedItem(bLeft, Partner))
+                if (ADroppedItemBase* Item = FindGraspedItem(bLeft, Partner))
                 {
                     ContactItem[h] = Item;
                     ContactPartner[h] = Partner;
@@ -1829,41 +1858,82 @@ void AVRPawn::UpdateContactGrab()
     }
 }
 
-bool AVRPawn::IsFingertipTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const
+const UCapsuleComponent* AVRPawn::FingerTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const
 {
-    const int32 i = (bLeft ? 0 : 5) + Finger;
-    const UCapsuleComponent* Tip = (Finger >= 0 && Finger < 5 && FingertipBodies.IsValidIndex(i)) ? FingertipBodies[i].Get() : nullptr;
-    if (!Tip || !IsValid(Item)) return false;
-    return Item->OverlapComponent(Tip->GetComponentLocation(), Tip->GetComponentQuat(),
-                                  FCollisionShape::MakeCapsule(Tip->GetScaledCapsuleRadius() + Margin, Tip->GetScaledCapsuleHalfHeight() + Margin));
+    if (!IsValid(Item) || Finger < 0 || Finger >= 5) return nullptr;
+    for (int32 Shape = UVRPawnAnimInstance::ShapesPerFinger - 1; Shape >= 0; --Shape)   // 끝마디 먼저
+    {
+        const int32 i = FingerBodyIndex(bLeft, Finger, Shape);
+        const UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
+        if (Body && Item->OverlapComponent(Body->GetComponentLocation(), Body->GetComponentQuat(),
+                                           FCollisionShape::MakeCapsule(Body->GetScaledCapsuleRadius() + Margin, Body->GetScaledCapsuleHalfHeight() + Margin)))
+        {
+            return Body;
+        }
+    }
+    return nullptr;
 }
 
-ADroppedItemBase* AVRPawn::FindPinchedItem(bool bLeft, int32& OutPartner) const
+bool AVRPawn::IsPalmTouching(bool bLeft, const UPrimitiveComponent* Item, float Margin) const
 {
-    const int32 Base = bLeft ? 0 : 5;
-    const UCapsuleComponent* Thumb = FingertipBodies.IsValidIndex(Base) ? FingertipBodies[Base].Get() : nullptr;
-    UWorld* World = GetWorld();
-    if (!Thumb || !World) return nullptr;
+    const int32 h = bLeft ? 0 : 1;
+    const UBoxComponent* Shape = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
+    return Shape && IsValid(Item)
+        && Item->OverlapComponent(Shape->GetComponentLocation(), Shape->GetComponentQuat(), FCollisionShape::MakeBox(Shape->GetScaledBoxExtent() + FVector(Margin)));
+}
 
-    // 엄지에 닿은 드랍 아이템이 후보. 짝 손끝도 같은 아이템에 닿고, 두 손끝을 잇는 선이 아이템을 지나야 "사이에 끼었다" —
-    // 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
-    // ponytail: 엄지 기준만 — 엄지 없이 손가락·손바닥으로 감싸거나 손바닥에 올려 받치는 쥐기는 안 걸린다.
+ADroppedItemBase* AVRPawn::FindGraspedItem(bool bLeft, int32& OutPartner) const
+{
+    const int32 h = bLeft ? 0 : 1;
+    const UBoxComponent* Palm = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
+    UWorld* World = GetWorld();
+    if (!Palm || !World) return nullptr;
+
+    // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 —
+    //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
+    //   주먹: 손바닥 모양이 닿고, 손가락 2개 이상이 닿으며, 손바닥 중심 → 그 캡슐 선이 아이템을 지난다.
+    //         주먹으로 감싸면 엄지가 물건이 아니라 손가락 위를 덮어 핀치로는 안 걸린다.
+    // "선이 지난다" = 사이에 끼었다. 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
+    // ponytail: 손바닥에 올려 받치기(손가락이 안 감쌈)는 안 걸린다.
     TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, Thumb->GetComponentLocation(), Thumb->GetComponentQuat(), FCollisionObjectQueryParams(ECC_PhysicsBody),
-        FCollisionShape::MakeCapsule(Thumb->GetScaledCapsuleRadius() + ContactGrabMargin, Thumb->GetScaledCapsuleHalfHeight() + ContactGrabMargin));
+    World->OverlapMultiByObjectType(Overlaps, Palm->GetComponentLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
+    const FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(GraspTrace), false);
     for (const FOverlapResult& Overlap : Overlaps)
     {
         ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
         if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
         if (Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Item || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Item)) continue;
-        for (int32 f = 1; f < 5; ++f)
+        auto Between = [&](const FVector& A, const FVector& B)
         {
-            const UCapsuleComponent* Tip = FingertipBodies.IsValidIndex(Base + f) ? FingertipBodies[Base + f].Get() : nullptr;
-            if (!Tip || !IsFingertipTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin)) continue;
             FHitResult Hit;
-            if (!Item->ItemMesh->LineTraceComponent(Hit, Thumb->GetComponentLocation(), Tip->GetComponentLocation(), FCollisionQueryParams(SCENE_QUERY_STAT(PinchTrace), false))) continue;
-            OutPartner = f;
-            return Item;
+            return Item->ItemMesh->LineTraceComponent(Hit, A, B, TraceParams);
+        };
+
+        if (const UCapsuleComponent* Thumb = FingerTouching(bLeft, 0, Item->ItemMesh, ContactGrabMargin))
+        {
+            for (int32 f = 1; f < 5; ++f)
+            {
+                const UCapsuleComponent* Other = FingerTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin);
+                if (Other && Between(Thumb->GetComponentLocation(), Other->GetComponentLocation()))
+                {
+                    OutPartner = f;
+                    return Item;
+                }
+            }
+        }
+        if (IsPalmTouching(bLeft, Item->ItemMesh, ContactGrabMargin))
+        {
+            int32 Wrapped = 0;
+            for (int32 f = 1; f < 5; ++f)
+            {
+                const UCapsuleComponent* Finger = FingerTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin);
+                if (Finger && Between(Palm->GetComponentLocation(), Finger->GetComponentLocation())) ++Wrapped;
+            }
+            if (Wrapped >= 2)
+            {
+                OutPartner = PalmGripPartner;
+                return Item;
+            }
         }
     }
     return nullptr;
@@ -2093,10 +2163,19 @@ float AVRPawn::HeldMassScale(int32 HandIndex) const
     return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass)) / PalmMass;
 }
 
-const UPrimitiveComponent* AVRPawn::GetGrabbedItemMesh(EControllerHand Hand) const
+void AVRPawn::GetNearbyItemMeshes(EControllerHand Hand, TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const
 {
-    const ADroppedItemBase* Held = GrabbedItems[Hand == EControllerHand::Left ? 0 : 1].Get();
-    return IsValid(Held) ? Held->ItemMesh : nullptr;
+    const int32 h = Hand == EControllerHand::Left ? 0 : 1;
+    const UBoxComponent* Palm = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
+    UWorld* World = GetWorld();
+    if (!Palm || !World) return;
+    TArray<FOverlapResult> Overlaps;
+    World->OverlapMultiByObjectType(Overlaps, Palm->GetComponentLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
+    for (const FOverlapResult& Overlap : Overlaps)
+    {
+        const ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
+        if (Item && Overlap.GetComponent() == Item->ItemMesh) Out.AddUnique(Item->ItemMesh);
+    }
 }
 
 void AVRPawn::ReleaseGrabConstraint(int32 HandIndex)

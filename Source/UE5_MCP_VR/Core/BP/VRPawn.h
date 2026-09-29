@@ -197,8 +197,8 @@ public:
         return Hand == EControllerHand::Left ? HandTrackStateLeft : HandTrackStateRight;
     }
 
-    /** 물리 제약으로 쥐고 있는 아이템의 메시. 빈손이면 null. 손가락 감싸기(애님 인스턴스)가 접촉 판정에 쓴다. */
-    const UPrimitiveComponent* GetGrabbedItemMesh(EControllerHand Hand) const;
+    /** 손바닥 20cm 안 드랍 아이템 메시(쥔 것 포함). 손가락 감싸기(애님 인스턴스)가 마디 고정 판정에 쓴다. */
+    void GetNearbyItemMeshes(EControllerHand Hand, TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const;
 
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
@@ -737,9 +737,9 @@ private:
     void ApplyHandColliderSizes();
     float AppliedHandColliderScale = -1.f;
 
-    /** 손바닥에 용접된 손끝 캡슐(손당 5개, 왼손 0~4·오른손 5~9). BeginPlay 에 생성. */
+    /** 손바닥에 용접된 손가락 캡슐 — 손가락마다 가운데 마디·끝마디(손당 10개, 왼손 먼저, UVRPawnAnimInstance::ShapeIndex 순). BeginPlay 에 생성. */
     UPROPERTY(Transient)
-    TArray<TObjectPtr<UCapsuleComponent>> FingertipBodies;
+    TArray<TObjectPtr<UCapsuleComponent>> FingerBodies;
 
     /** 손바닥 바디에 용접된 손바닥 모양(왼손 0·오른손 1) — 메시 손바닥 실제 중심에 놓는다. 바디 자체는 작은 핵. */
     UPROPERTY(Transient)
@@ -748,7 +748,7 @@ private:
     /** 손바닥 모양의 손바닥 바디 기준 상대 변환. 핸드트래킹이면 손목 관절 오프셋, 컨트롤러면 그립 보정 기준. */
     FTransform ComputePalmShapeRelative(EControllerHand Hand) const;
 
-    /** 손끝 캡슐 충돌이 켜져 있는가(왼손 0·오른손 1). 켜고 끌 때만 충돌 설정을 바꾼다. */
+    /** 손가락 캡슐 충돌이 켜져 있는가(왼손 0·오른손 1). 켜고 끌 때만 충돌 설정을 바꾼다. */
     bool bFingertipsActive[2] = { false, false };
 
     /** 손 이펙터 공통 — 핸드트래킹 중이면 손목 관절 위치·손바닥 관절 보정, 아니면 컨트롤러 그립 보정. */
@@ -916,16 +916,19 @@ private:
      *  bKeepCollision = 손과 쥔 물건의 충돌을 유지(접촉 쥐기 — 닿은 순간이라 겹침이 없다). 컨트롤러 쥐기는 손이 물건에 박혀 있을 수 있어 끈다. */
     bool GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft, bool bKeepCollision = false);
 
-    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손끝 사이에 물건이 끼면 쥐고, 둘 중 하나가 표면에서 떨어지면 놓는다. */
+    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손가락(핀치) 또는 손바닥과 손가락들(주먹) 사이에 물건이 끼면 쥐고, 짝이 표면에서 떨어지면 놓는다. */
     void UpdateContactGrab();
 
-    /** 엄지 캡슐과 다른 손끝 캡슐이 함께 닿아 있고 둘을 잇는 선이 지나는 아이템. OutPartner = 짝 손가락(1~4). */
-    ADroppedItemBase* FindPinchedItem(bool bLeft, int32& OutPartner) const;
+    /** 핀치 또는 주먹으로 사이에 낀 아이템. OutPartner = 핀치면 엄지의 짝 손가락(1~4), 주먹이면 손바닥(5). */
+    ADroppedItemBase* FindGraspedItem(bool bLeft, int32& OutPartner) const;
 
-    /** 손끝 캡슐 하나가 물건 표면에서 Margin(cm) 안에 있는지. */
-    bool IsFingertipTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const;
+    /** 손가락 하나의 캡슐(끝마디 먼저, 가운데 마디) 중 물건 표면에서 Margin(cm) 안에 있는 것. 없으면 null. */
+    const UCapsuleComponent* FingerTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const;
 
-    /** 접촉 쥐기 상태(왼손 0·오른손 1), 엄지 사이에 낀 아이템과 짝 손가락. 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
+    /** 손바닥 모양이 물건 표면에서 Margin(cm) 안에 있는지. */
+    bool IsPalmTouching(bool bLeft, const UPrimitiveComponent* Item, float Margin) const;
+
+    /** 접촉 쥐기 상태(왼손 0·오른손 1), 사이에 낀 아이템과 짝(엄지의 짝 손가락 1~4, 주먹 5). 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
     bool bContactHeld[2] = { false, false };
     TWeakObjectPtr<ADroppedItemBase> ContactItem[2];
     int32 ContactPartner[2] = { INDEX_NONE, INDEX_NONE };
