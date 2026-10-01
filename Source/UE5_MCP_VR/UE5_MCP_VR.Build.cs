@@ -16,7 +16,13 @@ public class UE5_MCP_VR : ModuleRules
 
 		// Uncomment if you are using Slate UI
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
+
+		// 에디터 전용: NPC 뼈 캡슐 반지름 자동 채움(UNPCBoneCapsuleSet::FillFromMeshes)이 메시 정점을 읽는다.
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "MeshUtilitiesEngine", "MeshUtilitiesCommon" });
+		}
+
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

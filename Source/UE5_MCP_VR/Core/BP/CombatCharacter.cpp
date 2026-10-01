@@ -1,5 +1,6 @@
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
+#include "Core/Physics/NPCBoneCapsuleSet.h"
 #include "Core/Types/PlayerGameplayTags.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
@@ -26,6 +27,15 @@ static EBodyPartType BoneToBodyPart(FName Bone)
         || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")) || B.Contains(TEXT("toe")))
         return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
     return EBodyPartType::Torso;
+}
+
+static TAutoConsoleVariable<bool> CVarDrawBoneCapsules(TEXT("npc.DrawBoneCapsules"), false, TEXT("NPC 뼈 캡슐(손 충돌 판정용)을 디버그 드로우로 그린다."));
+
+void ACombatCharacter::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    // 주민·적은 틱 간격이 0.1초라 한 프레임짜리 선은 깜박인다 — 다음 틱까지 남긴다.
+    if (BoneCapsules && CVarDrawBoneCapsules.GetValueOnGameThread()) BoneCapsules->DrawDebug(GetMesh(), GetActorTickInterval());
 }
 
 float ACombatCharacter::BodyPartMultiplierForBone(FName Bone)
