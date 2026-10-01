@@ -175,21 +175,17 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandPassThroughDistance = 6.f;
 
-    /** 물리 손이 NPC 에 막혀 목표에서 이만큼(cm) 이상 벌어지면 NPC 를 밀기 시작한다. 드라이브 지연 오차(2cm 안)를 밀기로 오인하지 않게 그 위로. */
+    /** 실제 손이 NPC 뼈 캡슐 표면보다 이만큼(cm) 넘게 들어가야 NPC 를 밀기 시작한다(살짝 닿기만 한 건 밀지 않게). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandPushMinError = 3.f;
 
-    /** 지속 밀기 강도(1/s) — 밀림 속도(cm/s) = (오차−최소오차)cm × 이 값. 0 = 지속 밀기 끔. */
+    /** 지속 밀기 강도(1/s) — 밀림 속도(cm/s) = (들어간 깊이−최소)cm × 이 값. 0 = 지속 밀기 끔. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandPushGain = 8.f;
 
     /** 지속 밀기 속도 상한(cm/s). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float MaxHandPushSpeed = 120.f;
-
-    /** 막은 NPC 를 찾는 손바닥 주변 구 반지름(cm). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandPushProbeRadius = 15.f;
 
     /** 손 콜라이더 두께 배율 — 손끝 캡슐 반지름·손바닥 두께에 곱한다. 치수 자체는 보이는 손 메시 정점에 맞춘 값.
      *  메시가 파묻히면 올리고, 닿기 전에 막히면 내린다. PIE 중 바로 반영. */
@@ -744,11 +740,12 @@ private:
     /** 목표에서 Threshold 넘게 밀려난 바디는 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
     void UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold);
 
-    /** 손 드라이브 목표(손바닥 바디 위치·회전)에서 손 모양이 근처 NPC 뼈 캡슐에 들어가면 목표를 표면 밖으로 옮긴 위치. 안 겹치면 그대로. */
-    FVector ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation) const;
+    /** 손 드라이브 목표(손바닥 바디 위치·회전)에서 손 모양이 근처 NPC 뼈 캡슐에 들어가면 목표를 표면 밖으로 옮긴 위치. 안 겹치면 그대로.
+     *  OutTouched = 실제 손 위치에서 가장 깊이 들어간 NPC(없으면 nullptr). */
+    FVector ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation, class ACombatCharacter*& OutTouched) const;
 
-    /** 손이 NPC 에 막혀 목표와 벌어졌으면 NPC 를 그 방향(수평)으로 오차 비례 속도로 민다. */
-    void PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& Target, float Error, float DeltaTime);
+    /** 물리 손이 NPC 뼈 캡슐 표면(Surface)에 와 있고 실제 손이 그 안으로 들어가 있으면, 들어간 깊이 비례 속도로 그 방향(수평)으로 민다. */
+    void PushTouchedNPC(class ACombatCharacter* NPC, const UPrimitiveComponent* Body, const FVector& Surface, const FVector& RealHand, float DeltaTime);
 
     /** 바디별 직전 틱에 보낸 위치 — 스프링이면 목표(목표 속도 계산용), 속도 추종이면 이번 스텝 무게중심 도착 예정 위치(접촉 판정용). */
     TMap<const UPrimitiveComponent*, FVector> GhostPrevTargets;

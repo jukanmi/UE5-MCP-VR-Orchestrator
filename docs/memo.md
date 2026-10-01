@@ -12,7 +12,6 @@
   "손으로 NPC 를 밀 수 있다": 구현 완료(2026-09-30) — 손 바디가 Pawn Block, 자기 캡슐·몸 메시는 손 채널 Ignore, 막혀 벌어진 오차 비례로 NPC 수평 밀기(`PushNPCWithBlockedHand`). 헤드셋 확인 완료(2026-10-02). 막힘 판정은 npc_bone_collision M2 로 뼈 캡슐 기준이 됐고, 밀기 판정은 M3 에서 교체. 미충족: 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
 - **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). M1 완료(손 채널 PhysicsBody Block, 헤드셋에서 잘 밀림). M2 = 후보 A(끊어지는 PhysicsConstraint) 구현·헤드셋에서 쥐어짐 확인. M3·M4 완료(2026-09-30, 헤드셋 확인) — 접촉 쥐기(핀치·주먹) + 가운데 마디 캡슐 + 관절별 고정 감싸기 + 팔 IK 로 손 메시↔콜라이더 일치. 남은 것: 컨트롤러 감싸기(듀얼 입력과 함께)·물건별 끊김 임계·양동이 무게(DT_ItemRegistry 0.5 실험값, 미커밋).
 - (선택) **고스트 손 드라이브 하나로 통합** — 양손 맞대기 남은 0.14cm(2프레임 주기)까지 없애려면 속도 덮어쓰기·접촉 전환을 버리고 드라이브 하나(강성 22500·감쇠 300·최대 10000 = 100m/s², 앞먹임 2cm 차단 조건 제거)로. PIE 실측 양손 0.000cm·널빤지 0.02cm·사인 왕복 3.3cm(차단 조건 탓, 빼면 이론 0.14cm). 미는 힘 상한 13 → 88N. 헤드셋에서 0.14cm 가 거슬릴 때만.
-- **npc_bone_collision** (`SPEC_npc_bone_collision.md`): M1·M2 완료(Done). 다음 M3(접촉 기준 밀기).
 - [ ] (보류) **한 손 컨트롤러 + 한 손 실제 손 동시 사용** — 코드는 손마다 이미 독립 판단. Quest 런타임이 컨트롤러가 켜져 있으면 핸드트래킹을 안 넘김(실측: 오른 컨트롤러 내려놓고 5초간 손 추적 0/300). Link 런타임은 `XR_META_simultaneous_hands_and_controllers` 지원(시작 로그), UE 5.5 OpenXR(헤더 1.0.27)은 미사용·미정의. 하려면 `PostConfigInit` 프로젝트 플러그인(IOpenXRExtensionPlugin)으로 확장 요청 + 세션 후 `xrResumeSimultaneousHandsAndControllersTrackingMETA`. 값: `XR_TYPE_SYSTEM_SIMULTANEOUS_HANDS_AND_CONTROLLERS_PROPERTIES_META=1000532001`·`..._TRACKING_RESUME_INFO_META=1000532002`·`..._PAUSE_INFO_META=1000532003`(Khronos openxr.h 대조).
 - [ ] **federated_orchestrator 운영 보강 반영** — 메인 트리 `tools/federated_orchestrator.py`(미추적)에 `--review gemini`·diff 파일 전달·빈 응답 가드 반영됨. 남은 것: 워크트리 pytest 용 `UV_PROJECT_ENVIRONMENT`·`UV_NO_SYNC` 를 스크립트가 직접 설정, UAT 가 `NewProjectTest.umap` 을 저장해 `git add -A` 에 섞이는 문제. 스크립트 자체의 git 추적 여부도 결정 필요.
 
@@ -72,6 +71,8 @@
 ---
 
 ## Done
+
+- [x] **SPEC_npc_bone_collision M3 — 접촉 기준 NPC 밀기, SPEC 전체 완료 (2026-10-02, 헤드셋 확인)** — `ProjectHandOutOfNPCs` 가 실제 손이 가장 깊이 들어간 NPC 를 함께 돌려주고, `PushTouchedNPC` 는 물리 손이 그 표면 목표에서 2cm 안일 때만 들어간 깊이 비례로 수평 스윕 이동. 손바닥 주변 구 오버랩·`HandPushProbeRadius` 삭제. PIE: NPC 23.6cm 밀림·손 멈추면 깊이 3cm 에서 정지, 바닥에 막힌 손이 NPC 앞 40cm 면 0cm, 뒤 NPC 캡슐에 막히면 정지. 시험 함정: 앵커를 한 프레임에 수십 cm 옮기면 `TryMeleeHits` 가 발동해 NPC 가 넘어진다.
 
 - [x] **SPEC_npc_bone_collision M2 — 손이 NPC 뼈 캡슐에서 멈춤 (2026-10-02, 헤드셋 확인)** — `AVRPawn::ProjectHandOutOfNPCs`: 손 모양(손바닥 상자 → 캡슐 2줄 + 손가락 캡슐 10)과 근처 NPC 뼈 캡슐의 선분 최단거리로 드라이브 목표를 표면 밖으로 밀어냄(×4회). 밀어낼 방향 = 물리 손 쪽, 실제 손이 뼈 축을 넘으면 축 기준으로 비춰서 계산(안 그러면 몸을 돌아 뒤로 미끄러짐 — PIE 실측). 치수 있는 NPC 는 몸 캡슐이 손 채널 Ignore(`ACombatCharacter::BeginPlay`). 손 채널 상수는 `Core/Types/CollisionChannels.h`. 밀기는 M3 전까지 기존 구 오버랩.
 - [x] **고스트 손 관성 제거 + 양손 버벅임 (2026-10-02, 헤드셋 확인)** — 원인 = Chaos 가속 모드 드라이브의 최대 힘이 곧 가속도 상한(1500 = 15m/s², 엔진 `SetMaxForce` 확인): 40cm 이동에 254ms·17.4cm 지나침. 빈손은 매 틱 속도를 목표 도달 속도로 덮어씀(`bHandVelocityTracking`) → 40ms·지나침 0. 덮어쓰기는 곧 충격(0.9kg×1m/s, 90fps ≈ 80N)이라 물건을 누르면 떨려서, 닿아 있는 동안(무게중심이 보낸 곳에 0.2cm 넘게 못 닿음 → 되민 방향 = 법선, 실제 손이 그 면 밖으로 나오면 해제)과 쥐었을 때는 스프링: 널빤지 누르기 1.2 → 0.01cm. 양손 버벅임 원인 = 두 손바닥 CCD(충돌 순간 되감기 ↔ 파고들기 2프레임 반복) → MACD: 0.56 → 0.14cm, 책상 내리치기 관통 없음. 함정: UE 5.5 `ComponentSweepMulti` 는 용접 모양 오프셋을 무시하고 같은 액터를 통째로 제외 — 손 스윕에 못 씀. 헤드셋 없는 PIE 측정은 `t.MaxFPS 90` + 백그라운드 스로틀 끄기 필수(30fps·8fps 로 떨어지면 수치가 달라짐).

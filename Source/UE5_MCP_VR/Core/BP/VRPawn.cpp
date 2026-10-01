@@ -604,44 +604,41 @@ void AVRPawn::UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float
     else if (!bBlocking && Error < Threshold * 0.5f)  Body->SetCollisionResponseToChannel(Other, ECR_Block);
 }
 
-void AVRPawn::PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& Target, float Error, float DeltaTime)
+void AVRPawn::PushTouchedNPC(ACombatCharacter* NPC, const UPrimitiveComponent* Body, const FVector& Surface, const FVector& RealHand, float DeltaTime)
 {
-    // 물리 손이 NPC 캡슐에 막혀 실제 손과 벌어지면, 그 벌어진 방향(수평)으로 NPC 를 오차에 비례한 속도로 민다.
+    // 실제 손이 NPC 뼈 캡슐 안으로 들어간 깊이(표면으로 옮긴 목표 ↔ 실제 손)에 비례한 속도로, 들어간 방향(수평)으로 민다.
+    // 물리 손이 그 표면에 와 있을 때만 — 벽에 막혀 NPC 에 못 닿았으면 실제 손이 NPC 안에 있어도 밀지 않는다.
     // 스윙(TryMeleeHits)은 1m/s 이상 순간 타격이고, 이건 느리게 대고 미는 접촉 몫이다.
-    if (HandPushGain <= 0.f || Error < HandPushMinError) return;
+    static constexpr float SurfaceTolerance = 2.f;   // 물리 손 ↔ 표면 목표(cm). 빈손 속도 추종은 매 스텝 목표에 닿는다.
+    if (!NPC || NPC->bIsDead || HandPushGain <= 0.f) return;
+    if (FVector::DistSquared(Body->GetComponentLocation(), Surface) > FMath::Square(SurfaceTolerance)) return;
 
-    FVector Dir = Target - Body->GetComponentLocation();
+    const float Depth = FVector::Dist(RealHand, Surface);
+    FVector Dir = RealHand - Surface;
     Dir.Z = 0.f;
-    if (!Dir.Normalize()) return;
+    if (Depth < HandPushMinError || !Dir.Normalize()) return;
 
-    // ponytail: 막은 게 NPC 인지 손바닥 주변 구 하나로 추정 — 손끝만 닿거나 벽에 막힌 채 NPC 가 곁에 있어도 밀린다. 정밀하게는 접촉 리포트(HitEvent)로.
-    TArray<FOverlapResult> Overlaps;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(HandPush), /*bTraceComplex=*/false, this);
-    GetWorld()->OverlapMultiByObjectType(Overlaps, Body->GetComponentLocation(), FQuat::Identity,
-        FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(HandPushProbeRadius), Params);
-
-    const float PushSpeed = FMath::Min((Error - HandPushMinError) * HandPushGain, MaxHandPushSpeed);
-    for (const FOverlapResult& O : Overlaps)
-    {
-        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
-        if (!NPC || NPC->bIsDead) continue;
-        // 스윕으로 옮겨 벽·지형에 막히면 거기서 멈춘다.
-        NPC->AddActorWorldOffset(Dir * PushSpeed * DeltaTime, /*bSweep=*/true);
-    }
+    // 스윕으로 옮겨 벽·지형에 막히면 거기서 멈춘다.
+    const float PushSpeed = FMath::Min((Depth - HandPushMinError) * HandPushGain, MaxHandPushSpeed);
+    NPC->AddActorWorldOffset(Dir * PushSpeed * DeltaTime, /*bSweep=*/true);
 }
 
-FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation) const
+FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation, ACombatCharacter*& OutTouched) const
 {
     // 손 모양이 닿을 수 있는 NPC 의 뼈 캡슐만 모은다. 메시 경계는 포즈(애니메이션·래그돌)를 따라간다.
     // 뼈 캡슐 치수가 없는 NPC 는 GetWorldCapsules 가 거절하고, 그 NPC 는 몸 캡슐이 손을 막는다.
     static constexpr float HandReach = 30.f;   // 손바닥 바디 중심 → 손 모양 끝(손끝)까지 여유(cm)
+    OutTouched = nullptr;
     TArray<FNPCWorldCapsule> Bones, Caps;
+    TArray<ACombatCharacter*> BoneOwners;   // Bones 와 같은 순서
     for (TActorIterator<ACombatCharacter> It(GetWorld()); It; ++It)
     {
         const USkeletalMeshComponent* NPCMesh = It->GetMesh();
         if (!It->BoneCapsules || !NPCMesh) continue;
         if (FVector::DistSquared(NPCMesh->Bounds.Origin, Location) > FMath::Square(NPCMesh->Bounds.SphereRadius + HandReach)) continue;
-        if (It->BoneCapsules->GetWorldCapsules(NPCMesh, Caps)) Bones.Append(Caps);
+        if (!It->BoneCapsules->GetWorldCapsules(NPCMesh, Caps)) continue;
+        Bones.Append(Caps);
+        while (BoneOwners.Num() < Bones.Num()) BoneOwners.Add(*It);
     }
     if (Bones.IsEmpty()) return Location;
 
@@ -689,8 +686,9 @@ FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent*
         {
             const FVector A = TargetTM.TransformPosition(S.A);
             const FVector B = TargetTM.TransformPosition(S.B);
-            for (const FNPCWorldCapsule& C : Bones)
+            for (int32 b = 0; b < Bones.Num(); ++b)
             {
+                const FNPCWorldCapsule& C = Bones[b];
                 FVector P, Q;
                 FMath::SegmentDistToSegmentSafe(A, B, C.A, C.B, P, Q);
                 const float Reach = S.Radius + C.Radius;
@@ -704,7 +702,12 @@ FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent*
                 const FVector Gap = P - Q;
                 const bool bCrossed = FVector::DotProduct(Gap, N) < 0.f;
                 const float D = Reach - FMath::Abs(FVector::DotProduct(Gap, N));
-                if (D > Depth) { Depth = D; Push = (bCrossed ? -2.f * Gap : FVector::ZeroVector) + N * D; }
+                if (D > Depth)
+                {
+                    Depth = D;
+                    Push = (bCrossed ? -2.f * Gap : FVector::ZeroVector) + N * D;
+                    if (Iter == 0) OutTouched = BoneOwners[b];   // 실제 손 위치에서 가장 깊이 들어간 NPC
+                }
             }
         }
         if (Depth <= KINDA_SMALL_NUMBER) break;
@@ -744,11 +747,11 @@ void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
         // 물리 엔진은 NPC 뼈 캡슐을 모르므로 드라이브 목표를 뼈 캡슐 밖으로 옮겨 손이 표면에서 멈추게 한다.
         const FVector RealHand = Anchor->GetComponentLocation();
         const FQuat TargetRotation = Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid);
-        const FVector Target = ProjectHandOutOfNPCs(Hand, Palm, RealHand, TargetRotation);
+        ACombatCharacter* TouchedNPC = nullptr;
+        const FVector Target = ProjectHandOutOfNPCs(Hand, Palm, RealHand, TargetRotation, TouchedNPC);
+        PushTouchedNPC(TouchedNPC, Palm, Target, RealHand, DeltaTime);   // 드라이브 전 물리 손 위치로 "표면에 와 있나"를 본다
         const float PalmError = DriveGhostBody(Palm, Constraint, Target, TargetRotation, DeltaTime, HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
         UpdateHandPassThrough(Palm, Hand == EControllerHand::Left, PalmError, HandPassThroughDistance);
-        // 밀기는 실제 손과 벌어진 만큼 — 뼈 캡슐에 막힌 오차는 드라이브 오차(옮긴 목표 기준)에 안 잡힌다.
-        PushNPCWithBlockedHand(Palm, RealHand, FVector::Dist(Palm->GetComponentLocation(), RealHand), DeltaTime);
         UpdateFingertipShapes(Hand, Palm);
     };
 
