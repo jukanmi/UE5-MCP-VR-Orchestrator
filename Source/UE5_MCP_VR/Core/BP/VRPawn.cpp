@@ -56,10 +56,11 @@ namespace
     constexpr ECollisionChannel ECC_HandLeft  = ECC_GameTraceChannel1;
     constexpr ECollisionChannel ECC_HandRight = ECC_GameTraceChannel2;
 
-    // 손 바디는 벽(WorldStatic/WorldDynamic)·물리 물체(PhysicsBody — 드랍 아이템·래그돌)·반대쪽 손에 막히고 나머지는 무시한다.
+    // 손 바디는 벽(WorldStatic/WorldDynamic)·물리 물체(PhysicsBody — 드랍 아이템·래그돌)·NPC 캡슐(Pawn)·반대쪽 손에 막히고 나머지는 무시한다.
     // 아이템과의 접촉(밀기·받치기·쳐내기)은 Chaos 가 벽과 같은 규칙으로 푼다 — 들고 있는 아이템은 QueryOnly 라 손과 안 부딪힌다.
     // 같은 손 채널을 무시해야 주먹(손끝↔손바닥)·핀치(손끝↔손끝)가 자기 몸체에 걸리지 않는다.
-    // 자기 캡슐·NPC(Pawn)를 막으면 몸에 손이 걸린다. Visibility 를 막으면 UI 포인터 광선을 가린다.
+    // Pawn 을 막으므로 자기 캡슐·몸 메시는 BeginPlay 에서 손 채널을 무시하게 한다.
+    // Visibility 를 막으면 UI 포인터 광선을 가린다.
     void SetupHandBodyCollision(UPrimitiveComponent* Body, bool bLeft)
     {
         Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -68,6 +69,7 @@ namespace
         Body->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
         Body->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
         Body->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+        Body->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
         Body->SetCollisionResponseToChannel(bLeft ? ECC_HandRight : ECC_HandLeft, ECR_Block);
         Body->SetGenerateOverlapEvents(false);
         Body->SetEnableGravity(false);   // 드라이브가 중력을 이기느라 손이 처지지 않게
@@ -435,6 +437,15 @@ void AVRPawn::BeginPlay()
     // 폰 틱(손끝 모양 배치)은 애님이 채운 손끝 목표를 한 프레임 늦게 읽게 되지만, 목표가 손바닥 기준 상대값이라 영향이 작다.
     if (GetMesh()) GetMesh()->SetTickGroup(TG_PostPhysics);
 
+    // 손이 NPC(Pawn)를 막게 됐으니 내 캡슐·몸 메시는 손 채널을 무시해 몸에 손이 걸리지 않게 한다.
+    // 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따른다. BP 프로필이 덮어쓸 수 있어 생성자 대신 여기서 설정.
+    for (UPrimitiveComponent* Own : { static_cast<UPrimitiveComponent*>(GetCapsuleComponent()), static_cast<UPrimitiveComponent*>(GetMesh()) })
+    {
+        if (!Own) continue;
+        Own->SetCollisionResponseToChannel(ECC_HandLeft, ECR_Ignore);
+        Own->SetCollisionResponseToChannel(ECC_HandRight, ECR_Ignore);
+    }
+
 #if !UE_BUILD_SHIPPING
     // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
     if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
@@ -545,6 +556,32 @@ void AVRPawn::UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float
     else if (!bBlocking && Error < Threshold * 0.5f)  Body->SetCollisionResponseToChannel(Other, ECR_Block);
 }
 
+void AVRPawn::PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& Target, float Error, float DeltaTime)
+{
+    // 물리 손이 NPC 캡슐에 막혀 실제 손과 벌어지면, 그 벌어진 방향(수평)으로 NPC 를 오차에 비례한 속도로 민다.
+    // 스윙(TryMeleeHits)은 1m/s 이상 순간 타격이고, 이건 느리게 대고 미는 접촉 몫이다.
+    if (HandPushGain <= 0.f || Error < HandPushMinError) return;
+
+    FVector Dir = Target - Body->GetComponentLocation();
+    Dir.Z = 0.f;
+    if (!Dir.Normalize()) return;
+
+    // ponytail: 막은 게 NPC 인지 손바닥 주변 구 하나로 추정 — 손끝만 닿거나 벽에 막힌 채 NPC 가 곁에 있어도 밀린다. 정밀하게는 접촉 리포트(HitEvent)로.
+    TArray<FOverlapResult> Overlaps;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(HandPush), /*bTraceComplex=*/false, this);
+    GetWorld()->OverlapMultiByObjectType(Overlaps, Body->GetComponentLocation(), FQuat::Identity,
+        FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(HandPushProbeRadius), Params);
+
+    const float PushSpeed = FMath::Min((Error - HandPushMinError) * HandPushGain, MaxHandPushSpeed);
+    for (const FOverlapResult& O : Overlaps)
+    {
+        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
+        if (!NPC || NPC->bIsDead) continue;
+        // 스윕으로 옮겨 벽·지형에 막히면 거기서 멈춘다.
+        NPC->AddActorWorldOffset(Dir * PushSpeed * DeltaTime, /*bSweep=*/true);
+    }
+}
+
 void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
 {
     auto UpdateHand = [this, DeltaTime](UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint, EControllerHand Hand)
@@ -576,6 +613,7 @@ void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
         const float PalmError = DriveGhostBody(Palm, Constraint, Anchor->GetComponentLocation(), Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid), DeltaTime,
                                                HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
         UpdateHandPassThrough(Palm, Hand == EControllerHand::Left, PalmError, HandPassThroughDistance);
+        PushNPCWithBlockedHand(Palm, Anchor->GetComponentLocation(), PalmError, DeltaTime);
         UpdateFingertipShapes(Hand, Palm);
     };
 
