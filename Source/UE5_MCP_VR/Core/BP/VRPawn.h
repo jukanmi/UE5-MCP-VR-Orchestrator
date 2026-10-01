@@ -737,6 +737,9 @@ private:
     /** 목표에서 Threshold 넘게 밀려난 바디는 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
     void UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold);
 
+    /** 손 드라이브 목표(손바닥 바디 위치·회전)에서 손 모양이 근처 NPC 뼈 캡슐에 들어가면 목표를 표면 밖으로 옮긴 위치. 안 겹치면 그대로. */
+    FVector ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation) const;
+
     /** 손이 NPC 에 막혀 목표와 벌어졌으면 NPC 를 그 방향(수평)으로 오차 비례 속도로 민다. */
     void PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& Target, float Error, float DeltaTime);
 

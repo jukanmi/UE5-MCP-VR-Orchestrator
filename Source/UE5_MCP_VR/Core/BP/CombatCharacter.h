@@ -76,13 +76,15 @@ public:
     float LastMeleeHitTime = -1000.f;
 
     /** 뼈 선분 + 반지름 몸 모양(플레이어 손 충돌 판정용). 뼈대 계열별 에셋, 이 메시의 치수 행이 있어야 쓰인다.
-     *  `npc.DrawBoneCapsules 1` 로 그려 볼 수 있다. */
+     *  쓰이면 몸 캡슐은 손 채널을 무시하고 손은 뼈 캡슐에만 막힌다. `npc.DrawBoneCapsules 1` 로 그려 볼 수 있다. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MCP|Collision")
     TObjectPtr<class UNPCBoneCapsuleSet> BoneCapsules;
 
     virtual void Tick(float DeltaSeconds) override;
 
 protected:
+    virtual void BeginPlay() override;
+
     /** 이번 스윙의 원시 데미지(방어력 차감 전). 파생 클래스가 자기 스탯에서 산출. */
     virtual float ComputeAttackDamage() const { return 0.f; }
 

@@ -11,6 +11,9 @@
 #include "Engine/Engine.h"
 #include "Core/BP/KineticProjectile.h"
 #include "Core/Physics/KineticDamage.h"
+#include "Core/Physics/NPCBoneCapsuleSet.h"
+#include "Core/Types/CollisionChannels.h"
+#include "EngineUtils.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
 #include "Core/Utils/EngineShapes.h"
@@ -52,10 +55,6 @@
 
 namespace
 {
-    // 손 물리 바디 전용 오브젝트 채널(DefaultEngine.ini 의 HandLeft/HandRight). 기본 응답이 Block 이라 벽·물체는 그대로 손을 막는다.
-    constexpr ECollisionChannel ECC_HandLeft  = ECC_GameTraceChannel1;
-    constexpr ECollisionChannel ECC_HandRight = ECC_GameTraceChannel2;
-
     // 손 바디는 벽(WorldStatic/WorldDynamic)·물리 물체(PhysicsBody — 드랍 아이템·래그돌)·NPC 캡슐(Pawn)·반대쪽 손에 막히고 나머지는 무시한다.
     // 아이템과의 접촉(밀기·받치기·쳐내기)은 Chaos 가 벽과 같은 규칙으로 푼다 — 들고 있는 아이템은 QueryOnly 라 손과 안 부딪힌다.
     // 같은 손 채널을 무시해야 주먹(손끝↔손바닥)·핀치(손끝↔손끝)가 자기 몸체에 걸리지 않는다.
@@ -582,6 +581,89 @@ void AVRPawn::PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& T
     }
 }
 
+FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation) const
+{
+    // 손 모양이 닿을 수 있는 NPC 의 뼈 캡슐만 모은다. 메시 경계는 포즈(애니메이션·래그돌)를 따라간다.
+    // 뼈 캡슐 치수가 없는 NPC 는 GetWorldCapsules 가 거절하고, 그 NPC 는 몸 캡슐이 손을 막는다.
+    static constexpr float HandReach = 30.f;   // 손바닥 바디 중심 → 손 모양 끝(손끝)까지 여유(cm)
+    TArray<FNPCWorldCapsule> Bones, Caps;
+    for (TActorIterator<ACombatCharacter> It(GetWorld()); It; ++It)
+    {
+        const USkeletalMeshComponent* NPCMesh = It->GetMesh();
+        if (!It->BoneCapsules || !NPCMesh) continue;
+        if (FVector::DistSquared(NPCMesh->Bounds.Origin, Location) > FMath::Square(NPCMesh->Bounds.SphereRadius + HandReach)) continue;
+        if (It->BoneCapsules->GetWorldCapsules(NPCMesh, Caps)) Bones.Append(Caps);
+    }
+    if (Bones.IsEmpty()) return Location;
+
+    // 손 모양 = 손바닥 바디 기준 선분 + 반지름. 손바닥 상자는 긴 축을 따라 짧은 축 양 끝에 캡슐 두 줄(반지름 = 두께 절반),
+    // 손가락은 켜져 있을 때(핸드트래킹)만 캡슐 그대로.
+    struct FHandSegment { FVector A, B; float Radius; };
+    TArray<FHandSegment, TInlineAllocator<2 + UVRPawnAnimInstance::NumFingerShapes>> Segments;
+    const int32 HandIndex = Hand == EControllerHand::Left ? 0 : 1;
+    if (const UBoxComponent* Shape = PalmShapes.IsValidIndex(HandIndex) ? PalmShapes[HandIndex].Get() : nullptr)
+    {
+        const FTransform Rel = Shape->GetRelativeTransform();
+        const FVector E = Shape->GetUnscaledBoxExtent();
+        const float R = E.Z;
+        const FVector Long = E.X >= E.Y ? FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f) : FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f);
+        const FVector Side = E.X >= E.Y ? FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f) : FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f);
+        Segments.Add({ Rel.TransformPosition(Side - Long), Rel.TransformPosition(Side + Long), R });
+        Segments.Add({ Rel.TransformPosition(-Side - Long), Rel.TransformPosition(-Side + Long), R });
+    }
+    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
+    if (bFingertipsActive[HandIndex] && FingerBodies.Num() == 2 * PerHand)
+    {
+        for (int32 j = 0; j < PerHand; ++j)
+        {
+            const UCapsuleComponent* Finger = FingerBodies[HandIndex * PerHand + j];
+            if (!Finger) continue;
+            const FTransform Rel = Finger->GetRelativeTransform();
+            const FVector Half(0.f, 0.f, Finger->GetUnscaledCapsuleHalfHeight_WithoutHemisphere());
+            Segments.Add({ Rel.TransformPosition(-Half), Rel.TransformPosition(Half), Finger->GetUnscaledCapsuleRadius() });
+        }
+    }
+
+    // 가장 깊이 박힌 짝의 깊이만큼 목표를 밀어내고, 밀린 곳에서 다른 캡슐에 박혔을 수 있으니 몇 번 되풀이한다. 위치만 옮기고 회전은 그대로.
+    // 밀어낼 방향은 지금 물리 손 쪽 — 실제 손이 뼈 축을 넘어 들어가도(몸통 반지름 ≈ 15cm) 반대편 표면으로 튀지 않는다.
+    // 축을 넘은 실제 손은 축 기준으로 들어온 쪽에 비춰서 본다. 그대로 두면 목표가 표면을 따라 축 너머 쪽으로 계속 끌려
+    // 손이 몸을 돌아 뒤로 미끄러진다(헤드셋 없는 PIE 실측: 몸통 축 10cm 너머에서 손이 앞 → 뒤 표면으로 돌아감).
+    // 실제 손이 반대편 표면 밖까지 나가면 더 겹치지 않아 물리 손이 몸을 지나간다.
+    const FTransform BodyTM = Palm->GetComponentTransform();
+    FVector Target = Location;
+    for (int32 Iter = 0; Iter < 4; ++Iter)
+    {
+        const FTransform TargetTM(Rotation, Target);
+        float Depth = 0.f;
+        FVector Push = FVector::ZeroVector;
+        for (const FHandSegment& S : Segments)
+        {
+            const FVector A = TargetTM.TransformPosition(S.A);
+            const FVector B = TargetTM.TransformPosition(S.B);
+            for (const FNPCWorldCapsule& C : Bones)
+            {
+                FVector P, Q;
+                FMath::SegmentDistToSegmentSafe(A, B, C.A, C.B, P, Q);
+                const float Reach = S.Radius + C.Radius;
+                if (FVector::DistSquared(P, Q) >= FMath::Square(Reach)) continue;
+
+                FVector BodyP, BodyQ;
+                FMath::SegmentDistToSegmentSafe(BodyTM.TransformPosition(S.A), BodyTM.TransformPosition(S.B), C.A, C.B, BodyP, BodyQ);
+                FVector N = (BodyP - BodyQ).GetSafeNormal();
+                if (N.IsZero()) N = (P - Q).GetSafeNormal();
+                if (N.IsZero()) continue;   // 물리 손·목표 둘 다 뼈 축 위 — 방향을 모른다
+                const FVector Gap = P - Q;
+                const bool bCrossed = FVector::DotProduct(Gap, N) < 0.f;
+                const float D = Reach - FMath::Abs(FVector::DotProduct(Gap, N));
+                if (D > Depth) { Depth = D; Push = (bCrossed ? -2.f * Gap : FVector::ZeroVector) + N * D; }
+            }
+        }
+        if (Depth <= KINDA_SMALL_NUMBER) break;
+        Target += Push;
+    }
+    return Target;
+}
+
 void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
 {
     auto UpdateHand = [this, DeltaTime](UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint, EControllerHand Hand)
@@ -610,10 +692,14 @@ void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
             Anchor->SetRelativeTransform(FTransform::Identity);
         }
 
-        const float PalmError = DriveGhostBody(Palm, Constraint, Anchor->GetComponentLocation(), Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid), DeltaTime,
-                                               HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
+        // 물리 엔진은 NPC 뼈 캡슐을 모르므로 드라이브 목표를 뼈 캡슐 밖으로 옮겨 손이 표면에서 멈추게 한다.
+        const FVector RealHand = Anchor->GetComponentLocation();
+        const FQuat TargetRotation = Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid);
+        const FVector Target = ProjectHandOutOfNPCs(Hand, Palm, RealHand, TargetRotation);
+        const float PalmError = DriveGhostBody(Palm, Constraint, Target, TargetRotation, DeltaTime, HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
         UpdateHandPassThrough(Palm, Hand == EControllerHand::Left, PalmError, HandPassThroughDistance);
-        PushNPCWithBlockedHand(Palm, Anchor->GetComponentLocation(), PalmError, DeltaTime);
+        // 밀기는 실제 손과 벌어진 만큼 — 뼈 캡슐에 막힌 오차는 드라이브 오차(옮긴 목표 기준)에 안 잡힌다.
+        PushNPCWithBlockedHand(Palm, RealHand, FVector::Dist(Palm->GetComponentLocation(), RealHand), DeltaTime);
         UpdateFingertipShapes(Hand, Palm);
     };
 

@@ -1,7 +1,9 @@
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Physics/NPCBoneCapsuleSet.h"
+#include "Core/Types/CollisionChannels.h"
 #include "Core/Types/PlayerGameplayTags.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
 #include "GameplayTagAssetInterface.h"
@@ -30,6 +32,19 @@ static EBodyPartType BoneToBodyPart(FName Bone)
 }
 
 static TAutoConsoleVariable<bool> CVarDrawBoneCapsules(TEXT("npc.DrawBoneCapsules"), false, TEXT("NPC 뼈 캡슐(손 충돌 판정용)을 디버그 드로우로 그린다."));
+
+void ACombatCharacter::BeginPlay()
+{
+    Super::BeginPlay();   // BP BeginPlay 가 메시를 바꿔도 그 뒤에 판단한다
+
+    // 이 메시에 뼈 캡슐 치수가 있으면 손은 뼈 캡슐(VRPawn 이 드라이브 목표를 밀어냄)에만 막히고 몸 캡슐은 손을 통과시킨다.
+    // 치수가 없으면 지금처럼 몸 캡슐에 막힌다. 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따른다.
+    if (BoneCapsules && GetMesh() && BoneCapsules->HasFits(GetMesh()->GetSkeletalMeshAsset()))
+    {
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_HandLeft, ECR_Ignore);
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_HandRight, ECR_Ignore);
+    }
+}
 
 void ACombatCharacter::Tick(float DeltaSeconds)
 {

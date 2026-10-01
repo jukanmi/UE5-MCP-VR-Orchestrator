@@ -100,6 +100,9 @@ public:
     UFUNCTION(CallInEditor, BlueprintCallable, Category = "Auto Fill")
     void FillFromMeshes();
 
+    /** 이 메시의 치수 행이 있는가(캡슐 수까지 맞아야 쓰인다). */
+    bool HasFits(const USkeletalMesh* Mesh) const { return FindFits(Mesh) != nullptr; }
+
     /** 메시 컴포넌트의 현재 포즈로 월드 캡슐을 만든다. 이 세트에 메시가 없으면 false. */
     bool GetWorldCapsules(const USkeletalMeshComponent* MeshComp, TArray<FNPCWorldCapsule>& Out) const;
 
