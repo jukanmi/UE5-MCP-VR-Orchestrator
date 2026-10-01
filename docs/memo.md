@@ -8,9 +8,11 @@
 ## Todo
 
 ### VR 손 — `SPEC_vr_ghost_hand.md` · `SPEC_vr_grip_pose.md` 진행 상황 (브랜치 `feat/reality_grab`, 워크트리 `C:\github\UE5_MCP_VR_wt_vr_ghost_hand-09252306`, 2026-09-30 기준)
-- **ghost_hand**: M1·M2 완료. M3 = 손끝 캡슐(콜리전, 메시 정점 맞춤·손바닥 용접)·양손 충돌·핀치·주먹 판정 완료(`9433069e`). 관절→X_Bot AnimBP/Control Rig **비주얼** 매핑은 그래프 작업이라 미완 — DoList 1-19 등록. 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
-  "손으로 NPC 를 밀 수 있다": 구현 완료(2026-09-30) — 손 바디가 Pawn Block, 자기 캡슐·몸 메시는 손 채널 Ignore, 막혀 벌어진 오차 비례로 NPC 수평 밀기(`PushNPCWithBlockedHand`). **헤드셋 검증 대기**(손이 NPC 몸에서 멈추는지·천천히 대면 밀리는지·자기 몸에 안 걸리는지). 미충족: 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
+- **ghost_hand**: M1·M2 완료. M3 = 손끝 캡슐(콜리전, 메시 정점 맞춤·손바닥 용접)·양손 충돌·핀치·주먹 판정 완료(`9433069e`). 관절→X_Bot AnimBP/Control Rig **비주얼** 매핑은 사용자 그래프 작업으로 완료(DoList 1-19, 2026-10-02 확인). 핸드트래킹으로 실제 잡히게 하는 건 grip_pose M0 로 처리.
+  "손으로 NPC 를 밀 수 있다": 구현 완료(2026-09-30) — 손 바디가 Pawn Block, 자기 캡슐·몸 메시는 손 채널 Ignore, 막혀 벌어진 오차 비례로 NPC 수평 밀기(`PushNPCWithBlockedHand`). 헤드셋 확인 완료(2026-10-02). 막힘 판정은 npc_bone_collision M2 로 뼈 캡슐 기준이 됐고, 밀기 판정은 M3 에서 교체. 미충족: 팔 통과(SPEC 밖, 팔꿈치 보정 시도 후 되돌림 — X_Bot·사용자 팔 길이 차이).
 - **grip_pose** (2026-09-27 'Chaos 내장 우선'으로 방향 수정): M0 완료(잡기 판정·손 속도 → 트래킹 앵커). M1 완료(손 채널 PhysicsBody Block, 헤드셋에서 잘 밀림). M2 = 후보 A(끊어지는 PhysicsConstraint) 구현·헤드셋에서 쥐어짐 확인. M3·M4 완료(2026-09-30, 헤드셋 확인) — 접촉 쥐기(핀치·주먹) + 가운데 마디 캡슐 + 관절별 고정 감싸기 + 팔 IK 로 손 메시↔콜라이더 일치. 남은 것: 컨트롤러 감싸기(듀얼 입력과 함께)·물건별 끊김 임계·양동이 무게(DT_ItemRegistry 0.5 실험값, 미커밋).
+- (선택) **고스트 손 드라이브 하나로 통합** — 양손 맞대기 남은 0.14cm(2프레임 주기)까지 없애려면 속도 덮어쓰기·접촉 전환을 버리고 드라이브 하나(강성 22500·감쇠 300·최대 10000 = 100m/s², 앞먹임 2cm 차단 조건 제거)로. PIE 실측 양손 0.000cm·널빤지 0.02cm·사인 왕복 3.3cm(차단 조건 탓, 빼면 이론 0.14cm). 미는 힘 상한 13 → 88N. 헤드셋에서 0.14cm 가 거슬릴 때만.
+- **npc_bone_collision** (`SPEC_npc_bone_collision.md`): M1·M2 완료(Done). 다음 M3(접촉 기준 밀기).
 - [ ] (보류) **한 손 컨트롤러 + 한 손 실제 손 동시 사용** — 코드는 손마다 이미 독립 판단. Quest 런타임이 컨트롤러가 켜져 있으면 핸드트래킹을 안 넘김(실측: 오른 컨트롤러 내려놓고 5초간 손 추적 0/300). Link 런타임은 `XR_META_simultaneous_hands_and_controllers` 지원(시작 로그), UE 5.5 OpenXR(헤더 1.0.27)은 미사용·미정의. 하려면 `PostConfigInit` 프로젝트 플러그인(IOpenXRExtensionPlugin)으로 확장 요청 + 세션 후 `xrResumeSimultaneousHandsAndControllersTrackingMETA`. 값: `XR_TYPE_SYSTEM_SIMULTANEOUS_HANDS_AND_CONTROLLERS_PROPERTIES_META=1000532001`·`..._TRACKING_RESUME_INFO_META=1000532002`·`..._PAUSE_INFO_META=1000532003`(Khronos openxr.h 대조).
 - [ ] **federated_orchestrator 운영 보강 반영** — 메인 트리 `tools/federated_orchestrator.py`(미추적)에 `--review gemini`·diff 파일 전달·빈 응답 가드 반영됨. 남은 것: 워크트리 pytest 용 `UV_PROJECT_ENVIRONMENT`·`UV_NO_SYNC` 를 스크립트가 직접 설정, UAT 가 `NewProjectTest.umap` 을 저장해 `git add -A` 에 섞이는 문제. 스크립트 자체의 git 추적 여부도 결정 필요.
 
@@ -53,6 +55,7 @@
   **4. 저가중치 뷰 색 환각.** Rock 바닥면이 파랗게 칠해짐(원본은 흰 대리석). 바닥·상단 뷰에서만 보이는 면은 페인트 모델이 근거 없이 지어냄.
 
 ### 백로그 (착수 미정, 2026-07 발굴분 — 필요 대두 시 개별 `/feature-spec`)
+- [ ] (참고) **오목 아이템 충돌체 CoACD** — 양동이·컵·바구니 테두리·손잡이 정밀도가 필요할 때 엔진 자동 볼록 분해(양동이 현재 20헐) 대신 CoACD 로 굽기. 손가락은 캡슐 유지(매 프레임 재용접·GJK 비용, 2026-10-02 판단).
 - [ ] **C++ 대형 함수 분할**: `OnTacticalCandidatesDone` 182줄 · `OnTargetPerceptionUpdated` 165줄 · `OnLLMMessageReceived` 133줄→타입별 핸들러. `ExecuteInteraction` 은 switch 본질 → 유지.
 - [ ] **스텁 2종 존치**: Craft 레시피 검증(레시피 데이터 설계 선행)·DetectEntities 확장. (Drop 스폰은 08-31 해소.)
 - [ ] (선택) `ItemManager` 인벤토리 JSON 직렬화를 `FJsonObjectConverter` 규격화(현행 수제 문자열).
@@ -69,6 +72,9 @@
 ---
 
 ## Done
+
+- [x] **SPEC_npc_bone_collision M2 — 손이 NPC 뼈 캡슐에서 멈춤 (2026-10-02, 헤드셋 확인)** — `AVRPawn::ProjectHandOutOfNPCs`: 손 모양(손바닥 상자 → 캡슐 2줄 + 손가락 캡슐 10)과 근처 NPC 뼈 캡슐의 선분 최단거리로 드라이브 목표를 표면 밖으로 밀어냄(×4회). 밀어낼 방향 = 물리 손 쪽, 실제 손이 뼈 축을 넘으면 축 기준으로 비춰서 계산(안 그러면 몸을 돌아 뒤로 미끄러짐 — PIE 실측). 치수 있는 NPC 는 몸 캡슐이 손 채널 Ignore(`ACombatCharacter::BeginPlay`). 손 채널 상수는 `Core/Types/CollisionChannels.h`. 밀기는 M3 전까지 기존 구 오버랩.
+- [x] **고스트 손 관성 제거 + 양손 버벅임 (2026-10-02, 헤드셋 확인)** — 원인 = Chaos 가속 모드 드라이브의 최대 힘이 곧 가속도 상한(1500 = 15m/s², 엔진 `SetMaxForce` 확인): 40cm 이동에 254ms·17.4cm 지나침. 빈손은 매 틱 속도를 목표 도달 속도로 덮어씀(`bHandVelocityTracking`) → 40ms·지나침 0. 덮어쓰기는 곧 충격(0.9kg×1m/s, 90fps ≈ 80N)이라 물건을 누르면 떨려서, 닿아 있는 동안(무게중심이 보낸 곳에 0.2cm 넘게 못 닿음 → 되민 방향 = 법선, 실제 손이 그 면 밖으로 나오면 해제)과 쥐었을 때는 스프링: 널빤지 누르기 1.2 → 0.01cm. 양손 버벅임 원인 = 두 손바닥 CCD(충돌 순간 되감기 ↔ 파고들기 2프레임 반복) → MACD: 0.56 → 0.14cm, 책상 내리치기 관통 없음. 함정: UE 5.5 `ComponentSweepMulti` 는 용접 모양 오프셋을 무시하고 같은 액터를 통째로 제외 — 손 스윕에 못 씀. 헤드셋 없는 PIE 측정은 `t.MaxFPS 90` + 백그라운드 스로틀 끄기 필수(30fps·8fps 로 떨어지면 수치가 달라짐).
 
 - [x] **SPEC_npc_bone_collision M1 — NPC 뼈 캡슐 데이터·디버그 드로우 (2026-10-01, PIE 육안 확인)** — Physics Asset 대신 뼈 선분 + 반지름. `UNPCBoneCapsuleSet`(`Core/Physics/`, 계열별 DataAsset `/Game/Data/NPC/DA_BoneCapsules_{Villager,Fighter,Mannequin,XBot}`, 메시 10개 × 캡슐 14개), BP 12개 `BoneCapsules` 지정, `npc.DrawBoneCapsules 1`. 자동 채움(에셋 `Fill From Meshes`) = 축까지 정점 거리 75% 백분위·축 방향 2~98% 구간, 끝 부위는 관절→정점 무게중심. PA 재생성 시도는 폐기·원복(자동 PA 는 경계 상자 맞춤이라 부풀고, Quaternius 루트 스케일 100 때문에 바디 4개). 함정: Quaternius `_end` 뼈 방향 엉망, Live Coding 으로 USTRUCT 바꾸면 DataAsset FName 이 None 으로 저장됨, 틱 간격 0.1s NPC 는 1프레임 디버그 선이 깜박임(수명 = 틱 간격). 미결(Imp·Puglin 무기 손, Rogue 발, Warrior 갑옷)은 SPEC. 다음 M2 = 선분 최단거리 + 목표점 투영.
 

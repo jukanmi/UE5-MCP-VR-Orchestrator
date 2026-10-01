@@ -140,6 +140,11 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
     UPhysicsConstraintComponent* PalmConstraintRight;
 
+    /** 빈손 위치를 관성 없이 따라간다 — 스프링 대신 매 틱 바디 속도를 이번 물리 스텝에 목표에 닿는 속도로 덮어쓴다.
+     *  벽·물건에 닿아 있는 동안과 쥔 물건이 있을 때는 아래 선형 드라이브(스프링)로 민다. 끄면 늘 스프링. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
+    bool bHandVelocityTracking = true;
+
     /** 선형 드라이브 강성 — 클수록 손바닥이 앵커에 빨리 붙는다. 너무 크면 벽에서 떨린다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandDriveStiffness = 3000.f;
@@ -148,7 +153,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandDriveDamping = 100.f;
 
-    /** 선형 드라이브 최대 힘 — 벽을 미는 힘의 상한. 작을수록 벽에서 손이 쉽게 멈춘다. */
+    /** 선형 드라이브 최대 힘 — 벽·물건을 미는 힘의 상한. 작을수록 벽에서 손이 쉽게 멈춘다.
+     *  가속도 모드라 실제로는 가속도 상한(cm/s²) — 1500 이면 15m/s²(손바닥 0.9kg 면 약 13N).
+     *  빈 공간에서 스프링으로 끌면 이 상한 때문에 빠른 손을 늦게 따라가고 늦게 멈춘다(그래서 빈손은 속도 추종). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
     float HandDriveMaxForce = 1500.f;
 
@@ -743,8 +750,11 @@ private:
     /** 손이 NPC 에 막혀 목표와 벌어졌으면 NPC 를 그 방향(수평)으로 오차 비례 속도로 민다. */
     void PushNPCWithBlockedHand(UPrimitiveComponent* Body, const FVector& Target, float Error, float DeltaTime);
 
-    /** 바디별 직전 틱 목표 위치 — 목표 속도 계산용. */
+    /** 바디별 직전 틱에 보낸 위치 — 스프링이면 목표(목표 속도 계산용), 속도 추종이면 이번 스텝 무게중심 도착 예정 위치(접촉 판정용). */
     TMap<const UPrimitiveComponent*, FVector> GhostPrevTargets;
+
+    /** 바디별 닿아 있는 벽·물건의 표면 법선(바깥쪽) — 0 이 아니면 속도 추종 대신 스프링으로 민다. 0 이면 접촉 없음. */
+    TMap<const UPrimitiveComponent*, FVector> GhostContactNormals;
 
     /** 매 Tick — 입력 소스(핸드트래킹/컨트롤러)로 앵커를 옮기고 손바닥·손끝 바디 드라이브 목표를 갱신. */
     void UpdateGhostHandTracking(float DeltaTime);

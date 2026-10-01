@@ -7,6 +7,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/BoxComponent.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
+#include "PhysicsEngine/PhysicsSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Core/BP/KineticProjectile.h"
@@ -151,7 +152,9 @@ AVRPawn::AVRPawn()
         Palm->SetupAttachment(RootComponent);
         Palm->InitBoxExtent(FVector(4.5f, 4.25f, 1.5f));
         SetupHandBodyCollision(Palm, bLeft);
-        Palm->SetUseCCD(true);   // 빠른 손놀림에 얇은 벽·지형을 건너뛰지 않게
+        // 빠른 손놀림에 얇은 벽·지형을 건너뛰지 않게. CCD 가 아니라 MACD — 양손 모두 CCD 면 맞닿을 때 한 프레임은 충돌 순간으로
+        // 되감고 다음 프레임은 파고들었다 튕겨 나와 2프레임 주기로 떨었다(PIE 실측 0.56cm/프레임 → MACD 0).
+        Palm->SetUseMACD(true);
         return Palm;
     };
     PhysicsPalmLeft  = MakePalm(TEXT("PhysicsPalmLeft"), true);
@@ -521,24 +524,70 @@ float AVRPawn::DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintCompo
         // ResetPhysics — 위치와 함께 잔류 속도도 비워 순간이동 직후 튕겨 나가지 않게 한다.
         Body->SetWorldLocationAndRotation(Location, Rotation, false, nullptr, ETeleportType::ResetPhysics);
         GhostPrevTargets.Remove(Body);
+        GhostContactNormals.Remove(Body);
     }
 
-    // 목표 속도 앞먹임 — 속도 드라이브(감쇠)가 목표 속도 0 을 향하면 움직이는 동안 감쇠×속도/강성 만큼
-    // 뒤처진다(1m/s 에 약 3cm). 손끝은 그 지연을 "벽에 막힘"으로 오인해 손가락을 굽히게 된다.
-    const FVector* Prev = GhostPrevTargets.Find(Body);
-    // 막혀 있으면(목표와 2cm 넘게 벌어짐) 앞먹임을 끈다 — 속도 드라이브가 접촉을 이겨 두께 없는 지형까지 밀고 뚫는다.
-    // 자유 이동 중엔 앞먹임 덕에 오차가 2cm 안이라 지연 제거는 유지된다. 트래킹 튐 대비 5m/s 상한.
-    FVector TargetVelocity = (Prev && DeltaTime > KINDA_SMALL_NUMBER && Error < 2.f) ? (Location - *Prev) / DeltaTime : FVector::ZeroVector;
-    TargetVelocity = TargetVelocity.GetClampedToMaxSize(500.f);
-    GhostPrevTargets.Add(Body, Location);
+    // 빈손 위치는 관성 없이 속도로 따라간다. 스프링은 가속도 모드라 최대 힘이 곧 가속도 상한(1500 = 15m/s²)이어서
+    // 2m/s 로 움직이던 손이 멈추는 데 13cm 를 더 갔다. 쥐고 있으면 물건이 손을 끌어 보낸 곳에 못 닿으므로(접촉으로 오인)
+    // 스프링으로 무게를 받친다.
+    //
+    // 벽·물건에 닿아 있는 동안도 스프링(최대 힘 = 가속도 HandDriveMaxForce, 손바닥 0.9kg 면 약 13N)으로 민다 — 엔진이 접촉과
+    // 함께 풀어 꾸준히 누른다. 속도를 매 스텝 덮어써 밀면 그 자체가 충격이라(0.9kg × 1m/s, 90fps 면 약 80N) 물건을 바닥에 두드려
+    // 떨게 했다(PIE 실측: 바닥 위 널빤지를 누르면 손 1.2cm·널빤지 0.6cm 떨림). 안쪽 성분만 줄여도 움직이는 물체에선 되민
+    // 방향이 기울어 나와 나머지 성분이 안으로 샌다.
+    // 접촉 시작 = 속도 추종 중 지난 스텝에 보낸 곳에 0.2cm 넘게 못 닿음. 무게중심으로 재야 회전이 섞이지 않는다(속도는
+    // 무게중심에 걸린다). 되민 방향 = 접촉면 법선. 접촉 끝 = 실제 손(목표)이 바디보다 접촉면 안쪽이 아니게 됨 — 손을 떼거나,
+    // 막던 게 비켜 스프링이 목표까지 데려간 때.
+    const FVector Com = Body->GetCenterOfMass();
+    const bool bWasVelocity = !Constraint->ConstraintInstance.ProfileInstance.LinearDrive.XDrive.bEnablePositionDrive;
+    FVector& Normal = GhostContactNormals.FindOrAdd(Body);
+    if (const FVector* Prev = GhostPrevTargets.Find(Body); bWasVelocity && Prev && FVector::DistSquared(Com, *Prev) > FMath::Square(0.2f))
+    {
+        Normal = (Com - *Prev).GetSafeNormal();
+    }
+    else if (MassScale > 1.f || FVector::DotProduct(Location - Body->GetComponentLocation(), Normal) >= 0.f)
+    {
+        Normal = FVector::ZeroVector;
+    }
 
-    // 튜닝 값을 PIE 중 Details 에서 바꿔도 바로 먹도록 매 틱 반영한다.
-    // 드라이브는 가속도 모드라 힘 = 이 바디 질량 × 가속도 — 제약으로 매단 물건의 질량은 모른다.
-    // 쥐고 있으면 MassScale 만큼 키워야 빈손과 같은 반응으로 따라오고 물건 무게를 받친다.
-    // ponytail: 회전도 같은 배율 — 긴 물건(관성 m·r²)은 실제보다 덜 무겁게 돈다. 필요하면 관성비로 따로.
-    Constraint->SetLinearDriveParams(HandDriveStiffness * MassScale, HandDriveDamping * MassScale, HandDriveMaxForce * MassScale);
-    Constraint->SetLinearPositionTarget(Location - Constraint->GetComponentLocation());
-    Constraint->SetLinearVelocityTarget(TargetVelocity);
+    // 선형 드라이브는 방식이 바뀔 때만 켜고 끄고, 직전 위치 기억도 그때 비운다(스프링은 목표, 속도 추종은 무게중심 도착 예정 위치라 뜻이 다르다).
+    const bool bVelocityTracking = bHandVelocityTracking && MassScale <= 1.f && Normal.IsZero();
+    if (bWasVelocity != bVelocityTracking)
+    {
+        Constraint->SetLinearPositionDrive(!bVelocityTracking, !bVelocityTracking, !bVelocityTracking);
+        Constraint->SetLinearVelocityDrive(!bVelocityTracking, !bVelocityTracking, !bVelocityTracking);
+        GhostPrevTargets.Remove(Body);
+    }
+    const FVector* Prev = GhostPrevTargets.Find(Body);
+
+    const float StepTime = FMath::Min(DeltaTime, UPhysicsSettings::Get()->MaxPhysicsDeltaTime);   // 이번 물리 스텝 길이
+    if (bVelocityTracking && StepTime > KINDA_SMALL_NUMBER)
+    {
+        // 매 틱 바디 속도를 이번 스텝에 목표에 닿는 속도로 덮어쓴다 — 지난 프레임 속도가 남지 않아 실제 손이 멈추면 바로 멈춘다.
+        // 빈 공간에선 보낸 곳에 정확히 닿는다(PIE 실측 오차 0.0cm). 트래킹 튐 대비 10m/s 상한.
+        const FVector Velocity = ((Location - Body->GetComponentLocation()) / StepTime).GetClampedToMaxSize(1000.f);
+        Body->SetPhysicsLinearVelocity(Velocity);
+        GhostPrevTargets.Add(Body, Com + Velocity * StepTime);
+    }
+    else
+    {
+        // 목표 속도 앞먹임 — 속도 드라이브(감쇠)가 목표 속도 0 을 향하면 움직이는 동안 감쇠×속도/강성 만큼
+        // 뒤처진다(1m/s 에 약 3cm). 손끝은 그 지연을 "벽에 막힘"으로 오인해 손가락을 굽히게 된다.
+        // 막혀 있으면(목표와 2cm 넘게 벌어짐) 앞먹임을 끈다 — 속도 드라이브가 접촉을 이겨 두께 없는 지형까지 밀고 뚫는다.
+        // 자유 이동 중엔 앞먹임 덕에 오차가 2cm 안이라 지연 제거는 유지된다. 트래킹 튐 대비 5m/s 상한.
+        FVector TargetVelocity = (Prev && DeltaTime > KINDA_SMALL_NUMBER && Error < 2.f) ? (Location - *Prev) / DeltaTime : FVector::ZeroVector;
+        TargetVelocity = TargetVelocity.GetClampedToMaxSize(500.f);
+        GhostPrevTargets.Add(Body, Location);
+
+        // 튜닝 값을 PIE 중 Details 에서 바꿔도 바로 먹도록 매 틱 반영한다.
+        // 드라이브는 가속도 모드라 힘 = 이 바디 질량 × 가속도 — 제약으로 매단 물건의 질량은 모른다.
+        // 쥐고 있으면 MassScale 만큼 키워야 빈손과 같은 반응으로 따라오고 물건 무게를 받친다.
+        Constraint->SetLinearDriveParams(HandDriveStiffness * MassScale, HandDriveDamping * MassScale, HandDriveMaxForce * MassScale);
+        Constraint->SetLinearPositionTarget(Location - Constraint->GetComponentLocation());
+        Constraint->SetLinearVelocityTarget(TargetVelocity);
+    }
+
+    // ponytail: 회전은 스프링 그대로, 쥐면 같은 배율 — 긴 물건(관성 m·r²)은 실제보다 덜 무겁게 돈다. 필요하면 관성비로 따로.
     Constraint->SetAngularDriveParams(HandAngularStiffness * MassScale, HandAngularDamping * MassScale, HandAngularMaxForce * MassScale);
     Constraint->SetAngularOrientationTarget(Rotation.Rotator());
     return Error;
