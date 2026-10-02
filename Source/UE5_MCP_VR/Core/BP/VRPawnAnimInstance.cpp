@@ -73,8 +73,11 @@ void UVRPawnAnimInstance::BuildHandRig(FHandRig& Rig, const TCHAR* Side)
     const float KnuckleSpan = FVector::Dist(IndexCS.GetLocation(), PinkyCS.GetLocation());
     const float ApproxRadius = KnuckleSpan / 6.f;
     const float PalmLength = FVector::Dist(HandCS.GetLocation(), MiddleCS.GetLocation());
-    Rig.PalmHalfExtent = FVector(PalmLength * 0.5f, KnuckleSpan * 0.5f + ApproxRadius, ApproxRadius * 1.5f);
-    Rig.PalmBoxCenter = FVector(PalmLength * 0.5f, 0.f, 0.f);
+    for (int32 Part = 0; Part < NumPalmShapes; ++Part)
+    {
+        Rig.PalmHalfExtent[Part] = FVector(PalmLength * 0.25f, KnuckleSpan * 0.5f + ApproxRadius, ApproxRadius * 1.5f);
+        Rig.PalmBoxCenter[Part] = FVector(PalmLength * (0.25f + 0.5f * Part), 0.f, 0.f);
+    }
     auto RefLocal = [&Ref](const FName& Name) { return Ref.GetRefBonePose()[Ref.FindBoneIndex(Name)].GetTranslation(); };
 
     for (int32 Finger = 0; Finger < 5; ++Finger)
@@ -194,24 +197,42 @@ bool UVRPawnAnimInstance::FitHandShapesToMesh(FHandRig& Rig)
 
     // 손바닥 상자 — 손 본 로컬 정점을 손바닥 관절 축으로 돌려(손 본 = 손바닥 관절 × PalmToBone) 축별 범위를 잰다.
     // 손 본에 묶인 정점엔 손목·엄지 뿌리 볼록한 부분이 섞여 범위가 부풀므로 축별 상·하위 5% 를 버린다.
+    // 손끝 방향(X) 범위를 반으로 나눠 손목 쪽·손가락 쪽 상자를 따로 맞춘다 — 옆·두께는 그 절반에 든 정점으로.
     // 상자 중심은 손바닥 관절이 아니라 이 범위의 중심 — 폰이 손바닥 바디에 붙인 모양으로 거기에 놓는다.
-    TArray<float> Axes[3];
-    for (const FVector& P : Local[HandSet])
+    TArray<FVector> PalmPoints;
+    for (const FVector& P : Local[HandSet]) PalmPoints.Add(Rig.PalmToBone.RotateVector(P));
+    auto Range = [](TArray<float>& Values, float& Lo, float& Hi)
     {
-        const FVector Q = Rig.PalmToBone.RotateVector(P);
-        for (int32 a = 0; a < 3; ++a) Axes[a].Add(Q[a]);
-    }
-    for (int32 a = 0; a < 3; ++a)
+        Values.Sort();
+        Lo = Values[FMath::FloorToInt(Values.Num() * 0.05f)];
+        Hi = Values[FMath::Min(Values.Num() - 1, FMath::FloorToInt(Values.Num() * 0.95f))];
+    };
+    TArray<float> Xs;
+    for (const FVector& Q : PalmPoints) Xs.Add(Q.X);
+    float XLo, XHi;
+    Range(Xs, XLo, XHi);
+    const float XMid = (XLo + XHi) * 0.5f;
+    for (int32 Part = 0; Part < NumPalmShapes; ++Part)
     {
-        Axes[a].Sort();
-        const float Lo = Axes[a][FMath::FloorToInt(Axes[a].Num() * 0.05f)];
-        const float Hi = Axes[a][FMath::Min(Axes[a].Num() - 1, FMath::FloorToInt(Axes[a].Num() * 0.95f))];
-        Rig.PalmBoxCenter[a] = (Lo + Hi) * 0.5f;
-        Rig.PalmHalfExtent[a] = (Hi - Lo) * 0.5f;
+        const float X0 = Part == 0 ? XLo : XMid;
+        const float X1 = Part == 0 ? XMid : XHi;
+        TArray<float> Ys, Zs;
+        for (const FVector& Q : PalmPoints)
+        {
+            if (Q.X < X0 || Q.X > X1) continue;
+            Ys.Add(Q.Y);
+            Zs.Add(Q.Z);
+        }
+        if (Ys.Num() < 8) return false;
+        float YLo, YHi, ZLo, ZHi;
+        Range(Ys, YLo, YHi);
+        Range(Zs, ZLo, ZHi);
+        Rig.PalmBoxCenter[Part] = FVector((X0 + X1) * 0.5f, (YLo + YHi) * 0.5f, (ZLo + ZHi) * 0.5f);
+        Rig.PalmHalfExtent[Part] = FVector((X1 - X0) * 0.5f, (YHi - YLo) * 0.5f, (ZHi - ZLo) * 0.5f);
     }
 
-    UE_LOG(LogTemp, Log, TEXT("[HandTracking] 손 콜라이더를 메시에 맞춤 — 손바닥 반치수 %s 중심 %s, 검지 가운데 r%.2f hh%.2f · 끝 r%.2f hh%.2f"),
-           *Rig.PalmHalfExtent.ToString(), *Rig.PalmBoxCenter.ToString(),
+    UE_LOG(LogTemp, Log, TEXT("[HandTracking] 손 콜라이더를 메시에 맞춤 — 손바닥 반치수 손목 쪽 %s 중심 %s · 손가락 쪽 %s 중심 %s, 검지 가운데 r%.2f hh%.2f · 끝 r%.2f hh%.2f"),
+           *Rig.PalmHalfExtent[0].ToString(), *Rig.PalmBoxCenter[0].ToString(), *Rig.PalmHalfExtent[1].ToString(), *Rig.PalmBoxCenter[1].ToString(),
            Rig.ShapeRadius[ShapeIndex(1, 0)], Rig.ShapeHalfHeight[ShapeIndex(1, 0)], Rig.ShapeRadius[ShapeIndex(1, 1)], Rig.ShapeHalfHeight[ShapeIndex(1, 1)]);
     return true;
 }

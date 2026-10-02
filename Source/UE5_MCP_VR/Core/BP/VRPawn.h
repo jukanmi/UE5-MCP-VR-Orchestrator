@@ -770,12 +770,16 @@ private:
     UPROPERTY(Transient)
     TArray<TObjectPtr<UCapsuleComponent>> FingerBodies;
 
-    /** 손바닥 바디에 용접된 손바닥 모양(왼손 0·오른손 1) — 메시 손바닥 실제 중심에 놓는다. 바디 자체는 작은 핵. */
+    /** 손바닥 바디에 용접된 손바닥 모양 — 손마다 손목 쪽·손가락 쪽 상자 2개(인덱스 = 손 × 2 + 부분, 왼손 0·오른손 1).
+     *  메시 손바닥 실제 위치에 놓는다. 바디 자체는 작은 핵. */
     UPROPERTY(Transient)
     TArray<TObjectPtr<UBoxComponent>> PalmShapes;
 
     /** 손바닥 모양의 손바닥 바디 기준 상대 변환. 핸드트래킹이면 손목 관절 오프셋, 컨트롤러면 그립 보정 기준. */
-    FTransform ComputePalmShapeRelative(EControllerHand Hand) const;
+    FTransform ComputePalmShapeRelative(EControllerHand Hand, int32 Part) const;
+
+    /** 손바닥 중심 = 손바닥 상자들의 가운데. 손바닥 모양이 없으면 false. */
+    bool GetPalmShapeCenter(int32 HandIndex, FVector& OutCenter) const;
 
     /** 손가락 캡슐 충돌이 켜져 있는가(왼손 0·오른손 1). 켜고 끌 때만 충돌 설정을 바꾼다. */
     bool bFingertipsActive[2] = { false, false };

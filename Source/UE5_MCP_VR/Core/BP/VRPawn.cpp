@@ -381,14 +381,15 @@ void AVRPawn::BeginPlay()
     if (HandTrackingAnchorLeft)  InitGhostBody(PhysicsPalmLeft,  HandTrackingAnchorLeft->GetComponentLocation(),  PalmConstraintLeft);
     if (HandTrackingAnchorRight) InitGhostBody(PhysicsPalmRight, HandTrackingAnchorRight->GetComponentLocation(), PalmConstraintRight);
 
-    // 손바닥 모양 — 바디(손바닥 관절에 중심)는 작은 핵이고, 메시 손바닥에 맞춘 상자를 용접해 실제 손바닥 중심에 놓는다.
-    for (int32 h = 0; h < 2; ++h)
+    // 손바닥 모양 — 바디(손바닥 관절에 중심)는 작은 핵이고, 메시 손바닥에 맞춘 상자(손목 쪽·손가락 쪽)를 용접해 실제 손바닥 자리에 놓는다.
+    for (int32 i = 0; i < 2 * UVRPawnAnimInstance::NumPalmShapes; ++i)
     {
-        UBoxComponent* Palm = h == 0 ? PhysicsPalmLeft : PhysicsPalmRight;
-        if (!Palm) { PalmShapes.Add(nullptr); continue; }
-        UBoxComponent* Shape = NewObject<UBoxComponent>(this, h == 0 ? TEXT("PalmShapeLeft") : TEXT("PalmShapeRight"));
+        const bool bLeft = i < UVRPawnAnimInstance::NumPalmShapes;
+        UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
+        if (!Palm) { PalmShapes.Add(nullptr); continue; }   // 자리를 비워 두어야 인덱스가 맞는다
+        UBoxComponent* Shape = NewObject<UBoxComponent>(this, *FString::Printf(TEXT("PalmShape%s%d"), bLeft ? TEXT("Left") : TEXT("Right"), i % UVRPawnAnimInstance::NumPalmShapes));
         Shape->InitBoxExtent(Palm->GetUnscaledBoxExtent());
-        SetupHandBodyCollision(Shape, h == 0);
+        SetupHandBodyCollision(Shape, bLeft);
         Shape->SetWorldLocationAndRotation(Palm->GetComponentLocation(), Palm->GetComponentQuat());
         Shape->RegisterComponent();
         Shape->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
@@ -642,13 +643,16 @@ FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent*
     }
     if (Bones.IsEmpty()) return Location;
 
-    // 손 모양 = 손바닥 바디 기준 선분 + 반지름. 손바닥 상자는 긴 축을 따라 짧은 축 양 끝에 캡슐 두 줄(반지름 = 두께 절반),
+    // 손 모양 = 손바닥 바디 기준 선분 + 반지름. 손바닥 상자마다 긴 축을 따라 짧은 축 양 끝에 캡슐 두 줄(반지름 = 두께 절반),
     // 손가락은 켜져 있을 때(핸드트래킹)만 캡슐 그대로.
     struct FHandSegment { FVector A, B; float Radius; };
-    TArray<FHandSegment, TInlineAllocator<2 + UVRPawnAnimInstance::NumFingerShapes>> Segments;
+    TArray<FHandSegment, TInlineAllocator<2 * UVRPawnAnimInstance::NumPalmShapes + UVRPawnAnimInstance::NumFingerShapes>> Segments;
     const int32 HandIndex = Hand == EControllerHand::Left ? 0 : 1;
-    if (const UBoxComponent* Shape = PalmShapes.IsValidIndex(HandIndex) ? PalmShapes[HandIndex].Get() : nullptr)
+    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
     {
+        const int32 ShapeIndex = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
+        const UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
+        if (!Shape) continue;
         const FTransform Rel = Shape->GetRelativeTransform();
         const FVector E = Shape->GetUnscaledBoxExtent();
         const float R = E.Z;
@@ -783,12 +787,15 @@ void AVRPawn::ApplyHandColliderSizes()
         if (!Palm) continue;
         // 바디 자체는 손바닥 관절에 중심을 둔 1cm 핵 — 실제 손바닥 모양은 용접된 PalmShape 가 맡는다.
         Palm->SetBoxExtent(FVector(1.f));
-        if (UBoxComponent* Shape = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr)
+        for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
         {
-            FVector PalmExtent = Anim->GetPalmHalfExtent(Hand);
+            const int32 ShapeIndex = h * UVRPawnAnimInstance::NumPalmShapes + Part;
+            UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
+            if (!Shape) continue;
+            FVector PalmExtent = Anim->GetPalmHalfExtent(Hand, Part);
             PalmExtent.Z *= HandColliderRadiusScale;
             Shape->SetBoxExtent(PalmExtent);
-            Shape->SetRelativeTransform(ComputePalmShapeRelative(Hand));
+            Shape->SetRelativeTransform(ComputePalmShapeRelative(Hand, Part));
             Shape->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
         }
 
@@ -807,7 +814,7 @@ void AVRPawn::ApplyHandColliderSizes()
     }
 }
 
-FTransform AVRPawn::ComputePalmShapeRelative(EControllerHand Hand) const
+FTransform AVRPawn::ComputePalmShapeRelative(EControllerHand Hand, int32 Part) const
 {
     // 손바닥 모양은 "손 본 원점(손목) + 손바닥 관절 축" 기준 중심(애님 인스턴스가 메시 정점으로 잰 값)에 놓인다.
     // 핸드트래킹: 바디 = 손바닥 관절, 손 본 원점 = 손목 관절 → 손바닥 관절 기준 손목 오프셋 + 중심, 축은 그대로.
@@ -815,7 +822,7 @@ FTransform AVRPawn::ComputePalmShapeRelative(EControllerHand Hand) const
     //          바디 기준 모양 보정⁻¹ × 그립 보정 × PalmToBone⁻¹.
     const UVRPawnAnimInstance* Anim = GetMesh() ? Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
     if (!Anim) return FTransform::Identity;
-    const FVector Center = Anim->GetPalmBoxCenter(Hand);
+    const FVector Center = Anim->GetPalmBoxCenter(Hand, Part);
     const FXRHandTrackingState& State = GetHandTrackState(Hand);
     if (State.bValid)
     {
@@ -839,9 +846,12 @@ void AVRPawn::UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm)
 
     // ponytail: 컨트롤러일 땐 관절이 없어 손끝 모양의 충돌을 끄고 손바닥 안에 둔다 — 컨트롤러 손가락도 막아야 하면 애니 포즈 손끝을 목표로.
     // 손바닥 모양 — 입력 소스가 바뀌거나(손바닥 축이 달라짐) 손목 오프셋이 변하면 다시 놓는다.
-    if (UBoxComponent* Shape = PalmShapes.IsValidIndex(HandIndex) ? PalmShapes[HandIndex].Get() : nullptr)
+    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
     {
-        const FTransform Rel = ComputePalmShapeRelative(Hand);
+        const int32 ShapeIndex = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
+        UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
+        if (!Shape) continue;
+        const FTransform Rel = ComputePalmShapeRelative(Hand, Part);
         if (FVector::DistSquared(Shape->GetRelativeLocation(), Rel.GetLocation()) > FMath::Square(0.2f)
             || Shape->GetRelativeRotation().Quaternion().AngularDistance(Rel.GetRotation()) > FMath::DegreesToRadians(2.f))
         {
@@ -2052,18 +2062,37 @@ const UCapsuleComponent* AVRPawn::FingerTouching(bool bLeft, int32 Finger, const
 
 bool AVRPawn::IsPalmTouching(bool bLeft, const UPrimitiveComponent* Item, float Margin) const
 {
-    const int32 h = bLeft ? 0 : 1;
-    const UBoxComponent* Shape = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
-    return Shape && IsValid(Item)
-        && Item->OverlapComponent(Shape->GetComponentLocation(), Shape->GetComponentQuat(), FCollisionShape::MakeBox(Shape->GetScaledBoxExtent() + FVector(Margin)));
+    if (!IsValid(Item)) return false;
+    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
+    {
+        const int32 i = (bLeft ? 0 : 1) * UVRPawnAnimInstance::NumPalmShapes + Part;
+        const UBoxComponent* Shape = PalmShapes.IsValidIndex(i) ? PalmShapes[i].Get() : nullptr;
+        if (Shape && Item->OverlapComponent(Shape->GetComponentLocation(), Shape->GetComponentQuat(), FCollisionShape::MakeBox(Shape->GetScaledBoxExtent() + FVector(Margin))))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AVRPawn::GetPalmShapeCenter(int32 HandIndex, FVector& OutCenter) const
+{
+    OutCenter = FVector::ZeroVector;
+    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
+    {
+        const int32 i = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
+        const UBoxComponent* Shape = PalmShapes.IsValidIndex(i) ? PalmShapes[i].Get() : nullptr;
+        if (!Shape) return false;
+        OutCenter += Shape->GetComponentLocation() / UVRPawnAnimInstance::NumPalmShapes;
+    }
+    return true;
 }
 
 ADroppedItemBase* AVRPawn::FindGraspedItem(bool bLeft, int32& OutPartner) const
 {
-    const int32 h = bLeft ? 0 : 1;
-    const UBoxComponent* Palm = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
+    FVector PalmCenter;
     UWorld* World = GetWorld();
-    if (!Palm || !World) return nullptr;
+    if (!GetPalmShapeCenter(bLeft ? 0 : 1, PalmCenter) || !World) return nullptr;
 
     // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 —
     //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
@@ -2072,7 +2101,7 @@ ADroppedItemBase* AVRPawn::FindGraspedItem(bool bLeft, int32& OutPartner) const
     // "선이 지난다" = 사이에 끼었다. 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
     // ponytail: 손바닥에 올려 받치기(손가락이 안 감쌈)는 안 걸린다.
     TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, Palm->GetComponentLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
+    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
     const FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(GraspTrace), false);
     for (const FOverlapResult& Overlap : Overlaps)
     {
@@ -2103,7 +2132,7 @@ ADroppedItemBase* AVRPawn::FindGraspedItem(bool bLeft, int32& OutPartner) const
             for (int32 f = 1; f < 5; ++f)
             {
                 const UCapsuleComponent* Finger = FingerTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin);
-                if (Finger && Between(Palm->GetComponentLocation(), Finger->GetComponentLocation())) ++Wrapped;
+                if (Finger && Between(PalmCenter, Finger->GetComponentLocation())) ++Wrapped;
             }
             if (Wrapped >= 2)
             {
@@ -2341,12 +2370,11 @@ float AVRPawn::HeldMassScale(int32 HandIndex) const
 
 void AVRPawn::GetNearbyItemMeshes(EControllerHand Hand, TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const
 {
-    const int32 h = Hand == EControllerHand::Left ? 0 : 1;
-    const UBoxComponent* Palm = PalmShapes.IsValidIndex(h) ? PalmShapes[h].Get() : nullptr;
+    FVector PalmCenter;
     UWorld* World = GetWorld();
-    if (!Palm || !World) return;
+    if (!GetPalmShapeCenter(Hand == EControllerHand::Left ? 0 : 1, PalmCenter) || !World) return;
     TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, Palm->GetComponentLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
+    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
     for (const FOverlapResult& Overlap : Overlaps)
     {
         const ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());

@@ -30,6 +30,10 @@ public:
     static constexpr int32 NumFingerShapes = 5 * ShapesPerFinger;
     static int32 ShapeIndex(int32 Finger, int32 Shape) { return Finger * ShapesPerFinger + Shape; }
 
+    /** 손바닥 상자 수 — 0 = 손목 쪽 절반, 1 = 손가락 쪽 절반. 메시 손바닥은 손목 쪽이 두껍고 손가락 뿌리 쪽이 얇아(X_Bot 약 6 → 3cm)
+     *  상자 하나로는 얇은 쪽이 떠 보인다. */
+    static constexpr int32 NumPalmShapes = 2;
+
     /** 손바닥 관절 프레임 → 손 본 프레임 보정. 이펙터 회전 = 손바닥 관절 회전 × 이 값. */
     FQuat GetPalmToHandBone(EControllerHand Hand) const;
 
@@ -41,10 +45,10 @@ public:
     float GetShapeRadius(EControllerHand Hand, int32 Finger, int32 Shape) const { return RigOf(Hand).ShapeRadius[ShapeIndex(Finger, Shape)]; }
     /** 캡슐 절반 길이(반구 포함). */
     float GetShapeHalfHeight(EControllerHand Hand, int32 Finger, int32 Shape) const { return RigOf(Hand).ShapeHalfHeight[ShapeIndex(Finger, Shape)]; }
-    /** 손바닥 상자 절반 치수(손바닥 관절 축: X=손끝, Y=옆, Z=손등). */
-    FVector GetPalmHalfExtent(EControllerHand Hand) const { return RigOf(Hand).PalmHalfExtent; }
+    /** 손바닥 상자 절반 치수(손바닥 관절 축: X=손끝, Y=옆, Z=손등). Part = 0 손목 쪽, 1 손가락 쪽. */
+    FVector GetPalmHalfExtent(EControllerHand Hand, int32 Part) const { return RigOf(Hand).PalmHalfExtent[Part]; }
     /** 손바닥 상자 중심 — 손 본 원점(손목) 기준, 손바닥 관절 축. */
-    FVector GetPalmBoxCenter(EControllerHand Hand) const { return RigOf(Hand).PalmBoxCenter; }
+    FVector GetPalmBoxCenter(EControllerHand Hand, int32 Part) const { return RigOf(Hand).PalmBoxCenter[Part]; }
 
 protected:
     virtual void NativeInitializeAnimation() override;
@@ -68,8 +72,8 @@ private:
         FVector ShapeAxis[NumFingerShapes];
         float ShapeRadius[NumFingerShapes];
         float ShapeHalfHeight[NumFingerShapes];
-        FVector PalmHalfExtent = FVector(4.5f, 4.25f, 1.5f);
-        FVector PalmBoxCenter = FVector::ZeroVector;
+        FVector PalmHalfExtent[NumPalmShapes] = { FVector(2.25f, 4.25f, 1.5f), FVector(2.25f, 4.25f, 1.5f) };
+        FVector PalmBoxCenter[NumPalmShapes] = { FVector::ZeroVector, FVector::ZeroVector };
         /** 이번 프레임 손가락 캡슐 목표(손바닥 기준 상대 위치·회전). */
         FVector TargetCenter[NumFingerShapes];
         FQuat TargetRotation[NumFingerShapes];
