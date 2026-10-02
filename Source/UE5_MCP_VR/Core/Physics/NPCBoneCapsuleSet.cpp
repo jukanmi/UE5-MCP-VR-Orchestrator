@@ -1,6 +1,7 @@
 #include "Core/Physics/NPCBoneCapsuleSet.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Core/Physics/CollisionFit.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/SkeletalMesh.h"
 
@@ -72,8 +73,6 @@ void UNPCBoneCapsuleSet::FillFromMeshes()
             for (const FVector3f& P : Infos[Bone].Positions) { Points[Owner].Add(Component[Bone].TransformPosition(FVector(P))); }
         }
 
-        auto Percentile = [](TArray<float>& V, float P) { V.Sort(); return V[FMath::Clamp(FMath::RoundToInt(P * (V.Num() - 1)), 0, V.Num() - 1)]; };
-
         Row.Fits.SetNum(Capsules.Num());
         for (int32 i = 0; i < Capsules.Num(); ++i)
         {
@@ -96,24 +95,12 @@ void UNPCBoneCapsuleSet::FillFromMeshes()
                 for (const FVector& P : Points[i]) Mean += P;
                 Dir = (Mean / Points[i].Num() - A).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
             }
-            Row.Fits[i].Axis = Component[StartIdx[i]].InverseTransformVectorNoScale(Dir).GetSafeNormal();
-
-            // 축 방향 거리(T)와 축까지 거리(D).
-            TArray<float> T, D;
-            for (const FVector& P : Points[i])
-            {
-                const float t = FVector::DotProduct(P - A, Dir);
-                T.Add(t);
-                D.Add(FVector::Dist(P, A + Dir * t));
-            }
             FNPCCapsuleFit& Fit = Row.Fits[i];
-            Fit.Radius = Percentile(D, RadiusPercentile);
-            const float Lo = Percentile(T, ExtentPercentile);
-            const float Hi = Percentile(T, 1.f - ExtentPercentile);
-            // 캡슐 양 끝 반구가 정점 분포 끝에 닿게 선분을 반지름만큼 안으로. 너무 짧으면 구.
-            Fit.Start = Lo + Fit.Radius;
-            Fit.End = Hi - Fit.Radius;
-            if (Fit.Start > Fit.End) { Fit.Start = Fit.End = 0.5f * (Lo + Hi); }
+            Fit.Axis = Component[StartIdx[i]].InverseTransformVectorNoScale(Dir).GetSafeNormal();
+            const CollisionFit::FAxisCapsule Cap = CollisionFit::FitCapsuleOnAxis(Points[i], A, Dir, RadiusPercentile, ExtentPercentile);
+            Fit.Radius = Cap.Radius;
+            Fit.Start = Cap.Start;
+            Fit.End = Cap.End;
         }
         UE_LOG(LogTemp, Log, TEXT("[BoneCapsule] %s 맞춤 완료 (캡슐 %d)"), *Mesh->GetName(), Row.Fits.Num());
     }
