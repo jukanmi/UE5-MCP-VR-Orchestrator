@@ -64,35 +64,23 @@ def import_meshes() -> int:
 
 
 def add_collisions() -> int:
-    """단순 콜리전을 붙인다. 이미 있으면 건드리지 않는다."""
+    """충돌이 없는 메시에 단순 충돌을 자동 생성한다(UItemCollisionGen — 기본도형 우선, 오목하면 V-HACD 헐).
+    이미 충돌이 있으면(손으로 다듬었거나 이미 생성됨) 건드리지 않는다."""
     if not unreal:
         return 0
 
-    # UE 5.5 에서 EditorStaticMeshLibrary 는 StaticMeshEditorSubsystem 으로 넘어갔다.
-    subsystem = None
-    if hasattr(unreal, "StaticMeshEditorSubsystem"):
-        subsystem = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
-
+    subsystem = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
     done = 0
     for asset_path in unreal.EditorAssetLibrary.list_assets(DEST_PATH, recursive=False):
         mesh = unreal.EditorAssetLibrary.load_asset(asset_path)
         if not isinstance(mesh, unreal.StaticMesh):
             continue
-
-        try:
-            if subsystem:
-                if subsystem.get_simple_collision_count(mesh) > 0:
-                    continue
-                # 손에 드는 소품이라 18-DOP 면 충분하다. 볼록 분해는 비용만 크다.
-                subsystem.add_simple_collisions(mesh, unreal.ScriptingCollisionShapeType.NDOP18)
-            else:
-                if unreal.EditorStaticMeshLibrary.get_simple_collision_count(mesh) > 0:
-                    continue
-                unreal.EditorStaticMeshLibrary.add_simple_collisions(mesh, unreal.ScriptingCollisionShapeType.NDOP18)
-            unreal.EditorAssetLibrary.save_loaded_asset(mesh)
-            done += 1
-        except Exception as e:
-            print(f"[경고] 콜리전 생성 실패: {asset_path} ({e})")
+        # simple 개수는 상자·구·캡슐만 센다 — 볼록 헐은 따로 봐야 한다.
+        if subsystem.get_simple_collision_count(mesh) > 0 or subsystem.get_convex_collision_count(mesh) > 0:
+            continue
+        print(unreal.ItemCollisionGen.generate_item_collision(mesh))
+        unreal.EditorAssetLibrary.save_loaded_asset(mesh)
+        done += 1
 
     print(f"=== 콜리전 생성: {done}종 ===")
     return done

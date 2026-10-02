@@ -8,6 +8,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Core/Physics/KineticDamage.h"
 #include "NPC/BP/SmartNPC.h"
 #include "Villager/MerchantStall.h"
@@ -111,6 +112,13 @@ void ADroppedItemBase::BeginPlay()
         {
             ItemMesh->SetMassOverrideInKg(NAME_None, Row.Weight * FMath::Max(1, Amount), true);
         }
+    }
+
+    // 충돌 자동 생성(UItemCollisionGen)이 메시에 저장한 무게중심 보정 — 기본도형으로 바뀌어도 원래 볼록 헐 무게중심을 유지한다.
+    // 컴포넌트는 BodySetup 의 값을 스스로 읽지 않아 여기서 적용한다. 생성 전 메시는 0.
+    if (ItemMesh && ItemMesh->GetBodySetup())
+    {
+        ItemMesh->SetCenterOfMass(ItemMesh->GetBodySetup()->DefaultInstance.COMNudge);
     }
 }
 

@@ -57,6 +57,8 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **BP 오버라이드가 C++ 기본값을 이긴다** — 상시 켜야 하는 것은 `BeginPlay` 에서 강제하거나 에셋 재직렬화 확인(`HUDWidgetComp` 가시성 사례). `BP_VRPawn::CameraHeightOffset` = **0 필수**(-30 이면 HMD 높이 역산 오염 → 캡슐 30cm 단축). 머리 본 위치는 `HeadEffectorOffset`/FBIK 로, 카메라 오프셋 금지.
 - **VR 아바타 1:1 고정** — 키 비율 스케일 삭제(FBIK 하에서 '서면 머리 낮음' 만 유발). `CalibratedStandingHeight` 는 자세판정용만. 몸통은 HMD Yaw 1:1 추종(`BodyMeshYawOffset=-90`), 착석 시 의자 방향 고정.
 - **PostProcess 는 이 렌더 경로(`r.ForwardShading`+`vr.InstancedStereo`+`vr.MobileMultiView`)에서 화면 전체 검정** — 비네트·터널 효과 불가. 시각 피드백은 HUD.
+- **아이템 CCD 꺼짐 — 프레임 이동량 ~10cm 면 바닥 관통**: 30fps 낙하(닿는 프레임 11cm)에서 62종 중 16종이 바닥 통과, CCD 켜면 0(2026-10-03). 헤드셋 없는 PIE 는 에디터 백그라운드 스로틀로 30fps 가 되니 물리 시험 전 `Default__EditorPerformanceSettings.bThrottleCPUWhenNotForeground=false`(MCP `ue_set_property`) + `t.MaxFPS 90`.
+- **아이템 충돌 수 세기**: `StaticMeshEditorSubsystem.get_simple_collision_count` 는 상자·구·캡슐만 센다 — 볼록 헐은 `get_convex_collision_count` 로 따로.
 - Sprint 해제는 `IA_Move` `Completed`/`Canceled`(`OnMoveReleased`) — `Triggered` 는 입력 0 에서 안 오고 `OnMove` 가 조기 return.
 
 ### D. 통신 · DX
@@ -136,6 +138,8 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **U-5. Live Coding "Live coding failed, please see Live console" 인데 .lib 는 만들어졌다 = 링크 실패** — 원인은 Live Coding 콘솔 창에만
   나와 로그로 못 본다. 새 엔진 클래스를 쓰면서 모듈 의존성이 빠진 경우가 흔했다(`UPhysicalMaterial` → `PhysicsCore`,
   `AnimationCore::SolveTwoBoneIK` → `AnimationCore`). 에디터를 닫고 Build.bat 을 돌리면 `LNK2019` 로 바로 보인다.
+- **U-7. Python 으로 PIE 월드에 아이템 놓기** — Python 엔 지연 스폰 API 가 없고 `ItemManager` 서브시스템 getter 도 없다. `unreal.ObjectIterator(unreal.ItemManager)` 에서 outer 가 PIE GameInstance 인 것 → `get_item_data_by_id` → 플레이어 `InventoryComponent.add_item(row,1,False)` → `drop_item` → 생긴 액터를 `set_actor_location_and_rotation(..., teleport=True)`. 퀘스트 아이템은 drop 이 막혀 인벤토리에 남으니 `remove_item` 으로 비울 것. 한 프레임에 몰아 넣지 말고 slate post-tick 콜백으로 프레임당 하나씩.
+- **U-8. Python `EditorLoadingAndSavingUtils.reload_packages` 는 dirty 패키지면 모달 확인창** — MCP 가 멈추고 입력 주입도 안 먹는다(사용자 클릭 필요). 검증용 변경은 같은 값이면 저장 후 `git checkout`, 다르면 에셋을 `/Game/_Tmp…` 로 복제해 거기서 시험하고 폴더 삭제.
 - **U-6. 워크트리에서 `sol_pi verify all` 의 Python 16 error 는 환경 문제** — `uv run` 이 시스템 Python(옛 pydantic)을 잡는다.
   `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
   UAT 는 `Content/Maps/NewProjectTest.umap` 을 저장한다 — 사용자 테스트 편집이 섞였을 수 있으니 되돌리기 전에 검증 전 상태와 비교하고 물을 것.
