@@ -1,0 +1,28 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Meta Simultaneous Hands and Controllers",
+	"Description": "XR_META_simultaneous_hands_and_controllers 를 요청·재개해 한 손은 컨트롤러, 다른 손은 핸드트래킹으로 동시에 쓴다.",
+	"Category": "Virtual Reality",
+	"CreatedBy": "UE5_MCP_VR",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "MetaSimultaneousHands",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit",
+			"PlatformAllowList": [
+				"Win64",
+				"Android"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "OpenXR",
+			"Enabled": true
+		}
+	]
+}
