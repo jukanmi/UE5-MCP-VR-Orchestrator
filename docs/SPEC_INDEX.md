@@ -14,9 +14,8 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 
 | 이름 | 진행상황 | 미결사항 | 비고 |
 |---|---|---|---|
-| [friction_grip](SPEC_friction_grip.md) | 🔶 M0 ✅ M1 ✅(헤드셋 확인, DoList 1-22) M2 ⬜ | 쥐는 힘 환산 강성·평활화·컨트롤러 그립 힘 튜닝, `UseSimd 0` 전역 비용(래그돌 여럿 프레임 시간 미측정), 회전 강성은 관성 최대축 하나 | **다음: M2 양손 쥐기.** 던지기·건네기·양동이 손잡이 체감, `HoldOffset` 0 은 완료 기준 밖 |
-| [npc_bone_collision](SPEC_npc_bone_collision.md) | 🔶 M1 ✅ M2 ✅ M3 ⬜ | Imp·Puglin 무기 손·Rogue 발·Warrior 갑옷 뼈 값, 좁은 틈에서 겹침, 손가락 하나만 닿을 때 전체를 밀어내는 느낌 | M3 = 밀기 판정을 접촉 기준으로 교체 |
-| [npc_lift_throw](SPEC_npc_lift_throw.md) | ⏸ M1 구현 후 코드 제거(2026-10-02) | 충돌 피해 속도 임계·계수 PIE 튜닝 | 재착수 전에 friction_grip M2(양손) 필요. 실측·함정은 memo |
+| [friction_grip](SPEC_friction_grip.md) | 🔶 M0 ✅ M1 ✅(헤드셋 확인) M2 ✅ 구현(헤드셋 없는 PIE 확인, 헤드셋 대기 DoList 1-23) | 쥐는 힘 환산 강성·평활화·컨트롤러 그립 힘 튜닝, `UseSimd 0` 전역 비용(래그돌 여럿 프레임 시간 미측정), 회전 강성은 관성 최대축 하나 | **다음: M2 헤드셋 확인(DoList 1-23).** 던지기·건네기·양동이 손잡이 체감, `HoldOffset` 0 은 완료 기준 밖 |
+| [npc_lift_throw](SPEC_npc_lift_throw.md) | ⏸ M1 구현 후 코드 제거(2026-10-02) | 충돌 피해 속도 임계·계수 PIE 튜닝 | friction_grip M2(양손) 구현으로 선행 조건 충족, 헤드셋 확인 뒤 재착수. 실측·함정은 memo |
 | [npc_grip](SPEC_npc_grip.md) | ⬜ M1~M3 착수 전(인터뷰 2026-09-24) | 붙잡기 `EAction` 을 LLM 선택지에서 뺄지, 반사 룰 발동 조건, 룸스케일로 걸어서 벗어날 때 처리, 뿌리치기 속도·최대 지속 시간 | grip_pose M1(`FItemData` 형상 유형) 선행 |
 
 ### VR 자세·메뉴 (2026-10-04 신규)
@@ -42,6 +41,7 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 |---|---|---|---|
 | [vr_ghost_hand](done/SPEC_vr_ghost_hand.md) | ✅ M1~M3 (2026-09-30~10-02, 헤드셋 확인) | 드라이브·임계 튜닝은 실사용으로 해소 | 팔 통과는 SPEC 밖. 이후 손 컴포넌트 분리·드라이브 통합 |
 | [vr_grip_pose](done/SPEC_vr_grip_pose.md) | ✅ M0~M4 (2026-09-30, 헤드셋 확인) | 가구 등 인벤토리 밖 물체 쥐기는 범위 밖 | 마찰·양손은 friction_grip 이 이어감 |
+| [npc_bone_collision](done/SPEC_npc_bone_collision.md) | ✅ M1~M3 (2026-10-02, 헤드셋 확인) | Imp·Puglin 무기 손·Rogue 발·Warrior 갑옷 뼈 값(수동 조정) | 밀기는 접촉 기준으로 교체됨 |
 | [item_collision_gen](done/SPEC_item_collision_gen.md) | ✅ 2026-10-03 | 없음 | 오목 아이템 CoACD 는 memo 백로그 |
 | [story_director](done/SPEC_story_director.md) | ✅ 2026-09-21 | 없음 | |
 | [story_progression_roadmap](done/SPEC_story_progression_roadmap.md) | ✅ 2026-09-18 확정 | 없음 | 로드맵 문서 |

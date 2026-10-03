@@ -1,6 +1,6 @@
 # SPEC: npc-bone-collision — NPC 뼈 선분 충돌·밀기
 
-> 상태: **인터뷰 완료(2026-10-01)**. 브랜치 `feat/reality_grab`.
+> 상태: **완료(2026-10-02)** — M1~M3 전부, 헤드셋 확인(완료 기준 전 항목 통과). 브랜치 `feat/reality_grab`. 남은 건 아래 미결 사항(무기 손·발·갑옷 뼈 값)뿐.
 > 선행: `SPEC_vr_ghost_hand.md` 의 "손으로 NPC 를 밀 수 있다"(`PushNPCWithBlockedHand`, 2026-09-30 미커밋 구현).
 
 ## 목표
