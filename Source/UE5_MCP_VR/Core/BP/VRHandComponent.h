@@ -18,7 +18,8 @@ class ACombatCharacter;
 
 /**
  * VR 손 하나 — 트래킹 목표(이 컴포넌트 = 앵커)와 그 목표를 드라이브로 쫓는 물리 손바닥을 분리해 벽·물건에 손이 막히게 한다.
- * 모션 컨트롤러 Grip 포즈에 붙는다. 핸드트래킹이 잡히면 손바닥 관절로 옮겨 가고, 아니면 컨트롤러를 따른다.
+ * 손 위치는 항상 핸드트래킹 손바닥 관절이고 컨트롤러는 버튼만 쓴다. 트래킹이 끊기면 마지막 손 자세(폰 기준)에 멈춘다.
+ * 모션 컨트롤러 Grip 포즈에 붙어 있어, 한 번도 안 잡혔을 때(헤드셋 없는 PIE)만 컨트롤러를 따른다.
  *
  * 소유: 물리 손바닥(바디) + 용접된 손바닥 상자·손가락 캡슐 + 손바닥↔월드 드라이브 제약 + 쥐기 제약.
  * 판정: 핀치·주먹 제스처, 접촉 쥐기(손가락 사이에 낀 물건), NPC 뼈 캡슐 밀어내기·밀기.
@@ -66,10 +67,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Drive")
     float AngularDamping = 80.f;
 
-    /** 회전 드라이브 최대 토크. 0 = 제한 없음. 벽에 댄 손이 표면을 따라 비틀려야 하면 낮춘다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Drive")
-    float AngularMaxForce = 0.f;
-
     /** 손바닥이 목표에서 이만큼(cm) 밀려나면 반대 손 충돌을 잠시 끈다. 양손이 반대편에 끼는 교착을 푼다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Drive")
     float PassThroughDistance = 6.f;
@@ -109,15 +106,39 @@ public:
 
     // ── 쥐기 ──
 
-    /** 물리 쥐기 제약이 끊어지는 힘(kg·cm/s²). 무거운 물건·세게 흔들면 놓친다. 1.2kg 물건의 무게 ≈ 1,180.
-     *  ponytail: 전역값 하나 — 물건별로 달라야 하면 FItemData 에 오버라이드 추가(SPEC_vr_grip_pose 미결). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grab", meta = (ClampMin = "0.0"))
-    float GrabBreakForce = 6000.f;
+    // ── 마찰 쥐기 — 쥐기 제약이 낼 수 있는 힘 = μ·ΣN, 토크 = μ·Σ(Nᵢ·rᵢ). 넘치는 만큼 미끄러지거나 돈다. 힘 단위 kg·cm/s²(1N = 100). ──
 
-    /** 물리 쥐기 제약이 끊어지는 토크(kg·cm²/s²). 긴 물건 끝을 한 손으로 들면 무게 × 손~무게중심 거리가 이를 넘어 놓친다.
-     *  60,000 = 2.5kg 양동이를 손잡이(무게중심 위 17cm, 약 41,700)로 들면 버티고, 2.5kg 을 25cm 넘게 떨어진 끝으로 들면 놓친다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grab", meta = (ClampMin = "0.0"))
-    float GrabBreakTorque = 60000.f;
+    /** 핸드트래킹 손가락 하나가 누르는 힘 = 쥐는 정도(물체에 막힌 관절보다 실제 손가락이 더 오므라든 각도, 라디안) × 이 값.
+     *  4000 이면 0.5rad 더 오므린 핀치(엄지+검지) ΣN 4000, μ 0.7 → 2.8kg 까지 든다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float SqueezeStiffness = 4000.f;
+
+    /** 쥐는 정도 평활화 시간 상수(초) — 트래킹 떨림에 마찰 한계가 출렁이지 않게. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float SqueezeSmoothTime = 0.1f;
+
+    /** 컨트롤러 그립을 끝까지 눌렀을 때 ΣN. 그립 아날로그값에 비례. 8000 이면 μ 0.7 에서 5.6kg. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float ControllerGripForce = 8000.f;
+
+    /** 컨트롤러 쥐기의 회전 저항 팔(cm) — 손가락 접촉이 없어 주먹으로 감싼 것으로 본다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float ControllerGripRadius = 4.f;
+
+    /** 접촉점 하나의 최소 회전 팔(cm) — 손가락 끝 살의 접촉면 반지름. 핀치처럼 접촉점이 쥔 중심에 붙어 있어도 0 이 되지 않게. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float FingerPadRadius = 0.8f;
+
+    /** 쥐기 드라이브 고유 진동수(rad/s) — 이동·회전. 강성 = 질량(관성) × ω², 감쇠는 임계. 클수록 단단하지만 상한 안에서만. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "1.0"))
+    float GripLinearFrequency = 100.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "1.0"))
+    float GripAngularFrequency = 40.f;
+
+    /** 쥔 점이 손에서 이만큼(cm) 넘게 미끄러지면 놓친 것으로 본다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grip", meta = (ClampMin = "0.0"))
+    float GripSlipReleaseDistance = 8.f;
 
     /** 접촉 쥐기 — 엄지와 다른 손끝 캡슐이 이 거리(cm) 안으로 같은 물건에 닿고, 둘 사이에 물건이 있으면 쥔다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hand|Grab", meta = (ClampMin = "0.0"))
@@ -145,14 +166,21 @@ public:
     /** 매 틱 — 접촉 쥐기 판정. bAllowNewGrab 이 false 면 새로 쥐지 않고 이미 쥔 것의 유지만 본다. 바뀌었으면 true. */
     bool UpdateContactGrab(bool bAllowNewGrab);
 
-    /** 물리 손바닥 ↔ 아이템을 끊어지는 제약으로 잇고 인벤토리 손 슬롯에 쥔 것으로 기록한다. 물리 손이 아직 없으면(시뮬레이션 전) false.
+    /** 물리 손바닥 ↔ 아이템을 마찰 한도 제약으로 잇고 인벤토리 손 슬롯에 쥔 것으로 기록한다. 물리 손이 아직 없으면(시뮬레이션 전) false.
      *  bKeepCollision = 손과 쥔 물건의 충돌을 유지(접촉 쥐기 — 닿은 순간이라 겹침이 없다). 컨트롤러 쥐기는 손이 물건에 박혀 있을 수 있어 끈다. */
     bool GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollision);
 
-    /** 쥐기 제약을 푼다(놓을 때). 끊김 이벤트는 나가지 않는다. */
+    /** 지금 쥐는 힘으로 이 아이템을 들 수 있나 — 마찰 한계 μ·ΣN ≥ 무게. 접촉 쥐기 중인 아이템이면 손가락 힘, 아니면 컨트롤러 그립값. */
+    bool CanHold(const ADroppedItemBase* Item) const;
+
+    /** 컨트롤러 그립 아날로그값(0~1). 폰이 입력마다 넣는다. */
+    void SetGripValue(float Value) { GripValue = FMath::Clamp(Value, 0.f, 1.f); }
+
+    /** 쥐기 제약을 푼다(놓을 때). */
     void ReleaseGrab();
 
-    /** 매 틱 — 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. */
+    /** 매 틱 — 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. 쥐고 있으면 마찰 한계를 갱신하고,
+     *  한계를 넘어 밀린 만큼 목표를 옮기며(재고착), 너무 밀리면 놓친다. */
     void SyncGrab();
 
     // ── 읽기 ──
@@ -223,9 +251,12 @@ private:
     /** 손바닥 모양이 물건 표면에서 Margin(cm) 안에 있는지. */
     bool IsPalmTouching(const UPrimitiveComponent* Item, float Margin) const;
 
-    /** 힘·토크 임계를 넘어 제약이 끊겼다 = 놓쳤다. 던지지 않고 그 자리에 떨어뜨린다. */
-    UFUNCTION()
-    void OnGrabConstraintBroken(int32 ConstraintIndex);
+    /** 마찰 한계 — 이동 최대 힘 μ·ΣN, 회전 최대 토크 μ·Σ(Nᵢ·rᵢ), 쥔 중심(접촉점 가운데).
+     *  bContact = 손가락 접촉(핸드트래킹, Partner 는 ContactPartner 규약), 아니면 컨트롤러 그립값으로 손바닥 중심에서 감싸 쥔 것으로 본다. */
+    void ComputeGrip(const ADroppedItemBase* Item, bool bContact, int32 Partner, float& OutForce, float& OutTorque, FVector& OutCenter) const;
+
+    /** 미끄러져 놓쳤다 — 던지지 않고 그 자리에 떨어뜨린다. */
+    void DropSlipped();
 
     /** 물리 손바닥 — 시뮬레이션 바디. 자체는 손바닥 관절에 중심을 둔 1cm 핵이고 실제 손 모양은 용접된 상자·캡슐이 맡는다. */
     UPROPERTY(Transient)
@@ -248,7 +279,22 @@ private:
     TObjectPtr<UPhysicsConstraintComponent> GrabConstraint;
     TWeakObjectPtr<ADroppedItemBase> GrabbedItem;
 
+    /** 쥐기 방식(접촉이면 짝)·제약 프레임(손바닥·아이템 기준)·드라이브 강성·감쇠·지금 드라이브 목표. 쥘 때 정한다. */
+    bool bGrabContact = false;
+    int32 GrabPartner = INDEX_NONE;
+    FTransform GrabFrameInPalm;
+    FTransform GrabFrameInItem;
+    float GrabLinStiffness = 0.f, GrabLinDamping = 0.f, GrabAngStiffness = 0.f, GrabAngDamping = 0.f;
+    FVector GrabLinTarget = FVector::ZeroVector;
+    FQuat GrabAngTarget = FQuat::Identity;
+
+    /** 컨트롤러 그립 아날로그값, 손가락별 평활화한 쥐는 정도(라디안). */
+    float GripValue = 0.f;
+    float SmoothedSqueeze[5] = {};
+
     FXRHandTrackingState TrackState;
+    /** 마지막으로 잡힌 관절 상태(폰 기준). 트래킹이 끊긴 동안 이걸 다시 쓴다. 한 번도 안 잡혔으면 bValid=false. */
+    FXRHandTrackingState LastTrackInOwner;
     bool bGesture = false;
 
     /** 손가락 캡슐 충돌이 켜져 있는가. 켜고 끌 때만 충돌 설정을 바꾼다. */

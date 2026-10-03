@@ -61,7 +61,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     void UnregisterDroppedItem(const FString& InInstanceID);
 
-    // 반경 내 등록된 드랍 아이템 — TMap 전체 순회 대신 물리 오버랩(PhysicsBody/WorldDynamic)으로 후보를 추린다.
+    // 반경 내 등록된 드랍 아이템(반경 = 아이템 메시 표면까지 거리) — TMap 전체 순회 대신 물리 오버랩(PhysicsBody/WorldDynamic)으로 후보를 추린다.
     // 반환은 액터 자체: 호출처(플레이어 픽업·손 쥐기·NPC 픽업)가 전부 ADroppedItemBase 로 캐스팅해 쓰기 때문.
     UFUNCTION(BlueprintCallable, Category = "MCP|Item")
     TArray<ADroppedItemBase*> GetItemsInRange(const FVector& SearchLocation, float SearchRadius) const;

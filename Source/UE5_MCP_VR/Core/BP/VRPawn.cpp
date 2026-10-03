@@ -1,6 +1,7 @@
 #include "Core/BP/VRPawn.h"
 #include "Core/BP/VRHandComponent.h"
 #include "Core/BP/VRPlayerUIComponent.h"
+#include "Core/Debug/VRCheatManager.h"
 #include "Core/BP/VRMeleeComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
@@ -220,6 +221,18 @@ void AVRPawn::BeginPlay()
             if (VRMappingContext)
                 Sub->AddMappingContext(VRMappingContext, 0);
         }
+
+#if !UE_BUILD_SHIPPING
+        // 디버그·튜닝 콘솔 명령(TuneGrab·DumpInventoryHUD·ToggleInventory·Cheat_Unequip)은 치트 매니저에 있다.
+        // 프로젝트에 게임모드·컨트롤러 BP 가 없어 에셋으로 CheatClass 를 못 지정하므로 여기서 지정한다.
+        // 에디터는 기본 치트 매니저를 이미 만들어 두므로(AddCheats 는 있으면 건너뛴다) 우리 클래스가 아니면 바꿔 끼운다.
+        PC->CheatClass = UVRCheatManager::StaticClass();
+        if (!PC->CheatManager || !PC->CheatManager->IsA<UVRCheatManager>())
+        {
+            PC->CheatManager = NewObject<UCheatManager>(PC, PC->CheatClass);
+            PC->CheatManager->InitCheatManager();
+        }
+#endif
     }
 
     RefreshStats();
@@ -553,6 +566,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_Grab)
         {
             EIC->BindAction(IA_Grab, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartRight);
+            EIC->BindAction(IA_Grab, ETriggerEvent::Triggered, this, &AVRPawn::OnGrabValueRight);
             // 그립을 뗀 순간이 곧 던지는 순간 — Completed 뿐 아니라 Canceled 도 받아야
             // 트래킹이 끊기며 취소된 경우에 아이템이 손에 영구히 붙어 남지 않는다.
             EIC->BindAction(IA_Grab, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseRight);
@@ -561,6 +575,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_GrabLeft)
         {
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartLeft);
+            EIC->BindAction(IA_GrabLeft, ETriggerEvent::Triggered, this, &AVRPawn::OnGrabValueLeft);
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseLeft);
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Canceled,  this, &AVRPawn::OnGrabReleaseLeft);
         }
@@ -934,7 +949,7 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
     if (!ItemManager) return nullptr;
 
     ADroppedItemBase* Nearest = nullptr;
-    float NearestDistSq = TNumericLimits<float>::Max();
+    float NearestDist = TNumericLimits<float>::Max();
     for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(Origin, Radius))
     {
         // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
@@ -943,29 +958,22 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
         // 진열품은 Interact 픽업 후보에서 뺀다 — 공짜 획득 경로. 그랩은 구매 판정을 타므로 포함.
         if (Dropped->bIsDisplayed && !bIncludeDisplayed) continue;
 
-        const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
-        if (DistSq < NearestDistSq)
+        // 메시 표면까지 거리 — 긴 물건 끝을 잡아도 중심이 멀다고 옆의 작은 물건에 지지 않게. 충돌이 꺼져 못 재면 액터 위치.
+        FVector Closest;
+        float Dist = IsValid(Dropped->ItemMesh) ? Dropped->ItemMesh->GetClosestPointOnCollision(Origin, Closest) : -1.f;
+        if (Dist < 0.f) Dist = FVector::Dist(Origin, Dropped->GetActorLocation());
+        if (Dist < NearestDist)
         {
-            NearestDistSq = DistSq;
+            NearestDist = Dist;
             Nearest = Dropped;
         }
     }
     return Nearest;
 }
 
-void AVRPawn::DumpInventoryHUD()
-{
-    if (PlayerUI) PlayerUI->DumpInventoryHUD();
-}
-
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
     if (PlayerUI) PlayerUI->ToggleInventory();
-}
-
-void AVRPawn::ToggleInventory()
-{
-    OnInventoryToggle(FInputActionValue());
 }
 
 bool AVRPawn::IsInventoryOpen() const
@@ -1008,10 +1016,27 @@ void AVRPawn::StandUpFromFurniture()
 // 물리 손 쥐기 — 그립으로 월드 아이템을 직접 쥐고, 놓으면 던지거나 NPC 에게 건넨다.
 // ============================================================================
 
-void AVRPawn::OnGrabStartRight(const FInputActionValue& /*Value*/)   { bGripHeld[1] = true;  UpdateGrabInput(/*bLeft=*/false); }
-void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)    { bGripHeld[0] = true;  UpdateGrabInput(/*bLeft=*/true); }
-void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { bGripHeld[1] = false; UpdateGrabInput(/*bLeft=*/false); }
-void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { bGripHeld[0] = false; UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabStartRight(const FInputActionValue& Value)       { HandleGripValue(false, Value.Get<float>()); bGripHeld[1] = true; UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabStartLeft(const FInputActionValue& Value)        { HandleGripValue(true, Value.Get<float>());  bGripHeld[0] = true; UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { HandleGripValue(false, 0.f); bGripHeld[1] = false; UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { HandleGripValue(true, 0.f);  bGripHeld[0] = false; UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabValueRight(const FInputActionValue& Value)       { HandleGripValue(false, Value.Get<float>()); }
+void AVRPawn::OnGrabValueLeft(const FInputActionValue& Value)        { HandleGripValue(true, Value.Get<float>()); }
+
+void AVRPawn::HandleGripValue(bool bLeft, float Value)
+{
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand) return;
+    Hand->SetGripValue(Value);
+
+    // 그립을 누른 채 손에 든 게 없으면(약하게 쥐어 못 들었음) 매 프레임 다시 쥐어 본다 — 더 세게 쥐면 들린다.
+    // 인벤토리가 열렸으면 그립은 슬롯 발동이라 되풀이하지 않는다.
+    const int32 h = bLeft ? 0 : 1;
+    if (bGripHeld[h] && bGrabInputActive[h] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()))
+    {
+        HandleGrabStart(bLeft);
+    }
+}
 
 void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
 {
@@ -1044,6 +1069,10 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     ADroppedItemBase* Nearest = Target ? Target : FindNearestItemNearHand(GrabRadius, bLeft);
     if (!Nearest) return;
 
+    // 물리 손이 없거나 쥐는 힘의 마찰 한계가 무게보다 작으면 안 든다(구매 판정보다 먼저 — 못 들 물건 값을 받지 않게).
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand || !Hand->IsPhysicsActive() || !Hand->CanHold(Nearest)) return;
+
     // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
     // 거부되면 손에 붙이지 않는다(붙였다 뺏으면 복사 버그 — TradeSession 의 교훈).
     if (Nearest->bIsDisplayed)
@@ -1052,13 +1081,11 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
         if (!Stall || !Stall->TryPurchase(Nearest, Inventory)) return;
     }
 
-    // 물리 손이 있으면 제약으로 쥔다(무게·토크를 엔진이 계산). 시뮬레이션 전이면 예전처럼 손 본 소켓에 붙인다.
-    UVRHandComponent* Hand = GetHand(bLeft);
-    if (!Hand || !Hand->GrabWithPhysics(Nearest, /*bKeepCollision=*/Target != nullptr))
+    // 물리 손과 아이템을 마찰 한도 제약으로 잇는다(무게·토크를 엔진이 계산).
+    if (Hand->GrabWithPhysics(Nearest, /*bKeepCollision=*/Target != nullptr))
     {
-        Inventory->AttachItemToHand(Nearest, HandSlot);
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
     }
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
@@ -1067,42 +1094,8 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     if (!IsValid(Anchor)) return nullptr;
 
     // 판정 원점은 폰이 아니라 실제 손(트래킹 앵커) — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    // 앵커는 핸드트래킹이면 손바닥 관절, 컨트롤러를 쥐면 그립 포즈를 따른다. 컨트롤러 위치를 쓰면
-    // 핸드트래킹 중엔 내려놓은 컨트롤러 주변을 찾아 손 근처 아이템을 못 잡는다.
+    // 앵커는 핸드트래킹 손바닥 관절이다(컨트롤러를 쥐어도). 컨트롤러 위치를 쓰면 내려놓은 컨트롤러 주변을 찾는다.
     return FindNearestItem(Anchor->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
-}
-
-void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
-{
-    // 오른손을 먼저 본다. 오른손이 비어 있으면 왼손에 쥔 것을 튜닝 대상으로 삼는다.
-    ADroppedItemBase* Held = nullptr;
-    if (Inventory)
-    {
-        Held = Inventory->GetHeldItem(EEquipmentSlot::MainHand);
-        if (!Held) Held = Inventory->GetHeldItem(EEquipmentSlot::OffHand);
-    }
-    if (!IsValid(Held))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] TuneGrab — 쥔 아이템이 없습니다."));
-        return;
-    }
-
-    // 델타로 밀고 절대값을 찍는다. VR 을 쓴 채로는 수치를 못 읽으니, 찍힌 값을 그대로
-    // DT_ItemRegistry 의 HoldOffset/HoldRotation 에 붙여넣어 확정하는 흐름.
-    // 델타가 전부 0 이면 밀지 않고 현재 값만 나오므로 그게 곧 조회 명령이 된다.
-    Held->AddActorLocalOffset(FVector(DX, DY, DZ));
-    Held->AddActorLocalRotation(FRotator(DPitch, DYaw, DRoll));
-
-    const FVector Loc = Held->GetRootComponent()->GetRelativeLocation();
-    const FRotator Rot = Held->GetRootComponent()->GetRelativeRotation();
-
-    // CSV 에 그대로 붙일 수 있는 표기로 찍는다.
-    const FString Line = FString::Printf(
-        TEXT("[VRPawn] %s HoldOffset=\"(X=%.2f,Y=%.2f,Z=%.2f)\" HoldRotation=\"(Pitch=%.2f,Yaw=%.2f,Roll=%.2f)\""),
-        *Held->ItemData.ItemTemplateID, Loc.X, Loc.Y, Loc.Z, Rot.Pitch, Rot.Yaw, Rot.Roll);
-
-    UE_LOG(LogTemp, Log, TEXT("%s"), *Line);
-    if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
 }
 
 void AVRPawn::HandleGrabRelease(bool bLeft)
@@ -1177,14 +1170,6 @@ bool AVRPawn::StoreHeldItemInInventory()
         || Inventory->StoreHeldItem(EEquipmentSlot::OffHand);
 }
 
-void AVRPawn::Cheat_Unequip(bool bOffHand)
-{
-    if (Inventory)
-    {
-        Inventory->UnequipItem(bOffHand ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
-    }
-}
-
 void AVRPawn::DetectNearbyNPC()
 {
     // 최근접이 주민(서버 미등록)이면 로컬 인사(바라보기+Wave+대사 1줄)로 끝. 타겟 NPC 는 건드리지 않는다.
@@ -1237,44 +1222,6 @@ void AVRPawn::SayToNpc(const FString& Text)
         return;
     }
     PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), CurrentTargetNPCID, Text);
-}
-
-void AVRPawn::LogIKMetrics()
-{
-    USkeletalMeshComponent* M = GetMesh();
-    if (!M || !MotionControllerRight) return;
-
-    // X_Bot 본 이름(접두어 없음). 어깨(상완 시작)→손 = 아바타 오른팔 길이.
-    const FVector Shoulder = M->GetSocketLocation(TEXT("RightArm"));
-    const FVector Hand     = M->GetSocketLocation(TEXT("RightHand"));
-    const float ArmLen     = (Hand - Shoulder).Size();
-
-    // 컨트롤러(=실제 손 타겟)가 아바타 어깨에서 떨어진 거리 = 필요한 도달거리.
-    const FVector Ctrl  = MotionControllerRight->GetComponentLocation();
-    const float Reach   = (Ctrl - Shoulder).Size();
-    const float Scale   = M->GetRelativeScale3D().X;
-
-    const FString Msg = FString::Printf(
-        TEXT("[IK] ArmLen=%.1f  Reach=%.1f  diff=%.1f  scale=%.3f  (Reach>ArmLen=팔짧음, Reach<<ArmLen=팔길어 팔꿈치접힘)"),
-        ArmLen, Reach, Reach - ArmLen, Scale);
-    UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
-
-    // 현재 이펙터 타겟(메시 공간) — CR 변수 Default Value 에 박아 프리뷰 재현용.
-    auto Dump = [](const TCHAR* Name, const FTransform& T)
-    {
-        const FVector L = T.GetLocation();
-        const FRotator R = T.Rotator();
-        UE_LOG(LogTemp, Warning,
-            TEXT("[IK] %s  Loc=(%.2f, %.2f, %.2f)  Rot=(P=%.2f, Y=%.2f, R=%.2f)"),
-            Name, L.X, L.Y, L.Z, R.Pitch, R.Yaw, R.Roll);
-    };
-    Dump(TEXT("HeadTarget     "), GetHeadEffectorCS());
-    Dump(TEXT("LeftHandTarget "), GetLeftHandEffectorCS());
-    Dump(TEXT("RightHandTarget"), GetRightHandEffectorCS());
-
-#if !UE_BUILD_SHIPPING
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, Msg);
-#endif
 }
 
 // ============================================================================

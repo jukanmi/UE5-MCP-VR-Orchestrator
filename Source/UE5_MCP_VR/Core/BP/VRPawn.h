@@ -497,10 +497,6 @@ public:
     UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
     bool StoreHeldItemInInventory();
 
-    /** 치트/콘솔 명령: 손 장비 해제. 인자 0 = 오른손 무기, 1 = 왼손 방패. */
-    UFUNCTION(Exec)
-    void Cheat_Unequip(bool bOffHand);
-
     /** 콘솔 채팅: 현재 타겟 NPC(없으면 근접 탐지)에게 텍스트 발화. 띄어쓰기 포함 시 따옴표 —
      *  `SayToNpc "안녕 뭐해"`. HUD ChatInput 과 같은 전송 경로. */
     UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
@@ -675,6 +671,11 @@ private:
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
 
+    /** 그립 아날로그값(누르는 동안 매 프레임) — 손의 마찰 한계로 넘기고, 약하게 쥐어 못 든 아이템은 더 세게 쥐면 다시 쥔다. */
+    void OnGrabValueRight(const FInputActionValue& Value);
+    void OnGrabValueLeft(const FInputActionValue& Value);
+    void HandleGripValue(bool bLeft, float Value);
+
     /** 잡기 입력 = 컨트롤러 그립 OR 접촉 쥐기. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
      *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */
     void UpdateGrabInput(bool bLeft, ADroppedItemBase* Target = nullptr);
@@ -698,26 +699,6 @@ public:
     FVector GetHandLocation(bool bRightHand) const;
 
 private:
-
-    /** 쥔 아이템의 손안 자세를 델타로 밀어보고 절대값을 CSV 표기로 찍는다. 예: TuneGrab 0 0 1 0 15 0
-     *  전부 0 을 넣으면 밀지 않고 현재 값만 출력한다.
-     *  헤드셋을 쓴 채로는 수치를 읽을 수 없으므로, 찍힌 값을 DT_ItemRegistry 에 옮겨 확정한다. */
-    UFUNCTION(Exec)
-    void TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll);
-
-    /** 콘솔 진단 — 아바타 팔길이 vs 컨트롤러 도달거리 + 현재 스케일 로그/화면 출력.
-     *  팔 뻗은 자세에서 호출해 비율 확인. Reach > ArmLen 이면 아바타 팔이 짧음. */
-    UFUNCTION(Exec)
-    void LogIKMetrics();
-
-    /** 콘솔 진단 — 인벤토리 실제 내용 + HUD 위젯 연결 상태 덤프.
-     *  픽업이 안 먹은 건지, 먹었는데 UI 가 안 그려진 건지 한 번에 갈라준다. */
-    UFUNCTION(Exec)
-    void DumpInventoryHUD();
-
-    /** 콘솔에서 인벤토리 패널 열기/닫기 토글 (에디터 디버그용). 콘솔창에 ToggleInventory 입력. */
-    UFUNCTION(Exec)
-    void ToggleInventory();
 
     // --- 전투 ---
     UFUNCTION()

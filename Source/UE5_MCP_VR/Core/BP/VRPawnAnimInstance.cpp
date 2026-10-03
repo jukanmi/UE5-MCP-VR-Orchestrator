@@ -361,9 +361,12 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
             if (bChanged) Build();
         }
 
+        Rig.Squeeze[Finger] = 0.f;
         for (int32 Segment = 0; Segment < 3; ++Segment)
         {
-            Rig.LastLocal[Finger * 3 + Segment] = Local[Segment];
+            const int32 i = Finger * 3 + Segment;
+            if (Rig.bFrozen[i]) Rig.Squeeze[Finger] += FMath::Max(0.f, Curl(Tracked[Segment]) - Curl(Rig.FrozenLocal[i]));
+            Rig.LastLocal[i] = Local[Segment];
             Rig.KeyRotations[KeyIndex(Finger, Segment)] = PalmKey * Rel[Segment];
         }
     }
@@ -397,6 +400,7 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             // 트래킹이 끊기면 고정도 끝 — 다시 잡혔을 때 옛 각도로 굳지 않게.
             Rig.bLastValid = false;
             for (bool& bFrozen : Rig.bFrozen) bFrozen = false;
+            for (float& Squeeze : Rig.Squeeze) Squeeze = 0.f;
             continue;
         }
 

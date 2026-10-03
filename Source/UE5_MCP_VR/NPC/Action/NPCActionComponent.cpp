@@ -2463,7 +2463,8 @@ bool UNPCActionComponent::PerformPickupAtDestination()
 
     // 좌표 경로 — 월드 액터를 직접 잡는다. ID·수량만 받으면 주운 뒤 액터를 못 없애 무한 복제된다.
     // 액션 1회당 1개 묶음만 — 범위 내 전부 쓸어 담지 않는다.
-    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 100.f))
+    // 200cm = 캡슐 중심(골반 높이)에서 바닥 아이템 표면까지. 반경 판정이 아이템 상호작용 구체(100cm)를 포함하던 시절의 실효 거리와 같다.
+    for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(OwnerCharacter->GetActorLocation(), 200.f))
     {
         if (Dropped->TryPickupInto(InventoryComponent)) return true;
     }

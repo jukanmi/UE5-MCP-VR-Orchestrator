@@ -50,6 +50,10 @@ public:
     /** 손바닥 상자 중심 — 손 본 원점(손목) 기준, 손바닥 관절 축. */
     FVector GetPalmBoxCenter(EControllerHand Hand, int32 Part) const { return RigOf(Hand).PalmBoxCenter[Part]; }
 
+    /** 쥐는 정도(라디안) — 물체에 막혀 고정된 관절들에서 실제 손가락이 고정 각도보다 더 오므라든 각도의 합. 안 막혔으면 0.
+     *  실제 손은 물체가 없어 끝까지 오므라지므로, 더 오므린 만큼이 "세게 쥐려는" 정도다. 직전 애님 갱신 값. */
+    float GetFingerSqueeze(EControllerHand Hand, int32 Finger) const { return RigOf(Hand).Squeeze[Finger]; }
+
 protected:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
@@ -84,6 +88,8 @@ private:
         FQuat FrozenLocal[NumFingerBones];
         bool bFrozen[NumFingerBones] = {};
         bool bLastValid = false;
+        /** 손가락별 쥐는 정도(라디안) — GetFingerSqueeze. */
+        float Squeeze[5] = {};
         /** 이번 프레임 관절 월드 회전(EHandKeypoint 순). 비어 있으면 미추적 — 그래프 포즈 그대로 둔다. */
         TArray<FQuat> KeyRotations;
         /** 팔 3관절 IK — 위팔·아래팔 본과 이번 프레임 손 이펙터(몸 메시 공간, FBIK 에 넣는 것과 같은 값). */

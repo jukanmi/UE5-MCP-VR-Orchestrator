@@ -7,6 +7,7 @@
 #include "CollisionQueryParams.h"
 #include "Inventory/BP/ItemDataAsset.h"
 #include "Inventory/Types/ItemRegistryOptions.h" // ItemRegistryPaths::DefaultItemTable
+#include "Components/StaticMeshComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Engine/DataTable.h"
 
@@ -108,11 +109,17 @@ TArray<ADroppedItemBase*> UItemManager::GetItemsInRange(const FVector& SearchLoc
     }
 
     // 한 액터가 컴포넌트마다 여러 번 잡히므로 중복 제거. 등록 여부는 액터가 든 InstanceID 로 O(1) 확인.
+    // 오버랩은 아이템의 상호작용 구체(반지름 100cm)에도 걸려 반경이 실제보다 100cm 커진다 — 메시 표면까지 거리로 다시 거른다.
+    // 충돌이 꺼져 표면 거리를 못 재면 액터 위치로.
     for (const FOverlapResult& HitResult : OverlapResults)
     {
         ADroppedItemBase* Dropped = Cast<ADroppedItemBase>(HitResult.GetActor());
         if (!IsValid(Dropped) || FoundItems.Contains(Dropped)) continue;
         if (!ActiveDroppedItems.Contains(Dropped->ItemData.ItemInstanceID)) continue;
+        FVector Closest;
+        float Dist = IsValid(Dropped->ItemMesh) ? Dropped->ItemMesh->GetClosestPointOnCollision(SearchLocation, Closest) : -1.f;
+        if (Dist < 0.f) Dist = FVector::Dist(SearchLocation, Dropped->GetActorLocation());
+        if (Dist > SearchRadius) continue;
         FoundItems.Add(Dropped);
     }
 
