@@ -1,6 +1,6 @@
 # SPEC: vr-ghost-hand — 물리 손(ghost hand)
 
-> 상태: **인터뷰 완료(2026-09-24)**, 착수 가능. 미결 3~6 은 구현·PIE 튜닝 중 결정. 근거: `docs/DESIGN_vr_physics_grip.md` + 손 트래킹 연구 노트.
+> 상태: **M1~M3 완료(2026-09-30~10-02, 헤드셋 확인)** — 손끝 캡슐·핀치·주먹 `9433069e`, 드라이브 하나로 통합(2026-10-03), 손은 `UVRHandComponent` 로 분리. 팔 통과는 SPEC 밖. 미결 3~6 은 튜닝으로 해소. 근거: `docs/DESIGN_vr_physics_grip.md` + 손 트래킹 연구 노트.
 > 후속 SPEC 전부의 기반: `SPEC_vr_grip_pose.md`(2·3), `SPEC_npc_lift_throw.md`(6).
 
 ## 목표
