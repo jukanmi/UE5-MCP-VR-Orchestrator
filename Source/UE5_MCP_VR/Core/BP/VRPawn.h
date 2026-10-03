@@ -20,6 +20,7 @@ class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
 class UVRPlayerUIComponent;
+class UVRMeleeComponent;
 class USphereComponent;
 class UVRHandComponent;
 class AKineticProjectile;
@@ -104,7 +105,11 @@ public:
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    // 동역학 근접 — 손 본 소켓에 부착된 타격 구체. NPC overlap 시 손 속도로 ½mv² 데미지.
+    /** 동역학 근접 전투 — 손 속도 추적·손/무기로 치기(½mv²)·막기/패링·J→HP 환산(던지기·투사체도 사용). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
+    UVRMeleeComponent* MeleeCombat;
+
+    // 손 위치 표시용 구(충돌 없음, 손 본 소켓). 실제 타격 판정은 UVRMeleeComponent 의 능동 오버랩.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereLeft;
 
@@ -335,60 +340,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
-    // ── 동역학 데미지 튜닝 (Damage = clamp(½·m·v² · Scale, 0, Cap), v 는 m/s) ──
-
-    /** 근접 손 무기 질량(kg) — ½mv² 의 m. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float WeaponMass = 2.0f;
-
-    /** 운동에너지(J) → HP 데미지 환산 계수. PIE 에서 체감 맞춰 튜닝. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float KineticDamageScale = 1.0f;
-
-    /** 밀치기 임계(m/s). 이 미만 접촉은 무시. 이상~MeleeStrikeSpeed 미만은 밀침만(데미지·공격인지 없음). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MinImpactSpeed = 1.0f;
-
-    /** 데미지(=공격 인지) 임계(m/s). 이 이상 스윙만 TakeDamage → SmartNPC 가 공격으로 인지.
-     *  미만(밀치기 구간)은 NPC 밀려나되 LLM 이 공격으로 안 봄. MinImpactSpeed ≤ 이 값 권장. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeStrikeSpeed = 2.0f;
-
-    /** 1회 타격 데미지 상한. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MaxKineticDamage = 100.f;
-
-    /** 손 타격 구체 반경(cm). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeSphereRadius = 12.f;
-
-    /** 같은 NPC 재타격 최소 간격(초) — 한 스윙 다중 overlap 폭주 방지. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeHitCooldown = 0.4f;
-
-    /** 손 속도 EMA 스무딩(0~1, 1=무스무딩) — 트래킹 스파이크 억제. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-    float HandVelSmoothing = 0.5f;
-
-    /** 방어 판정 — 아이템 쥔 손 방향(수평)·공격자 방향 내적이 이 이상이면 Block. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
-    float BlockDotThreshold = 0.6f;
-
-    /** 패링 임계(cm/s). Block 성립 + 그 손 속도가 이 이상이면 데미지 0. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block")
-    float ParryHandSpeed = 150.f;
-
-    /** 단순 Block 시 남는 데미지 배율(0.2 = 80% 경감). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float BlockDamageScale = 0.2f;
-
-    /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float KnockbackScale = 150.f;
-
-    /** 밀치기 속도 상한(cm/s). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MaxKnockbackSpeed = 600.f;
+    // 동역학 데미지 튜닝(½·m·v²·환산·상한)·막기/패링은 UVRMeleeComponent.
 
     /** IA_Attack 으로 발사할 투사체 클래스. BP_KineticProjectile 지정. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")
@@ -767,17 +719,6 @@ private:
     // --- 전투 ---
     UFUNCTION()
     void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-
-    // 동역학 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
-    // 본 소켓 패시브 overlap 은 애니 본에서 이벤트 누락이 잦아 능동 쿼리로 대체.
-    void TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand);
-
-    // 손 속도 추적(Tick) — 컨트롤러 위치 델타/dt. cm/s. ½mv² 의 v 산출.
-    FVector PrevHandLocLeft  = FVector::ZeroVector;
-    FVector PrevHandLocRight = FVector::ZeroVector;
-    FVector HandVelLeft      = FVector::ZeroVector;
-    FVector HandVelRight     = FVector::ZeroVector;
-    bool bHandVelInit = false;
 
     // --- 사망/리스폰 ---
     UPROPERTY(EditDefaultsOnly, Category = "Combat")

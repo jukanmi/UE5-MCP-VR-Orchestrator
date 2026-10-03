@@ -1,6 +1,7 @@
 #include "Core/BP/VRPawn.h"
 #include "Core/BP/VRHandComponent.h"
 #include "Core/BP/VRPlayerUIComponent.h"
+#include "Core/BP/VRMeleeComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
@@ -90,16 +91,18 @@ AVRPawn::AVRPawn()
     // 손 메시 제거됨 — 풀바디 FBIK(ABP_VRPawn) 손이 컨트롤러를 향해 역산되므로
     // 별도 손 메시는 중복. 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    // 동역학 근접 — 손 위치 시각 마커. **실제 타격 판정은 Tick 의 능동 스피어 쿼리(TryMeleeHits).**
+    // 동역학 근접 — 손 위치 시각 마커. **실제 타격 판정은 UVRMeleeComponent 의 능동 스피어 쿼리.**
     // 본 소켓에 붙인 패시브 overlap 은 애니 본에서 overlap 이벤트 누락이 잦아 쓰지 않음(콜리전 OFF).
+    MeleeCombat = CreateDefaultSubobject<UVRMeleeComponent>(TEXT("MeleeCombat"));
+
     MeleeSphereLeft = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereLeft"));
     MeleeSphereLeft->SetupAttachment(GetMesh(), TEXT("LeftHand"));  // Mixamo X_Bot 본 이름
-    MeleeSphereLeft->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereLeft->InitSphereRadius(MeleeCombat->MeleeSphereRadius);
     MeleeSphereLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     MeleeSphereRight = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereRight"));
     MeleeSphereRight->SetupAttachment(GetMesh(), TEXT("RightHand"));  // Mixamo X_Bot 본 이름
-    MeleeSphereRight->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereRight->InitSphereRadius(MeleeCombat->MeleeSphereRadius);
     MeleeSphereRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     // 손 — 컨트롤러 Grip 포즈에 붙은 앵커. 물리 손바닥·손가락·제약은 BeginPlay 에 손 컴포넌트가 만든다.
@@ -346,32 +349,8 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateDash(DeltaTime);
     UpdateHands(DeltaTime);
 
-    // 동역학 근접 — 실제 손(트래킹 앵커) 속도 추적. ½mv² 의 v, 던지기 속도, 패링 판정이 같이 쓴다.
-    // 앵커는 kinematic 이라 GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
-    // 컨트롤러 위치를 쓰면 핸드트래킹 중엔 내려놓은 컨트롤러라 속도가 0 — 던지면 떨어지고 타격이 안 들어간다.
-    if (DeltaTime > KINDA_SMALL_NUMBER && IsValid(HandLeft) && IsValid(HandRight))
-    {
-        const FVector CurL = HandLeft->GetComponentLocation();
-        const FVector CurR = HandRight->GetComponentLocation();
-        if (bHandVelInit)
-        {
-            // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
-            // 0 처리. ½mv² 데미지 폭주·물리 폭발 차단. 속도(cm/s) 기준이라 프레임레이트 독립(저FPS 정상스윙 오판 X).
-            const FVector VelL = (CurL - PrevHandLocLeft) / DeltaTime;
-            const FVector VelR = (CurR - PrevHandLocRight) / DeltaTime;
-            const FVector RawL = (VelL.Size() > 9000.f) ? FVector::ZeroVector : VelL;
-            const FVector RawR = (VelR.Size() > 9000.f) ? FVector::ZeroVector : VelR;
-            HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
-            HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
-
-            // 근접 타격 — 실제 손 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
-            TryMeleeHits(CurR, HandVelRight, /*bRightHand=*/true);
-            TryMeleeHits(CurL, HandVelLeft,  /*bRightHand=*/false);
-        }
-        PrevHandLocLeft  = CurL;
-        PrevHandLocRight = CurR;
-        bHandVelInit = true;
-    }
+    // 동역학 근접 — 손 갱신 뒤 실제 손 속도를 재고 그 손으로 친다.
+    if (MeleeCombat) MeleeCombat->Update(DeltaTime);
 }
 
 // ============================================================================
@@ -900,7 +879,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 
     // 동역학 원거리 — 히트스캔 폐기, 투사체 발사. 오른손 Aim 포즈(조준 정렬) 기준 전방.
     // 명중·데미지는 투사체의 ½mv²(KineticProjectile::OnHit)가 처리. 근접은 스윙 overlap.
-    if (ProjectileClass && MotionControllerRightAim)
+    if (ProjectileClass && MotionControllerRightAim && MeleeCombat)
     {
         const FVector  SpawnLoc = MotionControllerRightAim->GetComponentLocation();
         const FRotator SpawnRot = MotionControllerRightAim->GetComponentRotation();
@@ -913,7 +892,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
         if (AKineticProjectile* Proj = GetWorld()->SpawnActor<AKineticProjectile>(ProjectileClass, SpawnLoc, SpawnRot, SpawnParams))
         {
             // 근접과 동일한 J→HP 환산·상한 주입 — 전투 일관성.
-            Proj->InitProjectile(this, KineticDamageScale, MaxKineticDamage);
+            Proj->InitProjectile(this, MeleeCombat->KineticDamageScale, MeleeCombat->MaxKineticDamage);
         }
     }
 
@@ -942,111 +921,6 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 {
     RemoveStateTag(TAG_State_Action_Combat_Attack);
     AddStateTag(TAG_State_Idle);
-}
-
-void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
-{
-    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→피격자 인지).
-    // 대상은 ACombatCharacter(SmartNPC·EnemyCharacter) — 적 클래스도 같은 스윙·투사체 규약으로 맞는다.
-    // 가벼운 밀침(bPush~bStrike 사이)은 데미지 없음 = LLM 이 공격으로 안 봄.
-    const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
-    const bool  bPush   = SpeedMs >= MinImpactSpeed;
-    const bool  bStrike = SpeedMs >= MeleeStrikeSpeed;
-    if (!bPush) return;
-
-    // 무기를 쥐고 있으면 판정 형상을 그 무기로 바꾼다. 손 주변 구만 보면 검을 휘둘러도
-    // 칼날이 닿는 거리에서는 아무 일도 일어나지 않아 맨손과 사거리가 같아진다.
-    const EEquipmentSlot HandSlot = bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
-    const ADroppedItemBase* Held = Inventory ? Inventory->GetHeldItem(HandSlot) : nullptr;
-    const UStaticMeshComponent* HeldMesh = (Held && Held->ItemMesh) ? Held->ItemMesh : nullptr;
-
-    FVector QueryLoc = HandLoc;
-    FQuat QueryRot = FQuat::Identity;
-    FCollisionShape QueryShape = FCollisionShape::MakeSphere(MeleeSphereRadius);
-    float ImpactMass = WeaponMass;
-
-    if (HeldMesh && HeldMesh->GetStaticMesh())
-    {
-        // 회전은 컴포넌트에서 받고 크기는 로컬 바운즈에서 받는다. 월드 바운즈의 Extent 는
-        // 축 정렬이라 기울어진 검일수록 실제보다 큰 상자가 된다.
-        const FVector LocalExtent = HeldMesh->GetStaticMesh()->GetBounds().BoxExtent * HeldMesh->GetComponentScale();
-
-        QueryLoc = HeldMesh->GetComponentTransform().TransformPosition(HeldMesh->GetStaticMesh()->GetBounds().Origin);
-        QueryRot = HeldMesh->GetComponentQuat();
-        QueryShape = FCollisionShape::MakeBox(LocalExtent);
-
-        // 질량도 쥔 물건 것으로 — DroppedItemBase::BeginPlay 가 테이블 Weight 를 질량 오버라이드로 박아 뒀다.
-        // GetMass() 는 쓰면 안 된다: 쥔 동안 물리가 꺼져 있어 매 프레임 경고를 찍고 0 을 돌려주므로
-        // 근접 피해가 0.01kg 기준으로 뭉개진다. 오버라이드 없는 메시는 폰 기본 WeaponMass.
-        if (const FBodyInstance* Body = HeldMesh->GetBodyInstance(); Body && Body->bOverrideMass)
-        {
-            ImpactMass = FMath::Max(Body->GetMassOverride(), 0.01f);
-        }
-    }
-
-    // 능동 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
-    TArray<FOverlapResult> Overlaps;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeHit), /*bTraceComplex=*/false, this);
-    // Pawn(서 있는 NPC 캡슐) + PhysicsBody(넉다운 래그돌 메시) 둘 다 — 쓰러진 NPC 저글 타격 가능(의도된 동작).
-    FCollisionObjectQueryParams ObjParams;
-    ObjParams.AddObjectTypesToQuery(ECC_Pawn);
-    ObjParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-    const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, QueryLoc, QueryRot,
-        ObjParams, QueryShape, Params);
-
-    if (!bAnyOverlap) return;
-
-    const float Now = GetWorld()->GetTimeSeconds();
-
-    const float Damage = KineticDamage::Compute(ImpactMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
-
-    for (const FOverlapResult& O : Overlaps)
-    {
-        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
-        if (!NPC) continue;
-
-        // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
-        if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
-        NPC->LastMeleeHitTime = Now;
-
-        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
-        // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
-        if (bStrike)
-        {
-            // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
-            // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
-            ASmartNPC* SmartTarget = Cast<ASmartNPC>(NPC);
-            FDiceResult ParryRoll;
-            const bool bParried = SmartTarget && SmartTarget->StateComponent
-                && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
-                                             SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
-            if (bParried)
-            {
-                // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
-                if (SmartTarget->ParrySound)
-                {
-                    UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
-                }
-                const FPerceptionData ParryPerc(
-                    ASmartNPC::PerceptionIdFor(this), ESenseType::Parried,
-                    GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
-                SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
-            }
-            else
-            {
-                // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
-                KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
-            }
-        }
-
-        // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
-        if (!NPC->bIsDead && KnockbackScale > 0.f)
-        {
-            const float PushSpeed = FMath::Min(SpeedMs * KnockbackScale, MaxKnockbackSpeed);
-            const FVector PushVel = HandVel.GetSafeNormal() * PushSpeed;
-            NPC->LaunchCharacter(PushVel, /*bXYOverride=*/true, /*bZOverride=*/false);
-        }
-    }
 }
 
 // ============================================================================
@@ -1323,8 +1197,9 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
     }
 
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
-    Item->LaunchThrown((bLeft ? HandVelLeft : HandVelRight) * ThrowVelocityScale, this,
-                       KineticDamageScale, MaxKineticDamage, MeleeStrikeSpeed);
+    if (!MeleeCombat) return;
+    Item->LaunchThrown(MeleeCombat->GetHandVelocity(bLeft) * ThrowVelocityScale, this,
+                       MeleeCombat->KineticDamageScale, MeleeCombat->MaxKineticDamage, MeleeCombat->MeleeStrikeSpeed);
 }
 
 bool AVRPawn::StoreHeldItemInInventory()
@@ -1482,30 +1357,8 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
     // EnemyCharacter 와 같은 공식: 원시 − 방어력 (최소 0).
     float Actual = FMath::Max(0.f, Raw - CurrentStats.Combat.Defense);
 
-    // Block/Parry — 아이템을 쥔 손이 공격자 쪽(수평 내적 ≥ BlockDotThreshold)에 있으면 막은 것.
-    // 그 손이 ParryHandSpeed 이상으로 움직이는 중이면 패링(데미지 0), 아니면 단순 방어(BlockDamageScale).
-    // 수평 투영 이유: 손은 캡슐 중심보다 늘 위에 있어 3D 내적으론 높이 든 손이 방어로 안 잡힘.
-    if (Actual > 0.f && DamageCauser && Inventory)
-    {
-        const FVector PlayerLoc = GetActorLocation();
-        const FVector AttackDir = (DamageCauser->GetActorLocation() - PlayerLoc).GetSafeNormal2D();
-        for (const bool bRight : { true, false })
-        {
-            if (!Inventory->GetHeldItem(bRight ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand)) continue;
-            const FVector HandDir = (GetHandLocation(bRight) - PlayerLoc).GetSafeNormal2D();
-            if (FVector::DotProduct(HandDir, AttackDir) < BlockDotThreshold) continue;
-
-            const float HandSpeed = (bRight ? HandVelRight : HandVelLeft).Size();
-            const bool  bParry    = HandSpeed >= ParryHandSpeed;
-            Actual = bParry ? 0.f : Actual * BlockDamageScale;
-            const FString Msg = FString::Printf(TEXT("[VRPawn] %s (%s손 %.0f cm/s) 데미지 %.1f (raw %.1f, def %.1f)"),
-                bParry ? TEXT("Parried") : TEXT("Blocked"), bRight ? TEXT("오른") : TEXT("왼"),
-                HandSpeed, Actual, Raw, CurrentStats.Combat.Defense);
-            UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, bParry ? FColor::Cyan : FColor::Yellow, Msg);
-            break;
-        }
-    }
+    // 아이템을 쥔 손이 공격자 쪽이면 막기(경감)·패링(무효).
+    if (MeleeCombat) Actual = MeleeCombat->ApplyBlock(Actual, DamageCauser);
 
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 
@@ -1548,10 +1401,7 @@ void AVRPawn::Respawn()
     PawnDeathUtils::Respawn(this, CurrentStats, Checkpoint, GameplayTags, TEXT("VRPawn"));
 
     // 텔레포트 전 손 위치가 남아 있으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다.
-    // 근거리 리스폰은 9000cm/s 글리치 가드에도 걸리지 않아 허위 타격이 나간다.
-    bHandVelInit = false;
-    HandVelLeft  = FVector::ZeroVector;
-    HandVelRight = FVector::ZeroVector;
+    if (MeleeCombat) MeleeCombat->ResetHandVelocity();
 }
 
 // ============================================================================
