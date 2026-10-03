@@ -821,6 +821,14 @@ void UInventoryComponent::HoldItem(ADroppedItemBase* Item, EEquipmentSlot HandSl
     HeldItems.Add(HandSlot, Item);
 }
 
+void UInventoryComponent::MoveHeldItem(EEquipmentSlot From, EEquipmentSlot To)
+{
+    ADroppedItemBase* Item = GetHeldItem(From);
+    if (!IsValid(Item) || From == To) return;
+    HeldItems.Remove(From);
+    HeldItems.Add(To, Item);
+}
+
 ADroppedItemBase* UInventoryComponent::ReleaseHeldItem(EEquipmentSlot HandSlot)
 {
     ADroppedItemBase* Item = GetHeldItem(HandSlot);

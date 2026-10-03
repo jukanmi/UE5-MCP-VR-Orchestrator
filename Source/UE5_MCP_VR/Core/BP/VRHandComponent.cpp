@@ -303,7 +303,10 @@ float UVRHandComponent::HeldMassScale() const
     const ADroppedItemBase* Held = GrabbedItem.Get();
     if (!IsValid(Held) || !IsValid(Held->ItemMesh) || !IsValid(Palm)) return 1.f;
     const float PalmMass = FMath::Max(Palm->GetMass(), KINDA_SMALL_NUMBER);
-    return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass)) / PalmMass;
+    // 양손으로 쥔 물건은 무게를 두 손이 나눠 받는다.
+    const UVRHandComponent* Other = GetOtherHand();
+    const float Share = Other && Other->GrabbedItem.Get() == Held ? 0.5f : 1.f;
+    return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass) * Share) / PalmMass;
 }
 
 void UVRHandComponent::UpdatePassThrough(float Error)
@@ -647,7 +650,7 @@ bool UVRHandComponent::UpdateContactGrab(bool bAllowNewGrab)
             float Force = 0.f, Torque = 0.f;
             FVector Center;
             if (Item) ComputeGrip(Item, /*bContact=*/true, Partner, Force, Torque, Center);
-            if (Item && Force >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ()))
+            if (Item && Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ()))
             {
                 ContactItem = Item;
                 ContactPartner = Partner;
@@ -711,7 +714,6 @@ ADroppedItemBase* UVRHandComponent::FindGraspedItem(int32& OutPartner) const
     FVector PalmCenter;
     UWorld* World = GetWorld();
     if (!GetPalmShapeCenter(PalmCenter) || !World) return nullptr;
-    const UInventoryComponent* Inventory = GetInventory();
 
     // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 —
     //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
@@ -726,7 +728,7 @@ ADroppedItemBase* UVRHandComponent::FindGraspedItem(int32& OutPartner) const
     {
         ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
         if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
-        if (Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Item || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Item)) continue;
+        if (GrabbedItem.Get() == Item) continue;   // 다른 손이 쥔 물건은 후보다(양손 쥐기)
         auto Between = [&](const FVector& A, const FVector& B)
         {
             FHitResult Hit;
@@ -845,7 +847,7 @@ bool UVRHandComponent::CanHold(const ADroppedItemBase* Item) const
     float Force = 0.f, Torque = 0.f;
     FVector Center;
     ComputeGrip(Item, bContact, ContactPartner, Force, Torque, Center);
-    return Force >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ());
+    return Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ());
 }
 
 bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollision)
@@ -858,6 +860,10 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
 
     // 진열품은 구매 직후라 물리가 꺼져 있을 수 있다 — 제약은 시뮬레이션 바디끼리만 걸린다.
     if (!Item->ItemMesh->IsSimulatingPhysics()) Item->SetPhysicsFrozen(false);
+
+    // 다른 손이 이미 기록한 물건이면 두 번째 손 — 제약만 걸고 인벤토리 기록은 먼저 쥔 손이 갖는다.
+    const UVRHandComponent* OtherHand = GetOtherHand();
+    bGrabSecondary = OtherHand && OtherHand->GrabbedItem.Get() == Item && Inventory->GetHeldItem(OtherHand->GetHandSlot()) == Item;
 
     // 제약 기준점 = 쥔 중심(핀치면 두 손끝 사이, 주먹·컨트롤러면 손바닥) — 아이템은 그 점을 축으로 무게 토크만큼 돈다.
     bGrabContact = bContactHeld && ContactItem.Get() == Item;
@@ -895,7 +901,7 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
            Mass, FVector::Dist(Center, Item->ItemMesh->GetCenterOfMass()), Force, Mass * FMath::Abs(GetWorld()->GetGravityZ()), Torque,
            bKeepCollision ? TEXT("유지") : TEXT("끔"));
 
-    Inventory->HoldItem(Item, GetHandSlot());
+    if (!bGrabSecondary) Inventory->HoldItem(Item, GetHandSlot());
     GrabbedItem = Item;
     return true;
 }
@@ -903,6 +909,8 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
 void UVRHandComponent::ReleaseGrab()
 {
     GrabbedItem.Reset();
+    bGrabSecondary = false;
+    LastGripForce = 0.f;
     if (IsValid(GrabConstraint))
     {
         GrabConstraint->BreakConstraint();
@@ -912,7 +920,15 @@ void UVRHandComponent::ReleaseGrab()
 void UVRHandComponent::SyncGrab()
 {
     const UInventoryComponent* Inventory = GetInventory();
-    if (Inventory && GrabbedItem.IsValid() && Inventory->GetHeldItem(GetHandSlot()) != GrabbedItem.Get()) ReleaseGrab();
+    if (Inventory && GrabbedItem.IsValid())
+    {
+        // 기록 손은 자기 슬롯이, 두 번째 손은 어느 슬롯이든 그 물건을 쥐고 있어야 한다. 아니면(수납·소모·기록 손이 놓음) 푼다.
+        const ADroppedItemBase* Held = GrabbedItem.Get();
+        const bool bRecorded = bGrabSecondary
+            ? (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Held || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Held)
+            : Inventory->GetHeldItem(GetHandSlot()) == Held;
+        if (!bRecorded) ReleaseGrab();
+    }
     const ADroppedItemBase* Item = GrabbedItem.Get();
     if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !IsPhysicsActive()) return;
 
@@ -921,6 +937,7 @@ void UVRHandComponent::SyncGrab()
     float Force = 0.f, Torque = 0.f;
     FVector Center;
     ComputeGrip(Item, bGrabContact, GrabPartner, Force, Torque, Center);
+    LastGripForce = Force;
     Force = FMath::Max(Force, 1.f);
     Torque = FMath::Max(Torque, 1.f);
     GrabConstraint->SetLinearDriveParams(GrabLinStiffness, GrabLinDamping, Force);
@@ -952,11 +969,49 @@ void UVRHandComponent::SyncGrab()
     }
 
     // 쥔 점이 손에서 너무 멀리 미끄러졌으면 놓쳤다(제약은 상한만 있어 스스로 끊기지 않는다).
-    if (Rel.GetLocation().Size() > GripSlipReleaseDistance) DropSlipped();
+    // 두 번째 손이 놓친 건 그 손만 놓으면 된다(물건은 기록 손이 들고 있다).
+    if (Rel.GetLocation().Size() > GripSlipReleaseDistance)
+    {
+        if (bGrabSecondary) ReleaseGrab();
+        else DropSlipped();
+    }
+}
+
+UVRHandComponent* UVRHandComponent::GetOtherHand() const
+{
+    TArray<UVRHandComponent*> Hands;
+    if (GetOwner()) GetOwner()->GetComponents<UVRHandComponent>(Hands);
+    for (UVRHandComponent* H : Hands)
+    {
+        if (H && H != this) return H;
+    }
+    return nullptr;
+}
+
+float UVRHandComponent::GetOtherHandGripForce(const ADroppedItemBase* Item) const
+{
+    const UVRHandComponent* Other = GetOtherHand();
+    return Other && IsValid(Item) && Other->GrabbedItem.Get() == Item ? Other->LastGripForce : 0.f;
+}
+
+bool UVRHandComponent::HandOverToOtherHand()
+{
+    UVRHandComponent* Other = GetOtherHand();
+    UInventoryComponent* Inventory = GetInventory();
+    const ADroppedItemBase* Item = GrabbedItem.Get();
+    if (!Other || !Inventory || bGrabSecondary || !IsValid(Item) || !Other->bGrabSecondary || Other->GrabbedItem.Get() != Item) return false;
+
+    // 기록만 넘긴다 — 물건은 그대로 다른 손 제약에 매달려 있다.
+    Inventory->MoveHeldItem(GetHandSlot(), Other->GetHandSlot());
+    Other->bGrabSecondary = false;
+    ReleaseGrab();
+    UE_LOG(LogTemp, Log, TEXT("[VRHand] 양손 쥐기 — 기록 손 넘김: %s → %s"), IsLeft() ? TEXT("왼손") : TEXT("오른손"), Other->IsLeft() ? TEXT("왼손") : TEXT("오른손"));
+    return true;
 }
 
 void UVRHandComponent::DropSlipped()
 {
+    if (HandOverToOtherHand()) return;   // 다른 손이 같이 쥐고 있으면 이 손만 놓친 것
     UInventoryComponent* Inventory = GetInventory();
     ReleaseGrab();
     // 던지기·건네기 분기 없이 그 자리에서 떨어진다(ReleaseHeldItem 이 물리를 되살린다).

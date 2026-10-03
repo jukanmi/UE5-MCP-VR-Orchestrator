@@ -1032,7 +1032,8 @@ void AVRPawn::HandleGripValue(bool bLeft, float Value)
     // 그립을 누른 채 손에 든 게 없으면(약하게 쥐어 못 들었음) 매 프레임 다시 쥐어 본다 — 더 세게 쥐면 들린다.
     // 인벤토리가 열렸으면 그립은 슬롯 발동이라 되풀이하지 않는다.
     const int32 h = bLeft ? 0 : 1;
-    if (bGripHeld[h] && bGrabInputActive[h] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()))
+    // 두 번째 손(양손 쥐기)은 인벤토리 슬롯이 비어 있으니 이미 제약으로 쥐고 있는지도 본다 — 안 보면 매 프레임 다시 쥔다.
+    if (bGripHeld[h] && bGrabInputActive[h] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()) && !Hand->GetGrabbedItem())
     {
         HandleGrabStart(bLeft);
     }
@@ -1071,7 +1072,7 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
 
     // 물리 손이 없거나 쥐는 힘의 마찰 한계가 무게보다 작으면 안 든다(구매 판정보다 먼저 — 못 들 물건 값을 받지 않게).
     UVRHandComponent* Hand = GetHand(bLeft);
-    if (!Hand || !Hand->IsPhysicsActive() || !Hand->CanHold(Nearest)) return;
+    if (!Hand || !Hand->IsPhysicsActive() || Hand->GetGrabbedItem() || !Hand->CanHold(Nearest)) return;
 
     // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
     // 거부되면 손에 붙이지 않는다(붙였다 뺏으면 복사 버그 — TradeSession 의 교훈).
@@ -1101,7 +1102,18 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    if (UVRHandComponent* Hand = GetHand(bLeft)) Hand->ReleaseGrab();
+    if (UVRHandComponent* Hand = GetHand(bLeft))
+    {
+        // 양손으로 쥔 물건 — 두 번째 손이 놓으면 제약만 푼다. 기록 손이 놓을 때 다른 손이 같이 쥐고 있으면 기록만 넘긴다.
+        // 마지막 손이 놓을 때만 아래의 수납·판매·건네기·던지기가 일어난다.
+        if (Hand->IsSecondaryGrab())
+        {
+            Hand->ReleaseGrab();
+            return;
+        }
+        if (Hand->HandOverToOtherHand()) return;
+        Hand->ReleaseGrab();
+    }
     if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.

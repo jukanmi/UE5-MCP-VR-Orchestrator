@@ -179,6 +179,16 @@ public:
     /** 쥐기 제약을 푼다(놓을 때). */
     void ReleaseGrab();
 
+    /** 양손 쥐기 — 이 손이 인벤토리에 기록된 손이고 다른 손이 같은 물건을 쥐고 있으면, 기록을 그 손으로 넘기고 이 손만 놓는다.
+     *  마지막 손이 놓아야 던지기·건네기·드롭이 일어난다. 넘겼으면 true(호출처는 드롭·던지기를 하지 않는다). */
+    bool HandOverToOtherHand();
+
+    /** 인벤토리에 기록되지 않고 제약만 건 두 번째 손인가. */
+    bool IsSecondaryGrab() const { return bGrabSecondary; }
+
+    /** 지금 제약으로 쥔 물건. */
+    ADroppedItemBase* GetGrabbedItem() const { return GrabbedItem.Get(); }
+
     /** 매 틱 — 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. 쥐고 있으면 마찰 한계를 갱신하고,
      *  한계를 넘어 밀린 만큼 목표를 옮기며(재고착), 너무 밀리면 놓친다. */
     void SyncGrab();
@@ -255,8 +265,14 @@ private:
      *  bContact = 손가락 접촉(핸드트래킹, Partner 는 ContactPartner 규약), 아니면 컨트롤러 그립값으로 손바닥 중심에서 감싸 쥔 것으로 본다. */
     void ComputeGrip(const ADroppedItemBase* Item, bool bContact, int32 Partner, float& OutForce, float& OutTorque, FVector& OutCenter) const;
 
-    /** 미끄러져 놓쳤다 — 던지지 않고 그 자리에 떨어뜨린다. */
+    /** 미끄러져 놓쳤다 — 던지지 않고 그 자리에 떨어뜨린다. 다른 손이 같이 쥐고 있으면 그 손에 넘기고 이 손만 놓는다. */
     void DropSlipped();
+
+    /** 같은 폰의 반대쪽 손. 없으면 nullptr. */
+    UVRHandComponent* GetOtherHand() const;
+
+    /** 반대 손이 지금 이 아이템을 제약으로 쥐고 낼 수 있는 힘(마찰 한계). 안 쥐면 0. 양손이면 두 손의 한계가 더해진다. */
+    float GetOtherHandGripForce(const ADroppedItemBase* Item) const;
 
     /** 물리 손바닥 — 시뮬레이션 바디. 자체는 손바닥 관절에 중심을 둔 1cm 핵이고 실제 손 모양은 용접된 상자·캡슐이 맡는다. */
     UPROPERTY(Transient)
@@ -287,6 +303,10 @@ private:
     float GrabLinStiffness = 0.f, GrabLinDamping = 0.f, GrabAngStiffness = 0.f, GrabAngDamping = 0.f;
     FVector GrabLinTarget = FVector::ZeroVector;
     FQuat GrabAngTarget = FQuat::Identity;
+
+    /** 두 번째 손(제약만 걸고 인벤토리 기록은 다른 손), 직전 틱에 계산한 마찰 힘 한계(양손 합산용). */
+    bool bGrabSecondary = false;
+    float LastGripForce = 0.f;
 
     /** 컨트롤러 그립 아날로그값, 손가락별 평활화한 쥐는 정도(라디안). */
     float GripValue = 0.f;
