@@ -1,5 +1,6 @@
 #include "Core/BP/VRPawnAnimInstance.h"
 #include "Core/BP/VRPawn.h"
+#include "Core/BP/VRHandComponent.h"
 #include "AnimationRuntime.h"
 #include "TwoBoneIK.h"
 #include "CollisionShape.h"
@@ -399,9 +400,10 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             continue;
         }
 
-        const UBoxComponent* Palm = h == 0 ? Pawn->PhysicsPalmLeft : Pawn->PhysicsPalmRight;
+        const UVRHandComponent* HandComp = Pawn->GetHand(Hand);
+        const UBoxComponent* Palm = HandComp ? HandComp->GetPalm() : nullptr;
         TArray<const UPrimitiveComponent*, TInlineAllocator<4>> Obstacles;
-        if (IsValid(Palm)) Pawn->GetNearbyItemMeshes(Hand, Obstacles);
+        if (IsValid(Palm)) HandComp->GetNearbyItemMeshes(Obstacles);
         Rig.KeyRotations = State.HandKeyRotations;
         UpdateFingertipTargets(Rig, State, Obstacles, IsValid(Palm) ? Palm->GetComponentTransform() : FTransform::Identity);
     }

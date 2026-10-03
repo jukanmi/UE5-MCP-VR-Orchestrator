@@ -22,8 +22,7 @@ class UInventoryComponent;
 class UPlayerHUDWidget;
 class UChatWidget;
 class USphereComponent;
-class UBoxComponent;
-class UPhysicsConstraintComponent;
+class UVRHandComponent;
 class AKineticProjectile;
 class UWidgetComponent;
 class UWidgetInteractionComponent;
@@ -114,110 +113,21 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereRight;
 
-    // ── 고스트 핸드 — 트래킹 목표(앵커)와 물리 손바닥을 분리해 벽에 손이 막히게 한다 ──
-    // 앵커는 컨트롤러·핸드트래킹을 그대로 따라가는 목표점, 손바닥은 제약 조건의 선형·회전 드라이브로
-    // 앵커를 쫓는 물리 바디. 벽을 밀면 앵커만 벽 너머로 가고 손바닥은 표면에 멈춘다.
-    // FBIK 손과 GetHandLocation(거래·막기 판정)은 손바닥을 따르고, 잡기·던지기는 컨트롤러(앵커)를 그대로 쓴다.
+    // ── 손 — 트래킹 목표(앵커)와 물리 손바닥을 분리해 벽에 손이 막히게 한다(UVRHandComponent) ──
+    // FBIK 손과 GetHandLocation(거래·막기 판정)은 물리 손바닥을 따르고, 잡기·던지기는 실제 손(앵커)을 쓴다.
 
-    /** 왼손 물리 손바닥. 게임 시작 시 물리 시뮬레이션으로 전환되어 부모를 떠난다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    UBoxComponent* PhysicsPalmLeft;
+    /** 왼손 — 컨트롤러 Grip 포즈에 붙은 앵커이자 물리 손바닥·손가락·쥐기 제약의 주인. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Hand")
+    UVRHandComponent* HandLeft;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    UBoxComponent* PhysicsPalmRight;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Hand")
+    UVRHandComponent* HandRight;
 
-    /** 왼손 트래킹 목표 — 컨트롤러 Grip 포즈에 부착. 손바닥 드라이브의 목표 위치. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    USceneComponent* HandTrackingAnchorLeft;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    USceneComponent* HandTrackingAnchorRight;
-
-    /** 왼손 손바닥 ↔ 월드 제약. 선형 이동은 자유, 선형 드라이브가 앵커 쪽으로 끌어당긴다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    UPhysicsConstraintComponent* PalmConstraintLeft;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|GhostHand")
-    UPhysicsConstraintComponent* PalmConstraintRight;
-
-    /** 빈손 위치를 관성 없이 따라간다 — 스프링 대신 매 틱 바디 속도를 이번 물리 스텝에 목표에 닿는 속도로 덮어쓴다.
-     *  벽·물건에 닿아 있는 동안과 쥔 물건이 있을 때는 아래 선형 드라이브(스프링)로 민다. 끄면 늘 스프링. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    bool bHandVelocityTracking = true;
-
-    /** 선형 드라이브 강성 — 클수록 손바닥이 앵커에 빨리 붙는다. 너무 크면 벽에서 떨린다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandDriveStiffness = 3000.f;
-
-    /** 선형 드라이브 감쇠 — 앵커 도달 시 튕김(오버슈트) 억제. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandDriveDamping = 100.f;
-
-    /** 선형 드라이브 최대 힘 — 벽·물건을 미는 힘의 상한. 작을수록 벽에서 손이 쉽게 멈춘다.
-     *  가속도 모드라 실제로는 가속도 상한(cm/s²) — 1500 이면 15m/s²(손바닥 0.9kg 면 약 13N).
-     *  빈 공간에서 스프링으로 끌면 이 상한 때문에 빠른 손을 늦게 따라가고 늦게 멈춘다(그래서 빈손은 속도 추종). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandDriveMaxForce = 1500.f;
-
-    /** 회전 드라이브 강성 — 손바닥이 손 회전을 따라가는 속도. 가속도 모드라 질량 무관. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandAngularStiffness = 1500.f;
-
-    /** 회전 드라이브 감쇠 — 임계감쇠 ≈ 2√강성. 작으면 손목이 흔들린다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandAngularDamping = 80.f;
-
-    /** 회전 드라이브 최대 토크. 0 = 제한 없음. 벽에 댄 손이 표면을 따라 비틀려야 하면 낮춘다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandAngularMaxForce = 0.f;
-
-    /** 손바닥이 목표에서 이만큼(cm) 밀려나면 반대 손 충돌을 잠시 끈다(손끝은 절반). 양손이 반대편에 끼는 교착을 푼다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandPassThroughDistance = 6.f;
-
-    /** 실제 손이 NPC 뼈 캡슐 표면보다 이만큼(cm) 넘게 들어가야 NPC 를 밀기 시작한다(살짝 닿기만 한 건 밀지 않게). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandPushMinError = 3.f;
-
-    /** 지속 밀기 강도(1/s) — 밀림 속도(cm/s) = (들어간 깊이−최소)cm × 이 값. 0 = 지속 밀기 끔. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float HandPushGain = 8.f;
-
-    /** 지속 밀기 속도 상한(cm/s). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand")
-    float MaxHandPushSpeed = 120.f;
-
-    /** 손 콜라이더 두께 배율 — 손끝 캡슐 반지름·손바닥 두께에 곱한다. 치수 자체는 보이는 손 메시 정점에 맞춘 값.
-     *  메시가 파묻히면 올리고, 닿기 전에 막히면 내린다. PIE 중 바로 반영. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|GhostHand", meta = (ClampMin = "0.1"))
-    float HandColliderRadiusScale = 1.f;
-
-    // ── 핸드트래킹 제스처 — 핀치·주먹을 컨트롤러 그립과 같은 잡기 입력으로 쓴다 ──
-
-    /** 핀치 판정 거리(cm) — 엄지 끝↔검지 끝이 이보다 가까우면 잡는다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
-    float PinchDistanceThreshold = 3.f;
-
-    /** 해제 여유(cm) — 잡은 뒤엔 임계 + 이 값을 넘어야 놓는다. 트래킹 떨림에 잡기/놓기가 반복되지 않게. 주먹 판정에도 같이 쓴다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
-    float PinchHysteresis = 1.f;
-
-    /** 주먹 판정 거리(cm) — 중지·약지·새끼 끝이 모두 손바닥 관절에서 이보다 가까우면 잡는다(편 손은 약 9cm). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|HandTracking")
-    float FistDistanceThreshold = 5.f;
-
-    /** 이번 틱 손별 잡기 제스처(핀치 또는 주먹) 상태. 트래킹이 끊기면 false. */
-    bool bIsPinchingLeft = false;
-    bool bIsPinchingRight = false;
+    UVRHandComponent* GetHand(EControllerHand Hand) const { return Hand == EControllerHand::Left ? HandLeft : HandRight; }
+    UVRHandComponent* GetHand(bool bLeft) const { return bLeft ? HandLeft : HandRight; }
 
     /** 이번 틱 핸드트래킹 관절 상태. 추적 중이 아니면 bValid=false. */
-    const FXRHandTrackingState& GetHandTrackState(EControllerHand Hand) const
-    {
-        return Hand == EControllerHand::Left ? HandTrackStateLeft : HandTrackStateRight;
-    }
-
-    /** 손바닥 20cm 안 드랍 아이템 메시(쥔 것 포함). 손가락 감싸기(애님 인스턴스)가 마디 고정 판정에 쓴다. */
-    void GetNearbyItemMeshes(EControllerHand Hand, TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const;
+    const FXRHandTrackingState& GetHandTrackState(EControllerHand Hand) const;
 
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
@@ -584,16 +494,7 @@ public:
     // (World→Component 변환·축 정렬을 여기서 일원화 — 블루프린트 invert/multiply 불필요)
     // ============================================================================
 
-    /** 손 그립 축 보정 — 컨트롤러 그립 포즈 축과 메시 손 본 축이 달라서 생기는
-     *  손목 회전 오차를 상쇄. 손 로컬 공간에 적용되므로 손이 움직여도 유지됨.
-     *  에디터 Details 에서 라이브 튜닝(리빌드 불필요). 좌우 미러라 값이 다름. */
-    // X_Bot 본 축과 HMD/컨트롤러 축 차이 보정. 손 로컬 공간 우측곱(손 회전해도 유지).
-    // FRotator(Pitch, Yaw, Roll). 에디터 Details 라이브 튜닝(리빌드 불필요).
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    FRotator LeftHandGripOffset = FRotator(180.f, 0.f, 90.f);
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    FRotator RightHandGripOffset = FRotator(0.f, 0.f, -90.f);
+    // 손 그립 축 보정은 손 컴포넌트(UVRHandComponent::GripOffset).
 
     /** 머리 본 축 보정 — HMD 카메라 축과 head 본 축 차이 상쇄(머리 꺾임 교정). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
@@ -726,69 +627,9 @@ private:
     /** 매 Tick — 대쉬 잔여 시간 소진 시 StopDash */
     void UpdateDash(float DeltaTime);
 
-    // --- 고스트 핸드 ---
-    /** BeginPlay — 바디(손바닥·손끝)를 시작 위치로 옮기고 물리 시뮬레이션 + 월드 제약 선형·회전 드라이브를 건다. */
-    void InitGhostBody(UPrimitiveComponent* Body, const FVector& Start, UPhysicsConstraintComponent* Constraint);
-
-    /** 바디를 목표 위치·회전으로 끄는 드라이브 목표 갱신(목표 속도 앞먹임 포함). 너무 멀어지면(대쉬·리스폰) 목표로 순간이동.
-     *  @return 갱신 전 바디↔목표 거리(cm) */
-    float DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime, float MassScale = 1.f);
-
-    /** 쥔 물건 몫까지 드라이브를 키우는 배율 = (손바닥 + min(쥔 물건, MaxCarryMass)) / 손바닥. 빈손이면 1. */
-    float HeldMassScale(int32 HandIndex) const;
-
-    /** 목표에서 Threshold 넘게 밀려난 바디는 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
-    void UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold);
-
-    /** 손 드라이브 목표(손바닥 바디 위치·회전)에서 손 모양이 근처 NPC 뼈 캡슐에 들어가면 목표를 표면 밖으로 옮긴 위치. 안 겹치면 그대로.
-     *  OutTouched = 실제 손 위치에서 가장 깊이 들어간 NPC(없으면 nullptr). */
-    FVector ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation, class ACombatCharacter*& OutTouched) const;
-
-    /** 물리 손이 NPC 뼈 캡슐 표면(Surface)에 와 있고 실제 손이 그 안으로 들어가 있으면, 들어간 깊이 비례 속도로 그 방향(수평)으로 민다. */
-    void PushTouchedNPC(class ACombatCharacter* NPC, const UPrimitiveComponent* Body, const FVector& Surface, const FVector& RealHand, float DeltaTime);
-
-    /** 바디별 직전 틱에 보낸 위치 — 스프링이면 목표(목표 속도 계산용), 속도 추종이면 이번 스텝 무게중심 도착 예정 위치(접촉 판정용). */
-    TMap<const UPrimitiveComponent*, FVector> GhostPrevTargets;
-
-    /** 바디별 닿아 있는 벽·물건의 표면 법선(바깥쪽) — 0 이 아니면 속도 추종 대신 스프링으로 민다. 0 이면 접촉 없음. */
-    TMap<const UPrimitiveComponent*, FVector> GhostContactNormals;
-
-    /** 매 Tick — 입력 소스(핸드트래킹/컨트롤러)로 앵커를 옮기고 손바닥·손끝 바디 드라이브 목표를 갱신. */
-    void UpdateGhostHandTracking(float DeltaTime);
-
-    /** 매 Tick(UpdateGhostHandTracking 뒤) — 관절 거리로 핀치·주먹을 판정하고, 바뀌면 잡기 입력을 갱신한다. */
-    void UpdateHandGestures();
-
-    /** 손바닥에 용접된 손끝 모양 5개를 메시 손가락 끝마디로 옮긴다. 핸드트래킹이 아니면 충돌을 끄고 손바닥 안에 둔다. */
-    void UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm);
-
-    /** 손바닥 상자·손끝 캡슐 치수를 손 메시에 맞춘 값 × 두께 배율로 적용. 배율이 바뀔 때만 다시 적용. */
-    void ApplyHandColliderSizes();
-    float AppliedHandColliderScale = -1.f;
-
-    /** 손바닥에 용접된 손가락 캡슐 — 손가락마다 가운데 마디·끝마디(손당 10개, 왼손 먼저, UVRPawnAnimInstance::ShapeIndex 순). BeginPlay 에 생성. */
-    UPROPERTY(Transient)
-    TArray<TObjectPtr<UCapsuleComponent>> FingerBodies;
-
-    /** 손바닥 바디에 용접된 손바닥 모양 — 손마다 손목 쪽·손가락 쪽 상자 2개(인덱스 = 손 × 2 + 부분, 왼손 0·오른손 1).
-     *  메시 손바닥 실제 위치에 놓는다. 바디 자체는 작은 핵. */
-    UPROPERTY(Transient)
-    TArray<TObjectPtr<UBoxComponent>> PalmShapes;
-
-    /** 손바닥 모양의 손바닥 바디 기준 상대 변환. 핸드트래킹이면 손목 관절 오프셋, 컨트롤러면 그립 보정 기준. */
-    FTransform ComputePalmShapeRelative(EControllerHand Hand, int32 Part) const;
-
-    /** 손바닥 중심 = 손바닥 상자들의 가운데. 손바닥 모양이 없으면 false. */
-    bool GetPalmShapeCenter(int32 HandIndex, FVector& OutCenter) const;
-
-    /** 손가락 캡슐 충돌이 켜져 있는가(왼손 0·오른손 1). 켜고 끌 때만 충돌 설정을 바꾼다. */
-    bool bFingertipsActive[2] = { false, false };
-
-    /** 손 이펙터 공통 — 핸드트래킹 중이면 손목 관절 위치·손바닥 관절 보정, 아니면 컨트롤러 그립 보정. */
-    FTransform MakeHandEffectorCS(EControllerHand Hand, const USceneComponent* Anchor, const UBoxComponent* Palm, const FRotator& GripOffset) const;
-
-    FXRHandTrackingState HandTrackStateLeft;
-    FXRHandTrackingState HandTrackStateRight;
+    // --- 손 ---
+    /** 매 Tick — 손마다 트래킹·드라이브 → 제스처 → 접촉 쥐기 → 쥐기 제약 동기화. 바뀐 제스처·접촉 쥐기는 잡기 입력으로 넘긴다. */
+    void UpdateHands(float DeltaTime);
 
     /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
     void StopDash();
@@ -881,28 +722,6 @@ private:
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "5.0", ClampMax = "100.0"))
     float GrabRadius = 40.f;
 
-    /** 물리 쥐기 제약이 끊어지는 힘(kg·cm/s²). 무거운 물건·세게 흔들면 놓친다. 1.2kg 물건의 무게 ≈ 1,180.
-     *  ponytail: 전역값 하나 — 물건별로 달라야 하면 FItemData 에 오버라이드 추가(SPEC_vr_grip_pose 미결). */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float GrabBreakForce = 6000.f;
-
-    /** 물리 쥐기 제약이 끊어지는 토크(kg·cm²/s²). 긴 물건 끝을 한 손으로 들면 무게 × 손~무게중심 거리가 이를 넘어 놓친다.
-     *  60,000 = 2.5kg 양동이를 손잡이(무게중심 위 17cm, 약 41,700)로 들면 버티고, 2.5kg 을 25cm 넘게 떨어진 끝으로 들면 놓친다. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float GrabBreakTorque = 60000.f;
-
-    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손끝 캡슐이 이 거리(cm) 안으로 같은 물건에 닿고, 둘 사이에 물건이 있으면 쥔다. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float ContactGrabMargin = 0.5f;
-
-    /** 접촉 쥐기 놓기 — 엄지나 짝 손끝이 표면에서 이 거리(cm) 넘게 떨어지면 놓는다. 쥐기 여유보다 커야 트래킹 떨림에 안 흔들린다. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float ContactReleaseMargin = 1.5f;
-
-    /** 손 드라이브가 온전히 받쳐 주는 쥔 물건 질량 상한(kg). 이보다 무거우면 힘이 모자라 잘 안 들린다. */
-    UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-    float MaxCarryMass = 5.f;
-
     /** 던질 때 손 속도에 곱하는 배율. 1 = 실제 손 속도. VR 은 팔 스윙이 짧아 살짝 키우는 편이 자연스럽다. */
     UPROPERTY(EditAnywhere, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", ClampMax = "5.0"))
     float ThrowVelocityScale = 1.3f;
@@ -944,42 +763,6 @@ private:
 
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
-
-    /** 물리 손 바디 ↔ 아이템을 끊어지는 제약으로 잇는다. 물리 손이 아직 없으면(시뮬레이션 전) false.
-     *  bKeepCollision = 손과 쥔 물건의 충돌을 유지(접촉 쥐기 — 닿은 순간이라 겹침이 없다). 컨트롤러 쥐기는 손이 물건에 박혀 있을 수 있어 끈다. */
-    bool GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft, bool bKeepCollision = false);
-
-    /** 핸드트래킹 접촉 쥐기 — 엄지와 다른 손가락(핀치) 또는 손바닥과 손가락들(주먹) 사이에 물건이 끼면 쥐고, 짝이 표면에서 떨어지면 놓는다. */
-    void UpdateContactGrab();
-
-    /** 핀치 또는 주먹으로 사이에 낀 아이템. OutPartner = 핀치면 엄지의 짝 손가락(1~4), 주먹이면 손바닥(5). */
-    ADroppedItemBase* FindGraspedItem(bool bLeft, int32& OutPartner) const;
-
-    /** 손가락 하나의 캡슐(끝마디 먼저, 가운데 마디) 중 물건 표면에서 Margin(cm) 안에 있는 것. 없으면 null. */
-    const UCapsuleComponent* FingerTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const;
-
-    /** 손바닥 모양이 물건 표면에서 Margin(cm) 안에 있는지. */
-    bool IsPalmTouching(bool bLeft, const UPrimitiveComponent* Item, float Margin) const;
-
-    /** 접촉 쥐기 상태(왼손 0·오른손 1), 사이에 낀 아이템과 짝(엄지의 짝 손가락 1~4, 주먹 5). 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
-    bool bContactHeld[2] = { false, false };
-    TWeakObjectPtr<ADroppedItemBase> ContactItem[2];
-    int32 ContactPartner[2] = { INDEX_NONE, INDEX_NONE };
-
-    /** 쥐기 제약을 푼다(놓을 때). 끊김 이벤트는 나가지 않는다. */
-    void ReleaseGrabConstraint(int32 HandIndex);
-
-    /** 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. */
-    void SyncGrabConstraints();
-
-    /** 힘·토크 임계를 넘어 제약이 끊겼다 = 놓쳤다. 던지지 않고 그 자리에 떨어뜨린다. */
-    UFUNCTION()
-    void OnGrabConstraintBroken(int32 ConstraintIndex);
-
-    /** 물리 쥐기 제약(왼손 0·오른손 1)과 제약으로 쥔 아이템. BeginPlay 에 생성. */
-    UPROPERTY(Transient)
-    TArray<TObjectPtr<UPhysicsConstraintComponent>> GrabConstraints;
-    TWeakObjectPtr<ADroppedItemBase> GrabbedItems[2];
 
     /** 잡기 입력 = 컨트롤러 그립 OR 접촉 쥐기. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
      *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */

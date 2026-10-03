@@ -1,18 +1,14 @@
 #include "Core/BP/VRPawn.h"
-#include "Core/BP/VRPawnAnimInstance.h"
+#include "Core/BP/VRHandComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
-#include "Components/BoxComponent.h"
-#include "PhysicsEngine/PhysicsConstraintComponent.h"
-#include "PhysicsEngine/PhysicsSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Core/BP/KineticProjectile.h"
 #include "Core/Physics/KineticDamage.h"
-#include "Core/Physics/NPCBoneCapsuleSet.h"
 #include "Core/Types/CollisionChannels.h"
 #include "EngineUtils.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
@@ -53,37 +49,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
-
-namespace
-{
-    // 손 바디는 벽(WorldStatic/WorldDynamic)·물리 물체(PhysicsBody — 드랍 아이템·래그돌)·NPC 캡슐(Pawn)·반대쪽 손에 막히고 나머지는 무시한다.
-    // 아이템과의 접촉(밀기·받치기·쳐내기)은 Chaos 가 벽과 같은 규칙으로 푼다 — 들고 있는 아이템은 QueryOnly 라 손과 안 부딪힌다.
-    // 같은 손 채널을 무시해야 주먹(손끝↔손바닥)·핀치(손끝↔손끝)가 자기 몸체에 걸리지 않는다.
-    // Pawn 을 막으므로 자기 캡슐·몸 메시는 BeginPlay 에서 손 채널을 무시하게 한다.
-    // Visibility 를 막으면 UI 포인터 광선을 가린다.
-    void SetupHandBodyCollision(UPrimitiveComponent* Body, bool bLeft)
-    {
-        Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        Body->SetCollisionObjectType(bLeft ? ECC_HandLeft : ECC_HandRight);
-        Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-        Body->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-        Body->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-        Body->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-        Body->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-        Body->SetCollisionResponseToChannel(bLeft ? ECC_HandRight : ECC_HandLeft, ECR_Block);
-        Body->SetGenerateOverlapEvents(false);
-        Body->SetEnableGravity(false);   // 드라이브가 중력을 이기느라 손이 처지지 않게
-    }
-
-    // 손가락 캡슐 배열 위치 — 왼손 먼저, 손 안에서는 애님 인스턴스의 ShapeIndex(손가락, 마디) 순.
-    int32 FingerBodyIndex(bool bLeft, int32 Finger, int32 Shape)
-    {
-        return (bLeft ? 0 : UVRPawnAnimInstance::NumFingerShapes) + UVRPawnAnimInstance::ShapeIndex(Finger, Shape);
-    }
-
-    // 접촉 쥐기 짝 값 — 1~4 = 엄지의 짝 손가락(핀치), 이 값 = 손바닥과 손가락들로 감싸 쥠(주먹).
-    constexpr int32 PalmGripPartner = 5;
-}
 
 // ============================================================================
 // 생성자
@@ -139,36 +104,16 @@ AVRPawn::AVRPawn()
     MeleeSphereRight->InitSphereRadius(MeleeSphereRadius);
     MeleeSphereRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // 고스트 핸드 — 앵커는 컨트롤러 Grip 포즈를 그대로 따라가는 목표점.
-    HandTrackingAnchorLeft = CreateDefaultSubobject<USceneComponent>(TEXT("HandTrackingAnchorLeft"));
-    HandTrackingAnchorLeft->SetupAttachment(MotionControllerLeft);
-    HandTrackingAnchorRight = CreateDefaultSubobject<USceneComponent>(TEXT("HandTrackingAnchorRight"));
-    HandTrackingAnchorRight->SetupAttachment(MotionControllerRight);
-
-    // 물리 손바닥 — 손바닥 모양의 납작한 상자(X=손끝 방향, Z=손등 방향 두께). 회전 드라이브로 손 회전을 따라 돈다.
-    auto MakePalm = [this](const TCHAR* Name, bool bLeft)
-    {
-        UBoxComponent* Palm = CreateDefaultSubobject<UBoxComponent>(Name);
-        Palm->SetupAttachment(RootComponent);
-        Palm->InitBoxExtent(FVector(4.5f, 4.25f, 1.5f));
-        SetupHandBodyCollision(Palm, bLeft);
-        // 빠른 손놀림에 얇은 벽·지형을 건너뛰지 않게. CCD 가 아니라 MACD — 양손 모두 CCD 면 맞닿을 때 한 프레임은 충돌 순간으로
-        // 되감고 다음 프레임은 파고들었다 튕겨 나와 2프레임 주기로 떨었다(PIE 실측 0.56cm/프레임 → MACD 0).
-        Palm->SetUseMACD(true);
-        return Palm;
-    };
-    PhysicsPalmLeft  = MakePalm(TEXT("PhysicsPalmLeft"), true);
-    PhysicsPalmRight = MakePalm(TEXT("PhysicsPalmRight"), false);
-
-    // 제약은 손바닥 ↔ 월드. 월드 기준 프레임이 폰 이동에 끌려가지 않도록 절대 좌표로 둔다.
-    PalmConstraintLeft = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("PalmConstraintLeft"));
-    PalmConstraintLeft->SetupAttachment(RootComponent);
-    PalmConstraintLeft->SetUsingAbsoluteLocation(true);
-    PalmConstraintLeft->SetUsingAbsoluteRotation(true);
-    PalmConstraintRight = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("PalmConstraintRight"));
-    PalmConstraintRight->SetupAttachment(RootComponent);
-    PalmConstraintRight->SetUsingAbsoluteLocation(true);
-    PalmConstraintRight->SetUsingAbsoluteRotation(true);
+    // 손 — 컨트롤러 Grip 포즈에 붙은 앵커. 물리 손바닥·손가락·제약은 BeginPlay 에 손 컴포넌트가 만든다.
+    // 그립 보정 = X_Bot 손 본 축과 컨트롤러 그립 축 차이(좌우 미러).
+    HandLeft = CreateDefaultSubobject<UVRHandComponent>(TEXT("HandLeft"));
+    HandLeft->SetupAttachment(MotionControllerLeft);
+    HandLeft->Hand = EControllerHand::Left;
+    HandLeft->GripOffset = FRotator(180.f, 0.f, 90.f);
+    HandRight = CreateDefaultSubobject<UVRHandComponent>(TEXT("HandRight"));
+    HandRight->SetupAttachment(MotionControllerRight);
+    HandRight->Hand = EControllerHand::Right;
+    HandRight->GripOffset = FRotator(0.f, 0.f, -90.f);
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -378,62 +323,8 @@ void AVRPawn::BeginPlay()
 
     if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
 
-    if (HandTrackingAnchorLeft)  InitGhostBody(PhysicsPalmLeft,  HandTrackingAnchorLeft->GetComponentLocation(),  PalmConstraintLeft);
-    if (HandTrackingAnchorRight) InitGhostBody(PhysicsPalmRight, HandTrackingAnchorRight->GetComponentLocation(), PalmConstraintRight);
-
-    // 손바닥 모양 — 바디(손바닥 관절에 중심)는 작은 핵이고, 메시 손바닥에 맞춘 상자(손목 쪽·손가락 쪽)를 용접해 실제 손바닥 자리에 놓는다.
-    for (int32 i = 0; i < 2 * UVRPawnAnimInstance::NumPalmShapes; ++i)
-    {
-        const bool bLeft = i < UVRPawnAnimInstance::NumPalmShapes;
-        UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
-        if (!Palm) { PalmShapes.Add(nullptr); continue; }   // 자리를 비워 두어야 인덱스가 맞는다
-        UBoxComponent* Shape = NewObject<UBoxComponent>(this, *FString::Printf(TEXT("PalmShape%s%d"), bLeft ? TEXT("Left") : TEXT("Right"), i % UVRPawnAnimInstance::NumPalmShapes));
-        Shape->InitBoxExtent(Palm->GetUnscaledBoxExtent());
-        SetupHandBodyCollision(Shape, bLeft);
-        Shape->SetWorldLocationAndRotation(Palm->GetComponentLocation(), Palm->GetComponentQuat());
-        Shape->RegisterComponent();
-        Shape->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-        PalmShapes.Add(Shape);
-    }
-
-    // 손가락 캡슐 — 손가락마다 가운데 마디·끝마디(엄지는 첫 마디·끝마디). 첫 마디는 손바닥 상자와 겹쳐 두지 않는다.
-    // 따로 움직이는 바디가 아니라 손바닥 바디에 용접된 모양이라, 어느 마디가 닿든 엔진이 손 전체를 한 덩어리로 멈춘다.
-    // 핸드트래킹이 잡히기 전엔 충돌을 끄고 손바닥 안에 둔다.
-    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
-    for (int32 i = 0; i < 2 * PerHand; ++i)
-    {
-        const bool bLeft = i < PerHand;
-        UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
-        if (!Palm) { FingerBodies.Add(nullptr); continue; }   // 자리를 비워 두어야 FingerBodyIndex 가 맞는다
-
-        const int32 j = i % PerHand;
-        UCapsuleComponent* Body = NewObject<UCapsuleComponent>(this, *FString::Printf(TEXT("Finger%s%d_%d"), bLeft ? TEXT("Left") : TEXT("Right"),
-                                                                                    j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger));
-        Body->InitCapsuleSize(1.f, 2.f);   // 실제 치수는 애님 인스턴스가 메시에서 뽑은 뒤 ApplyHandColliderSizes 가 넣는다
-        SetupHandBodyCollision(Body, bLeft);
-        Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-        Body->SetWorldLocation(Palm->GetComponentLocation());
-        Body->RegisterComponent();
-        Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-        FingerBodies.Add(Body);
-    }
-
-    // 물리 쥐기 제약 — 잡을 때 손 바디와 아이템을 잇는다. 이동·회전 전부 잠그고, 힘·토크 임계를 넘으면
-    // 엔진이 끊는다(무게중심에서 먼 곳을 잡으면 토크가 커져 놓친다). 손 ↔ 쥔 물건 충돌 여부는 쥘 때 방식별로 정한다.
-    for (int32 h = 0; h < 2; ++h)
-    {
-        UPhysicsConstraintComponent* Grab = NewObject<UPhysicsConstraintComponent>(this, h == 0 ? TEXT("GrabConstraintLeft") : TEXT("GrabConstraintRight"));
-        Grab->RegisterComponent();
-        Grab->SetLinearXLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
-        Grab->SetLinearYLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
-        Grab->SetLinearZLimit(ELinearConstraintMotion::LCM_Locked, 0.f);
-        Grab->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
-        Grab->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Locked, 0.f);
-        Grab->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Locked, 0.f);
-        Grab->ConstraintInstance.ConstraintIndex = h;   // 끊김 이벤트에서 어느 손인지 가린다
-        Grab->OnConstraintBroken.AddDynamic(this, &AVRPawn::OnGrabConstraintBroken);
-        GrabConstraints.Add(Grab);
-    }
+    if (HandLeft)  HandLeft->InitPhysics();
+    if (HandRight) HandRight->InitPhysics();
 
     // 몸 메시 애니메이션은 물리 뒤에 — 손 이펙터가 물리 손바닥 위치를 읽는데, 물리 전(기본값)에 돌면 지난 프레임 위치로
     // 손을 그려 같은 프레임 물리로 움직인 쥔 물건보다 한 프레임 뒤처진다(이동 중 3m/s 면 약 3cm 어긋남).
@@ -459,453 +350,39 @@ void AVRPawn::BeginPlay()
 }
 
 // ============================================================================
-// 고스트 핸드 — 물리 손바닥이 선형·회전 드라이브로 트래킹 앵커를 쫓는다
+// 손 — 물리·판정은 UVRHandComponent, 폰은 잡기 입력으로 합쳐 넘긴다
 // ============================================================================
 
-namespace
+void AVRPawn::UpdateHands(float DeltaTime)
 {
-    // 앵커 프레임 → 손바닥 상자 프레임. 상자 두께축(Z)이 손바닥 법선이어야 한다.
-    // 핸드트래킹 손바닥 관절은 Z 가 곧 손등 방향이라 그대로, 컨트롤러 Grip 포즈는 손바닥 법선이 Y 라 X 축으로 90° 돌린다.
-    FQuat PalmShapeOffset(bool bHandTracked)
+    // 순서: 두 손 트래킹·드라이브 → 제스처 → 접촉 쥐기 → 쥐기 제약 동기화.
+    const TStaticArray<UVRHandComponent*, 2> Hands{ HandLeft, HandRight };
+    for (UVRHandComponent* H : Hands)
     {
-        return bHandTracked ? FQuat::Identity : FRotator(0.f, 0.f, 90.f).Quaternion();
+        if (H) H->UpdateTracking(DeltaTime);
+    }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (H && H->UpdateGesture()) UpdateGrabInput(H->IsLeft());
+    }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (!H) continue;
+        // 인벤토리가 열렸거나 그 손에 이미 쥔 게 있으면 새로 쥐지 않는다(접촉 쥐기 유지·놓기는 계속 본다).
+        const bool bAllowNew = !bInventoryOpen && Inventory && !Inventory->GetHeldItem(H->GetHandSlot());
+        if (H->UpdateContactGrab(bAllowNew)) UpdateGrabInput(H->IsLeft(), H->IsContactHeld() ? H->GetContactItem() : nullptr);
+    }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (H) H->SyncGrab();
     }
 }
 
-void AVRPawn::InitGhostBody(UPrimitiveComponent* Body, const FVector& Start, UPhysicsConstraintComponent* Constraint)
+const FXRHandTrackingState& AVRPawn::GetHandTrackState(EControllerHand Hand) const
 {
-    if (!Body || !Constraint) return;
-
-    // 시뮬레이션 바디는 부모를 따라가면 안 된다 — 폰에서 떼어 시작 위치에서 출발시킨다.
-    Body->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-    Body->SetWorldLocationAndRotation(Start, FQuat::Identity, false, nullptr, ETeleportType::TeleportPhysics);
-    Body->SetSimulatePhysics(true);
-
-    // 이동·회전 모두 자유 — 드라이브만이 바디를 목표 위치·회전 쪽으로 당긴다.
-    Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-    Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-    Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-    Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Free, 0.f);
-    Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Free, 0.f);
-    Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Free, 0.f);
-
-    // 강성은 위치 드라이브, 감쇠는 속도 드라이브(목표 속도 0)에 걸리므로 둘 다 켠다.
-    Constraint->SetLinearPositionDrive(true, true, true);
-    Constraint->SetLinearVelocityDrive(true, true, true);
-    Constraint->SetLinearVelocityTarget(FVector::ZeroVector);
-    Constraint->SetLinearDriveParams(HandDriveStiffness, HandDriveDamping, HandDriveMaxForce);
-    Constraint->SetLinearPositionTarget(FVector::ZeroVector);
-
-    // 회전은 SLERP 한 축으로 — 스윙/트위스트 분리 드라이브는 큰 회전에서 짐벌처럼 꺾인다.
-    Constraint->SetAngularDriveMode(EAngularDriveMode::SLERP);
-    Constraint->SetOrientationDriveSLERP(true);
-    Constraint->SetAngularVelocityDriveSLERP(true);
-    Constraint->SetAngularVelocityTarget(FVector::ZeroVector);
-    Constraint->SetAngularDriveParams(HandAngularStiffness, HandAngularDamping, HandAngularMaxForce);
-    Constraint->SetAngularOrientationTarget(FRotator::ZeroRotator);
-
-    // 제약 프레임을 월드 축 정렬로 바디 중심에 두고 마지막에 연결한다. 월드 쪽 프레임은 이 순간의
-    // 제약 월드 변환으로 고정되므로, 위치 목표 = (목표 월드 위치 − 제약 월드 위치), 회전 목표 = 목표 월드 회전.
-    Constraint->SetWorldLocationAndRotation(Body->GetComponentLocation(), FQuat::Identity);
-    Constraint->SetConstrainedComponents(Body, NAME_None, nullptr, NAME_None);
-}
-
-float AVRPawn::DriveGhostBody(UPrimitiveComponent* Body, UPhysicsConstraintComponent* Constraint, const FVector& Location, const FQuat& Rotation, float DeltaTime, float MassScale)
-{
-    // 잠든 바디는 드라이브 목표가 바뀌어도 깨어나지 않는다 — 손을 잠시 멈췄다 움직이면 제자리에 남는다.
-    if (!Body->IsAnyRigidBodyAwake()) Body->WakeAllRigidBodies();
-    const float Error = FVector::Dist(Body->GetComponentLocation(), Location);
-
-    // 바디가 목표에서 이 거리(cm) 이상 떨어지면 드라이브로 못 따라온다고 보고 목표로 순간이동.
-    // 대쉬(0.15초에 300cm)·리스폰·착석 스냅 때 손이 뒤에 남거나 벽 뒤에 끼는 것을 막는다.
-    // ponytail: 벽 너머로 이 거리 이상 손을 밀어 넣으면 바디가 벽을 통과한다 — 막아야 하면 순간이동 전 스윕 검사 추가.
-    static constexpr float SnapDistance = 60.f;
-    if (FVector::DistSquared(Body->GetComponentLocation(), Location) > FMath::Square(SnapDistance))
-    {
-        // ResetPhysics — 위치와 함께 잔류 속도도 비워 순간이동 직후 튕겨 나가지 않게 한다.
-        Body->SetWorldLocationAndRotation(Location, Rotation, false, nullptr, ETeleportType::ResetPhysics);
-        GhostPrevTargets.Remove(Body);
-        GhostContactNormals.Remove(Body);
-    }
-
-    // 빈손 위치는 관성 없이 속도로 따라간다. 스프링은 가속도 모드라 최대 힘이 곧 가속도 상한(1500 = 15m/s²)이어서
-    // 2m/s 로 움직이던 손이 멈추는 데 13cm 를 더 갔다. 쥐고 있으면 물건이 손을 끌어 보낸 곳에 못 닿으므로(접촉으로 오인)
-    // 스프링으로 무게를 받친다.
-    //
-    // 벽·물건에 닿아 있는 동안도 스프링(최대 힘 = 가속도 HandDriveMaxForce, 손바닥 0.9kg 면 약 13N)으로 민다 — 엔진이 접촉과
-    // 함께 풀어 꾸준히 누른다. 속도를 매 스텝 덮어써 밀면 그 자체가 충격이라(0.9kg × 1m/s, 90fps 면 약 80N) 물건을 바닥에 두드려
-    // 떨게 했다(PIE 실측: 바닥 위 널빤지를 누르면 손 1.2cm·널빤지 0.6cm 떨림). 안쪽 성분만 줄여도 움직이는 물체에선 되민
-    // 방향이 기울어 나와 나머지 성분이 안으로 샌다.
-    // 접촉 시작 = 속도 추종 중 지난 스텝에 보낸 곳에 0.2cm 넘게 못 닿음. 무게중심으로 재야 회전이 섞이지 않는다(속도는
-    // 무게중심에 걸린다). 되민 방향 = 접촉면 법선. 접촉 끝 = 실제 손(목표)이 바디보다 접촉면 안쪽이 아니게 됨 — 손을 떼거나,
-    // 막던 게 비켜 스프링이 목표까지 데려간 때.
-    const FVector Com = Body->GetCenterOfMass();
-    const bool bWasVelocity = !Constraint->ConstraintInstance.ProfileInstance.LinearDrive.XDrive.bEnablePositionDrive;
-    FVector& Normal = GhostContactNormals.FindOrAdd(Body);
-    if (const FVector* Prev = GhostPrevTargets.Find(Body); bWasVelocity && Prev && FVector::DistSquared(Com, *Prev) > FMath::Square(0.2f))
-    {
-        Normal = (Com - *Prev).GetSafeNormal();
-    }
-    else if (MassScale > 1.f || FVector::DotProduct(Location - Body->GetComponentLocation(), Normal) >= 0.f)
-    {
-        Normal = FVector::ZeroVector;
-    }
-
-    // 선형 드라이브는 방식이 바뀔 때만 켜고 끄고, 직전 위치 기억도 그때 비운다(스프링은 목표, 속도 추종은 무게중심 도착 예정 위치라 뜻이 다르다).
-    const bool bVelocityTracking = bHandVelocityTracking && MassScale <= 1.f && Normal.IsZero();
-    if (bWasVelocity != bVelocityTracking)
-    {
-        Constraint->SetLinearPositionDrive(!bVelocityTracking, !bVelocityTracking, !bVelocityTracking);
-        Constraint->SetLinearVelocityDrive(!bVelocityTracking, !bVelocityTracking, !bVelocityTracking);
-        GhostPrevTargets.Remove(Body);
-    }
-    const FVector* Prev = GhostPrevTargets.Find(Body);
-
-    const float StepTime = FMath::Min(DeltaTime, UPhysicsSettings::Get()->MaxPhysicsDeltaTime);   // 이번 물리 스텝 길이
-    if (bVelocityTracking && StepTime > KINDA_SMALL_NUMBER)
-    {
-        // 매 틱 바디 속도를 이번 스텝에 목표에 닿는 속도로 덮어쓴다 — 지난 프레임 속도가 남지 않아 실제 손이 멈추면 바로 멈춘다.
-        // 빈 공간에선 보낸 곳에 정확히 닿는다(PIE 실측 오차 0.0cm). 트래킹 튐 대비 10m/s 상한.
-        const FVector Velocity = ((Location - Body->GetComponentLocation()) / StepTime).GetClampedToMaxSize(1000.f);
-        Body->SetPhysicsLinearVelocity(Velocity);
-        GhostPrevTargets.Add(Body, Com + Velocity * StepTime);
-    }
-    else
-    {
-        // 목표 속도 앞먹임 — 속도 드라이브(감쇠)가 목표 속도 0 을 향하면 움직이는 동안 감쇠×속도/강성 만큼
-        // 뒤처진다(1m/s 에 약 3cm). 손끝은 그 지연을 "벽에 막힘"으로 오인해 손가락을 굽히게 된다.
-        // 막혀 있으면(목표와 2cm 넘게 벌어짐) 앞먹임을 끈다 — 속도 드라이브가 접촉을 이겨 두께 없는 지형까지 밀고 뚫는다.
-        // 자유 이동 중엔 앞먹임 덕에 오차가 2cm 안이라 지연 제거는 유지된다. 트래킹 튐 대비 5m/s 상한.
-        FVector TargetVelocity = (Prev && DeltaTime > KINDA_SMALL_NUMBER && Error < 2.f) ? (Location - *Prev) / DeltaTime : FVector::ZeroVector;
-        TargetVelocity = TargetVelocity.GetClampedToMaxSize(500.f);
-        GhostPrevTargets.Add(Body, Location);
-
-        // 튜닝 값을 PIE 중 Details 에서 바꿔도 바로 먹도록 매 틱 반영한다.
-        // 드라이브는 가속도 모드라 힘 = 이 바디 질량 × 가속도 — 제약으로 매단 물건의 질량은 모른다.
-        // 쥐고 있으면 MassScale 만큼 키워야 빈손과 같은 반응으로 따라오고 물건 무게를 받친다.
-        Constraint->SetLinearDriveParams(HandDriveStiffness * MassScale, HandDriveDamping * MassScale, HandDriveMaxForce * MassScale);
-        Constraint->SetLinearPositionTarget(Location - Constraint->GetComponentLocation());
-        Constraint->SetLinearVelocityTarget(TargetVelocity);
-    }
-
-    // ponytail: 회전은 스프링 그대로, 쥐면 같은 배율 — 긴 물건(관성 m·r²)은 실제보다 덜 무겁게 돈다. 필요하면 관성비로 따로.
-    Constraint->SetAngularDriveParams(HandAngularStiffness * MassScale, HandAngularDamping * MassScale, HandAngularMaxForce * MassScale);
-    Constraint->SetAngularOrientationTarget(Rotation.Rotator());
-    return Error;
-}
-
-void AVRPawn::UpdateHandPassThrough(UPrimitiveComponent* Body, bool bLeft, float Error, float Threshold)
-{
-    // 실제 손은 트래킹상 서로 통과할 수 있지만 물리 손은 못 지나가, 양손이 반대편에 끼면 서로 밀며 멈춘다.
-    // 목표에서 많이 밀려난 바디만 반대 손 충돌을 잠시 끄고, 절반 안으로 돌아오면 다시 켠다(벽 충돌은 유지).
-    // 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따르므로 끼임이 풀린다.
-    const ECollisionChannel Other = bLeft ? ECC_HandRight : ECC_HandLeft;
-    const bool bBlocking = Body->GetCollisionResponseToChannel(Other) == ECR_Block;
-    if (bBlocking && Error > Threshold)                Body->SetCollisionResponseToChannel(Other, ECR_Ignore);
-    else if (!bBlocking && Error < Threshold * 0.5f)  Body->SetCollisionResponseToChannel(Other, ECR_Block);
-}
-
-void AVRPawn::PushTouchedNPC(ACombatCharacter* NPC, const UPrimitiveComponent* Body, const FVector& Surface, const FVector& RealHand, float DeltaTime)
-{
-    // 실제 손이 NPC 뼈 캡슐 안으로 들어간 깊이(표면으로 옮긴 목표 ↔ 실제 손)에 비례한 속도로, 들어간 방향(수평)으로 민다.
-    // 물리 손이 그 표면에 와 있을 때만 — 벽에 막혀 NPC 에 못 닿았으면 실제 손이 NPC 안에 있어도 밀지 않는다.
-    // 스윙(TryMeleeHits)은 1m/s 이상 순간 타격이고, 이건 느리게 대고 미는 접촉 몫이다.
-    static constexpr float SurfaceTolerance = 2.f;   // 물리 손 ↔ 표면 목표(cm). 빈손 속도 추종은 매 스텝 목표에 닿는다.
-    if (!NPC || NPC->bIsDead || HandPushGain <= 0.f) return;
-    if (FVector::DistSquared(Body->GetComponentLocation(), Surface) > FMath::Square(SurfaceTolerance)) return;
-
-    const float Depth = FVector::Dist(RealHand, Surface);
-    FVector Dir = RealHand - Surface;
-    Dir.Z = 0.f;
-    if (Depth < HandPushMinError || !Dir.Normalize()) return;
-
-    // 스윕으로 옮겨 벽·지형에 막히면 거기서 멈춘다.
-    const float PushSpeed = FMath::Min((Depth - HandPushMinError) * HandPushGain, MaxHandPushSpeed);
-    NPC->AddActorWorldOffset(Dir * PushSpeed * DeltaTime, /*bSweep=*/true);
-}
-
-FVector AVRPawn::ProjectHandOutOfNPCs(EControllerHand Hand, const UBoxComponent* Palm, const FVector& Location, const FQuat& Rotation, ACombatCharacter*& OutTouched) const
-{
-    // 손 모양이 닿을 수 있는 NPC 의 뼈 캡슐만 모은다. 메시 경계는 포즈(애니메이션·래그돌)를 따라간다.
-    // 뼈 캡슐 치수가 없는 NPC 는 GetWorldCapsules 가 거절하고, 그 NPC 는 몸 캡슐이 손을 막는다.
-    static constexpr float HandReach = 30.f;   // 손바닥 바디 중심 → 손 모양 끝(손끝)까지 여유(cm)
-    OutTouched = nullptr;
-    TArray<FNPCWorldCapsule> Bones, Caps;
-    TArray<ACombatCharacter*> BoneOwners;   // Bones 와 같은 순서
-    for (TActorIterator<ACombatCharacter> It(GetWorld()); It; ++It)
-    {
-        const USkeletalMeshComponent* NPCMesh = It->GetMesh();
-        if (!It->BoneCapsules || !NPCMesh) continue;
-        if (FVector::DistSquared(NPCMesh->Bounds.Origin, Location) > FMath::Square(NPCMesh->Bounds.SphereRadius + HandReach)) continue;
-        if (!It->BoneCapsules->GetWorldCapsules(NPCMesh, Caps)) continue;
-        Bones.Append(Caps);
-        while (BoneOwners.Num() < Bones.Num()) BoneOwners.Add(*It);
-    }
-    if (Bones.IsEmpty()) return Location;
-
-    // 손 모양 = 손바닥 바디 기준 선분 + 반지름. 손바닥 상자마다 긴 축을 따라 짧은 축 양 끝에 캡슐 두 줄(반지름 = 두께 절반),
-    // 손가락은 켜져 있을 때(핸드트래킹)만 캡슐 그대로.
-    struct FHandSegment { FVector A, B; float Radius; };
-    TArray<FHandSegment, TInlineAllocator<2 * UVRPawnAnimInstance::NumPalmShapes + UVRPawnAnimInstance::NumFingerShapes>> Segments;
-    const int32 HandIndex = Hand == EControllerHand::Left ? 0 : 1;
-    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
-    {
-        const int32 ShapeIndex = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
-        const UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
-        if (!Shape) continue;
-        const FTransform Rel = Shape->GetRelativeTransform();
-        const FVector E = Shape->GetUnscaledBoxExtent();
-        const float R = E.Z;
-        const FVector Long = E.X >= E.Y ? FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f) : FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f);
-        const FVector Side = E.X >= E.Y ? FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f) : FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f);
-        Segments.Add({ Rel.TransformPosition(Side - Long), Rel.TransformPosition(Side + Long), R });
-        Segments.Add({ Rel.TransformPosition(-Side - Long), Rel.TransformPosition(-Side + Long), R });
-    }
-    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
-    if (bFingertipsActive[HandIndex] && FingerBodies.Num() == 2 * PerHand)
-    {
-        for (int32 j = 0; j < PerHand; ++j)
-        {
-            const UCapsuleComponent* Finger = FingerBodies[HandIndex * PerHand + j];
-            if (!Finger) continue;
-            const FTransform Rel = Finger->GetRelativeTransform();
-            const FVector Half(0.f, 0.f, Finger->GetUnscaledCapsuleHalfHeight_WithoutHemisphere());
-            Segments.Add({ Rel.TransformPosition(-Half), Rel.TransformPosition(Half), Finger->GetUnscaledCapsuleRadius() });
-        }
-    }
-
-    // 가장 깊이 박힌 짝의 깊이만큼 목표를 밀어내고, 밀린 곳에서 다른 캡슐에 박혔을 수 있으니 몇 번 되풀이한다. 위치만 옮기고 회전은 그대로.
-    // 밀어낼 방향은 지금 물리 손 쪽 — 실제 손이 뼈 축을 넘어 들어가도(몸통 반지름 ≈ 15cm) 반대편 표면으로 튀지 않는다.
-    // 축을 넘은 실제 손은 축 기준으로 들어온 쪽에 비춰서 본다. 그대로 두면 목표가 표면을 따라 축 너머 쪽으로 계속 끌려
-    // 손이 몸을 돌아 뒤로 미끄러진다(헤드셋 없는 PIE 실측: 몸통 축 10cm 너머에서 손이 앞 → 뒤 표면으로 돌아감).
-    // 실제 손이 반대편 표면 밖까지 나가면 더 겹치지 않아 물리 손이 몸을 지나간다.
-    const FTransform BodyTM = Palm->GetComponentTransform();
-    FVector Target = Location;
-    for (int32 Iter = 0; Iter < 4; ++Iter)
-    {
-        const FTransform TargetTM(Rotation, Target);
-        float Depth = 0.f;
-        FVector Push = FVector::ZeroVector;
-        for (const FHandSegment& S : Segments)
-        {
-            const FVector A = TargetTM.TransformPosition(S.A);
-            const FVector B = TargetTM.TransformPosition(S.B);
-            for (int32 b = 0; b < Bones.Num(); ++b)
-            {
-                const FNPCWorldCapsule& C = Bones[b];
-                FVector P, Q;
-                FMath::SegmentDistToSegmentSafe(A, B, C.A, C.B, P, Q);
-                const float Reach = S.Radius + C.Radius;
-                if (FVector::DistSquared(P, Q) >= FMath::Square(Reach)) continue;
-
-                FVector BodyP, BodyQ;
-                FMath::SegmentDistToSegmentSafe(BodyTM.TransformPosition(S.A), BodyTM.TransformPosition(S.B), C.A, C.B, BodyP, BodyQ);
-                FVector N = (BodyP - BodyQ).GetSafeNormal();
-                if (N.IsZero()) N = (P - Q).GetSafeNormal();
-                if (N.IsZero()) continue;   // 물리 손·목표 둘 다 뼈 축 위 — 방향을 모른다
-                const FVector Gap = P - Q;
-                const bool bCrossed = FVector::DotProduct(Gap, N) < 0.f;
-                const float D = Reach - FMath::Abs(FVector::DotProduct(Gap, N));
-                if (D > Depth)
-                {
-                    Depth = D;
-                    Push = (bCrossed ? -2.f * Gap : FVector::ZeroVector) + N * D;
-                    if (Iter == 0) OutTouched = BoneOwners[b];   // 실제 손 위치에서 가장 깊이 들어간 NPC
-                }
-            }
-        }
-        if (Depth <= KINDA_SMALL_NUMBER) break;
-        Target += Push;
-    }
-    return Target;
-}
-
-void AVRPawn::UpdateGhostHandTracking(float DeltaTime)
-{
-    auto UpdateHand = [this, DeltaTime](UBoxComponent* Palm, USceneComponent* Anchor, UPhysicsConstraintComponent* Constraint, EControllerHand Hand)
-    {
-        if (!Palm || !Anchor || !Constraint || !Palm->IsSimulatingPhysics()) return;
-
-        // 입력 소스 선택 — 앵커가 곧 "진짜 손" 이다. 핸드트래킹이 추적 중이면 손바닥 관절로 옮기고,
-        // 아니면(컨트롤러를 쥠·트래킹 소실) 컨트롤러 Grip 포즈로 되돌린다. 드라이브·Effector·순간이동이 전부 앵커를 읽는다.
-        // 관절 상태는 멤버에 남겨 두고 손가락 포즈(애님 인스턴스)·이펙터 손목 보정이 같이 읽는다.
-        FXRHandTrackingState& HandState = (Hand == EControllerHand::Left) ? HandTrackStateLeft : HandTrackStateRight;
-        HandState = FXRHandTrackingState();
-        if (GEngine && GEngine->XRSystem.IsValid())
-        {
-            GEngine->XRSystem->GetHandTrackingState(this, EXRSpaceType::UnrealWorldSpace, Hand, HandState);
-        }
-        HandState.bValid = HandState.bValid && HandState.TrackingStatus == ETrackingStatus::Tracked
-            && HandState.HandKeyLocations.Num() == EHandKeypointCount && HandState.HandKeyRotations.Num() == EHandKeypointCount;
-
-        const int32 PalmKey = static_cast<int32>(EHandKeypoint::Palm);
-        if (HandState.bValid)
-        {
-            Anchor->SetWorldLocationAndRotation(HandState.HandKeyLocations[PalmKey], HandState.HandKeyRotations[PalmKey]);
-        }
-        else
-        {
-            Anchor->SetRelativeTransform(FTransform::Identity);
-        }
-
-        // 물리 엔진은 NPC 뼈 캡슐을 모르므로 드라이브 목표를 뼈 캡슐 밖으로 옮겨 손이 표면에서 멈추게 한다.
-        const FVector RealHand = Anchor->GetComponentLocation();
-        const FQuat TargetRotation = Anchor->GetComponentQuat() * PalmShapeOffset(HandState.bValid);
-        ACombatCharacter* TouchedNPC = nullptr;
-        const FVector Target = ProjectHandOutOfNPCs(Hand, Palm, RealHand, TargetRotation, TouchedNPC);
-        PushTouchedNPC(TouchedNPC, Palm, Target, RealHand, DeltaTime);   // 드라이브 전 물리 손 위치로 "표면에 와 있나"를 본다
-        const float PalmError = DriveGhostBody(Palm, Constraint, Target, TargetRotation, DeltaTime, HeldMassScale(Hand == EControllerHand::Left ? 0 : 1));
-        UpdateHandPassThrough(Palm, Hand == EControllerHand::Left, PalmError, HandPassThroughDistance);
-        UpdateFingertipShapes(Hand, Palm);
-    };
-
-    UpdateHand(PhysicsPalmLeft,  HandTrackingAnchorLeft,  PalmConstraintLeft,  EControllerHand::Left);
-    UpdateHand(PhysicsPalmRight, HandTrackingAnchorRight, PalmConstraintRight, EControllerHand::Right);
-}
-
-void AVRPawn::ApplyHandColliderSizes()
-{
-    // 손 콜라이더 치수는 보이는 손 메시에 맞춘 값(애님 인스턴스) × 두께 배율. 배율을 PIE 중 바꾸면 다음 틱에 다시 적용.
-    // 용접된 모양의 크기는 떼고 바꾼 뒤 다시 붙인다 — 붙은 채 바꾸면 손바닥 바디의 모양 목록에 반영된다는 보장이 없다.
-    const UVRPawnAnimInstance* Anim = GetMesh() ? Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
-    if (!Anim || !Anim->HasHandShapes() || AppliedHandColliderScale == HandColliderRadiusScale) return;
-    AppliedHandColliderScale = HandColliderRadiusScale;
-
-    for (UCapsuleComponent* Body : FingerBodies)
-    {
-        if (Body) Body->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-    }
-    for (UBoxComponent* Shape : PalmShapes)
-    {
-        if (Shape) Shape->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-    }
-
-    for (int32 h = 0; h < 2; ++h)
-    {
-        const EControllerHand Hand = h == 0 ? EControllerHand::Left : EControllerHand::Right;
-        UBoxComponent* Palm = h == 0 ? PhysicsPalmLeft : PhysicsPalmRight;
-        if (!Palm) continue;
-        // 바디 자체는 손바닥 관절에 중심을 둔 1cm 핵 — 실제 손바닥 모양은 용접된 PalmShape 가 맡는다.
-        Palm->SetBoxExtent(FVector(1.f));
-        for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
-        {
-            const int32 ShapeIndex = h * UVRPawnAnimInstance::NumPalmShapes + Part;
-            UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
-            if (!Shape) continue;
-            FVector PalmExtent = Anim->GetPalmHalfExtent(Hand, Part);
-            PalmExtent.Z *= HandColliderRadiusScale;
-            Shape->SetBoxExtent(PalmExtent);
-            Shape->SetRelativeTransform(ComputePalmShapeRelative(Hand, Part));
-            Shape->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-        }
-
-        for (int32 f = 0; f < 5; ++f)
-        {
-            for (int32 s = 0; s < UVRPawnAnimInstance::ShapesPerFinger; ++s)
-            {
-                const int32 i = FingerBodyIndex(h == 0, f, s);
-                UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
-                if (!Body) continue;
-                const float Radius = Anim->GetShapeRadius(Hand, f, s) * HandColliderRadiusScale;
-                Body->SetCapsuleSize(Radius, FMath::Max(Anim->GetShapeHalfHeight(Hand, f, s), Radius));
-                Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-            }
-        }
-    }
-}
-
-FTransform AVRPawn::ComputePalmShapeRelative(EControllerHand Hand, int32 Part) const
-{
-    // 손바닥 모양은 "손 본 원점(손목) + 손바닥 관절 축" 기준 중심(애님 인스턴스가 메시 정점으로 잰 값)에 놓인다.
-    // 핸드트래킹: 바디 = 손바닥 관절, 손 본 원점 = 손목 관절 → 손바닥 관절 기준 손목 오프셋 + 중심, 축은 그대로.
-    // 컨트롤러: 이펙터가 손 본을 바디 위치에 (바디 회전 × 모양 보정⁻¹ × 그립 보정) 으로 두므로 손바닥 관절 축은
-    //          바디 기준 모양 보정⁻¹ × 그립 보정 × PalmToBone⁻¹.
-    const UVRPawnAnimInstance* Anim = GetMesh() ? Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
-    if (!Anim) return FTransform::Identity;
-    const FVector Center = Anim->GetPalmBoxCenter(Hand, Part);
-    const FXRHandTrackingState& State = GetHandTrackState(Hand);
-    if (State.bValid)
-    {
-        const FQuat PalmInverse = State.HandKeyRotations[static_cast<int32>(EHandKeypoint::Palm)].Inverse();
-        const FVector WristOffset = PalmInverse.RotateVector(State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Wrist)]
-                                                           - State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Palm)]);
-        return FTransform(FQuat::Identity, WristOffset + Center);
-    }
-    const FRotator& Grip = Hand == EControllerHand::Left ? LeftHandGripOffset : RightHandGripOffset;
-    const FQuat Axes = PalmShapeOffset(false).Inverse() * Grip.Quaternion() * Anim->GetPalmToHandBone(Hand).Inverse();
-    return FTransform(Axes, Axes.RotateVector(Center));
-}
-
-void AVRPawn::UpdateFingertipShapes(EControllerHand Hand, UBoxComponent* Palm)
-{
-    const bool bLeft = Hand == EControllerHand::Left;
-    const int32 HandIndex = bLeft ? 0 : 1;
-    constexpr int32 PerHand = UVRPawnAnimInstance::NumFingerShapes;
-    if (FingerBodies.Num() != 2 * PerHand) return;
-    ApplyHandColliderSizes();
-
-    // ponytail: 컨트롤러일 땐 관절이 없어 손끝 모양의 충돌을 끄고 손바닥 안에 둔다 — 컨트롤러 손가락도 막아야 하면 애니 포즈 손끝을 목표로.
-    // 손바닥 모양 — 입력 소스가 바뀌거나(손바닥 축이 달라짐) 손목 오프셋이 변하면 다시 놓는다.
-    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
-    {
-        const int32 ShapeIndex = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
-        UBoxComponent* Shape = PalmShapes.IsValidIndex(ShapeIndex) ? PalmShapes[ShapeIndex].Get() : nullptr;
-        if (!Shape) continue;
-        const FTransform Rel = ComputePalmShapeRelative(Hand, Part);
-        if (FVector::DistSquared(Shape->GetRelativeLocation(), Rel.GetLocation()) > FMath::Square(0.2f)
-            || Shape->GetRelativeRotation().Quaternion().AngularDistance(Rel.GetRotation()) > FMath::DegreesToRadians(2.f))
-        {
-            Shape->SetRelativeTransform(Rel);
-        }
-        const ECollisionChannel Other = bLeft ? ECC_HandRight : ECC_HandLeft;
-        const ECollisionResponse Response = Palm->GetCollisionResponseToChannel(Other);
-        if (Shape->GetCollisionResponseToChannel(Other) != Response) Shape->SetCollisionResponseToChannel(Other, Response);
-    }
-
-    const bool bTracked = GetHandTrackState(Hand).bValid;
-    if (bTracked != bFingertipsActive[HandIndex])
-    {
-        bFingertipsActive[HandIndex] = bTracked;
-        for (int32 j = 0; j < PerHand; ++j)
-        {
-            UCapsuleComponent* Body = FingerBodies[HandIndex * PerHand + j];
-            if (!Body) continue;
-            if (bTracked) SetupHandBodyCollision(Body, bLeft);
-            else
-            {
-                Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-                Body->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
-            }
-        }
-    }
-    if (!bTracked) return;
-
-    // 양손 끼임 해소(UpdateHandPassThrough)는 손바닥에 걸리므로, 용접된 손끝 모양도 반대 손 응답을 손바닥과 맞춘다.
-    const ECollisionChannel OtherHand = bLeft ? ECC_HandRight : ECC_HandLeft;
-    const ECollisionResponse OtherResponse = Palm->GetCollisionResponseToChannel(OtherHand);
-    for (int32 j = 0; j < PerHand; ++j)
-    {
-        UCapsuleComponent* Body = FingerBodies[HandIndex * PerHand + j];
-        if (Body && Body->GetCollisionResponseToChannel(OtherHand) != OtherResponse) Body->SetCollisionResponseToChannel(OtherHand, OtherResponse);
-    }
-
-    // 손가락 캡슐 = 보이는 메시 손가락의 가운데·끝마디 구간(애님 인스턴스가 트래킹 관절 + 본 길이로 손바닥 기준 FK).
-    // 용접된 모양을 옮기면 엔진이 손바닥 바디의 모양을 다시 붙인다(UnWeld→Weld).
-    // 손가락을 표면 안으로 굽히면 모양이 표면에 박히고, 엔진이 손 전체를 밀어내 손이 들린다.
-    const UVRPawnAnimInstance* Anim = GetMesh() ? Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
-    if (!Anim) return;
-    for (int32 j = 0; j < PerHand; ++j)
-    {
-        UCapsuleComponent* Tip = FingerBodies[HandIndex * PerHand + j];
-        FVector Center;
-        FQuat Rotation;
-        if (!Tip || !Anim->GetFingerShapeTarget(Hand, j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger, Center, Rotation)) continue;
-        // 목표는 손바닥 기준 상대값 — 손이 밀려도 변하지 않고 손가락이 실제로 움직일 때만 바뀐다.
-        // 트래킹 미세 떨림(수 mm)마다 다시 붙이지 않도록 0.2cm·2° 미만 변화는 무시.
-        if (FVector::DistSquared(Tip->GetRelativeLocation(), Center) < FMath::Square(0.2f)
-            && Tip->GetRelativeRotation().Quaternion().AngularDistance(Rotation) < FMath::DegreesToRadians(2.f)) continue;
-        Tip->SetRelativeLocationAndRotation(Center, Rotation);
-    }
+    static const FXRHandTrackingState Invalid;
+    const UVRHandComponent* H = GetHand(Hand);
+    return H ? H->GetTrackState() : Invalid;
 }
 
 // ============================================================================
@@ -928,18 +405,15 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateItemTooltip();
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
-    UpdateGhostHandTracking(DeltaTime);
-    UpdateHandGestures();
-    UpdateContactGrab();
-    SyncGrabConstraints();
+    UpdateHands(DeltaTime);
 
     // 동역학 근접 — 실제 손(트래킹 앵커) 속도 추적. ½mv² 의 v, 던지기 속도, 패링 판정이 같이 쓴다.
     // 앵커는 kinematic 이라 GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
     // 컨트롤러 위치를 쓰면 핸드트래킹 중엔 내려놓은 컨트롤러라 속도가 0 — 던지면 떨어지고 타격이 안 들어간다.
-    if (DeltaTime > KINDA_SMALL_NUMBER && IsValid(HandTrackingAnchorLeft) && IsValid(HandTrackingAnchorRight))
+    if (DeltaTime > KINDA_SMALL_NUMBER && IsValid(HandLeft) && IsValid(HandRight))
     {
-        const FVector CurL = HandTrackingAnchorLeft->GetComponentLocation();
-        const FVector CurR = HandTrackingAnchorRight->GetComponentLocation();
+        const FVector CurL = HandLeft->GetComponentLocation();
+        const FVector CurR = HandRight->GetComponentLocation();
         if (bHandVelInit)
         {
             // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
@@ -1044,47 +518,14 @@ FTransform AVRPawn::GetHeadEffectorCS() const
     return T;
 }
 
-// 손 위치·회전 모두 물리 손바닥(벽에 막힌 실제 자세). 손바닥 상자 회전에서 모양 보정을 빼면 "막힌 앵커" 회전이 된다.
-// 시뮬레이션 전(에디터·BeginPlay 이전)엔 앵커 그대로.
-FTransform AVRPawn::MakeHandEffectorCS(EControllerHand Hand, const USceneComponent* Anchor, const UBoxComponent* Palm, const FRotator& GripOffset) const
-{
-    if (!Anchor || !GetMesh()) return FTransform::Identity;
-    const FXRHandTrackingState& State = GetHandTrackState(Hand);
-    FTransform W = Anchor->GetComponentTransform();
-    if (Palm && Palm->IsSimulatingPhysics())
-    {
-        W.SetLocation(Palm->GetComponentLocation());
-        W.SetRotation(Palm->GetComponentQuat() * PalmShapeOffset(State.bValid).Inverse());
-    }
-
-    // 핸드트래킹 중엔 앵커가 손바닥 중심 관절에 있는데 손 본 피벗은 손목이다 — 손목 관절까지의 차이만큼 당긴다.
-    // 차이는 앵커 로컬로 옮겨 물리 손바닥 회전으로 다시 돌린다(벽에 막혀 손이 덜 돌았으면 손목도 그만큼).
-    // 회전 보정도 컨트롤러 그립용이 아니라 손바닥 관절 프레임용(애님 인스턴스가 레퍼런스 포즈에서 계산)을 쓴다.
-    FQuat Offset = GripOffset.Quaternion();
-    const UVRPawnAnimInstance* Anim = Cast<UVRPawnAnimInstance>(GetMesh()->GetAnimInstance());
-    // 애님의 프레임 내부 상태(이번 프레임 관절 복사 여부)에 기대면 호출 시점에 따라 손목 오프셋이 빠진다 — 트래킹 유효 여부만 본다.
-    if (State.bValid && Anim && Anim->HasHandShapes())
-    {
-        const FVector PalmToWrist = State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Wrist)]
-                                  - State.HandKeyLocations[static_cast<int32>(EHandKeypoint::Palm)];
-        W.AddToTranslation(W.GetRotation() * (Anchor->GetComponentQuat().Inverse() * PalmToWrist));
-        Offset = Anim->GetPalmToHandBone(Hand);
-    }
-
-    FTransform T = W.GetRelativeTransform(GetMesh()->GetComponentTransform());
-    // 축 보정을 손 로컬 공간에 적용(우측 곱) — 손이 회전해도 보정이 따라감.
-    T.SetRotation(T.GetRotation() * Offset);
-    return T;
-}
-
 FTransform AVRPawn::GetLeftHandEffectorCS() const
 {
-    return MakeHandEffectorCS(EControllerHand::Left, HandTrackingAnchorLeft, PhysicsPalmLeft, LeftHandGripOffset);
+    return HandLeft ? HandLeft->GetEffectorCS(GetMesh()) : FTransform::Identity;
 }
 
 FTransform AVRPawn::GetRightHandEffectorCS() const
 {
-    return MakeHandEffectorCS(EControllerHand::Right, HandTrackingAnchorRight, PhysicsPalmRight, RightHandGripOffset);
+    return HandRight ? HandRight->GetEffectorCS(GetMesh()) : FTransform::Identity;
 }
 
 void AVRPawn::UpdatePosture()
@@ -1987,195 +1428,13 @@ void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
     const int32 h = bLeft ? 0 : 1;
     // 핸드트래킹 핀치·주먹은 인벤토리가 열렸을 때 슬롯 발동에만 쓴다 — 월드 아이템은 접촉 쥐기(UpdateContactGrab)가 맡는다.
     // 제스처는 손가락이 이미 물건 속에 들어간 뒤에야 성립해, 그때 쥐면 밀려난 손이 튀며 제약이 끊겼다.
-    const bool bGesture = bInventoryOpen && (bLeft ? bIsPinchingLeft : bIsPinchingRight);
-    const bool bHeld = bGripHeld[h] || bContactHeld[h] || bGesture;
+    const UVRHandComponent* Hand = GetHand(bLeft);
+    const bool bGesture = bInventoryOpen && Hand && Hand->IsGesturing();
+    const bool bHeld = bGripHeld[h] || (Hand && Hand->IsContactHeld()) || bGesture;
     if (bHeld == bGrabInputActive[h]) return;
     bGrabInputActive[h] = bHeld;
     if (bHeld) HandleGrabStart(bLeft, Target);
     else       HandleGrabRelease(bLeft);
-}
-
-void AVRPawn::UpdateContactGrab()
-{
-    for (int32 h = 0; h < 2; ++h)
-    {
-        const bool bLeft = h == 0;
-        const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-        bool bHeld = false;
-        if (bFingertipsActive[h] && GetHandTrackState(bLeft ? EControllerHand::Left : EControllerHand::Right).bValid)
-        {
-            if (bContactHeld[h])
-            {
-                // 짝이 표면에서 떨어지면(손을 폄) 놓는다. 쥔 동안은 감싸기가 마디를 표면에 멈춰 두어 닿아 있다.
-                // 핀치 = 엄지와 짝 손가락 둘 다, 주먹 = 손바닥과 손가락 하나 이상이 닿아 있어야 유지.
-                const ADroppedItemBase* Item = ContactItem[h].Get();
-                const UPrimitiveComponent* HeldMesh = IsValid(Item) ? Item->ItemMesh : nullptr;
-                if (ContactPartner[h] == PalmGripPartner)
-                {
-                    bHeld = IsPalmTouching(bLeft, HeldMesh, ContactReleaseMargin);
-                    bool bAnyFinger = false;
-                    for (int32 f = 1; f < 5 && bHeld && !bAnyFinger; ++f) bAnyFinger = FingerTouching(bLeft, f, HeldMesh, ContactReleaseMargin) != nullptr;
-                    bHeld = bHeld && bAnyFinger;
-                }
-                else
-                {
-                    bHeld = FingerTouching(bLeft, 0, HeldMesh, ContactReleaseMargin) && FingerTouching(bLeft, ContactPartner[h], HeldMesh, ContactReleaseMargin);
-                }
-            }
-            else if (!bInventoryOpen && Inventory && !Inventory->GetHeldItem(HandSlot))
-            {
-                int32 Partner = INDEX_NONE;
-                if (ADroppedItemBase* Item = FindGraspedItem(bLeft, Partner))
-                {
-                    ContactItem[h] = Item;
-                    ContactPartner[h] = Partner;
-                    bHeld = true;
-                }
-            }
-        }
-        if (bHeld == bContactHeld[h]) continue;
-        bContactHeld[h] = bHeld;
-        UpdateGrabInput(bLeft, bHeld ? ContactItem[h].Get() : nullptr);
-        if (!bHeld)
-        {
-            ContactItem[h].Reset();
-            ContactPartner[h] = INDEX_NONE;
-        }
-    }
-}
-
-const UCapsuleComponent* AVRPawn::FingerTouching(bool bLeft, int32 Finger, const UPrimitiveComponent* Item, float Margin) const
-{
-    if (!IsValid(Item) || Finger < 0 || Finger >= 5) return nullptr;
-    for (int32 Shape = UVRPawnAnimInstance::ShapesPerFinger - 1; Shape >= 0; --Shape)   // 끝마디 먼저
-    {
-        const int32 i = FingerBodyIndex(bLeft, Finger, Shape);
-        const UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
-        if (Body && Item->OverlapComponent(Body->GetComponentLocation(), Body->GetComponentQuat(),
-                                           FCollisionShape::MakeCapsule(Body->GetScaledCapsuleRadius() + Margin, Body->GetScaledCapsuleHalfHeight() + Margin)))
-        {
-            return Body;
-        }
-    }
-    return nullptr;
-}
-
-bool AVRPawn::IsPalmTouching(bool bLeft, const UPrimitiveComponent* Item, float Margin) const
-{
-    if (!IsValid(Item)) return false;
-    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
-    {
-        const int32 i = (bLeft ? 0 : 1) * UVRPawnAnimInstance::NumPalmShapes + Part;
-        const UBoxComponent* Shape = PalmShapes.IsValidIndex(i) ? PalmShapes[i].Get() : nullptr;
-        if (Shape && Item->OverlapComponent(Shape->GetComponentLocation(), Shape->GetComponentQuat(), FCollisionShape::MakeBox(Shape->GetScaledBoxExtent() + FVector(Margin))))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool AVRPawn::GetPalmShapeCenter(int32 HandIndex, FVector& OutCenter) const
-{
-    OutCenter = FVector::ZeroVector;
-    for (int32 Part = 0; Part < UVRPawnAnimInstance::NumPalmShapes; ++Part)
-    {
-        const int32 i = HandIndex * UVRPawnAnimInstance::NumPalmShapes + Part;
-        const UBoxComponent* Shape = PalmShapes.IsValidIndex(i) ? PalmShapes[i].Get() : nullptr;
-        if (!Shape) return false;
-        OutCenter += Shape->GetComponentLocation() / UVRPawnAnimInstance::NumPalmShapes;
-    }
-    return true;
-}
-
-ADroppedItemBase* AVRPawn::FindGraspedItem(bool bLeft, int32& OutPartner) const
-{
-    FVector PalmCenter;
-    UWorld* World = GetWorld();
-    if (!GetPalmShapeCenter(bLeft ? 0 : 1, PalmCenter) || !World) return nullptr;
-
-    // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 —
-    //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
-    //   주먹: 손바닥 모양이 닿고, 손가락 2개 이상이 닿으며, 손바닥 중심 → 그 캡슐 선이 아이템을 지난다.
-    //         주먹으로 감싸면 엄지가 물건이 아니라 손가락 위를 덮어 핀치로는 안 걸린다.
-    // "선이 지난다" = 사이에 끼었다. 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
-    // ponytail: 손바닥에 올려 받치기(손가락이 안 감쌈)는 안 걸린다.
-    TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
-    const FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(GraspTrace), false);
-    for (const FOverlapResult& Overlap : Overlaps)
-    {
-        ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
-        if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
-        if (Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Item || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Item)) continue;
-        auto Between = [&](const FVector& A, const FVector& B)
-        {
-            FHitResult Hit;
-            return Item->ItemMesh->LineTraceComponent(Hit, A, B, TraceParams);
-        };
-
-        if (const UCapsuleComponent* Thumb = FingerTouching(bLeft, 0, Item->ItemMesh, ContactGrabMargin))
-        {
-            for (int32 f = 1; f < 5; ++f)
-            {
-                const UCapsuleComponent* Other = FingerTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin);
-                if (Other && Between(Thumb->GetComponentLocation(), Other->GetComponentLocation()))
-                {
-                    OutPartner = f;
-                    return Item;
-                }
-            }
-        }
-        if (IsPalmTouching(bLeft, Item->ItemMesh, ContactGrabMargin))
-        {
-            int32 Wrapped = 0;
-            for (int32 f = 1; f < 5; ++f)
-            {
-                const UCapsuleComponent* Finger = FingerTouching(bLeft, f, Item->ItemMesh, ContactGrabMargin);
-                if (Finger && Between(PalmCenter, Finger->GetComponentLocation())) ++Wrapped;
-            }
-            if (Wrapped >= 2)
-            {
-                OutPartner = PalmGripPartner;
-                return Item;
-            }
-        }
-    }
-    return nullptr;
-}
-
-void AVRPawn::UpdateHandGestures()
-{
-    // 슈미트 트리거 — 잡은 뒤엔 임계 + 여유를 넘어야 놓는다. 트래킹이 끊기면 제스처는 풀린다(그립이 없으면 놓는다).
-    auto Evaluate = [this](EControllerHand Hand, bool bWas)
-    {
-        const FXRHandTrackingState& S = GetHandTrackState(Hand);
-        if (!S.bValid) return false;
-        auto Dist = [&S](EHandKeypoint A, EHandKeypoint B)
-        {
-            return FVector::Dist(S.HandKeyLocations[static_cast<int32>(A)], S.HandKeyLocations[static_cast<int32>(B)]);
-        };
-        const float Slack = bWas ? PinchHysteresis : 0.f;
-        const bool bPinch = Dist(EHandKeypoint::ThumbTip, EHandKeypoint::IndexTip) < PinchDistanceThreshold + Slack;
-        // 주먹은 엄지·검지 위치가 사람마다 달라 중지·약지·새끼 끝이 모두 손바닥에 붙었는지만 본다.
-        const float FistDist = FMath::Max3(Dist(EHandKeypoint::MiddleTip, EHandKeypoint::Palm),
-                                           Dist(EHandKeypoint::RingTip,   EHandKeypoint::Palm),
-                                           Dist(EHandKeypoint::LittleTip, EHandKeypoint::Palm));
-        return bPinch || FistDist < FistDistanceThreshold + Slack;
-    };
-
-    const bool bLeft = Evaluate(EControllerHand::Left, bIsPinchingLeft);
-    if (bLeft != bIsPinchingLeft)
-    {
-        bIsPinchingLeft = bLeft;
-        UpdateGrabInput(/*bLeft=*/true);
-    }
-    const bool bRight = Evaluate(EControllerHand::Right, bIsPinchingRight);
-    if (bRight != bIsPinchingRight)
-    {
-        bIsPinchingRight = bRight;
-        UpdateGrabInput(/*bLeft=*/false);
-    }
 }
 
 void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
@@ -2223,7 +1482,8 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     }
 
     // 물리 손이 있으면 제약으로 쥔다(무게·토크를 엔진이 계산). 시뮬레이션 전이면 예전처럼 손 본 소켓에 붙인다.
-    if (!GrabItemWithPhysics(Nearest, bLeft, /*bKeepCollision=*/Target != nullptr))
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand || !Hand->GrabWithPhysics(Nearest, /*bKeepCollision=*/Target != nullptr))
     {
         Inventory->AttachItemToHand(Nearest, HandSlot);
     }
@@ -2232,7 +1492,7 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
 {
-    const USceneComponent* Anchor = bLeft ? HandTrackingAnchorLeft : HandTrackingAnchorRight;
+    const UVRHandComponent* Anchor = GetHand(bLeft);
     if (!IsValid(Anchor)) return nullptr;
 
     // 판정 원점은 폰이 아니라 실제 손(트래킹 앵커) — 손을 뻗은 곳에 있는 것만 걸려야 한다.
@@ -2328,100 +1588,10 @@ void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, f
     if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
 }
 
-bool AVRPawn::GrabItemWithPhysics(ADroppedItemBase* Item, bool bLeft, bool bKeepCollision)
-{
-    const int32 h = bLeft ? 0 : 1;
-    UBoxComponent* Palm = bLeft ? PhysicsPalmLeft : PhysicsPalmRight;
-    UPhysicsConstraintComponent* Grab = GrabConstraints.IsValidIndex(h) ? GrabConstraints[h].Get() : nullptr;
-    if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !IsValid(Palm) || !Palm->IsSimulatingPhysics() || !IsValid(Grab) || !Inventory)
-    {
-        return false;
-    }
-
-    // 진열품은 구매 직후라 물리가 꺼져 있을 수 있다 — 제약은 시뮬레이션 바디끼리만 걸린다.
-    if (!Item->ItemMesh->IsSimulatingPhysics()) Item->SetPhysicsFrozen(false);
-
-    // 제약 기준점 = 손 위치 — 아이템은 잡은 자리 그대로 매달리고, 무게중심이 손에서 멀수록 토크가 커진다.
-    Grab->SetLinearBreakable(true, GrabBreakForce);
-    Grab->SetAngularBreakable(true, GrabBreakTorque);
-    Grab->SetWorldLocationAndRotation(Palm->GetComponentLocation(), Palm->GetComponentQuat());
-    Grab->SetDisableCollision(!bKeepCollision);
-    Grab->SetConstrainedComponents(Palm, NAME_None, Item->ItemMesh, NAME_None);
-
-    // 튜닝용 — 쥘 때 물리 손이 실제 손에서 밀려난 거리(쥔 직후 이만큼 끌려가며 충격), 질량, 손~무게중심 거리(토크 팔).
-    const USceneComponent* Anchor = bLeft ? HandTrackingAnchorLeft : HandTrackingAnchorRight;
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠 상세: %s 손 어긋남 %.1fcm, 질량 %.2fkg, 무게중심 거리 %.1fcm, 충돌 %s"),
-           *Item->ItemData.ItemTemplateID, Anchor ? FVector::Dist(Anchor->GetComponentLocation(), Palm->GetComponentLocation()) : -1.f,
-           Item->ItemMesh->GetMass(), FVector::Dist(Palm->GetComponentLocation(), Item->ItemMesh->GetCenterOfMass()), bKeepCollision ? TEXT("유지") : TEXT("끔"));
-
-    Inventory->HoldItem(Item, bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
-    GrabbedItems[h] = Item;
-    return true;
-}
-
-float AVRPawn::HeldMassScale(int32 HandIndex) const
-{
-    const ADroppedItemBase* Held = GrabbedItems[HandIndex].Get();
-    const UBoxComponent* Palm = HandIndex == 0 ? PhysicsPalmLeft : PhysicsPalmRight;
-    if (!IsValid(Held) || !IsValid(Held->ItemMesh) || !IsValid(Palm)) return 1.f;
-    const float PalmMass = FMath::Max(Palm->GetMass(), KINDA_SMALL_NUMBER);
-    return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass)) / PalmMass;
-}
-
-void AVRPawn::GetNearbyItemMeshes(EControllerHand Hand, TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const
-{
-    FVector PalmCenter;
-    UWorld* World = GetWorld();
-    if (!GetPalmShapeCenter(Hand == EControllerHand::Left ? 0 : 1, PalmCenter) || !World) return;
-    TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
-    for (const FOverlapResult& Overlap : Overlaps)
-    {
-        const ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
-        if (Item && Overlap.GetComponent() == Item->ItemMesh) Out.AddUnique(Item->ItemMesh);
-    }
-}
-
-void AVRPawn::ReleaseGrabConstraint(int32 HandIndex)
-{
-    // 기록을 먼저 지운다 — 물리가 끊은 이벤트는 한 프레임 늦게 올 수 있어, 그 사이 다른 물건을 쥐었으면
-    // OnGrabConstraintBroken 이 새 물건을 떨어뜨린다. 기록이 없으면 그 이벤트는 무시된다.
-    GrabbedItems[HandIndex].Reset();
-    if (GrabConstraints.IsValidIndex(HandIndex) && IsValid(GrabConstraints[HandIndex]))
-    {
-        GrabConstraints[HandIndex]->BreakConstraint();   // TermConstraint 만 — 끊김 이벤트는 나가지 않는다
-    }
-}
-
-void AVRPawn::SyncGrabConstraints()
-{
-    if (!Inventory) return;
-    for (int32 h = 0; h < 2; ++h)
-    {
-        if (!GrabbedItems[h].IsValid()) continue;
-        const EEquipmentSlot HandSlot = h == 0 ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-        if (Inventory->GetHeldItem(HandSlot) != GrabbedItems[h].Get()) ReleaseGrabConstraint(h);
-    }
-}
-
-void AVRPawn::OnGrabConstraintBroken(int32 ConstraintIndex)
-{
-    // 이미 놓았거나(ReleaseGrabConstraint 가 기록을 지움) 쥔 물건이 바뀌었으면 늦게 온 이벤트다 — 무시.
-    if (ConstraintIndex < 0 || ConstraintIndex > 1 || !Inventory || !GrabbedItems[ConstraintIndex].IsValid()) return;
-    const EEquipmentSlot HandSlot = ConstraintIndex == 0 ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    if (Inventory->GetHeldItem(HandSlot) != GrabbedItems[ConstraintIndex].Get()) return;
-    GrabbedItems[ConstraintIndex].Reset();
-    // 놓친 것 — 던지기·건네기 분기 없이 그 자리에서 떨어진다(ReleaseHeldItem 이 물리를 되살린다).
-    if (ADroppedItemBase* Dropped = Inventory->ReleaseHeldItem(HandSlot))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 놓침(제약 끊김): %s"), *Dropped->ItemData.ItemTemplateID);
-    }
-}
-
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    ReleaseGrabConstraint(bLeft ? 0 : 1);
+    if (UVRHandComponent* Hand = GetHand(bLeft)) Hand->ReleaseGrab();
     if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
@@ -2522,10 +1692,8 @@ void AVRPawn::DetectNearbyNPC()
 FVector AVRPawn::GetHandLocation(bool bRightHand) const
 {
     // 보이는 손(물리 손바닥)과 판정 손을 일치시킨다 — 벽 너머로 넣은 실제 손으로는 거래·막기 판정이 안 된다.
-    const UBoxComponent* Palm = bRightHand ? PhysicsPalmRight : PhysicsPalmLeft;
-    if (Palm && Palm->IsSimulatingPhysics()) return Palm->GetComponentLocation();
-    const UMotionControllerComponent* HandController = bRightHand ? MotionControllerRight : MotionControllerLeft;
-    return HandController ? HandController->GetComponentLocation() : GetActorLocation();
+    const UVRHandComponent* Hand = GetHand(!bRightHand);
+    return Hand ? Hand->GetVisibleLocation() : GetActorLocation();
 }
 
 void AVRPawn::OnChatKey()
