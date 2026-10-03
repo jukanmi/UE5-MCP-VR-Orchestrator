@@ -25,30 +25,15 @@ AEnemyCharacter::AEnemyCharacter()
     GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);  // AnimBP 없이 클립 직접 재생
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
-    RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
-
     // 손 소품 — 생성자에선 소켓을 못 정한다(BP 가 HandPropSocket 을 나중에 덮어씀). PostInitializeComponents 에서 붙인다.
     HandProp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HandProp"));
     HandProp->SetupAttachment(GetMesh());
     HandProp->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // 캡슐·NPC 인지 방해 금지(타격은 공격 판정이 담당)
 
-    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
-    if (StimuliSource)
-    {
-        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
-        StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
-        StimuliSource->RegisterWithPerceptionSystem();
-    }
-
-    // SmartNPC 와 동일 — 컨트롤러 회전 무시 + 이동 방향으로 자동 선회(옆걸음 방지).
-    bUseControllerRotationPitch = false;
-    bUseControllerRotationYaw   = false;
-    bUseControllerRotationRoll  = false;
+    // 컨트롤러 회전 무시·이동 방향 선회는 ACombatCharacter. 선회 속도만 여기서.
     if (UCharacterMovementComponent* CMC = GetCharacterMovement())
     {
-        CMC->bOrientRotationToMovement = true;
         CMC->RotationRate = FRotator(0.f, 540.f, 0.f);
-        CMC->bUseControllerDesiredRotation = false;
         // RVO 회피는 켜지 않는다 — 켜면 타겟 앞 1.7~2.2m 에서 두 명이 서로 피하느라 v=0 으로 얼어 공격 사거리(170)에
         // 영영 못 든다(실측 32초 무타격). 끼임의 실제 원인은 나무 수관 충돌이었고 그쪽을 고쳤다.
     }
@@ -76,15 +61,8 @@ void AEnemyCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
-    // BaseStats(BP 편집) → 파생치. HP 는 만땅에서 시작.
-    Attributes.RecalculateCombatStats();
-    Attributes.Resources.Health = Attributes.Resources.MaxHealth;
-    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
-    {
-        CMC->MaxWalkSpeed = Attributes.Movement.WalkSpeed;
-    }
-
-    GameplayTagUtils::AddState(GameplayTags, TAG_State_Idle);
+    InitAttributes(Attributes);
+    AddStateTag(TAG_State_Idle);
     PlayLoco(IdleAnim);
 }
 
@@ -113,15 +91,6 @@ void AEnemyCharacter::UpdateLocomotionAnim()
     PlayLoco(Speed < 10.f ? IdleAnim : (Speed < RunThreshold ? WalkAnim : RunAnim));
 }
 
-void AEnemyCharacter::PlayOneOf(const TArray<USoundBase*>& Sounds) const
-{
-    if (Sounds.Num() == 0) return;
-    if (USoundBase* S = Sounds[FMath::RandRange(0, Sounds.Num() - 1)])
-    {
-        UGameplayStatics::PlaySoundAtLocation(this, S, GetActorLocation());
-    }
-}
-
 bool AEnemyCharacter::IsHostileTo_Implementation(const TScriptInterface<ICharacterBase>& Other) const
 {
     const UObject* Obj = Other.GetObject();
@@ -138,20 +107,8 @@ float AEnemyCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const&
 
     const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
-    // 부위 배율 + 래그돌 임펄스 방향 — SmartNPC::TakeDamage 와 같은 규약.
-    float Multiplier = 1.0f;
-    if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
-    {
-        const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
-        Multiplier = BodyPartMultiplierForBone(Pt.HitInfo.BoneName);
-        if (RagdollComponent) RagdollComponent->NoteHit(Pt.HitInfo.BoneName, Pt.ShotDirection);
-    }
-    else if (RagdollComponent)
-    {
-        RagdollComponent->NoteHit(NAME_None, DamageCauser
-            ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
-            : -GetActorForwardVector());
-    }
+    // 부위 배율 + 래그돌 임펄스 방향.
+    const float Multiplier = NoteHit(DamageEvent, DamageCauser);
 
     // NPCStateComponent::ApplyDamage 와 같은 공식: (원시 − 방어력) × 부위 배율.
     const float Effective = FMath::Max(0.f, Raw - Attributes.Combat.Defense) * Multiplier;
@@ -220,11 +177,7 @@ void AEnemyCharacter::OnAttackHitTime()
 // ============================================================================
 void AEnemyCharacter::HandleDeath()
 {
-    if (bIsDead) return;
-    bIsDead = true;
-
-    GameplayTags.Reset();
-    GameplayTagUtils::AddState(GameplayTags, TAG_State_Condition_Dead);
+    if (!BeginDeath()) return;
     GetWorldTimerManager().ClearTimer(AttackHitTimer);
     AttackEndTime = -1.f;
 
