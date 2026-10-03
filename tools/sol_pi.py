@@ -7,7 +7,9 @@ NVIDIA NVLabs SoL-Pi 기반 에이전트 최적화 하네스 도구.
 5. status : 프로젝트 및 엔진 상태 요약
 """
 
+import os
 import sys
+import time
 import subprocess
 import re
 from pathlib import Path
@@ -26,7 +28,12 @@ LOG_FILE = PROJECT_ROOT / "Saved" / "Logs" / "UE5_MCP_VR.log"
 RAW_LOG_FILE = PROJECT_ROOT / "Saved" / "Logs" / "sol_pi_raw.log"
 BUILD_BAT = Path(r"C:\Program Files\Epic Games\UE_5.5\Engine\Build\BatchFiles\Build.bat")
 UNREAL_CMD = Path(r"C:\Program Files\Epic Games\UE_5.5\Engine\Binaries\Win64\UnrealEditor-Cmd.exe")
+UBT_EXE = Path(r"C:\Program Files\Epic Games\UE_5.5\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe")
 UPROJECT = PROJECT_ROOT / "UE5_MCP_VR.uproject"
+
+# UBT 는 git status 출력을 경로로 읽는데, 한글 경로가 따옴표 8진 이스케이프("docs/\354...")로 나오면
+# "Path fragment ... contains invalid directory separators" 로 빌드 전에 죽는다. 리포 설정은 두고 UBT 환경에만 끈다.
+UBT_ENV = {**os.environ, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotepath", "GIT_CONFIG_VALUE_0": "false"}
 COGNITIVE_DIR = PROJECT_ROOT / "OmniAgent_VR_System" / "CognitiveEngine"
 
 # 무시할 무해한 엔진 기본 플러그인 경고 패턴
@@ -59,6 +66,27 @@ def archive_raw_log(raw_text: str):
         pass  # nosec B110 — 아카이빙은 부가 기능, 실패해도 빌드 검증 자체는 계속
 
 
+def regenerate_intellisense():
+    """빌드 성공 뒤 VS Code IntelliSense 용 compileCommands 를 다시 만든다 — 새 .cpp/.h 가 목록에 없으면 인클루드 경로 없이 열려
+    파일 전체가 "파일 소스를 열 수 없습니다" 로 빨개진다. 부가 기능이라 실패해도 빌드 결과는 그대로."""
+    if not UBT_EXE.exists():
+        return
+    try:
+        subprocess.run(
+            [str(UBT_EXE), "-projectfiles", f"-project={UPROJECT}", "-game", "-rocket", "-VSCode"],
+            capture_output=True,
+            timeout=120,
+            env=UBT_ENV,
+        )
+        # 재생성 중 compileCommands 가 잠깐 비는 사이 cpptools 가 빈 상태를 읽고 굳는다(파일 전체가 빨개짐).
+        # 끝난 뒤 설정 파일과 compileCommands 둘 다 건드려 다시 읽게 한다(설정만 건드리면 일부 파일이 빨간 채 남는다).
+        time.sleep(3)
+        for name in ("c_cpp_properties.json", "compileCommands_UE5_MCP_VR.json", "compileCommands_Default.json"):
+            (PROJECT_ROOT / ".vscode" / name).touch()
+    except Exception:
+        pass  # nosec B110 — IntelliSense 갱신은 편의 기능
+
+
 def slice_build(timeout_sec: int = 300) -> int:
     """UE5 C++ 컴파일을 실행하고 위상(Phase) 인식 및 샌드위치 기법으로 에러 슬라이싱"""
     if not BUILD_BAT.exists():
@@ -78,7 +106,7 @@ def slice_build(timeout_sec: int = 300) -> int:
 
     try:
         res = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout_sec
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout_sec, env=UBT_ENV
         )
         archive_raw_log(res.stdout + "\n" + res.stderr)
     except subprocess.TimeoutExpired:
@@ -91,6 +119,7 @@ def slice_build(timeout_sec: int = 300) -> int:
 
     if res.returncode == 0:
         print("✅ [SoL-Pi] BUILD SUCCESS — 컴파일 오류 0건! (완벽)")
+        regenerate_intellisense()
         return 0
 
     lines = res.stdout.splitlines() + res.stderr.splitlines()
