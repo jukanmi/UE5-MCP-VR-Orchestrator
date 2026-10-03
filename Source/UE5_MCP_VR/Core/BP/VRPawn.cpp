@@ -1,5 +1,6 @@
 #include "Core/BP/VRPawn.h"
 #include "Core/BP/VRHandComponent.h"
+#include "Core/BP/VRPlayerUIComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
@@ -13,7 +14,6 @@
 #include "EngineUtils.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
-#include "Core/Utils/EngineShapes.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -38,8 +38,6 @@
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
-#include "UI/BP/PlayerHUDWidget.h"
-#include "UI/BP/ChatWidget.h"
 #include "UI/BP/ItemTooltipWidget.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Villager/MerchantStall.h"
@@ -114,6 +112,8 @@ AVRPawn::AVRPawn()
     HandRight->SetupAttachment(MotionControllerRight);
     HandRight->Hand = EControllerHand::Right;
     HandRight->GripOffset = FRotator(0.f, 0.f, -90.f);
+
+    PlayerUI = CreateDefaultSubobject<UVRPlayerUIComponent>(TEXT("PlayerUI"));
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -226,25 +226,6 @@ void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
-    // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
-    if (PointerBeam && PointerDot)
-    {
-        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
-        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
-
-        // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
-        PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
-        if (PointerMID)
-        {
-            PointerBeam->SetMaterial(0, PointerMID);
-            PointerDot->SetMaterial(0, PointerMID);
-        }
-
-        // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
-        PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
-    }
-
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
     // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
     UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Stage);
@@ -280,46 +261,8 @@ void AVRPawn::BeginPlay()
     // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
     StartCalibration();
 
-    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만.
-    // 위젯은 뷰포트가 아니라 왼손 패널(HUDWidgetComp)에 실린다. 화면 공간 위젯은
-    // 스테레오 렌더 타깃 위에 한 번만 합성되어 한쪽 눈에만 보이기 때문.
-    if (HUDWidgetClass && HUDWidgetComp)
-    {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            if (PC->IsLocalController())
-            {
-                HUDWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-                HUDWidgetComp->SetWidgetClass(HUDWidgetClass);
-                HUDWidgetComp->InitWidget();
-                HUDWidget = Cast<UPlayerHUDWidget>(HUDWidgetComp->GetUserWidgetObject());
-            }
-        }
-    }
-
-    // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
-    if (HUDWidgetComp)
-    {
-        HUDWidgetComp->SetVisibility(true);
-    }
-
-    if (ChatWidgetClass && ChatWidgetComp)
-    {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            if (PC->IsLocalController())
-            {
-                ChatWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-                ChatWidgetComp->SetWidgetClass(ChatWidgetClass);
-                ChatWidgetComp->InitWidget();
-                ChatWidget = Cast<UChatWidget>(ChatWidgetComp->GetUserWidgetObject());
-            }
-        }
-    }
-
-    // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
-    // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
-    ApplyInventoryPresentation(false);
+    // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
+    if (PlayerUI) PlayerUI->Init();
 
     if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
 
@@ -369,7 +312,7 @@ void AVRPawn::UpdateHands(float DeltaTime)
     {
         if (!H) continue;
         // 인벤토리가 열렸거나 그 손에 이미 쥔 게 있으면 새로 쥐지 않는다(접촉 쥐기 유지·놓기는 계속 본다).
-        const bool bAllowNew = !bInventoryOpen && Inventory && !Inventory->GetHeldItem(H->GetHandSlot());
+        const bool bAllowNew = !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(H->GetHandSlot());
         if (H->UpdateContactGrab(bAllowNew)) UpdateGrabInput(H->IsLeft(), H->IsContactHeld() ? H->GetContactItem() : nullptr);
     }
     for (UVRHandComponent* H : Hands)
@@ -398,11 +341,7 @@ void AVRPawn::Tick(float DeltaTime)
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
     UpdateBodyPlacement();
-    UpdateHUDPanelFacing();
-    UpdateHUDPanelGaze(DeltaTime);
-    UpdateChatPanelVisibility();
-    UpdatePointerVisual();
-    UpdateItemTooltip();
+    if (PlayerUI) PlayerUI->Update(DeltaTime);
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
     UpdateHands(DeltaTime);
@@ -861,61 +800,15 @@ void AVRPawn::OnTurn(const FInputActionValue& Value)
 
     // 인벤토리가 열려 있는 동안 같은 스틱이 회전과 슬롯 이동을 겸하면 아이템을 고르다 몸이 돈다.
     // 회전을 0 으로 확실히 죽이고 선택만 처리한다.
-    if (bInventoryOpen)
+    if (IsInventoryOpen())
     {
         TurnAxisInput = 0.f;
-        UpdateInventorySelection(Stick);
+        PlayerUI->NavigateInventory(Stick);
         return;
     }
 
     // 입력값만 저장 — 실제 회전은 Tick(UpdateSmoothTurn)에서 프레임 보정 적용.
     TurnAxisInput = Stick.X;
-}
-
-void AVRPawn::UpdateInventorySelection(const FVector2D& Stick)
-{
-    if (!Inventory || Inventory->InventorySlots.Num() == 0) return;
-
-    // 기울임 임계와 복귀 임계를 따로 둔다 — 하나면 경계에서 떨려 여러 칸이 한 번에 넘어간다.
-    const float PushThreshold = 0.6f;
-    const float ReleaseThreshold = 0.3f;
-
-    if (!bSlotNavArmed)
-    {
-        if (FMath::Abs(Stick.X) < ReleaseThreshold && FMath::Abs(Stick.Y) < ReleaseThreshold)
-        {
-            bSlotNavArmed = true;
-        }
-        return;
-    }
-
-    int32 Step = 0;
-    if (FMath::Abs(Stick.X) >= PushThreshold)
-    {
-        Step = (Stick.X > 0.f) ? 1 : -1;
-    }
-    else if (FMath::Abs(Stick.Y) >= PushThreshold)
-    {
-        // 스틱을 위로 = 윗줄 = 인덱스 감소. 그리드가 좌→우, 위→아래로 채워지기 때문.
-        Step = (Stick.Y > 0.f) ? -InventoryGridColumns : InventoryGridColumns;
-    }
-    else
-    {
-        return;
-    }
-
-    bSlotNavArmed = false;
-    Inventory->SetSelectedSlot(Inventory->SelectedSlotIndex + Step);
-
-    if (bDebugInventorySelection && GEngine)
-    {
-        const FInventorySlot& Slot = Inventory->InventorySlots[Inventory->SelectedSlotIndex];
-        const FString Label = Slot.IsEmpty()
-            ? TEXT("(빈 칸)")
-            : FString::Printf(TEXT("%s x%d"), *Slot.ItemData.ItemID, Slot.Count);
-        GEngine->AddOnScreenDebugMessage(8811, 2.f, FColor::Cyan,
-            FString::Printf(TEXT("[인벤] %d번 슬롯: %s"), Inventory->SelectedSlotIndex, *Label));
-    }
 }
 
 void AVRPawn::OnTurnReleased(const FInputActionValue& Value)
@@ -997,12 +890,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 {
     // 인벤토리 열림 중 트리거는 UI 클릭 — 투사체를 쏘지 않는다.
     // 안 막으면 슬롯을 누를 때마다 손앞으로 발사체가 나간다.
-    if (bInventoryOpen && HUDInteractor)
-    {
-        HUDInteractor->PressPointerKey(EKeys::LeftMouseButton);
-        bPointerPressed = true;
-        return;
-    }
+    if (PlayerUI && PlayerUI->PressPointer()) return;
 
     RemoveStateTag(TAG_State_Idle);
     AddStateTag(TAG_State_Action_Combat_Attack);
@@ -1047,9 +935,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 
 void AVRPawn::OnAttackReleased(const FInputActionValue& /*Value*/)
 {
-    if (!bPointerPressed || !HUDInteractor) return;
-    HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
-    bPointerPressed = false;
+    if (PlayerUI) PlayerUI->ReleasePointer();
 }
 
 void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
@@ -1227,46 +1113,12 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
 
 void AVRPawn::DumpInventoryHUD()
 {
-    auto Report = [this](const FString& Line)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[InvDump] %s"), *Line);
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Yellow, FString::Printf(TEXT("[InvDump] %s"), *Line));
-    };
-
-    if (!Inventory)
-    {
-        Report(TEXT("Inventory 컴포넌트 없음"));
-        return;
-    }
-
-    Report(FString::Printf(TEXT("슬롯 %d개"), Inventory->InventorySlots.Num()));
-    for (const FInventorySlot& Slot : Inventory->InventorySlots)
-    {
-        Report(FString::Printf(TEXT("  - %s x%d"), *Slot.ItemData.ItemID, Slot.Count));
-    }
-
-    Report(FString::Printf(TEXT("HUDWidget=%s  HUDWidgetComp=%s  visible=%d  open=%d"),
-        HUDWidget ? TEXT("OK") : TEXT("NULL"),
-        HUDWidgetComp ? TEXT("OK") : TEXT("NULL"),
-        HUDWidgetComp ? (HUDWidgetComp->IsVisible() ? 1 : 0) : -1,
-        bInventoryOpen ? 1 : 0));
-
-    if (HUDWidget)
-    {
-        // 위젯이 폰을 못 잡으면 슬롯 조회가 통째로 빈 배열이 된다 — UI 무반응의 주 원인.
-        Report(FString::Printf(TEXT("위젯 OwnerPawn=%s  위젯이 본 슬롯 %d개  패널열림=%d"),
-            HUDWidget->GetOwningPlayerPawn() ? *HUDWidget->GetOwningPlayerPawn()->GetName() : TEXT("NULL"),
-            HUDWidget->GetInventorySlots().Num(),
-            HUDWidget->IsInventoryVisible() ? 1 : 0));
-    }
+    if (PlayerUI) PlayerUI->DumpInventoryHUD();
 }
 
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
-    if (!HUDWidget) return;
-
-    bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
-    ApplyInventoryPresentation(bInventoryOpen);
+    if (PlayerUI) PlayerUI->ToggleInventory();
 }
 
 void AVRPawn::ToggleInventory()
@@ -1274,113 +1126,9 @@ void AVRPawn::ToggleInventory()
     OnInventoryToggle(FInputActionValue());
 }
 
-void AVRPawn::UpdateHUDPanelGaze(float DeltaTime)
+bool AVRPawn::IsInventoryOpen() const
 {
-    if (!HUDWidgetComp || !VRCamera) return;
-
-    // 인벤토리를 연 동안에는 시선과 무관하게 완전 불투명. 슬롯을 조준하다 고개가 조금
-    // 돌아갔다고 패널이 흐려지면 조작이 끊긴다.
-    float TargetOpacity = 1.f;
-    if (!bInventoryOpen)
-    {
-        const FVector ToPanel =
-            (HUDWidgetComp->GetComponentLocation() - VRCamera->GetComponentLocation()).GetSafeNormal();
-        const float GazeDot = FVector::DotProduct(VRCamera->GetForwardVector(), ToPanel);
-        TargetOpacity = (GazeDot >= HUDGazeDotThreshold) ? 1.f : 0.f;
-    }
-
-    // 목표값을 그대로 쓰면 임계 경계에서 손 떨림만으로 깜빡인다 — 보간이 히스테리시스 역할.
-    HUDPanelOpacity = FMath::FInterpTo(HUDPanelOpacity, TargetOpacity, DeltaTime, HUDGazeFadeSpeed);
-    HUDWidgetComp->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, HUDPanelOpacity));
-}
-
-void AVRPawn::UpdateHUDPanelFacing()
-{
-    if (!HUDWidgetComp || !VRCamera) return;   // 패널이 상시 표시라 인벤토리 개폐와 무관하게 매 Tick 정면 유지
-
-    // 위치는 왼손을 따라가고 회전만 HMD 를 향한다. 손목을 어떻게 돌려도 정면으로 읽힌다.
-    const FVector PanelLoc = HUDWidgetComp->GetComponentLocation();
-    const FVector CamLoc   = VRCamera->GetComponentLocation();
-    const FVector ToCam    = CamLoc - PanelLoc;
-    if (ToCam.IsNearlyZero()) return;
-
-    // Rotation() 은 X 축을 ToCam 방향에 맞추고 Roll 0 — 패널이 기울지 않는다.
-    const FQuat LookAt = ToCam.Rotation().Quaternion();
-    HUDWidgetComp->SetWorldRotation(LookAt * HUDPanelRotation.Quaternion());
-}
-
-void AVRPawn::UpdateChatPanelVisibility()
-{
-    if (!ChatWidgetComp || !ChatWidget) return;
-    if (ChatWidgetComp->IsVisible() && !ChatWidget->IsChatFocused())
-    {
-        ChatWidgetComp->SetVisibility(false);
-    }
-}
-
-void AVRPawn::ApplyInventoryPresentation(bool bOpen)
-{
-    // HUDWidgetComp 는 여기서 건드리지 않는다 — 패널에 HP·스태미나 게이지가 상시 표시되고,
-    // 인벤토리 슬롯만 위젯 내부에서 접힌다. 컴포넌트를 통째로 숨기면 게이지까지 같이 사라진다.
-    if (HUDInteractor)
-    {
-        // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
-        if (!bOpen && bPointerPressed)
-        {
-            HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
-            bPointerPressed = false;
-        }
-        HUDInteractor->SetActive(bOpen);
-        HUDInteractor->SetVisibility(bOpen);
-    }
-
-    // 닫는 프레임에 바로 끈다 — Tick 을 기다리면 한 프레임 광선이 남는다.
-    if (!bOpen)
-    {
-        if (PointerBeam) PointerBeam->SetVisibility(false);
-        if (PointerDot)  PointerDot->SetVisibility(false);
-    }
-}
-
-// 포인터 광선 갱신 — 조준 결과(WidgetInteraction 의 마지막 히트)를 그대로 그린다.
-// 별도 트레이스를 또 쏘지 않는 이유: 광선과 실제 클릭 판정이 어긋나면 보이는 곳과 눌리는 곳이 달라진다.
-void AVRPawn::UpdatePointerVisual()
-{
-    if (!PointerBeam || !PointerDot || !HUDInteractor) return;
-
-    if (!bInventoryOpen)
-    {
-        if (PointerBeam->IsVisible()) PointerBeam->SetVisibility(false);
-        if (PointerDot->IsVisible())  PointerDot->SetVisibility(false);
-        return;
-    }
-
-    const FHitResult& Hit = HUDInteractor->GetLastHitResult();
-    const bool bHit = Hit.bBlockingHit;
-    const float Length = bHit ? Hit.Distance : HUDInteractionDistance;
-
-    // 원통 기본 크기 100cm(지름 100) 기준 → 실치수/100 이 스케일.
-    PointerBeam->SetRelativeScale3D(FVector(PointerBeamThickness / 100.f,
-                                            PointerBeamThickness / 100.f,
-                                            FMath::Max(Length, 1.f) / 100.f));
-    // 원통은 중심 기준이라 절반 지점에 놓아야 손끝에서 히트점까지 정확히 채워진다.
-    PointerBeam->SetRelativeLocation(FVector(Length * 0.5f, 0.f, 0.f));
-    PointerBeam->SetVisibility(true);
-
-    if (bHit)
-    {
-        // 히트점은 부모 회전과 무관한 월드 좌표 — 위젯 면에 살짝 띄워 Z-파이팅을 피한다.
-        PointerDot->SetWorldLocation(Hit.ImpactPoint + Hit.ImpactNormal * 0.3f);
-    }
-    PointerDot->SetVisibility(bHit);
-
-    // 색 전환은 상태가 바뀌는 프레임에만 — MID 파라미터 쓰기는 매 틱 돌릴 만큼 싸지 않다.
-    if (PointerMID && bHit != bPointerWasHitting)
-    {
-        const FLinearColor C = bHit ? PointerHitColor : PointerColor;
-        PointerMID->SetVectorParameterValue(TEXT("Color"), C);
-        bPointerWasHitting = bHit;
-    }
+    return PlayerUI && PlayerUI->IsInventoryOpen();
 }
 
 bool AVRPawn::TrySitOnNearbyFurniture()
@@ -1429,7 +1177,7 @@ void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
     // 핸드트래킹 핀치·주먹은 인벤토리가 열렸을 때 슬롯 발동에만 쓴다 — 월드 아이템은 접촉 쥐기(UpdateContactGrab)가 맡는다.
     // 제스처는 손가락이 이미 물건 속에 들어간 뒤에야 성립해, 그때 쥐면 밀려난 손이 튀며 제약이 끊겼다.
     const UVRHandComponent* Hand = GetHand(bLeft);
-    const bool bGesture = bInventoryOpen && Hand && Hand->IsGesturing();
+    const bool bGesture = IsInventoryOpen() && Hand && Hand->IsGesturing();
     const bool bHeld = bGripHeld[h] || (Hand && Hand->IsContactHeld()) || bGesture;
     if (bHeld == bGrabInputActive[h]) return;
     bGrabInputActive[h] = bHeld;
@@ -1445,28 +1193,9 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
-    // 종류별 분기(소비=사용 / 장비=장착 / 일반=손에 쥐기)는 ActivateItem 이 들고 있어서 여기서 다시 보지 않는다.
-    if (bInventoryOpen && Inventory)
+    if (IsInventoryOpen())
     {
-        if (!Inventory->InventorySlots.IsValidIndex(Inventory->SelectedSlotIndex)) return;
-
-        const FInventorySlot& Slot = Inventory->InventorySlots[Inventory->SelectedSlotIndex];
-        if (Slot.IsEmpty())
-        {
-            if (bDebugInventorySelection && GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(8812, 2.f, FColor::Orange, TEXT("[인벤] 빈 슬롯 — 꺼낼 것 없음"));
-            }
-            return;
-        }
-
-        const FString ItemID = Slot.ItemData.ItemID;
-        const bool bActivated = Inventory->ActivateItem(ItemID, HandSlot);
-        if (bDebugInventorySelection && GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(8812, 2.f, bActivated ? FColor::Green : FColor::Red,
-                FString::Printf(TEXT("[인벤] %s %s"), *ItemID, bActivated ? TEXT("발동") : TEXT("발동 실패")));
-        }
+        PlayerUI->ActivateSelectedSlot(HandSlot);
         return;
     }
 
@@ -1499,60 +1228,6 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
     // 앵커는 핸드트래킹이면 손바닥 관절, 컨트롤러를 쥐면 그립 포즈를 따른다. 컨트롤러 위치를 쓰면
     // 핸드트래킹 중엔 내려놓은 컨트롤러 주변을 찾아 손 근처 아이템을 못 잡는다.
     return FindNearestItem(Anchor->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
-}
-
-void AVRPawn::UpdateItemTooltip()
-{
-    if (!ItemTooltipComp || !VRCamera) return;
-
-    // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
-    // 손을 따라다니는 이름표는 시야만 가린다.
-    const bool bHolding = Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand)
-                                     || Inventory->GetHeldItem(EEquipmentSlot::OffHand));
-    ADroppedItemBase* Target = bHolding ? nullptr : FindNearestItemNearHand(TooltipRange, /*bLeft=*/false);
-
-    if (!Target)
-    {
-        if (ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(false);
-        TooltipTarget = nullptr;
-        return;
-    }
-
-    // 대상이 바뀔 때만 텍스트를 다시 만든다 — 매 틱 SetText 는 폰트 셰이핑을 다시 돌려
-    // VR 90Hz 에서 프레임을 갉아먹는다(HUD 게이지와 같은 이유).
-    if (Target != TooltipTarget)
-    {
-        TooltipTarget = Target;
-
-        UItemManager* ItemManager = UItemManager::Get(this);
-
-        FItemData Data;
-        if (ItemManager && ItemManager->GetItemDataByID(Target->ItemData.ItemTemplateID, Data))
-        {
-            if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(ItemTooltipComp->GetUserWidgetObject()))
-            {
-                Tooltip->SetItem(Data, Target->Amount, Target->bIsDisplayed ? Target->DisplayPrice : -1);
-            }
-        }
-        else
-        {
-            // 마스터 테이블에 없는 ID 면 이름표를 띄우지 않는다 — 빈 상자만 뜨는 게 더 헷갈린다.
-            ItemTooltipComp->SetVisibility(false);
-            return;
-        }
-    }
-
-    const FVector TooltipLoc = Target->GetActorLocation() + FVector(0.f, 0.f, TooltipHeightOffset);
-    ItemTooltipComp->SetWorldLocation(TooltipLoc);
-
-    // 위젯의 가시면은 +X 라 X 축을 카메라로 향하게 한다(HUD 패널과 같은 규칙).
-    const FVector ToCam = VRCamera->GetComponentLocation() - TooltipLoc;
-    if (!ToCam.IsNearlyZero())
-    {
-        ItemTooltipComp->SetWorldRotation(ToCam.Rotation());
-    }
-
-    if (!ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(true);
 }
 
 void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
@@ -1596,7 +1271,7 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
     // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).
-    if (bInventoryOpen)
+    if (IsInventoryOpen())
     {
         Inventory->StoreHeldItem(HandSlot);
         return;
@@ -1698,9 +1373,7 @@ FVector AVRPawn::GetHandLocation(bool bRightHand) const
 
 void AVRPawn::OnChatKey()
 {
-    if (!ChatWidgetComp || !ChatWidget) return;
-    ChatWidgetComp->SetVisibility(true);
-    ChatWidget->FocusChatInput();
+    if (PlayerUI) PlayerUI->OpenChat();
 }
 
 void AVRPawn::SayToNpc(const FString& Text)
@@ -1861,11 +1534,7 @@ void AVRPawn::HandleDeath()
     // 앉은 채 죽으면 가구가 계속 점유 상태로 남아 아무도 못 쓴다.
     StandUpFromFurniture();
 
-    if (bInventoryOpen)
-    {
-        bInventoryOpen = false;
-        ApplyInventoryPresentation(false);
-    }
+    if (PlayerUI) PlayerUI->CloseInventory();
     SetSprinting(false);
     StopMoveState();
 
