@@ -1,7 +1,7 @@
 #include "UI/Trade/TradeSessionActor.h"
 
 #include "Components/StaticMeshComponent.h"
-#include "Components/WidgetComponent.h"
+#include "UI/Components/ItemTooltipUIComponent.h"
 #include "Core/BP/VRPawn.h"
 #include "Core/Utils/EngineShapes.h"
 #include "Engine/GameInstance.h"
@@ -12,7 +12,6 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NPC/BP/SmartNPC.h"
-#include "UI/BP/ItemTooltipWidget.h"
 
 namespace
 {
@@ -61,15 +60,9 @@ ATradeSessionActor::ATradeSessionActor()
     CancelButton->SetRelativeScale3D(FVector(0.06f));
     CancelButton->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    RequestWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("RequestWidget"));
+    RequestWidget = CreateDefaultSubobject<UItemTooltipUIComponent>(TEXT("RequestWidget"));
     RequestWidget->SetupAttachment(SceneRoot);
     RequestWidget->SetRelativeLocation(FVector(0.f, 0.f, 25.f));
-    RequestWidget->SetWidgetSpace(EWidgetSpace::World);
-    RequestWidget->SetDrawSize(FVector2D(400.f, 140.f));
-    RequestWidget->SetRelativeScale3D(FVector(0.05f));
-    RequestWidget->SetTwoSided(true);
-    RequestWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    RequestWidget->SetWidgetClass(UItemTooltipWidget::StaticClass());
 }
 
 void ATradeSessionActor::BeginPlay()
@@ -135,11 +128,8 @@ bool ATradeSessionActor::InitSession(ASmartNPC* InNpc, APawn* InPlayer,
         FItemData GetData;
         if (ItemManager->GetItemDataByID(GetItemID, GetData))
         {
-            RequestWidget->InitWidget();
-            if (UItemTooltipWidget* W = Cast<UItemTooltipWidget>(RequestWidget->GetUserWidgetObject()))
-            {
-                W->SetItem(GetData, GetAmount);
-            }
+            RequestWidget->SetItem(GetData, GetAmount);
+            RequestWidget->ShowUI();
         }
     }
 
@@ -153,16 +143,7 @@ void ATradeSessionActor::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
 
     CheckHandPress();
-
-    // 안내 위젯은 플레이어를 향한다 — 위젯의 가시면은 +X.
-    if (RequestWidget && Player.IsValid())
-    {
-        const FVector ToPlayer = Player->GetActorLocation() - RequestWidget->GetComponentLocation();
-        if (!ToPlayer.IsNearlyZero())
-        {
-            RequestWidget->SetWorldRotation(ToPlayer.Rotation());
-        }
-    }
+    // 안내 위젯의 카메라 정렬은 UItemTooltipUIComponent(UWorldUIComponent)가 한다.
 }
 
 void ATradeSessionActor::CheckHandPress()

@@ -20,6 +20,9 @@ class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
 class UVRPlayerUIComponent;
+class UHUDPanelUIComponent;
+class UChatPanelUIComponent;
+class UItemTooltipUIComponent;
 class UVRMeleeComponent;
 class USphereComponent;
 class UVRHandComponent;
@@ -147,14 +150,14 @@ public:
      *  렌더하고 Slate 오버레이는 그 위에 한 번만 합성되므로, 화면 공간 위젯은 한쪽 눈에만
      *  뜨거나 좌우로 늘어져 보인다. 월드 공간 위젯은 씬과 같이 양안 렌더되어 정상. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetComponent* HUDWidgetComp;
+    UHUDPanelUIComponent* HUDWidgetComp;
 
     /** 채팅 패널 — VRCamera 에 부착된 월드공간 위젯. 카메라를 따라 움직이므로 시야에
      *  고정되어 보이지만(화면 UI처럼), 씬과 같이 양안 렌더되어 HUDWidgetComp 와 같은
      *  이유로 AddToViewport 문제를 피한다. 손 패널과 달리 상시 표시가 아니라
      *  Enter 로 열고 포커스를 잃으면 닫는다(UVRPlayerUIComponent). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Chat")
-    UWidgetComponent* ChatWidgetComp;
+    UChatPanelUIComponent* ChatWidgetComp;
 
     /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
@@ -187,7 +190,7 @@ public:
     /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
      *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetComponent* ItemTooltipComp;
+    UItemTooltipUIComponent* ItemTooltipComp;
 
     /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")

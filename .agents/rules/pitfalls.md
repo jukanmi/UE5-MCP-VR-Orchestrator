@@ -59,6 +59,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **PostProcess 는 이 렌더 경로(`r.ForwardShading`+`vr.InstancedStereo`+`vr.MobileMultiView`)에서 화면 전체 검정** — 비네트·터널 효과 불가. 시각 피드백은 HUD.
 - **아이템 CCD 를 끄지 말 것 — 프레임 이동량 ~10cm 면 바닥 관통**: 30fps 낙하(닿는 프레임 11cm)에서 62종 중 16종이 바닥 통과, CCD 켜면 8fps 에서도 0(2026-10-03). `ADroppedItemBase::BeginPlay` 가 `SetUseCCD(true)` 로 강제. 헤드셋 없는 PIE 는 에디터 백그라운드 스로틀로 30fps 가 되니 물리 시험 전 `Default__EditorPerformanceSettings.bThrottleCPUWhenNotForeground=false`(MCP `ue_set_property`) + `t.MaxFPS 90`.
 - **헤드셋 없는 PIE 손 시험은 모션 컨트롤러 상대 위치를 매 틱 바꿔서** — 트래킹이 없으면 컨트롤러가 마지막 위치를 유지한다(앵커 = 컨트롤러 Grip 에 붙은 `HandLeft`·`HandRight`, 물리 손바닥은 이름 `PhysicsPalmLeft`·`PhysicsPalmRight` 인 런타임 컴포넌트). 한 프레임에 60cm 넘게 옮기면 `UVRHandComponent::DriveBody` 순간이동 규칙으로 손이 벽·바닥 너머에 놓이니 천천히. 에디터 창이 최소화돼 있으면 스로틀을 꺼도 3fps — 포커스 안 뺏고 `ShowWindow(hwnd, 4)`.
+- **월드 위젯 앞면** — 단면(two-sided 끔) 위젯은 −X 면이 읽히는 면이라 +X 를 카메라 반대로 돌려야 보인다. 양면이면 +X 를 카메라로 돌려도 글자가 정상(2026-10-03 PIE 화면 캡처). 프로젝트 규약: 월드 UI 는 `UWorldUIComponent` 상속(양면 + +X→카메라).
 - **아이템 충돌 수 세기**: `StaticMeshEditorSubsystem.get_simple_collision_count` 는 상자·구·캡슐만 센다 — 볼록 헐은 `get_convex_collision_count` 로 따로.
 - Sprint 해제는 `IA_Move` `Completed`/`Canceled`(`OnMoveReleased`) — `Triggered` 는 입력 0 에서 안 오고 `OnMove` 가 조기 return.
 

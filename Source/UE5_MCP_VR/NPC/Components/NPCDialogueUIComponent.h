@@ -1,19 +1,19 @@
 // NPCDialogueUIComponent — NPC 머리 위 말풍선 위젯 + 그 표시 수명 전체.
 //
-// 위젯 컴포넌트를 상속해 "말풍선 그 자체"가 되게 했다. 자막 텍스트·표시 타이머·
-// 카메라 빌보드가 모두 여기 모인다.
+// 월드 UI 공통(UWorldUIComponent)을 상속해 "말풍선 그 자체"가 되게 했다. 자막 텍스트·표시 타이머가 여기,
+// 카메라 정렬(좌우만 — 글자 직립)과 보일 때만 틱은 베이스가 맡는다.
 // ASmartNPC 는 표시를 시키기만 하고(ShowSubtitle) 수명 관리는 하지 않는다.
 //
 // 분리 전에는 이 로직이 액터에 있어서, 말풍선이 보이는 동안 액터 전체 틱이 켜지고
-// 플린치·넉다운 틱과 수명을 공유했다. 지금은 이 컴포넌트가 자기 틱만 켠다.
+// 플린치·넉다운 틱과 수명을 공유했다. 지금은 이 컴포넌트가 보일 때만 자기 틱을 켠다.
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/WidgetComponent.h"
+#include "UI/Components/WorldUIComponent.h"
 #include "NPCDialogueUIComponent.generated.h"
 
 UCLASS(ClassGroup = (MCP), meta = (BlueprintSpawnableComponent))
-class UE5_MCP_VR_API UNPCDialogueUIComponent : public UWidgetComponent
+class UE5_MCP_VR_API UNPCDialogueUIComponent : public UWorldUIComponent
 {
     GENERATED_BODY()
 
@@ -36,13 +36,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Dialogue")
     float SubtitlePerCharDuration = 0.05f;
 
-protected:
-    virtual void BeginPlay() override;
-    virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-                               FActorComponentTickFunction* ThisTickFunction) override;
-
 private:
-    /** 텍스트를 위젯에 반영하고 표시 상태를 지정. 빌보드 틱도 여기서 함께 켜고 끈다.
+    /** 텍스트를 위젯에 반영하고 표시 상태를 지정.
      *  인자 이름이 bShow 인 이유: bVisible 은 USceneComponent 의 멤버라 가려 버린다. */
     void ApplySubtitle(bool bShow);
 

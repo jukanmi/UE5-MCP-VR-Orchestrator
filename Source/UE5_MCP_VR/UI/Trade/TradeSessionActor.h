@@ -15,7 +15,7 @@ class ADroppedItemBase;
 class ASmartNPC;
 class UBoxComponent;
 class UStaticMeshComponent;
-class UWidgetComponent;
+class UItemTooltipUIComponent;
 
 UCLASS()
 class UE5_MCP_VR_API ATradeSessionActor : public AActor
@@ -78,9 +78,9 @@ protected:
     UPROPERTY(VisibleAnywhere, Category = "Trade")
     UStaticMeshComponent* CancelButton;
 
-    /** 요구 품목 안내 — 아이템 이름표 위젯을 그대로 재사용한다(이름·종류·수량이 그 위젯의 내용 그대로). */
+    /** 요구 품목 안내 — 아이템 이름표를 그대로 재사용한다(이름·종류·수량). 플레이어 카메라를 향한다. */
     UPROPERTY(VisibleAnywhere, Category = "Trade")
-    UWidgetComponent* RequestWidget;
+    UItemTooltipUIComponent* RequestWidget;
 
 private:
     /** 손이 버튼 반경에 들어왔는지 검사하고 눌린 것을 실행. */

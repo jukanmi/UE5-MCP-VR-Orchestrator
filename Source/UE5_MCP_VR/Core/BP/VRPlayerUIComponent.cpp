@@ -10,10 +10,11 @@
 #include "Engine/StaticMesh.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
-#include "Inventory/Subsystems/ItemManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UI/BP/ChatWidget.h"
-#include "UI/BP/ItemTooltipWidget.h"
+#include "UI/Components/ChatPanelUIComponent.h"
+#include "UI/Components/HUDPanelUIComponent.h"
+#include "UI/Components/ItemTooltipUIComponent.h"
 #include "UI/BP/PlayerHUDWidget.h"
 
 UVRPlayerUIComponent::UVRPlayerUIComponent()
@@ -83,11 +84,8 @@ void UVRPlayerUIComponent::Init()
     ApplyInventoryPresentation(false);
 }
 
-void UVRPlayerUIComponent::Update(float DeltaTime)
+void UVRPlayerUIComponent::Update(float /*DeltaTime*/)
 {
-    UpdateHUDPanelFacing();
-    UpdateHUDPanelGaze(DeltaTime);
-    UpdateChatPanelVisibility();
     UpdatePointerVisual();
     UpdateItemTooltip();
 }
@@ -115,8 +113,9 @@ void UVRPlayerUIComponent::ApplyInventoryPresentation(bool bOpen)
     AVRPawn* Pawn = GetPawn();
     if (!Pawn) return;
 
-    // HUDWidgetComp 는 여기서 건드리지 않는다 — 패널에 HP·스태미나 게이지가 상시 표시되고,
-    // 인벤토리 슬롯만 위젯 내부에서 접힌다. 컴포넌트를 통째로 숨기면 게이지까지 같이 사라진다.
+    // 패널은 숨기지 않는다 — HP·스태미나 게이지가 상시 표시되고 인벤토리 슬롯만 위젯 내부에서 접힌다.
+    // 연 동안엔 시선과 무관하게 불투명(슬롯을 조준하다 고개가 조금 돌아갔다고 흐려지면 조작이 끊긴다).
+    if (Pawn->HUDWidgetComp) Pawn->HUDWidgetComp->bForceOpaque = bOpen;
     if (UWidgetInteractionComponent* Interactor = Pawn->HUDInteractor)
     {
         // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
@@ -271,62 +270,10 @@ void UVRPlayerUIComponent::DumpInventoryHUD() const
 // 패널·채팅·포인터·이름표 — 매 틱
 // ============================================================================
 
-void UVRPlayerUIComponent::UpdateHUDPanelFacing()
-{
-    AVRPawn* Pawn = GetPawn();
-    // 패널이 상시 표시라 인벤토리 개폐와 무관하게 매 Tick 정면 유지
-    if (!Pawn || !Pawn->HUDWidgetComp || !Pawn->VRCamera) return;
-
-    // 위치는 왼손을 따라가고 회전만 HMD 를 향한다. 손목을 어떻게 돌려도 정면으로 읽힌다.
-    const FVector PanelLoc = Pawn->HUDWidgetComp->GetComponentLocation();
-    const FVector CamLoc   = Pawn->VRCamera->GetComponentLocation();
-    const FVector ToCam    = CamLoc - PanelLoc;
-    if (ToCam.IsNearlyZero()) return;
-
-    // Rotation() 은 X 축을 ToCam 방향에 맞추고 Roll 0 — 패널이 기울지 않는다.
-    const FQuat LookAt = ToCam.Rotation().Quaternion();
-    Pawn->HUDWidgetComp->SetWorldRotation(LookAt * HUDPanelRotation.Quaternion());
-}
-
-void UVRPlayerUIComponent::UpdateHUDPanelGaze(float DeltaTime)
-{
-    AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->HUDWidgetComp || !Pawn->VRCamera) return;
-
-    // 인벤토리를 연 동안에는 시선과 무관하게 완전 불투명. 슬롯을 조준하다 고개가 조금
-    // 돌아갔다고 패널이 흐려지면 조작이 끊긴다.
-    float TargetOpacity = 1.f;
-    if (!bInventoryOpen)
-    {
-        const FVector ToPanel =
-            (Pawn->HUDWidgetComp->GetComponentLocation() - Pawn->VRCamera->GetComponentLocation()).GetSafeNormal();
-        const float GazeDot = FVector::DotProduct(Pawn->VRCamera->GetForwardVector(), ToPanel);
-        TargetOpacity = (GazeDot >= HUDGazeDotThreshold) ? 1.f : 0.f;
-    }
-
-    // 목표값을 그대로 쓰면 임계 경계에서 손 떨림만으로 깜빡인다 — 보간이 히스테리시스 역할.
-    HUDPanelOpacity = FMath::FInterpTo(HUDPanelOpacity, TargetOpacity, DeltaTime, HUDGazeFadeSpeed);
-    Pawn->HUDWidgetComp->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, HUDPanelOpacity));
-}
-
-void UVRPlayerUIComponent::UpdateChatPanelVisibility()
-{
-    // 채팅 패널이 열려 있는데 입력 포커스를 잃었으면(전송 완료·빈 Enter) 닫는다.
-    // 카메라 부착이라 별도 시선 페이드는 불필요 — 늘 정면이라 그냥 켜고 끈다.
-    AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->ChatWidgetComp || !ChatWidget) return;
-    if (Pawn->ChatWidgetComp->IsVisible() && !ChatWidget->IsChatFocused())
-    {
-        Pawn->ChatWidgetComp->SetVisibility(false);
-    }
-}
-
 void UVRPlayerUIComponent::OpenChat()
 {
     AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->ChatWidgetComp || !ChatWidget) return;
-    Pawn->ChatWidgetComp->SetVisibility(true);
-    ChatWidget->FocusChatInput();
+    if (Pawn && Pawn->ChatWidgetComp) Pawn->ChatWidgetComp->Open();
 }
 
 // 포인터 광선 갱신 — 조준 결과(WidgetInteraction 의 마지막 히트)를 그대로 그린다.
@@ -376,56 +323,12 @@ void UVRPlayerUIComponent::UpdatePointerVisual()
 void UVRPlayerUIComponent::UpdateItemTooltip()
 {
     AVRPawn* Pawn = GetPawn();
-    UWidgetComponent* TooltipComp = Pawn ? Pawn->ItemTooltipComp : nullptr;
-    if (!TooltipComp || !Pawn->VRCamera) return;
+    if (!Pawn || !Pawn->ItemTooltipComp) return;
 
     // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
     // 손을 따라다니는 이름표는 시야만 가린다.
     const UInventoryComponent* Inventory = Pawn->Inventory;
     const bool bHolding = Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand)
                                      || Inventory->GetHeldItem(EEquipmentSlot::OffHand));
-    ADroppedItemBase* Target = bHolding ? nullptr : Pawn->FindNearestItemNearHand(TooltipRange, /*bLeft=*/false);
-
-    if (!Target)
-    {
-        if (TooltipComp->IsVisible()) TooltipComp->SetVisibility(false);
-        TooltipTarget = nullptr;
-        return;
-    }
-
-    // 대상이 바뀔 때만 텍스트를 다시 만든다 — 매 틱 SetText 는 폰트 셰이핑을 다시 돌려
-    // VR 90Hz 에서 프레임을 갉아먹는다(HUD 게이지와 같은 이유).
-    if (Target != TooltipTarget)
-    {
-        TooltipTarget = Target;
-
-        UItemManager* ItemManager = UItemManager::Get(this);
-
-        FItemData Data;
-        if (ItemManager && ItemManager->GetItemDataByID(Target->ItemData.ItemTemplateID, Data))
-        {
-            if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(TooltipComp->GetUserWidgetObject()))
-            {
-                Tooltip->SetItem(Data, Target->Amount, Target->bIsDisplayed ? Target->DisplayPrice : -1);
-            }
-        }
-        else
-        {
-            // 마스터 테이블에 없는 ID 면 이름표를 띄우지 않는다 — 빈 상자만 뜨는 게 더 헷갈린다.
-            TooltipComp->SetVisibility(false);
-            return;
-        }
-    }
-
-    const FVector TooltipLoc = Target->GetActorLocation() + FVector(0.f, 0.f, TooltipHeightOffset);
-    TooltipComp->SetWorldLocation(TooltipLoc);
-
-    // 위젯의 가시면은 +X 라 X 축을 카메라로 향하게 한다(HUD 패널과 같은 규칙).
-    const FVector ToCam = Pawn->VRCamera->GetComponentLocation() - TooltipLoc;
-    if (!ToCam.IsNearlyZero())
-    {
-        TooltipComp->SetWorldRotation(ToCam.Rotation());
-    }
-
-    if (!TooltipComp->IsVisible()) TooltipComp->SetVisibility(true);
+    Pawn->ItemTooltipComp->ShowForItem(bHolding ? nullptr : Pawn->FindNearestItemNearHand(TooltipRange, /*bLeft=*/false));
 }
