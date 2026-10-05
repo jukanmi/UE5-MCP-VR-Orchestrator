@@ -148,6 +148,5 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **U-8. Python `EditorLoadingAndSavingUtils.reload_packages` 는 dirty 패키지면 모달 확인창** — MCP 가 멈추고 입력 주입도 안 먹는다(사용자 클릭 필요). 검증용 변경은 같은 값이면 저장 후 `git checkout`, 다르면 에셋을 `/Game/_Tmp…` 로 복제해 거기서 시험하고 폴더 삭제.
 - **U-6. 워크트리에서 `sol_pi verify all` 의 Python 16 error 는 환경 문제** — `uv run` 이 시스템 Python(옛 pydantic)을 잡는다.
   `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
-  UAT 는 `Content/Maps/NewProjectTest.umap` 을 저장한다 — 사용자 테스트 편집이 섞였을 수 있으니 되돌리기 전에 검증 전 상태와 비교하고 물을 것.
 - **U-4. `sol_pi.py build` 워치독 300초** — 룰 캐시 재생성처럼 오래 걸리는 빌드는 중간에 죽고 `cl.exe` 만 taskkill 됨
   (`dotnet.exe` 호스트는 안 죽음). 워치독에 끊긴 뒤 재실행하면 이미 컴파일된 `.obj` 는 재사용되니 그냥 다시 돌리면 된다.
