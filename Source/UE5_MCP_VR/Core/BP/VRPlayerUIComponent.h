@@ -9,6 +9,7 @@ class AVRPawn;
 class ADroppedItemBase;
 class UPlayerHUDWidget;
 class UChatWidget;
+class UMenuWidget;
 class UMaterialInstanceDynamic;
 
 /**
@@ -34,6 +35,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Chat")
     TSubclassOf<UChatWidget> ChatWidgetClass;
 
+    /** 메뉴 위젯 클래스 — BP_VRPawn 에서 WBP_Menu 지정. 미지정 시 메뉴 없음. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Menu")
+    TSubclassOf<UMenuWidget> MenuWidgetClass;
+
     /** 생성된 HUD 인스턴스 (런타임). */
     UPROPERTY(BlueprintReadOnly, Transient, Category = "UI")
     UPlayerHUDWidget* HUDWidget = nullptr;
@@ -41,6 +46,10 @@ public:
     /** 생성된 채팅 위젯 인스턴스 (런타임). */
     UPROPERTY(BlueprintReadOnly, Transient, Category = "UI|Chat")
     UChatWidget* ChatWidget = nullptr;
+
+    /** 생성된 메뉴 위젯 인스턴스 (런타임). */
+    UPROPERTY(BlueprintReadOnly, Transient, Category = "UI|Menu")
+    UMenuWidget* MenuWidget = nullptr;
 
     /** 슬롯 그리드 열 수. 스틱 상하 이동이 몇 칸 건너뛸지 결정한다(WBP SlotGrid 열 수와 맞출 것). */
     UPROPERTY(EditAnywhere, Category = "UI", meta = (ClampMin = "1"))
@@ -81,6 +90,15 @@ public:
     /** 인벤토리 패널 열림 상태 — HUD 위젯과 동기. 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다. */
     bool IsInventoryOpen() const { return bInventoryOpen; }
 
+    /** 메뉴 열림 상태. 열림 중엔 이동·회전·공격·잡기·대시·상호작용이 막히고 트리거는 UI 클릭이 된다. */
+    bool IsMenuOpen() const { return bMenuOpen; }
+
+    /** 메뉴 열기/닫기(왼손 Menu 버튼). 열 때 인벤토리는 닫는다. */
+    void ToggleMenu();
+
+    /** 메뉴 닫기(재개 버튼·사망 등). */
+    void CloseMenu();
+
     /** 인벤토리 열기/닫기(왼손 Y버튼·콘솔). */
     void ToggleInventory();
 
@@ -113,10 +131,17 @@ private:
      *  닫힘 상태에서 포인터를 켜두면 손을 흔들 때 슬롯이 호버되어 오작동한다. */
     void ApplyInventoryPresentation(bool bOpen);
 
+    /** 포인터(광선·히트점·위젯 상호작용)를 인벤토리 또는 메뉴가 열려 있을 때만 켠다. */
+    void SyncPointer();
+
+    UFUNCTION()
+    void OnMenuResume();
+
     void UpdatePointerVisual();
     void UpdateItemTooltip();
 
     bool bInventoryOpen = false;
+    bool bMenuOpen = false;
 
     /** 트리거로 UI 를 누른 상태인지 — 열림 중에만 true. 닫을 때 강제 릴리즈에 쓴다. */
     bool bPointerPressed = false;

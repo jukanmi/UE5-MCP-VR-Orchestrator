@@ -34,6 +34,10 @@ public:
     UFUNCTION(Exec)
     void ToggleInventory();
 
+    /** 메뉴 패널 열기/닫기 토글(헤드셋 없는 PIE 에서 Menu 버튼 대신). */
+    UFUNCTION(Exec)
+    void ToggleMenu();
+
 private:
     AVRPawn* GetVRPawn() const;
 };

@@ -66,3 +66,9 @@ void UVRCheatManager::ToggleInventory()
     const AVRPawn* Pawn = GetVRPawn();
     if (Pawn && Pawn->PlayerUI) Pawn->PlayerUI->ToggleInventory();
 }
+
+void UVRCheatManager::ToggleMenu()
+{
+    const AVRPawn* Pawn = GetVRPawn();
+    if (Pawn && Pawn->PlayerUI) Pawn->PlayerUI->ToggleMenu();
+}

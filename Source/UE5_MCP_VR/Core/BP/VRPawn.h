@@ -22,6 +22,7 @@ class UInventoryComponent;
 class UVRPlayerUIComponent;
 class UHUDPanelUIComponent;
 class UChatPanelUIComponent;
+class UMenuPanelUIComponent;
 class UItemTooltipUIComponent;
 class UVRMeleeComponent;
 class USphereComponent;
@@ -159,6 +160,18 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Chat")
     UChatPanelUIComponent* ChatWidgetComp;
 
+    /** 메뉴 패널 — 왼손 Menu 버튼으로 열면 시선 앞에 놓이고 그 자리에 고정된다(머리를 따라오지 않음, UMenuPanelUIComponent). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Menu")
+    UMenuPanelUIComponent* MenuWidgetComp;
+
+    /** 메뉴 패널 가상 캔버스 해상도(px). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu")
+    FVector2D MenuPanelDrawSize = FVector2D(500.f, 300.f);
+
+    /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float MenuPanelScale = 0.12f;
+
     /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
     FVector ChatPanelOffset = FVector(80.f, 0.f, -15.f);
@@ -250,6 +263,10 @@ public:
     /** 왼손 Y버튼 → 인벤토리 HUD 열기/닫기 토글 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_InventoryToggle;
+
+    /** 왼손 Menu 버튼 → 메뉴 열기/닫기 토글 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_MenuToggle;
 
     /** 오른손 B버튼 → 대쉬. 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -523,6 +540,7 @@ private:
     /** Enter 키 — HUD 채팅 칸에 포커스. 입력 중 Enter 는 텍스트박스가 먼저 먹으므로 여기 안 온다. */
     void OnChatKey();
     void OnInventoryToggle(const FInputActionValue& Value);
+    void OnMenuToggle(const FInputActionValue& Value);
 
     // --- 로코모션 ---
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */
@@ -689,6 +707,9 @@ private:
 public:
     /** 인벤토리 패널이 열려 있는가 — 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다(UI 클릭·슬롯 이동·슬롯 발동). */
     bool IsInventoryOpen() const;
+
+    /** 메뉴가 열려 있는지 — 열림 중엔 이동·회전·공격·잡기·대시·상호작용 입력을 무시한다. */
+    bool IsMenuOpen() const;
 
     /** 손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
     ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;

@@ -41,6 +41,7 @@
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
 #include "UI/Components/ChatPanelUIComponent.h"
+#include "UI/Components/MenuPanelUIComponent.h"
 #include "UI/Components/HUDPanelUIComponent.h"
 #include "UI/Components/ItemTooltipUIComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
@@ -145,6 +146,12 @@ AVRPawn::AVRPawn()
     ChatWidgetComp->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
     ChatWidgetComp->SetDrawSize(ChatPanelDrawSize);
     ChatWidgetComp->SetRelativeScale3D(FVector(ChatPanelScale));
+
+    // 메뉴 패널 — 루트에 붙지만 월드 고정(절대 좌표). 열 때 시선 앞에 놓는다(UMenuPanelUIComponent).
+    MenuWidgetComp = CreateDefaultSubobject<UMenuPanelUIComponent>(TEXT("MenuWidgetComp"));
+    MenuWidgetComp->SetupAttachment(RootComponent);
+    MenuWidgetComp->SetDrawSize(MenuPanelDrawSize);
+    MenuWidgetComp->SetRelativeScale3D(FVector(MenuPanelScale));
 
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
     // 광선이 패널을 빗나간다.
@@ -562,6 +569,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         }
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
+        if (IA_MenuToggle)      EIC->BindAction(IA_MenuToggle,      ETriggerEvent::Started, this, &AVRPawn::OnMenuToggle);
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
         {
@@ -588,6 +596,14 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void AVRPawn::OnMove(const FInputActionValue& Value)
 {
+    // 메뉴가 열린 동안 이동 입력은 무시 — 월드가 계속 흐르므로 서 있는 채로 메뉴를 본다.
+    if (IsMenuOpen())
+    {
+        SetSprinting(false);
+        LastMoveInput = FVector2D::ZeroVector;
+        return;
+    }
+
     // 착석 중 스틱 이동 잠금 — 기상은 Interact 재입력(토글)만.
     if (SeatedFurniture.IsValid())
     {
@@ -689,7 +705,7 @@ void AVRPawn::UpdateStamina(float DeltaTime)
 
 void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
 {
-    if (SeatedFurniture.IsValid()) return;
+    if (SeatedFurniture.IsValid() || IsMenuOpen()) return;
 
     // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
     if (CurrentPosture != EVRPosture::Standing) return;
@@ -758,6 +774,12 @@ void AVRPawn::StopDash()
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
 {
+    if (IsMenuOpen())
+    {
+        TurnAxisInput = 0.f;
+        return;
+    }
+
     const FVector2D Stick = Value.Get<FVector2D>();
 
     // 인벤토리가 열려 있는 동안 같은 스틱이 회전과 슬롯 이동을 겸하면 아이템을 고르다 몸이 돈다.
@@ -912,6 +934,8 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 
 void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 {
+    if (IsMenuOpen()) return;
+
     // 착석 중이면 기상이 최우선(토글) — 다른 상호작용 차단.
     if (SeatedFurniture.IsValid())
     {
@@ -974,6 +998,16 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
     if (PlayerUI) PlayerUI->ToggleInventory();
+}
+
+void AVRPawn::OnMenuToggle(const FInputActionValue& /*Value*/)
+{
+    if (PlayerUI) PlayerUI->ToggleMenu();
+}
+
+bool AVRPawn::IsMenuOpen() const
+{
+    return PlayerUI && PlayerUI->IsMenuOpen();
 }
 
 bool AVRPawn::IsInventoryOpen() const
@@ -1058,6 +1092,8 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
     UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
 
+    // 메뉴가 열린 동안 새로 쥐지 않는다. 이미 쥔 물건은 유지하고 놓기·던지기는 그대로 허용.
+    if (IsMenuOpen()) return;
     if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.

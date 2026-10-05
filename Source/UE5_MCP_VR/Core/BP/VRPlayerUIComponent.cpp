@@ -12,6 +12,8 @@
 #include "Inventory/Components/InventoryComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UI/BP/ChatWidget.h"
+#include "UI/BP/MenuWidget.h"
+#include "UI/Components/MenuPanelUIComponent.h"
 #include "UI/Components/ChatPanelUIComponent.h"
 #include "UI/Components/HUDPanelUIComponent.h"
 #include "UI/Components/ItemTooltipUIComponent.h"
@@ -73,6 +75,15 @@ void UVRPlayerUIComponent::Init()
         }
     }
 
+    if (PC && PC->IsLocalController() && MenuWidgetClass && Pawn->MenuWidgetComp)
+    {
+        Pawn->MenuWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
+        Pawn->MenuWidgetComp->SetWidgetClass(MenuWidgetClass);
+        Pawn->MenuWidgetComp->InitWidget();
+        MenuWidget = Cast<UMenuWidget>(Pawn->MenuWidgetComp->GetUserWidgetObject());
+        if (MenuWidget) MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
+    }
+
     // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
     if (Pawn->HUDWidgetComp)
     {
@@ -96,7 +107,7 @@ void UVRPlayerUIComponent::Update(float /*DeltaTime*/)
 
 void UVRPlayerUIComponent::ToggleInventory()
 {
-    if (!HUDWidget) return;
+    if (!HUDWidget || bMenuOpen) return;   // 메뉴가 열려 있으면 인벤토리를 열지 않는다
     bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
     ApplyInventoryPresentation(bInventoryOpen);
 }
@@ -116,31 +127,74 @@ void UVRPlayerUIComponent::ApplyInventoryPresentation(bool bOpen)
     // 패널은 숨기지 않는다 — HP·스태미나 게이지가 상시 표시되고 인벤토리 슬롯만 위젯 내부에서 접힌다.
     // 연 동안엔 시선과 무관하게 불투명(슬롯을 조준하다 고개가 조금 돌아갔다고 흐려지면 조작이 끊긴다).
     if (Pawn->HUDWidgetComp) Pawn->HUDWidgetComp->bForceOpaque = bOpen;
+    SyncPointer();
+}
+
+void UVRPlayerUIComponent::SyncPointer()
+{
+    AVRPawn* Pawn = GetPawn();
+    if (!Pawn) return;
+
+    const bool bOn = bInventoryOpen || bMenuOpen;
     if (UWidgetInteractionComponent* Interactor = Pawn->HUDInteractor)
     {
         // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
-        if (!bOpen && bPointerPressed)
+        if (!bOn && bPointerPressed)
         {
             Interactor->ReleasePointerKey(EKeys::LeftMouseButton);
             bPointerPressed = false;
         }
-        Interactor->SetActive(bOpen);
-        Interactor->SetVisibility(bOpen);
+        Interactor->SetActive(bOn);
+        Interactor->SetVisibility(bOn);
     }
 
     // 닫는 프레임에 바로 끈다 — Tick 을 기다리면 한 프레임 광선이 남는다.
-    if (!bOpen)
+    if (!bOn)
     {
         if (Pawn->PointerBeam) Pawn->PointerBeam->SetVisibility(false);
         if (Pawn->PointerDot)  Pawn->PointerDot->SetVisibility(false);
     }
 }
 
+// ============================================================================
+// 메뉴
+// ============================================================================
+
+void UVRPlayerUIComponent::ToggleMenu()
+{
+    AVRPawn* Pawn = GetPawn();
+    if (!Pawn || !Pawn->MenuWidgetComp || !MenuWidget) return;   // 위젯 클래스 미지정이면 메뉴 없음
+
+    if (bMenuOpen)
+    {
+        CloseMenu();
+        return;
+    }
+
+    CloseInventory();   // 포인터·슬롯 입력 규칙이 겹치지 않게 인벤토리는 먼저 닫는다
+    bMenuOpen = true;
+    Pawn->MenuWidgetComp->Open();
+    SyncPointer();
+}
+
+void UVRPlayerUIComponent::CloseMenu()
+{
+    if (!bMenuOpen) return;
+    bMenuOpen = false;
+    if (AVRPawn* Pawn = GetPawn(); Pawn && Pawn->MenuWidgetComp) Pawn->MenuWidgetComp->Close();
+    SyncPointer();
+}
+
+void UVRPlayerUIComponent::OnMenuResume()
+{
+    CloseMenu();
+}
+
 bool UVRPlayerUIComponent::PressPointer()
 {
     // 인벤토리 열림 중 트리거는 UI 클릭 — 안 막으면 슬롯을 누를 때마다 손앞으로 발사체가 나간다.
     AVRPawn* Pawn = GetPawn();
-    if (!bInventoryOpen || !Pawn || !Pawn->HUDInteractor) return false;
+    if (!(bInventoryOpen || bMenuOpen) || !Pawn || !Pawn->HUDInteractor) return false;
     Pawn->HUDInteractor->PressPointerKey(EKeys::LeftMouseButton);
     bPointerPressed = true;
     return true;
@@ -285,7 +339,7 @@ void UVRPlayerUIComponent::UpdatePointerVisual()
     UStaticMeshComponent* Beam = Pawn->PointerBeam;
     UStaticMeshComponent* Dot = Pawn->PointerDot;
 
-    if (!bInventoryOpen)
+    if (!(bInventoryOpen || bMenuOpen))
     {
         if (Beam->IsVisible()) Beam->SetVisibility(false);
         if (Dot->IsVisible())  Dot->SetVisibility(false);
