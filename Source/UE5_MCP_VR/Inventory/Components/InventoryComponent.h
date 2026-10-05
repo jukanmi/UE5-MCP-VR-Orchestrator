@@ -246,6 +246,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")
     ADroppedItemBase* ReleaseHeldItem(EEquipmentSlot HandSlot = EEquipmentSlot::MainHand);
 
+    /** 손에 쥔 것으로 등록만 한다 — 소켓 부착·물리 정지 없이. 물리 손이 제약(constraint)으로 쥘 때 쓴다.
+     *  반대 손·NPC 가 다시 집지 않게 상호작용 구체만 끈다. 놓을 때는 ReleaseHeldItem 이 그대로 되살린다. */
+    void HoldItem(ADroppedItemBase* Item, EEquipmentSlot HandSlot);
+
+    /** 쥔 물건의 기록 손을 바꾼다(양손으로 쥔 물건에서 먼저 쥔 손이 놓을 때). 물리·상호작용 구체는 건드리지 않는다. */
+    void MoveHeldItem(EEquipmentSlot From, EEquipmentSlot To);
+
     /** 인벤토리 슬롯의 아이템 1개를 월드 액터로 꺼내 해당 손에 쥔다. 스폰 성공 후에만 차감한다.
      *  그 손이 이미 차 있거나 퀘스트 아이템이면 실패. */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Hand")

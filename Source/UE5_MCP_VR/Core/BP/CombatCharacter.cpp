@@ -1,6 +1,18 @@
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
+#include "Core/Physics/NPCBoneCapsuleSet.h"
+#include "Core/Types/CollisionChannels.h"
 #include "Core/Types/PlayerGameplayTags.h"
+#include "Core/Types/CharacterAttributes.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "NPC/Components/NPCRagdollComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Hearing.h"
+#include "Perception/AISense_Sight.h"
+#include "Sound/SoundBase.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
 #include "GameplayTagAssetInterface.h"
@@ -26,6 +38,104 @@ static EBodyPartType BoneToBodyPart(FName Bone)
         || B.Contains(TEXT("foot")) || B.Contains(TEXT("ball")) || B.Contains(TEXT("toe")))
         return bRight ? EBodyPartType::LegRight : EBodyPartType::LegLeft;
     return EBodyPartType::Torso;
+}
+
+static TAutoConsoleVariable<bool> CVarDrawBoneCapsules(TEXT("npc.DrawBoneCapsules"), false, TEXT("NPC 뼈 캡슐(손 충돌 판정용)을 디버그 드로우로 그린다."));
+
+ACombatCharacter::ACombatCharacter()
+{
+    RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
+
+    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+    StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+    StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
+    StimuliSource->RegisterWithPerceptionSystem();
+
+    // AI 캐릭터 공통 — 기본 Character 는 컨트롤러 Yaw 를 따라 돌고 이동 방향을 향하지 않아 MoveTo 시 옆걸음·뒷걸음이 난다.
+    // 컨트롤러 회전은 무시하고 이동 방향으로 자동 선회. 선회 속도(RotationRate)는 파생 클래스가 정한다.
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationYaw   = false;
+    bUseControllerRotationRoll  = false;
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->bOrientRotationToMovement = true;
+        CMC->bUseControllerDesiredRotation = false;
+    }
+}
+
+void ACombatCharacter::AddStateTag(FGameplayTag Tag)
+{
+    GameplayTagUtils::AddState(GameplayTags, Tag);
+}
+
+void ACombatCharacter::RemoveStateTag(FGameplayTag Tag)
+{
+    GameplayTagUtils::RemoveState(GameplayTags, Tag);
+}
+
+bool ACombatCharacter::BeginDeath()
+{
+    if (bIsDead) return false;
+    bIsDead = true;
+    GameplayTags.Reset();
+    AddStateTag(TAG_State_Condition_Dead);
+    return true;
+}
+
+float ACombatCharacter::NoteHit(FDamageEvent const& DamageEvent, const AActor* DamageCauser)
+{
+    if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+    {
+        const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
+        if (RagdollComponent) RagdollComponent->NoteHit(Pt.HitInfo.BoneName, Pt.ShotDirection);
+        return BodyPartMultiplierForBone(Pt.HitInfo.BoneName);
+    }
+    if (RagdollComponent)
+    {
+        RagdollComponent->NoteHit(NAME_None, DamageCauser
+            ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
+            : -GetActorForwardVector());
+    }
+    return 1.f;
+}
+
+void ACombatCharacter::PlayOneOf(const TArray<USoundBase*>& Sounds) const
+{
+    if (Sounds.Num() == 0) return;
+    if (USoundBase* S = Sounds[FMath::RandRange(0, Sounds.Num() - 1)])
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, S, GetActorLocation());
+    }
+}
+
+void ACombatCharacter::InitAttributes(FCharacterAttributesBase& Attributes)
+{
+    Attributes.RecalculateCombatStats();
+    Attributes.Resources.Health = Attributes.Resources.MaxHealth;
+    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+    {
+        CMC->MaxWalkSpeed = Attributes.Movement.WalkSpeed;
+    }
+}
+
+void ACombatCharacter::BeginPlay()
+{
+    Super::BeginPlay();   // BP BeginPlay 가 메시를 바꿔도 그 뒤에 판단한다
+
+    // 이 메시에 뼈 캡슐 치수가 있으면 손은 뼈 캡슐(VRPawn 이 드라이브 목표를 밀어냄)에만 막히고 몸 캡슐은 손을 통과시킨다.
+    // 치수가 없으면 지금처럼 몸 캡슐에 막힌다. 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따른다.
+    if (BoneCapsules && GetMesh() && BoneCapsules->HasFits(GetMesh()->GetSkeletalMeshAsset()))
+    {
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_HandLeft, ECR_Ignore);
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_HandRight, ECR_Ignore);
+    }
+}
+
+void ACombatCharacter::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    // 주민·적은 틱 간격이 0.1초라 한 프레임짜리 선은 깜박인다 — 다음 틱까지 남긴다.
+    if (BoneCapsules && CVarDrawBoneCapsules.GetValueOnGameThread()) BoneCapsules->DrawDebug(GetMesh(), GetActorTickInterval());
 }
 
 float ACombatCharacter::BodyPartMultiplierForBone(FName Bone)

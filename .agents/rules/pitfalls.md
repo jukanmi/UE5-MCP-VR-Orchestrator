@@ -30,7 +30,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **스토리 디렉터(2026-09-18)**: `get_story()` None = 비활성(`STORY_ENABLED=0` 또는 main.yaml 부재) → 전 훅 no-op. 디렉터 LLM 은 `needs_direction`(전이·해금·캐시 없음) 일 때만 — replan 마다 도는 게 아니다. `gemma4:cloud` 는 grammar 미강제라 `npc_id` 를 `npc` 로 줄여 보냄(실측) → `AliasChoices` + 프롬프트 JSON 예시로 흡수. 타임아웃 5s 초과·402 는 작가 YAML 원문 폴백(qwen3:8b 폴백 금지 — 예시 복사 결함). `talked_to` 카운트는 `_handle_prompt` 성공 턴만(에러/빈 배치 제외). `Story` 블록은 갱신 직후 첫 응답에만 실림(`block_pending`) — UE5 재시작 시 최신 퀘스트 로그를 못 받는 구멍은 Phase B 에서 판단.
 - **대화 배선 4건(2026-09-18 전 루프 주행에서 발견, 전부 수정)**: ① `interface_input` 이름 추출이 UE 명시 타겟을 덮었다 → 명시 타겟 우선, 이름 추출은 타겟 없을 때만(자유 채팅). ② `KNOWLEDGE_BASE_PATH` 가 cwd 상대라 README 대로 repo 루트에서 띄우면 RAG 0건(빈 `<repo>/app/agents/knowledge` 자동 생성) → 절대경로. ③ 디렉터 goal 이 Stage2 에만 실려 비트 첫 턴 대사가 목표를 몰랐다 → Stage1 프롬프트 `Story objective` 1줄. ④ `num_ctx` 2048: RAG 실리자 프롬프트 2011 토큰, 생성 37 토큰에 잘려 `......` → 4096 + `done_reason=length` 경고. **대사 품질 의심 시 모델보다 이 배선부터** — 고치기 전엔 Guard 가 "성벽에 불이 났나?", 고친 뒤 "성 안은 이미 함락됐어… 안으로 들어와".
 - **전 루프 주행법(헤드셋 없이, 15분)**: `story_state.json` 삭제 + `knowledge/*/conversation_memory.json` 비움(이전 대사가 지배) → 서버 → PIE → `get_player_pawn` 텔레포트 + `CurrentTargetNPCID` 세팅 + `say_to_npc()` → 서버 로그 `[Story] 비트 전이` 확인. 보스는 `apply_damage(100000)`. 아이템은 `ItemManager.get_item_data_by_id` + `Inventory.add_item`. 디렉터 첫 호출은 5s 타임아웃 폴백이 정상(`ReadTimeout('')`).
-- **tests/ 회귀 기준선: pytest 75 passed**(2026-09-18, 라이브 gemma4:cloud 1건 포함 — Ollama 없으면 skip). `python -m tests.…` 불가(site-packages `tests` 패키지가 가림) → `python tests/파일.py`. test_pipeline·test_affinity 는 라이브 하네스라 유닛 수집 제외.
+- **tests/ 회귀**: 라이브 gemma4:cloud 1건 포함 — Ollama 없으면 skip. 개수는 `sol_pi verify python` 영수증 기준. `python -m tests.…` 불가(site-packages `tests` 패키지가 가림) → `python tests/파일.py`. test_pipeline·test_affinity 는 라이브 하네스라 유닛 수집 제외.
 
 ### B. NPC 전투 · AI
 - **Physics Asset 필수** — 없으면 `SetSimulatePhysics` 조용히 무효 + `FindClosestBone` None→Torso 폴백(부위 인지 무력화). 래그돌은 `UNPCRagdollComponent`(09-12 추출), 튜닝은 BP 의 `Ragdoll` 컴포넌트 Details.
@@ -51,9 +51,17 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **월드 아이템 = `ADroppedItemBase` 하나** — `ItemManager` 등록 풀을 NPC 탐지가 본다. 별도 픽업 클래스를 만들면 NPC 가 인지 못 하는 두 번째 계통이 생긴다. Deferred 스폰으로 `FinishSpawning` 전에 `ItemTemplateID` 를 넣을 것(늦으면 `BeginPlay` 가 `DefaultEntity_Unknown` 으로 등록).
 - **HandObject 는 소유권 이전 없음** — 제시(손에 들기) 연출 전용, 실제 이전은 GiveItem. 플레이어 인벤에 넣으면 복제.
 - **손 쥐기 규칙(최종, 사용자 지정 2026-09-07)**: 손에 쥐는 모든 것은 물리 액터. 그립 홀드(`Started` 쥠 / `Completed`·`Canceled` 놓음). 뗄 때 **인벤토리 열림 = 회수 / 닫힘 = 거래접시→NPC 건네기→던지기**. 시간 가드 없음. 장착 무기는 `AttachedMeshes` 라 `HeldItems` 가 아님 — 그립을 누르면 `OnGrabStart` 가 물리 쥐기로 전환해야 던지기 경로를 탄다. 이 규칙 밖의 조작 기능 임의 추가 금지(당일 두 번 뒤집힌 원인).
+  갱신(2026-09-30): 핸드트래킹은 그립 대신 **접촉 쥐기**(엄지+다른 손끝 사이에 물건이 끼면 쥠, 손끝이 떨어지면 놓음 — `UpdateContactGrab`). 핀치·주먹 제스처로 쥐면 손가락이 이미 물건 속이라 막혀 있던 물리 손이 튀며 제약이 끊긴다. 놓을 때 분기는 동일.
+- **FBIK(PBIK)는 손을 이펙터에 정확히 못 붙인다** — 여러 목표 절충이라 반복 20 에서 5~7cm 남았다(손 콜라이더와 메시 어긋남). 반복 60 + 애님 프록시의 팔 2본 IK 로 0.2cm. 손 본만 옮기면 손목이 꺾인다 — 팔꿈치까지 같이 풀 것.
+- **손가락 캡슐을 트래킹대로 물체 속에 옮기면 움직이는 물체에서만 떤다** — 캡슐은 손바닥에 용접돼 따로 못 휘어 엔진이 손 전체를 밀고, 물체도 밀려 움직이니 밀기·당기기가 반복된다(벽은 안 움직여 한 번에 멈춤). 닿은 마디의 관절을 직전 프레임 각도에 고정해 푼다. 고정은 "실제 손가락 모양이 안 겹치면" 풀어야 툭 칠 때 굳지 않는다. 손↔물건 충돌을 끄는 해법은 쓰지 않는다(사용자 지정).
 - **BP 오버라이드가 C++ 기본값을 이긴다** — 상시 켜야 하는 것은 `BeginPlay` 에서 강제하거나 에셋 재직렬화 확인(`HUDWidgetComp` 가시성 사례). `BP_VRPawn::CameraHeightOffset` = **0 필수**(-30 이면 HMD 높이 역산 오염 → 캡슐 30cm 단축). 머리 본 위치는 `HeadEffectorOffset`/FBIK 로, 카메라 오프셋 금지.
 - **VR 아바타 1:1 고정** — 키 비율 스케일 삭제(FBIK 하에서 '서면 머리 낮음' 만 유발). `CalibratedStandingHeight` 는 자세판정용만. 몸통은 HMD Yaw 1:1 추종(`BodyMeshYawOffset=-90`), 착석 시 의자 방향 고정.
 - **PostProcess 는 이 렌더 경로(`r.ForwardShading`+`vr.InstancedStereo`+`vr.MobileMultiView`)에서 화면 전체 검정** — 비네트·터널 효과 불가. 시각 피드백은 HUD.
+- **Chaos 조인트 드라이브 상한(UE 5.5)**: ① 회전 드라이브 MaxTorque 는 `p.Chaos.Solver.Joint.UseSimd 0` 일 때만 먹는다(기본 true 의 SIMD 경로가 클램프 생략). 물리 씬 생성 때 한 번 읽으므로 런타임 변경은 다음 PIE 부터 — 실사용은 ini. ② MaxForce/MaxTorque **0 = 무제한**. ③ 가속 모드면 상한이 역질량으로 나뉘니 힘 단위로 쓰려면 가속 모드 끔. ④ 축별 클램프(대각은 최대 √3 배). ⑤ 드라이브 목표를 런타임에 옮길 때(재고착 등) 목표 = **Component2 프레임 기준 Component1 프레임**(`Frame1.GetRelativeTransform(Frame2)`). 반대로 넣으면 목표가 거울 위치라 상한만큼 한쪽으로 계속 밀려 감쇠 없이 출렁인다 — 손 쪽이 항등 회전이면 정적 각도는 같아 보여 못 잡는다. ⑥ 회전 드라이브 강성·감쇠는 엔진이 ×1.5(`p.Chaos.JointConstraint.AngularDriveStiffnessScale`). 실측은 `docs/SPEC_friction_grip.md` M0·M1(2026-10-03~04).
+- **아이템 CCD 를 끄지 말 것 — 프레임 이동량 ~10cm 면 바닥 관통**: 30fps 낙하(닿는 프레임 11cm)에서 62종 중 16종이 바닥 통과, CCD 켜면 8fps 에서도 0(2026-10-03). `ADroppedItemBase::BeginPlay` 가 `SetUseCCD(true)` 로 강제. 헤드셋 없는 PIE 는 에디터 백그라운드 스로틀로 30fps 가 되니 물리 시험 전 `Default__EditorPerformanceSettings.bThrottleCPUWhenNotForeground=false`(MCP `ue_set_property`) + `t.MaxFPS 90`.
+- **헤드셋 없는 PIE 손 시험은 모션 컨트롤러 상대 위치를 매 틱 바꿔서** — 트래킹이 없으면 컨트롤러가 마지막 위치를 유지한다(앵커 = 컨트롤러 Grip 에 붙은 `HandLeft`·`HandRight`, 물리 손바닥은 이름 `PhysicsPalmLeft`·`PhysicsPalmRight` 인 런타임 컴포넌트). 한 프레임에 60cm 넘게 옮기면 `UVRHandComponent::DriveBody` 순간이동 규칙으로 손이 벽·바닥 너머에 놓이니 천천히. 에디터 창이 최소화돼 있으면 스로틀을 꺼도 3fps — 포커스 안 뺏고 `ShowWindow(hwnd, 4)`.
+- **월드 위젯 앞면** — 단면(two-sided 끔) 위젯은 −X 면이 읽히는 면이라 +X 를 카메라 반대로 돌려야 보인다. 양면이면 +X 를 카메라로 돌려도 글자가 정상(2026-10-03 PIE 화면 캡처). 프로젝트 규약: 월드 UI 는 `UWorldUIComponent` 상속(양면 + +X→카메라).
+- **아이템 충돌 수 세기**: `StaticMeshEditorSubsystem.get_simple_collision_count` 는 상자·구·캡슐만 센다 — 볼록 헐은 `get_convex_collision_count` 로 따로.
 - Sprint 해제는 `IA_Move` `Completed`/`Canceled`(`OnMoveReleased`) — `Triggered` 는 입력 0 에서 안 오고 `OnMove` 가 조기 return.
 
 ### D. 통신 · DX
@@ -67,7 +75,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **`style` 파라미터**: 어휘 단일 소스 = C++ `EMoveType`(Walk/Run/Sprint/Crouch), 미매칭은 Walk 폴백 + Warning. 액션별 의미 다름(Move/Follow=속도, Sing/Emote=미디어 키). `EMoveType` 추가 시 `ParseMoveStyle` 분기 필수(`test_move_style_vocabulary_matches_cpp` 가 잡음).
 - **`.claude/skills/` 는 디렉터리 형식만 로드된다**: `<name>/SKILL.md` 여야 하고 frontmatter `name:` 은 디렉터리명과
   같은 kebab-case. 평면 `skills/foo.md` 는 조용히 무시된다(에러 없음 — 스킬 목록에 안 뜨는 걸로만 판정 가능).
-  `.claude/` 전체가 gitignore 라 이 폴더의 소실·변경은 **git 으로 추적·복구 불가**. 이름이 유저/플러그인 스킬과
+  `.claude/*` 는 ignore 지만 `.claude/skills/` 는 추적된다(`.gitignore` 108-109). 이름이 유저/플러그인 스킬과
   겹치면 그쪽이 이기므로 프로젝트 스킬 이름은 충분히 구체적으로(`spec` 같은 일반어 금지).
 - **Mixamo 액션 애니는 In Place 배포본이 없다 — 루트 모션을 켜는 게 정답**: 이동이 Hips 트랙에 통째로 들어있어
   ① 루트모션 OFF 면 메시만 끌려갔다가 몽타주 끝에 캡슐로 스냅백 ② `bForceRootLock` 으로 묶으면 "밀려나는 그림인데
@@ -83,7 +91,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **WS 는 서버보다 먼저 뜨면 Offline Mode 로 고착**: 5회 재접속 실패 후 `Switching to permanent Offline AI Mode`.
   **PIE 재시작으로는 안 풀리고 에디터를 재시작해야 한다.** 상태 확인은 `curl 127.0.0.1:8000/api/ws/status`.
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
-- **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/`·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
+- **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/*`(skills 제외)·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 
 ### E. 파인튜닝
 → `OmniAgent_VR_System/CognitiveEngine/finetune/RESULT.md` "운영 주의점" 절. Stage2 12B 는 unsloth 미지원으로 보류(서빙은 qwen3:8b 로 대체) · VRAM 스필오버는 OOM 아닌 감속 · GGUF 변환 베이스 태그 인자 · 시드 데이터 페르소나 규칙.
@@ -130,5 +138,15 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
   code-review-graph(`uvx code-review-graph serve`) 3개 정의. 파일이 살아 있어도 세션 내 재연결은 안 됨(`/mcp` 또는 새 세션).
   ue5 서버가 붙으려면 에디터가 떠 있어야 하고(Remote Control `:30010` 응답이 준비 신호), 에디터가 떠 있어도 이 파일이 없으면
   도구 목록에 안 뜬다. `sol_pi.py` 는 에디터 켜진 상태에서 Build.bat 을 돌리면 Live Coding 충돌로 실패 — `quit_editor` 먼저.
+- **U-5. Live Coding "Live coding failed, please see Live console" 인데 .lib 는 만들어졌다 = 링크 실패** — 원인은 Live Coding 콘솔 창에만
+  나와 로그로 못 본다. 새 엔진 클래스를 쓰면서 모듈 의존성이 빠진 경우가 흔했다(`UPhysicalMaterial` → `PhysicsCore`,
+  `AnimationCore::SolveTwoBoneIK` → `AnimationCore`). 에디터를 닫고 Build.bat 을 돌리면 `LNK2019` 로 바로 보인다.
+- **U-7. Python 으로 PIE 월드에 아이템 놓기** — Python 엔 지연 스폰 API 가 없고 `ItemManager` 서브시스템 getter 도 없다. `unreal.ObjectIterator(unreal.ItemManager)` 에서 outer 가 PIE GameInstance 인 것 → `get_item_data_by_id` → 플레이어 `InventoryComponent.add_item(row,1,False)` → `drop_item` → 생긴 액터를 `set_actor_location_and_rotation(..., teleport=True)`. 퀘스트 아이템은 drop 이 막혀 인벤토리에 남으니 `remove_item` 으로 비울 것. 한 프레임에 몰아 넣지 말고 slate post-tick 콜백으로 프레임당 하나씩.
+- **U-10. 콘솔 `UFUNCTION(Exec)` 는 컴포넌트에 전달되지 않는다** — 대상은 PlayerController·폰·HUD·GameMode·CheatManager·GameState·CameraManager 뿐(`Player.cpp` ProcessConsoleExec). 디버그 명령은 `UVRCheatManager`(`Core/Debug/`)에 둔다. 에디터는 기본 CheatManager 를 먼저 만들어 `AddCheats` 가 건너뛰니 `CheatClass` 지정만으론 안 바뀐다 — 폰 BeginPlay 가 바꿔 끼운다(2026-10-04).
+- **U-11. 빌드·프로젝트 파일 재생성 뒤 열린 .cpp 가 전부 빨갛다("파일 소스을(를) 열 수 없습니다")** — `.vscode/compileCommands_*.json`·rsp 는 정상(인클루드 경로 있음), cpptools 가 재생성 중 빈 상태로 굳은 것. 코드·빌드 문제 아님(빌드 오류 0). 해결은 VS Code 에서 `C/C++: Reset IntelliSense Database`(안 되면 `Developer: Reload Window`) — 파일을 touch 해 재로딩을 유도하는 건 일부 파일만 풀려 확실하지 않다. IDE 진단은 `mcp__claude-vscode__getDiagnostics` 로 읽어 확인 가능(2026-10-04).
+- **U-9. UBT 가 git 의 따옴표 한글 경로에서 크래시** — 추적 안 된/수정된 한글 경로(`docs/주간기록/...`)가 있으면 adaptive non-unity 의 `git status` 출력(`"docs/\354\243..."` 8진 이스케이프)을 경로로 못 읽어 `Path fragment ... contains invalid directory separators` 로 빌드 전 종료(sol_pi 는 "오류 0건 FAILED"). `tools/sol_pi.py` 가 UBT 환경에 `core.quotepath=false` 를 자동 주입한다(2026-10-04, 접두어 불필요). Live Coding(`LiveCodingConsole`)은 이 환경이 안 걸려 같은 이유로 실패한다 — 에디터를 닫고 `sol_pi` 로 빌드.
+- **U-8. Python `EditorLoadingAndSavingUtils.reload_packages` 는 dirty 패키지면 모달 확인창** — MCP 가 멈추고 입력 주입도 안 먹는다(사용자 클릭 필요). 검증용 변경은 같은 값이면 저장 후 `git checkout`, 다르면 에셋을 `/Game/_Tmp…` 로 복제해 거기서 시험하고 폴더 삭제.
+- **U-6. 워크트리에서 `sol_pi verify all` 의 Python 16 error 는 환경 문제** — `uv run` 이 시스템 Python(옛 pydantic)을 잡는다.
+  `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
 - **U-4. `sol_pi.py build` 워치독 300초** — 룰 캐시 재생성처럼 오래 걸리는 빌드는 중간에 죽고 `cl.exe` 만 taskkill 됨
   (`dotnet.exe` 호스트는 안 죽음). 워치독에 끊긴 뒤 재실행하면 이미 컴파일된 `.obj` 는 재사용되니 그냥 다시 돌리면 된다.

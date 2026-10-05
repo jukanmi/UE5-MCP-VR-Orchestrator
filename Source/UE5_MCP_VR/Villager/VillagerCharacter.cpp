@@ -26,8 +26,6 @@ AVillagerCharacter::AVillagerCharacter()
     GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);  // AnimBP 없이 클립 직접 재생
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
-    RagdollComponent = CreateDefaultSubobject<UNPCRagdollComponent>(TEXT("Ragdoll"));
-
     // 말풍선 — 위젯 공간·크기·머리 위 오프셋은 컴포넌트 기본값(SmartNPC 와 동일).
     DialogueWidgetComp = CreateDefaultSubobject<UNPCDialogueUIComponent>(TEXT("DialogueWidget"));
     DialogueWidgetComp->SetupAttachment(GetMesh());
@@ -46,23 +44,10 @@ AVillagerCharacter::AVillagerCharacter()
 
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
-    StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
-    if (StimuliSource)
-    {
-        StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
-        StimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
-        StimuliSource->RegisterWithPerceptionSystem();
-    }
-
-    // 적·SmartNPC 와 동일 — 컨트롤러 회전 무시 + 이동 방향으로 자동 선회(옆걸음 방지).
-    bUseControllerRotationPitch = false;
-    bUseControllerRotationYaw   = false;
-    bUseControllerRotationRoll  = false;
+    // 컨트롤러 회전 무시·이동 방향 선회는 ACombatCharacter. 선회 속도만 여기서.
     if (UCharacterMovementComponent* CMC = GetCharacterMovement())
     {
-        CMC->bOrientRotationToMovement = true;
         CMC->RotationRate = FRotator(0.f, 360.f, 0.f);
-        CMC->bUseControllerDesiredRotation = false;
     }
 }
 
@@ -70,15 +55,8 @@ void AVillagerCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
-    // BaseStats(BP 편집) → 파생치. HP 는 만땅에서 시작.
-    Attributes.RecalculateCombatStats();
-    Attributes.Resources.Health = Attributes.Resources.MaxHealth;
-    if (UCharacterMovementComponent* CMC = GetCharacterMovement())
-    {
-        CMC->MaxWalkSpeed = Attributes.Movement.WalkSpeed;
-    }
-
-    GameplayTagUtils::AddState(GameplayTags, TAG_State_Idle);
+    InitAttributes(Attributes);
+    AddStateTag(TAG_State_Idle);
     PlayLoco(IdleAnim);
 }
 
@@ -127,15 +105,6 @@ float AVillagerCharacter::PlayWave()
 bool AVillagerCharacter::IsPlayingOneShot() const
 {
     return GetWorld() && GetWorld()->GetTimeSeconds() < OneShotEndTime;
-}
-
-void AVillagerCharacter::PlayOneOf(const TArray<USoundBase*>& Sounds) const
-{
-    if (Sounds.Num() == 0) return;
-    if (USoundBase* S = Sounds[FMath::RandRange(0, Sounds.Num() - 1)])
-    {
-        UGameplayStatics::PlaySoundAtLocation(this, S, GetActorLocation());
-    }
 }
 
 // ============================================================================
@@ -270,20 +239,8 @@ float AVillagerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 
     const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
-    // 부위 배율 + 래그돌 임펄스 방향 — 적·SmartNPC 와 같은 규약.
-    float Multiplier = 1.0f;
-    if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
-    {
-        const FPointDamageEvent& Pt = static_cast<const FPointDamageEvent&>(DamageEvent);
-        Multiplier = BodyPartMultiplierForBone(Pt.HitInfo.BoneName);
-        if (RagdollComponent) RagdollComponent->NoteHit(Pt.HitInfo.BoneName, Pt.ShotDirection);
-    }
-    else if (RagdollComponent)
-    {
-        RagdollComponent->NoteHit(NAME_None, DamageCauser
-            ? (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal()
-            : -GetActorForwardVector());
-    }
+    // 부위 배율 + 래그돌 임펄스 방향.
+    const float Multiplier = NoteHit(DamageEvent, DamageCauser);
 
     const float Effective = FMath::Max(0.f, Raw - Attributes.Combat.Defense) * Multiplier;
     Attributes.Resources.Health -= Effective;
@@ -317,11 +274,7 @@ float AVillagerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 // ============================================================================
 void AVillagerCharacter::HandleDeath()
 {
-    if (bIsDead) return;
-    bIsDead = true;
-
-    GameplayTags.Reset();
-    GameplayTagUtils::AddState(GameplayTags, TAG_State_Condition_Dead);
+    if (!BeginDeath()) return;
     OneShotEndTime = -1.f;
 
     // AI 정지 — UnPossess 하지 않는다: 폰이 Destroy 될 때 PawnPendingDestroy 가 컨트롤러를 같이 지우게(고아 방지).

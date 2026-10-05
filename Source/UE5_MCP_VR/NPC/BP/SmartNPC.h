@@ -31,13 +31,8 @@ class UE5_MCP_VR_API ASmartNPC : public ACombatCharacter, public INPC
 
 public:
     // --- IGameplayTagAssetInterface 구현 ---
-	virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override;
+	virtual void GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const override { TagContainer = GameplayTags; }
 
-	void AddStateTag(FGameplayTag Tag);
-	void RemoveStateTag(FGameplayTag Tag);
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags")
-    FGameplayTagContainer GameplayTags;
     ASmartNPC();
 
     UFUNCTION(BlueprintCallable, Category = "MCP|Components")
@@ -59,10 +54,6 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
 	UNPCInventoryComponent* InventoryComponent;
-
-    // 액티브 래그돌(Flinch/Knockdown/사망 래그돌) — 튜닝값·진행 상태 전부 컴포넌트 소유. PA_SmartNPC(Physics Asset) 필요.
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Ragdoll")
-    UNPCRagdollComponent* RagdollComponent;
 
     // 플레이어 근접 공격을 쳐냈을 때(RNG 패링 성공) 재생할 3D 사운드 — 미배정이면 조용히 스킵.
     UPROPERTY(EditDefaultsOnly, Category = "MCP|Combat")
@@ -101,11 +92,6 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|AI|Hearing")
     float HearingRange = 3000.0f;
-
-    // === Perception Source ===
-    
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|AI|Perception")
-	UAIPerceptionStimuliSourceComponent* StimuliSource;
 
     // === Dialogue Subtitle (머리 위 WorldSpace 말풍선) ===
 

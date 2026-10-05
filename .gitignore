@@ -105,9 +105,9 @@ Desktop.ini
 # ==============================================================================
 CLAUDE.md
 GEMINI.md
-.claude/
+.claude/*
+!.claude/skills/
 .codex/
-.claude/skills/
 .code-review-graph/
 .gstack/
 

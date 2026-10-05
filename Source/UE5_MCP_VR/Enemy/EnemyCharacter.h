@@ -109,14 +109,6 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Enemy")
     FOnEnemyDied OnEnemyDied;
 
-    /** 아군 NPC AIPerception 에 보이기 위한 자극원(Sight·Hearing). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
-    UAIPerceptionStimuliSourceComponent* StimuliSource;
-
-    /** 액티브 래그돌(Flinch/Knockdown/사망) — SmartNPC 와 같은 컴포넌트. 메시에 Physics Asset 필요. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
-    UNPCRagdollComponent* RagdollComponent;
-
     /** 손에 쥔 소품(횃불·무기) — 비주얼 전용, 충돌 없음. 메시·손안 오프셋은 BP(make_enemy_bps.py)가 넣고,
      *  소켓은 HandPropSocket. 래그돌 시 본을 따라간다. 메시가 비어 있으면 그냥 빈 컴포넌트. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
@@ -164,15 +156,10 @@ protected:
     virtual float ComputeAttackDamage() const override { return Attributes.Combat.AttackPower * AttackDamageScale; }
 
 private:
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags", meta = (AllowPrivateAccess = "true"))
-    FGameplayTagContainer GameplayTags;
-
     // 공격 판정 타이머(AttackHitDelay) + 공격 점유 종료 시각.
     FTimerHandle AttackHitTimer;
     float AttackEndTime = -1.f;
     void OnAttackHitTime();
-
-    void PlayOneOf(const TArray<USoundBase*>& Sounds) const;
 
     // 단일 노드 로코모션 — 현재 재생 클립(같은 클립 재요청 방지).
     TWeakObjectPtr<UAnimSequence> CurrentLocoAnim;

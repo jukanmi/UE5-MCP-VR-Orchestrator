@@ -1,4 +1,8 @@
 #include "Core/BP/VRPawn.h"
+#include "Core/BP/VRHandComponent.h"
+#include "Core/BP/VRPlayerUIComponent.h"
+#include "Core/Debug/VRCheatManager.h"
+#include "Core/BP/VRMeleeComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Camera/CameraComponent.h"
 #include "MotionControllerComponent.h"
@@ -8,9 +12,10 @@
 #include "Engine/Engine.h"
 #include "Core/BP/KineticProjectile.h"
 #include "Core/Physics/KineticDamage.h"
+#include "Core/Types/CollisionChannels.h"
+#include "EngineUtils.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
-#include "Core/Utils/EngineShapes.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -23,19 +28,21 @@
 #include "Engine/DamageEvents.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
+#include "IXRTrackingSystem.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
 #include "Utils/DiceSystem.h"
 #include "Villager/VillagerCharacter.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
-#include "UI/BP/PlayerHUDWidget.h"
-#include "UI/BP/ChatWidget.h"
-#include "UI/BP/ItemTooltipWidget.h"
+#include "UI/Components/ChatPanelUIComponent.h"
+#include "UI/Components/HUDPanelUIComponent.h"
+#include "UI/Components/ItemTooltipUIComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Villager/MerchantStall.h"
 #include "Blueprint/UserWidget.h"
@@ -87,17 +94,32 @@ AVRPawn::AVRPawn()
     // 손 메시 제거됨 — 풀바디 FBIK(ABP_VRPawn) 손이 컨트롤러를 향해 역산되므로
     // 별도 손 메시는 중복. 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    // 동역학 근접 — 손 위치 시각 마커. **실제 타격 판정은 Tick 의 능동 스피어 쿼리(TryMeleeHits).**
+    // 동역학 근접 — 손 위치 시각 마커. **실제 타격 판정은 UVRMeleeComponent 의 능동 스피어 쿼리.**
     // 본 소켓에 붙인 패시브 overlap 은 애니 본에서 overlap 이벤트 누락이 잦아 쓰지 않음(콜리전 OFF).
+    MeleeCombat = CreateDefaultSubobject<UVRMeleeComponent>(TEXT("MeleeCombat"));
+
     MeleeSphereLeft = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereLeft"));
     MeleeSphereLeft->SetupAttachment(GetMesh(), TEXT("LeftHand"));  // Mixamo X_Bot 본 이름
-    MeleeSphereLeft->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereLeft->InitSphereRadius(MeleeCombat->MeleeSphereRadius);
     MeleeSphereLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     MeleeSphereRight = CreateDefaultSubobject<USphereComponent>(TEXT("MeleeSphereRight"));
     MeleeSphereRight->SetupAttachment(GetMesh(), TEXT("RightHand"));  // Mixamo X_Bot 본 이름
-    MeleeSphereRight->InitSphereRadius(MeleeSphereRadius);
+    MeleeSphereRight->InitSphereRadius(MeleeCombat->MeleeSphereRadius);
     MeleeSphereRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    // 손 — 컨트롤러 Grip 포즈에 붙은 앵커. 물리 손바닥·손가락·제약은 BeginPlay 에 손 컴포넌트가 만든다.
+    // 그립 보정 = X_Bot 손 본 축과 컨트롤러 그립 축 차이(좌우 미러).
+    HandLeft = CreateDefaultSubobject<UVRHandComponent>(TEXT("HandLeft"));
+    HandLeft->SetupAttachment(MotionControllerLeft);
+    HandLeft->Hand = EControllerHand::Left;
+    HandLeft->GripOffset = FRotator(180.f, 0.f, 90.f);
+    HandRight = CreateDefaultSubobject<UVRHandComponent>(TEXT("HandRight"));
+    HandRight->SetupAttachment(MotionControllerRight);
+    HandRight->Hand = EControllerHand::Right;
+    HandRight->GripOffset = FRotator(0.f, 0.f, -90.f);
+
+    PlayerUI = CreateDefaultSubobject<UVRPlayerUIComponent>(TEXT("PlayerUI"));
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -107,46 +129,22 @@ AVRPawn::AVRPawn()
     // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
-    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯.
-    // 화면 공간(AddToViewport)은 VR 에서 한쪽 눈에만 뜨거나 늘어져 보이므로 쓰지 않는다.
-    // 카메라 부착(head-lock)도 피한다 — 시야에 고정된 패널은 멀미를 유발한다.
-    HUDWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HUDWidgetComp"));
+    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯. 카메라 정렬·시선 페이드·포인터 충돌은 UHUDPanelUIComponent.
+    // 카메라 부착(head-lock)은 피한다 — 상시 표시 패널이 시야에 고정되면 멀미를 유발한다.
+    HUDWidgetComp = CreateDefaultSubobject<UHUDPanelUIComponent>(TEXT("HUDWidgetComp"));
     HUDWidgetComp->SetupAttachment(MotionControllerLeft);
     HUDWidgetComp->SetRelativeLocation(HUDPanelLocation);
-    // 회전은 매 Tick UpdateHUDPanelFacing() 이 HMD 정면으로 덮어쓴다.
     HUDWidgetComp->SetDrawSize(HUDPanelDrawSize);
     HUDWidgetComp->SetRelativeScale3D(FVector(HUDPanelScale));
-    HUDWidgetComp->SetTwoSided(true);           // 손을 뒤집어도 사라지지 않게
-    // 시선 페이드가 알파를 쓰므로 Masked 로는 안 된다 — Masked 는 알파를 0/1 로 잘라
-    // 중간값이 표현되지 않아 페이드가 계단식으로 튄다.
-    HUDWidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
-    // HUDInteractor 가 World 모드라 물리 레이로 위젯을 찾는다. 콜리전을 끄면 광선이
-    // 패널을 관통해 클릭·호버가 전혀 전달되지 않는다. 이동·물리에는 관여하지 않도록
-    // QueryOnly 로 두고 Visibility 채널만 막는다.
-    HUDWidgetComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    HUDWidgetComp->SetCollisionResponseToAllChannels(ECR_Ignore);
-    HUDWidgetComp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-    // 패널은 항상 켜 둔다 — HP·스태미나 게이지가 실려 있어 인벤토리와 수명이 다르다.
-    // 인벤토리 슬롯만 위젯 안에서 Collapsed 로 접힌다(UPlayerHUDWidget::SetInventoryPanelVisible).
-    HUDWidgetComp->SetVisibility(true);
 
-    // 채팅 패널 — 예외적으로 카메라(VRCamera) 부착. 위 HUD 패널 주석의 head-lock 금기는
-    // "상시 표시" 패널 얘기다. 채팅은 Enter 를 눌렀을 때만 잠깐 켜졌다 닫히므로 그 시간대만
-    // 시야에 고정되어도 멀미로 이어지지 않는다 — 대신 타이핑 중 고개를 돌려도 입력창을 잃지 않는다.
-    ChatWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("ChatWidgetComp"));
+    // 채팅 패널 — 예외적으로 카메라(VRCamera) 부착(이유·자동 닫기는 UChatPanelUIComponent).
+    // 카메라 앞에 있으니 Yaw 180 으로 카메라 쪽을 본다(양면이라 어느 면이든 읽힌다).
+    ChatWidgetComp = CreateDefaultSubobject<UChatPanelUIComponent>(TEXT("ChatWidgetComp"));
     ChatWidgetComp->SetupAttachment(VRCamera);
     ChatWidgetComp->SetRelativeLocation(ChatPanelOffset);
-    // 가시면은 +X 쪽(HUDWidgetComp 와 동일 관례) — 카메라 앞에 있으니 뒤(-X, 카메라 쪽)를
-    // 보게 Yaw 180.
     ChatWidgetComp->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
     ChatWidgetComp->SetDrawSize(ChatPanelDrawSize);
     ChatWidgetComp->SetRelativeScale3D(FVector(ChatPanelScale));
-    ChatWidgetComp->SetTwoSided(true);
-    ChatWidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
-    // 클릭 없이 키보드 포커스만 쓰므로(FocusChatInput) 광선 레이가 필요 없다.
-    ChatWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    // 손 패널과 달리 상시 표시가 아니다 — Enter 전까지 숨김(OnChatKey 가 켠다).
-    ChatWidgetComp->SetVisibility(false);
 
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
     // 광선이 패널을 빗나간다.
@@ -174,19 +172,9 @@ AVRPawn::AVRPawn()
     PointerDot->SetCastShadow(false);
     PointerDot->SetVisibility(false);
 
-    // 아이템 이름표 — 월드 공간 위젯 1개를 폰이 들고 다니며 대상 위로 옮긴다.
-    // 루트에 붙이되 위치는 매 틱 월드 좌표로 덮어쓴다(손이 아니라 아이템 위에 떠야 한다).
-    ItemTooltipComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("ItemTooltipComp"));
+    // 아이템 이름표 — 하나를 폰이 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
+    ItemTooltipComp = CreateDefaultSubobject<UItemTooltipUIComponent>(TEXT("ItemTooltipComp"));
     ItemTooltipComp->SetupAttachment(RootComponent);
-    ItemTooltipComp->SetWidgetSpace(EWidgetSpace::World);
-    ItemTooltipComp->SetDrawSize(FVector2D(400.f, 140.f));
-    ItemTooltipComp->SetRelativeScale3D(FVector(0.05f));
-    ItemTooltipComp->SetTwoSided(true);
-    ItemTooltipComp->SetBlendMode(EWidgetBlendMode::Transparent);
-    // 이름표가 광선·물리를 가로채면 안 된다 — 보기만 하는 물건이다.
-    ItemTooltipComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    ItemTooltipComp->SetVisibility(false);
-    ItemTooltipComp->SetWidgetClass(UItemTooltipWidget::StaticClass());
 
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
@@ -209,25 +197,6 @@ AVRPawn::AVRPawn()
 void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
-
-    // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
-    // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
-    if (PointerBeam && PointerDot)
-    {
-        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
-        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
-
-        // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
-        PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
-        if (PointerMID)
-        {
-            PointerBeam->SetMaterial(0, PointerMID);
-            PointerDot->SetMaterial(0, PointerMID);
-        }
-
-        // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
-        PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
-    }
 
     // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
     // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
@@ -252,6 +221,18 @@ void AVRPawn::BeginPlay()
             if (VRMappingContext)
                 Sub->AddMappingContext(VRMappingContext, 0);
         }
+
+#if !UE_BUILD_SHIPPING
+        // 디버그·튜닝 콘솔 명령(TuneGrab·DumpInventoryHUD·ToggleInventory·Cheat_Unequip)은 치트 매니저에 있다.
+        // 프로젝트에 게임모드·컨트롤러 BP 가 없어 에셋으로 CheatClass 를 못 지정하므로 여기서 지정한다.
+        // 에디터는 기본 치트 매니저를 이미 만들어 두므로(AddCheats 는 있으면 건너뛴다) 우리 클래스가 아니면 바꿔 끼운다.
+        PC->CheatClass = UVRCheatManager::StaticClass();
+        if (!PC->CheatManager || !PC->CheatManager->IsA<UVRCheatManager>())
+        {
+            PC->CheatManager = NewObject<UCheatManager>(PC, PC->CheatClass);
+            PC->CheatManager->InitCheatManager();
+        }
+#endif
     }
 
     RefreshStats();
@@ -264,46 +245,71 @@ void AVRPawn::BeginPlay()
     // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
     StartCalibration();
 
-    // HUD 생성 — 로컬 플레이어 컨트롤러일 때만.
-    // 위젯은 뷰포트가 아니라 왼손 패널(HUDWidgetComp)에 실린다. 화면 공간 위젯은
-    // 스테레오 렌더 타깃 위에 한 번만 합성되어 한쪽 눈에만 보이기 때문.
-    if (HUDWidgetClass && HUDWidgetComp)
+    // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
+    if (PlayerUI) PlayerUI->Init();
+
+    if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+
+    if (HandLeft)  HandLeft->InitPhysics();
+    if (HandRight) HandRight->InitPhysics();
+
+    // 몸 메시 애니메이션은 물리 뒤에 — 손 이펙터가 물리 손바닥 위치를 읽는데, 물리 전(기본값)에 돌면 지난 프레임 위치로
+    // 손을 그려 같은 프레임 물리로 움직인 쥔 물건보다 한 프레임 뒤처진다(이동 중 3m/s 면 약 3cm 어긋남).
+    // 폰 틱(손끝 모양 배치)은 애님이 채운 손끝 목표를 한 프레임 늦게 읽게 되지만, 목표가 손바닥 기준 상대값이라 영향이 작다.
+    if (GetMesh()) GetMesh()->SetTickGroup(TG_PostPhysics);
+
+    // 손이 NPC(Pawn)를 막게 됐으니 내 캡슐·몸 메시는 손 채널을 무시해 몸에 손이 걸리지 않게 한다.
+    // 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따른다. BP 프로필이 덮어쓸 수 있어 생성자 대신 여기서 설정.
+    for (UPrimitiveComponent* Own : { static_cast<UPrimitiveComponent*>(GetCapsuleComponent()), static_cast<UPrimitiveComponent*>(GetMesh()) })
     {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            if (PC->IsLocalController())
-            {
-                HUDWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-                HUDWidgetComp->SetWidgetClass(HUDWidgetClass);
-                HUDWidgetComp->InitWidget();
-                HUDWidget = Cast<UPlayerHUDWidget>(HUDWidgetComp->GetUserWidgetObject());
-            }
-        }
+        if (!Own) continue;
+        Own->SetCollisionResponseToChannel(ECC_HandLeft, ECR_Ignore);
+        Own->SetCollisionResponseToChannel(ECC_HandRight, ECR_Ignore);
     }
 
-    // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
-    if (HUDWidgetComp)
+#if !UE_BUILD_SHIPPING
+    // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
+    if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
     {
-        HUDWidgetComp->SetVisibility(true);
+        GetWorld()->GetGameViewport()->ConsoleCommand(TEXT("show collision"));
     }
+#endif
+}
 
-    if (ChatWidgetClass && ChatWidgetComp)
+// ============================================================================
+// 손 — 물리·판정은 UVRHandComponent, 폰은 잡기 입력으로 합쳐 넘긴다
+// ============================================================================
+
+void AVRPawn::UpdateHands(float DeltaTime)
+{
+    // 순서: 두 손 트래킹·드라이브 → 제스처 → 접촉 쥐기 → 쥐기 제약 동기화.
+    const TStaticArray<UVRHandComponent*, 2> Hands{ HandLeft, HandRight };
+    for (UVRHandComponent* H : Hands)
     {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            if (PC->IsLocalController())
-            {
-                ChatWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-                ChatWidgetComp->SetWidgetClass(ChatWidgetClass);
-                ChatWidgetComp->InitWidget();
-                ChatWidget = Cast<UChatWidget>(ChatWidgetComp->GetUserWidgetObject());
-            }
-        }
+        if (H) H->UpdateTracking(DeltaTime);
     }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (H && H->UpdateGesture()) UpdateGrabInput(H->IsLeft());
+    }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (!H) continue;
+        // 인벤토리가 열렸거나 그 손에 이미 쥔 게 있으면 새로 쥐지 않는다(접촉 쥐기 유지·놓기는 계속 본다).
+        const bool bAllowNew = !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(H->GetHandSlot());
+        if (H->UpdateContactGrab(bAllowNew)) UpdateGrabInput(H->IsLeft(), H->IsContactHeld() ? H->GetContactItem() : nullptr);
+    }
+    for (UVRHandComponent* H : Hands)
+    {
+        if (H) H->SyncGrab();
+    }
+}
 
-    // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
-    // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
-    ApplyInventoryPresentation(false);
+const FXRHandTrackingState& AVRPawn::GetHandTrackState(EControllerHand Hand) const
+{
+    static const FXRHandTrackingState Invalid;
+    const UVRHandComponent* H = GetHand(Hand);
+    return H ? H->GetTrackState() : Invalid;
 }
 
 // ============================================================================
@@ -318,39 +324,14 @@ void AVRPawn::Tick(float DeltaTime)
     UpdateBodyRotation(DeltaTime);
     UpdatePosture();
     UpdateDynamicCapsule(DeltaTime);
-    UpdateHUDPanelFacing();
-    UpdateHUDPanelGaze(DeltaTime);
-    UpdateChatPanelVisibility();
-    UpdatePointerVisual();
-    UpdateItemTooltip();
+    UpdateBodyPlacement();
+    if (PlayerUI) PlayerUI->Update(DeltaTime);
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
+    UpdateHands(DeltaTime);
 
-    // 동역학 근접 — 손(Grip 컨트롤러) 속도 추적. ½mv² 의 v. 컨트롤러는 kinematic 이라
-    // GetVelocity()=0 → 위치 델타/dt 수동 산출. EMA 로 트래킹 스파이크 평탄화.
-    if (DeltaTime > KINDA_SMALL_NUMBER && MotionControllerLeft && MotionControllerRight)
-    {
-        const FVector CurL = MotionControllerLeft->GetComponentLocation();
-        const FVector CurR = MotionControllerRight->GetComponentLocation();
-        if (bHandVelInit)
-        {
-            // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
-            // 0 처리. ½mv² 데미지 폭주·물리 폭발 차단. 속도(cm/s) 기준이라 프레임레이트 독립(저FPS 정상스윙 오판 X).
-            const FVector VelL = (CurL - PrevHandLocLeft) / DeltaTime;
-            const FVector VelR = (CurR - PrevHandLocRight) / DeltaTime;
-            const FVector RawL = (VelL.Size() > 9000.f) ? FVector::ZeroVector : VelL;
-            const FVector RawR = (VelR.Size() > 9000.f) ? FVector::ZeroVector : VelR;
-            HandVelLeft  = FMath::Lerp(HandVelLeft,  RawL, HandVelSmoothing);
-            HandVelRight = FMath::Lerp(HandVelRight, RawR, HandVelSmoothing);
-
-            // 근접 타격 — 컨트롤러 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피).
-            TryMeleeHits(CurR, HandVelRight, /*bRightHand=*/true);
-            TryMeleeHits(CurL, HandVelLeft,  /*bRightHand=*/false);
-        }
-        PrevHandLocLeft  = CurL;
-        PrevHandLocRight = CurR;
-        bHandVelInit = true;
-    }
+    // 동역학 근접 — 손 갱신 뒤 실제 손 속도를 재고 그 손으로 친다.
+    if (MeleeCombat) MeleeCombat->Update(DeltaTime);
 }
 
 // ============================================================================
@@ -427,7 +408,10 @@ float AVRPawn::GetCurrentHMDHeight() const
 FTransform AVRPawn::GetHeadEffectorCS() const
 {
     if (!VRCamera || !GetMesh()) return FTransform::Identity;
-    FTransform T = VRCamera->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
+    // 위치는 눈이 아니라 머리 본 자리(눈 뒤·아래) — 눈 위치를 넘기면 FBIK 가 척추를 앞으로 당겨 몸이 쏠린다.
+    FTransform Head = VRCamera->GetComponentTransform();
+    Head.AddToTranslation(Head.GetRotation().RotateVector(EyeToHeadOffset));
+    FTransform T = Head.GetRelativeTransform(GetMesh()->GetComponentTransform());
     // 머리 본 축 보정을 로컬 공간에 적용(우측 곱).
     T.SetRotation(T.GetRotation() * HeadEffectorOffset.Quaternion());
     return T;
@@ -435,19 +419,12 @@ FTransform AVRPawn::GetHeadEffectorCS() const
 
 FTransform AVRPawn::GetLeftHandEffectorCS() const
 {
-    if (!MotionControllerLeft || !GetMesh()) return FTransform::Identity;
-    FTransform T = MotionControllerLeft->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
-    // 그립 축 보정을 손 로컬 공간에 적용(우측 곱) — 손이 회전해도 보정이 따라감.
-    T.SetRotation(T.GetRotation() * LeftHandGripOffset.Quaternion());
-    return T;
+    return HandLeft ? HandLeft->GetEffectorCS(GetMesh()) : FTransform::Identity;
 }
 
 FTransform AVRPawn::GetRightHandEffectorCS() const
 {
-    if (!MotionControllerRight || !GetMesh()) return FTransform::Identity;
-    FTransform T = MotionControllerRight->GetComponentTransform().GetRelativeTransform(GetMesh()->GetComponentTransform());
-    T.SetRotation(T.GetRotation() * RightHandGripOffset.Quaternion());
-    return T;
+    return HandRight ? HandRight->GetEffectorCS(GetMesh()) : FTransform::Identity;
 }
 
 void AVRPawn::UpdatePosture()
@@ -501,6 +478,24 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
            *UEnum::GetValueAsString(CurrentPosture));
 
     OnPostureChanged.Broadcast(CurrentPosture);
+}
+
+void AVRPawn::UpdateBodyPlacement()
+{
+    USkeletalMeshComponent* Body = GetMesh();
+    if (!Body || !VRCamera || Body->IsSimulatingPhysics()) return;   // 래그돌 중엔 물리가 메시를 움직인다
+
+    // 발: 메시는 기본 캡슐 높이 기준으로 붙어 있다. 캡슐이 HMD 높이에 맞춰 줄면(앉기·숙이기) 그만큼 올려 발을 바닥에 둔다 —
+    // 안 올리면 몸 전체가 바닥 아래로 가라앉아 어깨·팔꿈치가 실제보다 낮아진다(앉은 자세 실측 약 20cm). 몸 낮추기는 FBIK 가 무릎·허리로.
+    Body->SetRelativeLocation(FVector(MeshBaseRelativeLocation.X, MeshBaseRelativeLocation.Y,
+                                      MeshBaseRelativeLocation.Z + (BaseCapsuleHalfHeight - InterpedCapsuleHalfHeight)));
+
+    // 수평: 캡슐은 충돌용으로 HMD(눈) 아래를 따르지만, 몸 메시는 목 아래에 둔다(착석 중엔 의자 배치 유지).
+    if (SeatedFurniture.IsValid()) return;
+    const FTransform Eye = VRCamera->GetComponentTransform();
+    const FVector Neck = Eye.GetLocation() + Eye.GetRotation().RotateVector(EyeToNeckOffset);
+    const FVector Current = Body->GetComponentLocation();
+    Body->SetWorldLocation(FVector(Neck.X, Neck.Y, Current.Z));
 }
 
 void AVRPawn::UpdateDynamicCapsule(float DeltaTime)
@@ -571,6 +566,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_Grab)
         {
             EIC->BindAction(IA_Grab, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartRight);
+            EIC->BindAction(IA_Grab, ETriggerEvent::Triggered, this, &AVRPawn::OnGrabValueRight);
             // 그립을 뗀 순간이 곧 던지는 순간 — Completed 뿐 아니라 Canceled 도 받아야
             // 트래킹이 끊기며 취소된 경우에 아이템이 손에 영구히 붙어 남지 않는다.
             EIC->BindAction(IA_Grab, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseRight);
@@ -579,6 +575,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_GrabLeft)
         {
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Started,   this, &AVRPawn::OnGrabStartLeft);
+            EIC->BindAction(IA_GrabLeft, ETriggerEvent::Triggered, this, &AVRPawn::OnGrabValueLeft);
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Completed, this, &AVRPawn::OnGrabReleaseLeft);
             EIC->BindAction(IA_GrabLeft, ETriggerEvent::Canceled,  this, &AVRPawn::OnGrabReleaseLeft);
         }
@@ -765,61 +762,15 @@ void AVRPawn::OnTurn(const FInputActionValue& Value)
 
     // 인벤토리가 열려 있는 동안 같은 스틱이 회전과 슬롯 이동을 겸하면 아이템을 고르다 몸이 돈다.
     // 회전을 0 으로 확실히 죽이고 선택만 처리한다.
-    if (bInventoryOpen)
+    if (IsInventoryOpen())
     {
         TurnAxisInput = 0.f;
-        UpdateInventorySelection(Stick);
+        PlayerUI->NavigateInventory(Stick);
         return;
     }
 
     // 입력값만 저장 — 실제 회전은 Tick(UpdateSmoothTurn)에서 프레임 보정 적용.
     TurnAxisInput = Stick.X;
-}
-
-void AVRPawn::UpdateInventorySelection(const FVector2D& Stick)
-{
-    if (!Inventory || Inventory->InventorySlots.Num() == 0) return;
-
-    // 기울임 임계와 복귀 임계를 따로 둔다 — 하나면 경계에서 떨려 여러 칸이 한 번에 넘어간다.
-    const float PushThreshold = 0.6f;
-    const float ReleaseThreshold = 0.3f;
-
-    if (!bSlotNavArmed)
-    {
-        if (FMath::Abs(Stick.X) < ReleaseThreshold && FMath::Abs(Stick.Y) < ReleaseThreshold)
-        {
-            bSlotNavArmed = true;
-        }
-        return;
-    }
-
-    int32 Step = 0;
-    if (FMath::Abs(Stick.X) >= PushThreshold)
-    {
-        Step = (Stick.X > 0.f) ? 1 : -1;
-    }
-    else if (FMath::Abs(Stick.Y) >= PushThreshold)
-    {
-        // 스틱을 위로 = 윗줄 = 인덱스 감소. 그리드가 좌→우, 위→아래로 채워지기 때문.
-        Step = (Stick.Y > 0.f) ? -InventoryGridColumns : InventoryGridColumns;
-    }
-    else
-    {
-        return;
-    }
-
-    bSlotNavArmed = false;
-    Inventory->SetSelectedSlot(Inventory->SelectedSlotIndex + Step);
-
-    if (bDebugInventorySelection && GEngine)
-    {
-        const FInventorySlot& Slot = Inventory->InventorySlots[Inventory->SelectedSlotIndex];
-        const FString Label = Slot.IsEmpty()
-            ? TEXT("(빈 칸)")
-            : FString::Printf(TEXT("%s x%d"), *Slot.ItemData.ItemID, Slot.Count);
-        GEngine->AddOnScreenDebugMessage(8811, 2.f, FColor::Cyan,
-            FString::Printf(TEXT("[인벤] %d번 슬롯: %s"), Inventory->SelectedSlotIndex, *Label));
-    }
 }
 
 void AVRPawn::OnTurnReleased(const FInputActionValue& Value)
@@ -901,12 +852,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 {
     // 인벤토리 열림 중 트리거는 UI 클릭 — 투사체를 쏘지 않는다.
     // 안 막으면 슬롯을 누를 때마다 손앞으로 발사체가 나간다.
-    if (bInventoryOpen && HUDInteractor)
-    {
-        HUDInteractor->PressPointerKey(EKeys::LeftMouseButton);
-        bPointerPressed = true;
-        return;
-    }
+    if (PlayerUI && PlayerUI->PressPointer()) return;
 
     RemoveStateTag(TAG_State_Idle);
     AddStateTag(TAG_State_Action_Combat_Attack);
@@ -916,7 +862,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 
     // 동역학 원거리 — 히트스캔 폐기, 투사체 발사. 오른손 Aim 포즈(조준 정렬) 기준 전방.
     // 명중·데미지는 투사체의 ½mv²(KineticProjectile::OnHit)가 처리. 근접은 스윙 overlap.
-    if (ProjectileClass && MotionControllerRightAim)
+    if (ProjectileClass && MotionControllerRightAim && MeleeCombat)
     {
         const FVector  SpawnLoc = MotionControllerRightAim->GetComponentLocation();
         const FRotator SpawnRot = MotionControllerRightAim->GetComponentRotation();
@@ -929,7 +875,7 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
         if (AKineticProjectile* Proj = GetWorld()->SpawnActor<AKineticProjectile>(ProjectileClass, SpawnLoc, SpawnRot, SpawnParams))
         {
             // 근접과 동일한 J→HP 환산·상한 주입 — 전투 일관성.
-            Proj->InitProjectile(this, KineticDamageScale, MaxKineticDamage);
+            Proj->InitProjectile(this, MeleeCombat->KineticDamageScale, MeleeCombat->MaxKineticDamage);
         }
     }
 
@@ -951,120 +897,13 @@ void AVRPawn::OnAttack(const FInputActionValue& /*Value*/)
 
 void AVRPawn::OnAttackReleased(const FInputActionValue& /*Value*/)
 {
-    if (!bPointerPressed || !HUDInteractor) return;
-    HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
-    bPointerPressed = false;
+    if (PlayerUI) PlayerUI->ReleasePointer();
 }
 
 void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
 {
     RemoveStateTag(TAG_State_Action_Combat_Attack);
     AddStateTag(TAG_State_Idle);
-}
-
-void AVRPawn::TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand)
-{
-    // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→피격자 인지).
-    // 대상은 ACombatCharacter(SmartNPC·EnemyCharacter) — 적 클래스도 같은 스윙·투사체 규약으로 맞는다.
-    // 가벼운 밀침(bPush~bStrike 사이)은 데미지 없음 = LLM 이 공격으로 안 봄.
-    const float SpeedMs = HandVel.Size() / 100.f;          // cm/s → m/s
-    const bool  bPush   = SpeedMs >= MinImpactSpeed;
-    const bool  bStrike = SpeedMs >= MeleeStrikeSpeed;
-    if (!bPush) return;
-
-    // 무기를 쥐고 있으면 판정 형상을 그 무기로 바꾼다. 손 주변 구만 보면 검을 휘둘러도
-    // 칼날이 닿는 거리에서는 아무 일도 일어나지 않아 맨손과 사거리가 같아진다.
-    const EEquipmentSlot HandSlot = bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
-    const ADroppedItemBase* Held = Inventory ? Inventory->GetHeldItem(HandSlot) : nullptr;
-    const UStaticMeshComponent* HeldMesh = (Held && Held->ItemMesh) ? Held->ItemMesh : nullptr;
-
-    FVector QueryLoc = HandLoc;
-    FQuat QueryRot = FQuat::Identity;
-    FCollisionShape QueryShape = FCollisionShape::MakeSphere(MeleeSphereRadius);
-    float ImpactMass = WeaponMass;
-
-    if (HeldMesh && HeldMesh->GetStaticMesh())
-    {
-        // 회전은 컴포넌트에서 받고 크기는 로컬 바운즈에서 받는다. 월드 바운즈의 Extent 는
-        // 축 정렬이라 기울어진 검일수록 실제보다 큰 상자가 된다.
-        const FVector LocalExtent = HeldMesh->GetStaticMesh()->GetBounds().BoxExtent * HeldMesh->GetComponentScale();
-
-        QueryLoc = HeldMesh->GetComponentTransform().TransformPosition(HeldMesh->GetStaticMesh()->GetBounds().Origin);
-        QueryRot = HeldMesh->GetComponentQuat();
-        QueryShape = FCollisionShape::MakeBox(LocalExtent);
-
-        // 질량도 쥔 물건 것으로 — DroppedItemBase::BeginPlay 가 테이블 Weight 를 질량 오버라이드로 박아 뒀다.
-        // GetMass() 는 쓰면 안 된다: 쥔 동안 물리가 꺼져 있어 매 프레임 경고를 찍고 0 을 돌려주므로
-        // 근접 피해가 0.01kg 기준으로 뭉개진다. 오버라이드 없는 메시는 폰 기본 WeaponMass.
-        if (const FBodyInstance* Body = HeldMesh->GetBodyInstance(); Body && Body->bOverrideMass)
-        {
-            ImpactMass = FMath::Max(Body->GetMassOverride(), 0.01f);
-        }
-    }
-
-    // 능동 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
-    TArray<FOverlapResult> Overlaps;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeHit), /*bTraceComplex=*/false, this);
-    // Pawn(서 있는 NPC 캡슐) + PhysicsBody(넉다운 래그돌 메시) 둘 다 — 쓰러진 NPC 저글 타격 가능(의도된 동작).
-    FCollisionObjectQueryParams ObjParams;
-    ObjParams.AddObjectTypesToQuery(ECC_Pawn);
-    ObjParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-    const bool bAnyOverlap = GetWorld()->OverlapMultiByObjectType(Overlaps, QueryLoc, QueryRot,
-        ObjParams, QueryShape, Params);
-
-    if (!bAnyOverlap) return;
-
-    const float Now = GetWorld()->GetTimeSeconds();
-
-    const float Damage = KineticDamage::Compute(ImpactMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
-
-    for (const FOverlapResult& O : Overlaps)
-    {
-        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
-        if (!NPC) continue;
-
-        // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
-        if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
-        NPC->LastMeleeHitTime = Now;
-
-        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
-        // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
-        if (bStrike)
-        {
-            // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
-            // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
-            ASmartNPC* SmartTarget = Cast<ASmartNPC>(NPC);
-            FDiceResult ParryRoll;
-            const bool bParried = SmartTarget && SmartTarget->StateComponent
-                && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
-                                             SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
-            if (bParried)
-            {
-                // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
-                if (SmartTarget->ParrySound)
-                {
-                    UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
-                }
-                const FPerceptionData ParryPerc(
-                    ASmartNPC::PerceptionIdFor(this), ESenseType::Parried,
-                    GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
-                SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
-            }
-            else
-            {
-                // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
-                KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, HandVel.GetSafeNormal(), GetController(), this);
-            }
-        }
-
-        // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
-        if (!NPC->bIsDead && KnockbackScale > 0.f)
-        {
-            const float PushSpeed = FMath::Min(SpeedMs * KnockbackScale, MaxKnockbackSpeed);
-            const FVector PushVel = HandVel.GetSafeNormal() * PushSpeed;
-            NPC->LaunchCharacter(PushVel, /*bXYOverride=*/true, /*bZOverride=*/false);
-        }
-    }
 }
 
 // ============================================================================
@@ -1110,7 +949,7 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
     if (!ItemManager) return nullptr;
 
     ADroppedItemBase* Nearest = nullptr;
-    float NearestDistSq = TNumericLimits<float>::Max();
+    float NearestDist = TNumericLimits<float>::Max();
     for (ADroppedItemBase* Dropped : ItemManager->GetItemsInRange(Origin, Radius))
     {
         // 거래 접시에 올라간 물건은 손으로 못 뺀다 — 올려둔 채 취소를 누르면 인벤토리 반환과
@@ -1119,172 +958,27 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
         // 진열품은 Interact 픽업 후보에서 뺀다 — 공짜 획득 경로. 그랩은 구매 판정을 타므로 포함.
         if (Dropped->bIsDisplayed && !bIncludeDisplayed) continue;
 
-        const float DistSq = FVector::DistSquared(Origin, Dropped->GetActorLocation());
-        if (DistSq < NearestDistSq)
+        // 메시 표면까지 거리 — 긴 물건 끝을 잡아도 중심이 멀다고 옆의 작은 물건에 지지 않게. 충돌이 꺼져 못 재면 액터 위치.
+        FVector Closest;
+        float Dist = IsValid(Dropped->ItemMesh) ? Dropped->ItemMesh->GetClosestPointOnCollision(Origin, Closest) : -1.f;
+        if (Dist < 0.f) Dist = FVector::Dist(Origin, Dropped->GetActorLocation());
+        if (Dist < NearestDist)
         {
-            NearestDistSq = DistSq;
+            NearestDist = Dist;
             Nearest = Dropped;
         }
     }
     return Nearest;
 }
 
-void AVRPawn::DumpInventoryHUD()
-{
-    auto Report = [this](const FString& Line)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[InvDump] %s"), *Line);
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Yellow, FString::Printf(TEXT("[InvDump] %s"), *Line));
-    };
-
-    if (!Inventory)
-    {
-        Report(TEXT("Inventory 컴포넌트 없음"));
-        return;
-    }
-
-    Report(FString::Printf(TEXT("슬롯 %d개"), Inventory->InventorySlots.Num()));
-    for (const FInventorySlot& Slot : Inventory->InventorySlots)
-    {
-        Report(FString::Printf(TEXT("  - %s x%d"), *Slot.ItemData.ItemID, Slot.Count));
-    }
-
-    Report(FString::Printf(TEXT("HUDWidget=%s  HUDWidgetComp=%s  visible=%d  open=%d"),
-        HUDWidget ? TEXT("OK") : TEXT("NULL"),
-        HUDWidgetComp ? TEXT("OK") : TEXT("NULL"),
-        HUDWidgetComp ? (HUDWidgetComp->IsVisible() ? 1 : 0) : -1,
-        bInventoryOpen ? 1 : 0));
-
-    if (HUDWidget)
-    {
-        // 위젯이 폰을 못 잡으면 슬롯 조회가 통째로 빈 배열이 된다 — UI 무반응의 주 원인.
-        Report(FString::Printf(TEXT("위젯 OwnerPawn=%s  위젯이 본 슬롯 %d개  패널열림=%d"),
-            HUDWidget->GetOwningPlayerPawn() ? *HUDWidget->GetOwningPlayerPawn()->GetName() : TEXT("NULL"),
-            HUDWidget->GetInventorySlots().Num(),
-            HUDWidget->IsInventoryVisible() ? 1 : 0));
-    }
-}
-
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
-    if (!HUDWidget) return;
-
-    bInventoryOpen = HUDWidget->ToggleInventoryVisibility();
-    ApplyInventoryPresentation(bInventoryOpen);
+    if (PlayerUI) PlayerUI->ToggleInventory();
 }
 
-void AVRPawn::ToggleInventory()
+bool AVRPawn::IsInventoryOpen() const
 {
-    OnInventoryToggle(FInputActionValue());
-}
-
-void AVRPawn::UpdateHUDPanelGaze(float DeltaTime)
-{
-    if (!HUDWidgetComp || !VRCamera) return;
-
-    // 인벤토리를 연 동안에는 시선과 무관하게 완전 불투명. 슬롯을 조준하다 고개가 조금
-    // 돌아갔다고 패널이 흐려지면 조작이 끊긴다.
-    float TargetOpacity = 1.f;
-    if (!bInventoryOpen)
-    {
-        const FVector ToPanel =
-            (HUDWidgetComp->GetComponentLocation() - VRCamera->GetComponentLocation()).GetSafeNormal();
-        const float GazeDot = FVector::DotProduct(VRCamera->GetForwardVector(), ToPanel);
-        TargetOpacity = (GazeDot >= HUDGazeDotThreshold) ? 1.f : 0.f;
-    }
-
-    // 목표값을 그대로 쓰면 임계 경계에서 손 떨림만으로 깜빡인다 — 보간이 히스테리시스 역할.
-    HUDPanelOpacity = FMath::FInterpTo(HUDPanelOpacity, TargetOpacity, DeltaTime, HUDGazeFadeSpeed);
-    HUDWidgetComp->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, HUDPanelOpacity));
-}
-
-void AVRPawn::UpdateHUDPanelFacing()
-{
-    if (!HUDWidgetComp || !VRCamera) return;   // 패널이 상시 표시라 인벤토리 개폐와 무관하게 매 Tick 정면 유지
-
-    // 위치는 왼손을 따라가고 회전만 HMD 를 향한다. 손목을 어떻게 돌려도 정면으로 읽힌다.
-    const FVector PanelLoc = HUDWidgetComp->GetComponentLocation();
-    const FVector CamLoc   = VRCamera->GetComponentLocation();
-    const FVector ToCam    = CamLoc - PanelLoc;
-    if (ToCam.IsNearlyZero()) return;
-
-    // Rotation() 은 X 축을 ToCam 방향에 맞추고 Roll 0 — 패널이 기울지 않는다.
-    const FQuat LookAt = ToCam.Rotation().Quaternion();
-    HUDWidgetComp->SetWorldRotation(LookAt * HUDPanelRotation.Quaternion());
-}
-
-void AVRPawn::UpdateChatPanelVisibility()
-{
-    if (!ChatWidgetComp || !ChatWidget) return;
-    if (ChatWidgetComp->IsVisible() && !ChatWidget->IsChatFocused())
-    {
-        ChatWidgetComp->SetVisibility(false);
-    }
-}
-
-void AVRPawn::ApplyInventoryPresentation(bool bOpen)
-{
-    // HUDWidgetComp 는 여기서 건드리지 않는다 — 패널에 HP·스태미나 게이지가 상시 표시되고,
-    // 인벤토리 슬롯만 위젯 내부에서 접힌다. 컴포넌트를 통째로 숨기면 게이지까지 같이 사라진다.
-    if (HUDInteractor)
-    {
-        // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
-        if (!bOpen && bPointerPressed)
-        {
-            HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
-            bPointerPressed = false;
-        }
-        HUDInteractor->SetActive(bOpen);
-        HUDInteractor->SetVisibility(bOpen);
-    }
-
-    // 닫는 프레임에 바로 끈다 — Tick 을 기다리면 한 프레임 광선이 남는다.
-    if (!bOpen)
-    {
-        if (PointerBeam) PointerBeam->SetVisibility(false);
-        if (PointerDot)  PointerDot->SetVisibility(false);
-    }
-}
-
-// 포인터 광선 갱신 — 조준 결과(WidgetInteraction 의 마지막 히트)를 그대로 그린다.
-// 별도 트레이스를 또 쏘지 않는 이유: 광선과 실제 클릭 판정이 어긋나면 보이는 곳과 눌리는 곳이 달라진다.
-void AVRPawn::UpdatePointerVisual()
-{
-    if (!PointerBeam || !PointerDot || !HUDInteractor) return;
-
-    if (!bInventoryOpen)
-    {
-        if (PointerBeam->IsVisible()) PointerBeam->SetVisibility(false);
-        if (PointerDot->IsVisible())  PointerDot->SetVisibility(false);
-        return;
-    }
-
-    const FHitResult& Hit = HUDInteractor->GetLastHitResult();
-    const bool bHit = Hit.bBlockingHit;
-    const float Length = bHit ? Hit.Distance : HUDInteractionDistance;
-
-    // 원통 기본 크기 100cm(지름 100) 기준 → 실치수/100 이 스케일.
-    PointerBeam->SetRelativeScale3D(FVector(PointerBeamThickness / 100.f,
-                                            PointerBeamThickness / 100.f,
-                                            FMath::Max(Length, 1.f) / 100.f));
-    // 원통은 중심 기준이라 절반 지점에 놓아야 손끝에서 히트점까지 정확히 채워진다.
-    PointerBeam->SetRelativeLocation(FVector(Length * 0.5f, 0.f, 0.f));
-    PointerBeam->SetVisibility(true);
-
-    if (bHit)
-    {
-        // 히트점은 부모 회전과 무관한 월드 좌표 — 위젯 면에 살짝 띄워 Z-파이팅을 피한다.
-        PointerDot->SetWorldLocation(Hit.ImpactPoint + Hit.ImpactNormal * 0.3f);
-    }
-    PointerDot->SetVisibility(bHit);
-
-    // 색 전환은 상태가 바뀌는 프레임에만 — MID 파라미터 쓰기는 매 틱 돌릴 만큼 싸지 않다.
-    if (PointerMID && bHit != bPointerWasHitting)
-    {
-        const FLinearColor C = bHit ? PointerHitColor : PointerColor;
-        PointerMID->SetVectorParameterValue(TEXT("Color"), C);
-        bPointerWasHitting = bHit;
-    }
+    return PlayerUI && PlayerUI->IsInventoryOpen();
 }
 
 bool AVRPawn::TrySitOnNearbyFurniture()
@@ -1322,12 +1016,44 @@ void AVRPawn::StandUpFromFurniture()
 // 물리 손 쥐기 — 그립으로 월드 아이템을 직접 쥐고, 놓으면 던지거나 NPC 에게 건넨다.
 // ============================================================================
 
-void AVRPawn::OnGrabStartRight(const FInputActionValue& /*Value*/) { HandleGrabStart(/*bLeft=*/false); }
-void AVRPawn::OnGrabStartLeft(const FInputActionValue& /*Value*/)  { HandleGrabStart(/*bLeft=*/true); }
-void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { HandleGrabRelease(/*bLeft=*/false); }
-void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { HandleGrabRelease(/*bLeft=*/true); }
+void AVRPawn::OnGrabStartRight(const FInputActionValue& Value)       { HandleGripValue(false, Value.Get<float>()); bGripHeld[1] = true; UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabStartLeft(const FInputActionValue& Value)        { HandleGripValue(true, Value.Get<float>());  bGripHeld[0] = true; UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabReleaseRight(const FInputActionValue& /*Value*/) { HandleGripValue(false, 0.f); bGripHeld[1] = false; UpdateGrabInput(/*bLeft=*/false); }
+void AVRPawn::OnGrabReleaseLeft(const FInputActionValue& /*Value*/)  { HandleGripValue(true, 0.f);  bGripHeld[0] = false; UpdateGrabInput(/*bLeft=*/true); }
+void AVRPawn::OnGrabValueRight(const FInputActionValue& Value)       { HandleGripValue(false, Value.Get<float>()); }
+void AVRPawn::OnGrabValueLeft(const FInputActionValue& Value)        { HandleGripValue(true, Value.Get<float>()); }
 
-void AVRPawn::HandleGrabStart(bool bLeft)
+void AVRPawn::HandleGripValue(bool bLeft, float Value)
+{
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand) return;
+    Hand->SetGripValue(Value);
+
+    // 그립을 누른 채 손에 든 게 없으면(약하게 쥐어 못 들었음) 매 프레임 다시 쥐어 본다 — 더 세게 쥐면 들린다.
+    // 인벤토리가 열렸으면 그립은 슬롯 발동이라 되풀이하지 않는다.
+    const int32 h = bLeft ? 0 : 1;
+    // 두 번째 손(양손 쥐기)은 인벤토리 슬롯이 비어 있으니 이미 제약으로 쥐고 있는지도 본다 — 안 보면 매 프레임 다시 쥔다.
+    if (bGripHeld[h] && bGrabInputActive[h] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()) && !Hand->GetGrabbedItem())
+    {
+        HandleGrabStart(bLeft);
+    }
+}
+
+void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
+{
+    const int32 h = bLeft ? 0 : 1;
+    // 핸드트래킹 핀치·주먹은 인벤토리가 열렸을 때 슬롯 발동에만 쓴다 — 월드 아이템은 접촉 쥐기(UpdateContactGrab)가 맡는다.
+    // 제스처는 손가락이 이미 물건 속에 들어간 뒤에야 성립해, 그때 쥐면 밀려난 손이 튀며 제약이 끊겼다.
+    const UVRHandComponent* Hand = GetHand(bLeft);
+    const bool bGesture = IsInventoryOpen() && Hand && Hand->IsGesturing();
+    const bool bHeld = bGripHeld[h] || (Hand && Hand->IsContactHeld()) || bGesture;
+    if (bHeld == bGrabInputActive[h]) return;
+    bGrabInputActive[h] = bHeld;
+    if (bHeld) HandleGrabStart(bLeft, Target);
+    else       HandleGrabRelease(bLeft);
+}
+
+void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
     UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
@@ -1335,33 +1061,18 @@ void AVRPawn::HandleGrabStart(bool bLeft)
     if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
-    // 종류별 분기(소비=사용 / 장비=장착 / 일반=손에 쥐기)는 ActivateItem 이 들고 있어서 여기서 다시 보지 않는다.
-    if (bInventoryOpen && Inventory)
+    if (IsInventoryOpen())
     {
-        if (!Inventory->InventorySlots.IsValidIndex(Inventory->SelectedSlotIndex)) return;
-
-        const FInventorySlot& Slot = Inventory->InventorySlots[Inventory->SelectedSlotIndex];
-        if (Slot.IsEmpty())
-        {
-            if (bDebugInventorySelection && GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(8812, 2.f, FColor::Orange, TEXT("[인벤] 빈 슬롯 — 꺼낼 것 없음"));
-            }
-            return;
-        }
-
-        const FString ItemID = Slot.ItemData.ItemID;
-        const bool bActivated = Inventory->ActivateItem(ItemID, HandSlot);
-        if (bDebugInventorySelection && GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(8812, 2.f, bActivated ? FColor::Green : FColor::Red,
-                FString::Printf(TEXT("[인벤] %s %s"), *ItemID, bActivated ? TEXT("발동") : TEXT("발동 실패")));
-        }
+        PlayerUI->ActivateSelectedSlot(HandSlot);
         return;
     }
 
-    ADroppedItemBase* Nearest = FindNearestItemNearHand(GrabRadius, bLeft);
+    ADroppedItemBase* Nearest = Target ? Target : FindNearestItemNearHand(GrabRadius, bLeft);
     if (!Nearest) return;
+
+    // 물리 손이 없거나 쥐는 힘의 마찰 한계가 무게보다 작으면 안 든다(구매 판정보다 먼저 — 못 들 물건 값을 받지 않게).
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand || !Hand->IsPhysicsActive() || Hand->GetGrabbedItem() || !Hand->CanHold(Nearest)) return;
 
     // 진열품은 구매가 먼저 — 가판대가 CanAddItem → 골드 차감 → 진열 해제까지 한 번에 판정한다.
     // 거부되면 손에 붙이지 않는다(붙였다 뺏으면 복사 버그 — TradeSession 의 교훈).
@@ -1371,114 +1082,43 @@ void AVRPawn::HandleGrabStart(bool bLeft)
         if (!Stall || !Stall->TryPurchase(Nearest, Inventory)) return;
     }
 
-    Inventory->AttachItemToHand(Nearest, HandSlot);
-    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
+    // 물리 손과 아이템을 마찰 한도 제약으로 잇는다(무게·토크를 엔진이 계산).
+    if (Hand->GrabWithPhysics(Nearest, /*bKeepCollision=*/Target != nullptr))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 쥠: %s"), *Nearest->ItemData.ItemTemplateID);
+    }
 }
 
 ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) const
 {
-    const UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
-    if (!HandController) return nullptr;
+    const UVRHandComponent* Anchor = GetHand(bLeft);
+    if (!IsValid(Anchor)) return nullptr;
 
-    // 판정 원점은 폰이 아니라 컨트롤러 위치 — 손을 뻗은 곳에 있는 것만 걸려야 한다.
-    return FindNearestItem(HandController->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
-}
-
-void AVRPawn::UpdateItemTooltip()
-{
-    if (!ItemTooltipComp || !VRCamera) return;
-
-    // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
-    // 손을 따라다니는 이름표는 시야만 가린다.
-    const bool bHolding = Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand)
-                                     || Inventory->GetHeldItem(EEquipmentSlot::OffHand));
-    ADroppedItemBase* Target = bHolding ? nullptr : FindNearestItemNearHand(TooltipRange, /*bLeft=*/false);
-
-    if (!Target)
-    {
-        if (ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(false);
-        TooltipTarget = nullptr;
-        return;
-    }
-
-    // 대상이 바뀔 때만 텍스트를 다시 만든다 — 매 틱 SetText 는 폰트 셰이핑을 다시 돌려
-    // VR 90Hz 에서 프레임을 갉아먹는다(HUD 게이지와 같은 이유).
-    if (Target != TooltipTarget)
-    {
-        TooltipTarget = Target;
-
-        UItemManager* ItemManager = UItemManager::Get(this);
-
-        FItemData Data;
-        if (ItemManager && ItemManager->GetItemDataByID(Target->ItemData.ItemTemplateID, Data))
-        {
-            if (UItemTooltipWidget* Tooltip = Cast<UItemTooltipWidget>(ItemTooltipComp->GetUserWidgetObject()))
-            {
-                Tooltip->SetItem(Data, Target->Amount, Target->bIsDisplayed ? Target->DisplayPrice : -1);
-            }
-        }
-        else
-        {
-            // 마스터 테이블에 없는 ID 면 이름표를 띄우지 않는다 — 빈 상자만 뜨는 게 더 헷갈린다.
-            ItemTooltipComp->SetVisibility(false);
-            return;
-        }
-    }
-
-    const FVector TooltipLoc = Target->GetActorLocation() + FVector(0.f, 0.f, TooltipHeightOffset);
-    ItemTooltipComp->SetWorldLocation(TooltipLoc);
-
-    // 위젯의 가시면은 +X 라 X 축을 카메라로 향하게 한다(HUD 패널과 같은 규칙).
-    const FVector ToCam = VRCamera->GetComponentLocation() - TooltipLoc;
-    if (!ToCam.IsNearlyZero())
-    {
-        ItemTooltipComp->SetWorldRotation(ToCam.Rotation());
-    }
-
-    if (!ItemTooltipComp->IsVisible()) ItemTooltipComp->SetVisibility(true);
-}
-
-void AVRPawn::TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll)
-{
-    // 오른손을 먼저 본다. 오른손이 비어 있으면 왼손에 쥔 것을 튜닝 대상으로 삼는다.
-    ADroppedItemBase* Held = nullptr;
-    if (Inventory)
-    {
-        Held = Inventory->GetHeldItem(EEquipmentSlot::MainHand);
-        if (!Held) Held = Inventory->GetHeldItem(EEquipmentSlot::OffHand);
-    }
-    if (!IsValid(Held))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] TuneGrab — 쥔 아이템이 없습니다."));
-        return;
-    }
-
-    // 델타로 밀고 절대값을 찍는다. VR 을 쓴 채로는 수치를 못 읽으니, 찍힌 값을 그대로
-    // DT_ItemRegistry 의 HoldOffset/HoldRotation 에 붙여넣어 확정하는 흐름.
-    // 델타가 전부 0 이면 밀지 않고 현재 값만 나오므로 그게 곧 조회 명령이 된다.
-    Held->AddActorLocalOffset(FVector(DX, DY, DZ));
-    Held->AddActorLocalRotation(FRotator(DPitch, DYaw, DRoll));
-
-    const FVector Loc = Held->GetRootComponent()->GetRelativeLocation();
-    const FRotator Rot = Held->GetRootComponent()->GetRelativeRotation();
-
-    // CSV 에 그대로 붙일 수 있는 표기로 찍는다.
-    const FString Line = FString::Printf(
-        TEXT("[VRPawn] %s HoldOffset=\"(X=%.2f,Y=%.2f,Z=%.2f)\" HoldRotation=\"(Pitch=%.2f,Yaw=%.2f,Roll=%.2f)\""),
-        *Held->ItemData.ItemTemplateID, Loc.X, Loc.Y, Loc.Z, Rot.Pitch, Rot.Yaw, Rot.Roll);
-
-    UE_LOG(LogTemp, Log, TEXT("%s"), *Line);
-    if (GEngine) GEngine->AddOnScreenDebugMessage(8813, 8.f, FColor::Yellow, Line);
+    // 판정 원점은 폰이 아니라 실제 손(트래킹 앵커) — 손을 뻗은 곳에 있는 것만 걸려야 한다.
+    // 앵커는 핸드트래킹 손바닥 관절이다(컨트롤러를 쥐어도). 컨트롤러 위치를 쓰면 내려놓은 컨트롤러 주변을 찾는다.
+    return FindNearestItem(Anchor->GetComponentLocation(), Radius, /*bIncludeDisplayed=*/true);
 }
 
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
+    if (UVRHandComponent* Hand = GetHand(bLeft))
+    {
+        // 양손으로 쥔 물건 — 두 번째 손이 놓으면 제약만 푼다. 기록 손이 놓을 때 다른 손이 같이 쥐고 있으면 기록만 넘긴다.
+        // 마지막 손이 놓을 때만 아래의 수납·판매·건네기·던지기가 일어난다.
+        if (Hand->IsSecondaryGrab())
+        {
+            Hand->ReleaseGrab();
+            return;
+        }
+        if (Hand->HandOverToOtherHand()) return;
+        Hand->ReleaseGrab();
+    }
     if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
     // 인벤토리를 열어 둔 채 뗐으면 "집어넣겠다"는 뜻이라 회수한다(수납이 detach·해제까지 처리).
-    if (bInventoryOpen)
+    if (IsInventoryOpen())
     {
         Inventory->StoreHeldItem(HandSlot);
         return;
@@ -1530,8 +1170,9 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
     }
 
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
-    Item->LaunchThrown((bLeft ? HandVelLeft : HandVelRight) * ThrowVelocityScale, this,
-                       KineticDamageScale, MaxKineticDamage, MeleeStrikeSpeed);
+    if (!MeleeCombat) return;
+    Item->LaunchThrown(MeleeCombat->GetHandVelocity(bLeft) * ThrowVelocityScale, this,
+                       MeleeCombat->KineticDamageScale, MeleeCombat->MaxKineticDamage, MeleeCombat->MeleeStrikeSpeed);
 }
 
 bool AVRPawn::StoreHeldItemInInventory()
@@ -1539,14 +1180,6 @@ bool AVRPawn::StoreHeldItemInInventory()
     if (!Inventory) return false;
     return Inventory->StoreHeldItem(EEquipmentSlot::MainHand)
         || Inventory->StoreHeldItem(EEquipmentSlot::OffHand);
-}
-
-void AVRPawn::Cheat_Unequip(bool bOffHand)
-{
-    if (Inventory)
-    {
-        Inventory->UnequipItem(bOffHand ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand);
-    }
 }
 
 void AVRPawn::DetectNearbyNPC()
@@ -1573,15 +1206,14 @@ void AVRPawn::DetectNearbyNPC()
 
 FVector AVRPawn::GetHandLocation(bool bRightHand) const
 {
-    const UMotionControllerComponent* HandController = bRightHand ? MotionControllerRight : MotionControllerLeft;
-    return HandController ? HandController->GetComponentLocation() : GetActorLocation();
+    // 보이는 손(물리 손바닥)과 판정 손을 일치시킨다 — 벽 너머로 넣은 실제 손으로는 거래·막기 판정이 안 된다.
+    const UVRHandComponent* Hand = GetHand(!bRightHand);
+    return Hand ? Hand->GetVisibleLocation() : GetActorLocation();
 }
 
 void AVRPawn::OnChatKey()
 {
-    if (!ChatWidgetComp || !ChatWidget) return;
-    ChatWidgetComp->SetVisibility(true);
-    ChatWidget->FocusChatInput();
+    if (PlayerUI) PlayerUI->OpenChat();
 }
 
 void AVRPawn::SayToNpc(const FString& Text)
@@ -1602,44 +1234,6 @@ void AVRPawn::SayToNpc(const FString& Text)
         return;
     }
     PlayerInteractionUtils::SendDialogueToNpc(this, TEXT("Player"), CurrentTargetNPCID, Text);
-}
-
-void AVRPawn::LogIKMetrics()
-{
-    USkeletalMeshComponent* M = GetMesh();
-    if (!M || !MotionControllerRight) return;
-
-    // X_Bot 본 이름(접두어 없음). 어깨(상완 시작)→손 = 아바타 오른팔 길이.
-    const FVector Shoulder = M->GetSocketLocation(TEXT("RightArm"));
-    const FVector Hand     = M->GetSocketLocation(TEXT("RightHand"));
-    const float ArmLen     = (Hand - Shoulder).Size();
-
-    // 컨트롤러(=실제 손 타겟)가 아바타 어깨에서 떨어진 거리 = 필요한 도달거리.
-    const FVector Ctrl  = MotionControllerRight->GetComponentLocation();
-    const float Reach   = (Ctrl - Shoulder).Size();
-    const float Scale   = M->GetRelativeScale3D().X;
-
-    const FString Msg = FString::Printf(
-        TEXT("[IK] ArmLen=%.1f  Reach=%.1f  diff=%.1f  scale=%.3f  (Reach>ArmLen=팔짧음, Reach<<ArmLen=팔길어 팔꿈치접힘)"),
-        ArmLen, Reach, Reach - ArmLen, Scale);
-    UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
-
-    // 현재 이펙터 타겟(메시 공간) — CR 변수 Default Value 에 박아 프리뷰 재현용.
-    auto Dump = [](const TCHAR* Name, const FTransform& T)
-    {
-        const FVector L = T.GetLocation();
-        const FRotator R = T.Rotator();
-        UE_LOG(LogTemp, Warning,
-            TEXT("[IK] %s  Loc=(%.2f, %.2f, %.2f)  Rot=(P=%.2f, Y=%.2f, R=%.2f)"),
-            Name, L.X, L.Y, L.Z, R.Pitch, R.Yaw, R.Roll);
-    };
-    Dump(TEXT("HeadTarget     "), GetHeadEffectorCS());
-    Dump(TEXT("LeftHandTarget "), GetLeftHandEffectorCS());
-    Dump(TEXT("RightHandTarget"), GetRightHandEffectorCS());
-
-#if !UE_BUILD_SHIPPING
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, Msg);
-#endif
 }
 
 // ============================================================================
@@ -1690,30 +1284,8 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
     // EnemyCharacter 와 같은 공식: 원시 − 방어력 (최소 0).
     float Actual = FMath::Max(0.f, Raw - CurrentStats.Combat.Defense);
 
-    // Block/Parry — 아이템을 쥔 손이 공격자 쪽(수평 내적 ≥ BlockDotThreshold)에 있으면 막은 것.
-    // 그 손이 ParryHandSpeed 이상으로 움직이는 중이면 패링(데미지 0), 아니면 단순 방어(BlockDamageScale).
-    // 수평 투영 이유: 손은 캡슐 중심보다 늘 위에 있어 3D 내적으론 높이 든 손이 방어로 안 잡힘.
-    if (Actual > 0.f && DamageCauser && Inventory)
-    {
-        const FVector PlayerLoc = GetActorLocation();
-        const FVector AttackDir = (DamageCauser->GetActorLocation() - PlayerLoc).GetSafeNormal2D();
-        for (const bool bRight : { true, false })
-        {
-            if (!Inventory->GetHeldItem(bRight ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand)) continue;
-            const FVector HandDir = (GetHandLocation(bRight) - PlayerLoc).GetSafeNormal2D();
-            if (FVector::DotProduct(HandDir, AttackDir) < BlockDotThreshold) continue;
-
-            const float HandSpeed = (bRight ? HandVelRight : HandVelLeft).Size();
-            const bool  bParry    = HandSpeed >= ParryHandSpeed;
-            Actual = bParry ? 0.f : Actual * BlockDamageScale;
-            const FString Msg = FString::Printf(TEXT("[VRPawn] %s (%s손 %.0f cm/s) 데미지 %.1f (raw %.1f, def %.1f)"),
-                bParry ? TEXT("Parried") : TEXT("Blocked"), bRight ? TEXT("오른") : TEXT("왼"),
-                HandSpeed, Actual, Raw, CurrentStats.Combat.Defense);
-            UE_LOG(LogTemp, Log, TEXT("%s"), *Msg);
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, bParry ? FColor::Cyan : FColor::Yellow, Msg);
-            break;
-        }
-    }
+    // 아이템을 쥔 손이 공격자 쪽이면 막기(경감)·패링(무효).
+    if (MeleeCombat) Actual = MeleeCombat->ApplyBlock(Actual, DamageCauser);
 
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 
@@ -1742,11 +1314,7 @@ void AVRPawn::HandleDeath()
     // 앉은 채 죽으면 가구가 계속 점유 상태로 남아 아무도 못 쓴다.
     StandUpFromFurniture();
 
-    if (bInventoryOpen)
-    {
-        bInventoryOpen = false;
-        ApplyInventoryPresentation(false);
-    }
+    if (PlayerUI) PlayerUI->CloseInventory();
     SetSprinting(false);
     StopMoveState();
 
@@ -1760,10 +1328,7 @@ void AVRPawn::Respawn()
     PawnDeathUtils::Respawn(this, CurrentStats, Checkpoint, GameplayTags, TEXT("VRPawn"));
 
     // 텔레포트 전 손 위치가 남아 있으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다.
-    // 근거리 리스폰은 9000cm/s 글리치 가드에도 걸리지 않아 허위 타격이 나간다.
-    bHandVelInit = false;
-    HandVelLeft  = FVector::ZeroVector;
-    HandVelRight = FVector::ZeroVector;
+    if (MeleeCombat) MeleeCombat->ResetHandVelocity();
 }
 
 // ============================================================================

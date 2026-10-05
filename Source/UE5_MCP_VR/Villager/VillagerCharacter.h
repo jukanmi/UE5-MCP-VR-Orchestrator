@@ -85,14 +85,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Villager")
     float CorpseLifetime = 10.f;
 
-    /** 아군 NPC AIPerception 에 보이기 위한 자극원(Sight·Hearing). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
-    UAIPerceptionStimuliSourceComponent* StimuliSource;
-
-    /** 액티브 래그돌(Flinch/Knockdown/사망) — SmartNPC·적과 같은 컴포넌트. 메시에 Physics Asset 필요. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
-    UNPCRagdollComponent* RagdollComponent;
-
     /** 머리 위 말풍선 — SmartNPC 와 같은 컴포넌트. 발화자 이름은 ICharacterBase::GetEntityID = VillagerID. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Villager|Components")
     UNPCDialogueUIComponent* DialogueWidgetComp;
@@ -181,14 +173,9 @@ protected:
     virtual void Tick(float DeltaSeconds) override;
 
 private:
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tags", meta = (AllowPrivateAccess = "true"))
-    FGameplayTagContainer GameplayTags;
-
     // 원샷(Wave/Hit) 종료 시각 — 끝나면 로코모션 틱이 Idle/Walk/Run 으로 되돌린다.
     float OneShotEndTime = -1.f;
     float PlayOneShot(UAnimSequence* Anim);
-
-    void PlayOneOf(const TArray<USoundBase*>& Sounds) const;
 
     /** 현재 스토리 비트·활성 서브퀘스트 기준 길 안내 한 문장. */
     FString BuildDirections() const;

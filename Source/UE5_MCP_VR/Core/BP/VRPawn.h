@@ -11,6 +11,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "NativeGameplayTags.h"
 #include "Core/Types/PlayerGameplayTags.h"
+#include "HeadMountedDisplayTypes.h"
 #include "VRPawn.generated.h"
 
 class UCameraComponent;
@@ -18,15 +19,18 @@ class UMotionControllerComponent;
 class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
-class UPlayerHUDWidget;
-class UChatWidget;
+class UVRPlayerUIComponent;
+class UHUDPanelUIComponent;
+class UChatPanelUIComponent;
+class UItemTooltipUIComponent;
+class UVRMeleeComponent;
 class USphereComponent;
+class UVRHandComponent;
 class AKineticProjectile;
 class UWidgetComponent;
 class UWidgetInteractionComponent;
 class UStaticMeshComponent;
 class ADroppedItemBase;
-class UMaterialInstanceDynamic;
 struct FItemData;
 
 /** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
@@ -42,6 +46,7 @@ enum class EVRPosture : uint8
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVRPostureChanged, EVRPosture, NewPosture);
 
 class AFurnitureActor;
+class UCapsuleComponent;
 
 /**
  * Meta Quest 3S 전용 VR 폰.
@@ -103,46 +108,56 @@ public:
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    // 동역학 근접 — 손 본 소켓에 부착된 타격 구체. NPC overlap 시 손 속도로 ½mv² 데미지.
+    /** 동역학 근접 전투 — 손 속도 추적·손/무기로 치기(½mv²)·막기/패링·J→HP 환산(던지기·투사체도 사용). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
+    UVRMeleeComponent* MeleeCombat;
+
+    // 손 위치 표시용 구(충돌 없음, 손 본 소켓). 실제 타격 판정은 UVRMeleeComponent 의 능동 오버랩.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereLeft;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     USphereComponent* MeleeSphereRight;
 
+    // ── 손 — 트래킹 목표(앵커)와 물리 손바닥을 분리해 벽에 손이 막히게 한다(UVRHandComponent) ──
+    // FBIK 손과 GetHandLocation(거래·막기 판정)은 물리 손바닥을 따르고, 잡기·던지기는 실제 손(앵커)을 쓴다.
+
+    /** 왼손 — 컨트롤러 Grip 포즈에 붙은 앵커이자 물리 손바닥·손가락·쥐기 제약의 주인. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Hand")
+    UVRHandComponent* HandLeft;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Hand")
+    UVRHandComponent* HandRight;
+
+    UVRHandComponent* GetHand(EControllerHand Hand) const { return Hand == EControllerHand::Left ? HandLeft : HandRight; }
+    UVRHandComponent* GetHand(bool bLeft) const { return bLeft ? HandLeft : HandRight; }
+
+    /** 이번 틱 핸드트래킹 관절 상태. 추적 중이 아니면 bValid=false. */
+    const FXRHandTrackingState& GetHandTrackState(EControllerHand Hand) const;
+
     /** 인벤토리 — 슬롯/장비/무게. 기존 UInventoryComponent 재사용. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     UInventoryComponent* Inventory;
 
-    /** HUD 위젯 클래스 — BP_VRPawn 에서 WBP 지정. 미지정 시 HUD 없음. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
-    TSubclassOf<UPlayerHUDWidget> HUDWidgetClass;
+    // ── UI — 로직·상태는 UVRPlayerUIComponent, 위젯을 띄우는 장면 컴포넌트는 컨트롤러·카메라에 붙어야 해서 여기 ──
 
-    /** 생성된 HUD 인스턴스 (런타임). */
-    UPROPERTY(BlueprintReadOnly, Category = "UI")
-    UPlayerHUDWidget* HUDWidget;
+    /** 왼손 패널·채팅·포인터·이름표의 로직과 위젯 클래스. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+    UVRPlayerUIComponent* PlayerUI;
 
     /** HUD 를 3D 공간에 띄우는 위젯 컴포넌트 — 왼손 컨트롤러 부착.
      *  AddToViewport 는 VR 에서 쓰면 안 된다: OpenXR 은 양안을 한 장의 스테레오 타깃에
      *  렌더하고 Slate 오버레이는 그 위에 한 번만 합성되므로, 화면 공간 위젯은 한쪽 눈에만
      *  뜨거나 좌우로 늘어져 보인다. 월드 공간 위젯은 씬과 같이 양안 렌더되어 정상. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetComponent* HUDWidgetComp;
-
-    /** 채팅 위젯 클래스 — BP_VRPawn 에서 WBP_Chat 지정. 미지정 시 채팅 UI 없음. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Chat")
-    TSubclassOf<UChatWidget> ChatWidgetClass;
-
-    /** 생성된 채팅 위젯 인스턴스 (런타임). */
-    UPROPERTY(BlueprintReadOnly, Category = "UI|Chat")
-    UChatWidget* ChatWidget;
+    UHUDPanelUIComponent* HUDWidgetComp;
 
     /** 채팅 패널 — VRCamera 에 부착된 월드공간 위젯. 카메라를 따라 움직이므로 시야에
      *  고정되어 보이지만(화면 UI처럼), 씬과 같이 양안 렌더되어 HUDWidgetComp 와 같은
      *  이유로 AddToViewport 문제를 피한다. 손 패널과 달리 상시 표시가 아니라
-     *  Enter 로 열고 포커스를 잃으면 닫는다(UpdateChatPanelVisibility). */
+     *  Enter 로 열고 포커스를 잃으면 닫는다(UVRPlayerUIComponent). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Chat")
-    UWidgetComponent* ChatWidgetComp;
+    UChatPanelUIComponent* ChatWidgetComp;
 
     /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
@@ -175,18 +190,11 @@ public:
     /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
      *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetComponent* ItemTooltipComp;
+    UItemTooltipUIComponent* ItemTooltipComp;
 
     /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
     FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
-
-    /** 패널 회전 추가 오프셋. 매 Tick 계산되는 HMD 정면 회전 위에 얹힌다.
-     *  0 이면 정확히 카메라를 마주본다 — 살짝 눕히고 싶을 때만 Pitch 를 준다.
-     *  컨트롤러 회전을 그대로 쓰지 않는 이유: Grip 포즈 축이 손등 방향과 30~40° 어긋나 있어
-     *  고정 오프셋으로는 손목 각도가 바뀔 때마다 패널이 틀어진다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FRotator HUDPanelRotation = FRotator::ZeroRotator;
 
     /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
      *  세로는 인벤토리 패널(350px)과 상태 패널(게이지+채팅 로그+입력창, 292px)이 함께 들어갈
@@ -201,16 +209,6 @@ public:
     /** UI 포인터 광선 길이(cm). 손 패널까지만 닿으면 되므로 짧게. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "20.0", ClampMax = "500.0"))
     float HUDInteractionDistance = 150.f;
-
-    /** 패널이 보이기 시작하는 시선 일치도. HMD 정면 벡터와 패널 방향의 내적 임계.
-     *  0.9 ≈ 시야 중심에서 26° 안. 낮출수록 곁눈질에도 켜진다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.0", ClampMax = "0.99"))
-    float HUDGazeDotThreshold = 0.9f;
-
-    /** 패널 페이드 보간 속도. 임계 경계에서 손이 미세하게 떨리면 켜짐/꺼짐이 반복되므로
-     *  즉시 토글하지 않고 보간으로 완충한다. 클수록 빠르게 나타난다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "1.0", ClampMax = "30.0"))
-    float HUDGazeFadeSpeed = 8.f;
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
@@ -345,60 +343,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
-    // ── 동역학 데미지 튜닝 (Damage = clamp(½·m·v² · Scale, 0, Cap), v 는 m/s) ──
-
-    /** 근접 손 무기 질량(kg) — ½mv² 의 m. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float WeaponMass = 2.0f;
-
-    /** 운동에너지(J) → HP 데미지 환산 계수. PIE 에서 체감 맞춰 튜닝. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float KineticDamageScale = 1.0f;
-
-    /** 밀치기 임계(m/s). 이 미만 접촉은 무시. 이상~MeleeStrikeSpeed 미만은 밀침만(데미지·공격인지 없음). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MinImpactSpeed = 1.0f;
-
-    /** 데미지(=공격 인지) 임계(m/s). 이 이상 스윙만 TakeDamage → SmartNPC 가 공격으로 인지.
-     *  미만(밀치기 구간)은 NPC 밀려나되 LLM 이 공격으로 안 봄. MinImpactSpeed ≤ 이 값 권장. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeStrikeSpeed = 2.0f;
-
-    /** 1회 타격 데미지 상한. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MaxKineticDamage = 100.f;
-
-    /** 손 타격 구체 반경(cm). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeSphereRadius = 12.f;
-
-    /** 같은 NPC 재타격 최소 간격(초) — 한 스윙 다중 overlap 폭주 방지. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MeleeHitCooldown = 0.4f;
-
-    /** 손 속도 EMA 스무딩(0~1, 1=무스무딩) — 트래킹 스파이크 억제. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-    float HandVelSmoothing = 0.5f;
-
-    /** 방어 판정 — 아이템 쥔 손 방향(수평)·공격자 방향 내적이 이 이상이면 Block. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
-    float BlockDotThreshold = 0.6f;
-
-    /** 패링 임계(cm/s). Block 성립 + 그 손 속도가 이 이상이면 데미지 0. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block")
-    float ParryHandSpeed = 150.f;
-
-    /** 단순 Block 시 남는 데미지 배율(0.2 = 80% 경감). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float BlockDamageScale = 0.2f;
-
-    /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float KnockbackScale = 150.f;
-
-    /** 밀치기 속도 상한(cm/s). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MaxKnockbackSpeed = 600.f;
+    // 동역학 데미지 튜닝(½·m·v²·환산·상한)·막기/패링은 UVRMeleeComponent.
 
     /** IA_Attack 으로 발사할 투사체 클래스. BP_KineticProjectile 지정. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")
@@ -475,20 +420,21 @@ public:
     // (World→Component 변환·축 정렬을 여기서 일원화 — 블루프린트 invert/multiply 불필요)
     // ============================================================================
 
-    /** 손 그립 축 보정 — 컨트롤러 그립 포즈 축과 메시 손 본 축이 달라서 생기는
-     *  손목 회전 오차를 상쇄. 손 로컬 공간에 적용되므로 손이 움직여도 유지됨.
-     *  에디터 Details 에서 라이브 튜닝(리빌드 불필요). 좌우 미러라 값이 다름. */
-    // X_Bot 본 축과 HMD/컨트롤러 축 차이 보정. 손 로컬 공간 우측곱(손 회전해도 유지).
-    // FRotator(Pitch, Yaw, Roll). 에디터 Details 라이브 튜닝(리빌드 불필요).
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    FRotator LeftHandGripOffset = FRotator(180.f, 0.f, 90.f);
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
-    FRotator RightHandGripOffset = FRotator(0.f, 0.f, -90.f);
+    // 손 그립 축 보정은 손 컴포넌트(UVRHandComponent::GripOffset).
 
     /** 머리 본 축 보정 — HMD 카메라 축과 head 본 축 차이 상쇄(머리 꺾임 교정). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FRotator HeadEffectorOffset = FRotator(0.f, -90.f, 90.f);
+
+    /** 눈(HMD) → 머리 본 위치 오프셋(HMD 로컬, X=앞 Z=위, cm). 머리 이펙터 위치 = HMD + 머리 회전 × 이 값.
+     *  머리 본은 눈보다 뒤·아래(목 위)에 있다 — 눈 위치를 그대로 넘기면 FBIK 가 척추를 앞으로 당긴다. PIE 중 즉시 반영. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
+    FVector EyeToHeadOffset = FVector(-9.f, 0.f, -10.f);
+
+    /** 눈(HMD) → 목 위치 오프셋(HMD 로컬, cm). 몸 메시를 눈이 아니라 이 목 위치 아래에 놓는다 —
+     *  고개를 숙이거나 돌리면 눈은 앞으로 나가지만 몸통은 제자리라, 눈 아래에 두면 몸 전체가 끌려간다. PIE 중 즉시 반영. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
+    FVector EyeToNeckOffset = FVector(-10.f, 0.f, -20.f);
 
     /** 메시 정면 보정 오프셋 (Mixamo X_Bot 등 표준 스켈레탈 메시는 -90도 회전 시 캐릭터 전방 정렬). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
@@ -505,11 +451,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetHeadEffectorCS() const;
 
-    /** 왼손 컨트롤러를 몸체 메시 공간으로 변환한 Left Hand Effector Transform. */
+    /** 왼손 Effector — 위치·회전 모두 물리 손바닥(벽에 막힘). 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetLeftHandEffectorCS() const;
 
-    /** 오른손 컨트롤러를 몸체 메시 공간으로 변환한 Right Hand Effector Transform. */
+    /** 오른손 Effector — 위치·회전 모두 물리 손바닥(벽에 막힘). 몸체 메시 공간. */
     UFUNCTION(BlueprintPure, Category = "VR|IK")
     FTransform GetRightHandEffectorCS() const;
 
@@ -550,10 +496,6 @@ public:
      *  인벤토리가 가득 찼거나 데이터가 없으면 물리를 되살려 그 자리에 떨군다(증발 방지). */
     UFUNCTION(Exec, BlueprintCallable, Category = "VR|Interaction")
     bool StoreHeldItemInInventory();
-
-    /** 치트/콘솔 명령: 손 장비 해제. 인자 0 = 오른손 무기, 1 = 왼손 방패. */
-    UFUNCTION(Exec)
-    void Cheat_Unequip(bool bOffHand);
 
     /** 콘솔 채팅: 현재 타겟 NPC(없으면 근접 탐지)에게 텍스트 발화. 띄어쓰기 포함 시 따옴표 —
      *  `SayToNpc "안녕 뭐해"`. HUD ChatInput 과 같은 전송 경로. */
@@ -607,6 +549,10 @@ private:
     /** 매 Tick — 대쉬 잔여 시간 소진 시 StopDash */
     void UpdateDash(float DeltaTime);
 
+    // --- 손 ---
+    /** 매 Tick — 손마다 트래킹·드라이브 → 제스처 → 접촉 쥐기 → 쥐기 제약 동기화. 바뀐 제스처·접촉 쥐기는 잡기 입력으로 넘긴다. */
+    void UpdateHands(float DeltaTime);
+
     /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
     void StopDash();
 
@@ -650,6 +596,12 @@ private:
 
     /** 매 Tick — 동적 캡슐 리사이즈 + Rising Floor 역보정 (VInterp 스무딩) */
     void UpdateDynamicCapsule(float DeltaTime);
+
+    /** 매 Tick — 몸 메시를 발은 바닥에, 수평은 목 아래에 둔다. 캡슐이 줄어도 메시가 바닥 아래로 가라앉지 않게. */
+    void UpdateBodyPlacement();
+
+    /** BeginPlay 시점 메시 상대 위치(기본 캡슐 높이 기준). 캡슐 높이 변화만큼 Z 를 보정한다. */
+    FVector MeshBaseRelativeLocation = FVector::ZeroVector;
 
     // --- NPC 상호작용 ---
     void DetectNearbyNPC();
@@ -704,23 +656,13 @@ private:
     void OnGrabStartRight(const FInputActionValue& Value);
     void OnGrabStartLeft(const FInputActionValue& Value);
 
-    /** 그립 누름 본체. 왼손이면 OffHand, 오른손이면 MainHand 슬롯을 대상으로 같은 일을 한다. */
-    void HandleGrabStart(bool bLeft);
+    /** 그립 누름 본체. 왼손이면 OffHand, 오른손이면 MainHand 슬롯을 대상으로 같은 일을 한다.
+     *  Target 이 있으면(접촉 쥐기) 그 아이템을, 없으면 손 근처 최근접 아이템을 쥔다. */
+    void HandleGrabStart(bool bLeft, ADroppedItemBase* Target = nullptr);
 
-    /** 인벤토리 열림 중 오른손 스틱 = 슬롯 이동. 한 번 기울일 때 한 칸만 가고,
-     *  중립으로 돌아와야 다시 먹는다(계속 기울이면 목록이 순식간에 흘러가 버린다). */
-    void UpdateInventorySelection(const FVector2D& Stick);
-
-    /** 슬롯 이동 재장전 플래그 — 스틱이 중립으로 돌아왔는지. */
-    bool bSlotNavArmed = true;
-
-    /** 슬롯 그리드 열 수. 스틱 상하 이동이 몇 칸 건너뛸지 결정한다(WBP SlotGrid 열 수와 맞출 것). */
-    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "1"))
-    int32 InventoryGridColumns = 5;
-
-    /** 선택·꺼내기 결과를 화면에 띄운다. 슬롯 강조 UI 가 없는 동안의 임시 피드백. */
+    /** PIE 시작 때 콜리전 표시(show collision)를 켠다 — 손 콜라이더와 메시 맞춤을 볼 때 매번 콘솔에 치지 않게. 개발용. */
     UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
-    bool bDebugInventorySelection = true;
+    bool bShowCollisionOnStart = false;
 
     /** 그립 뗌 — 인벤토리가 열려 있으면 회수, 닫혀 있으면 거래 접시·NPC 를 차례로 보고 던진다. */
     void OnGrabReleaseRight(const FInputActionValue& Value);
@@ -729,118 +671,38 @@ private:
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
 
-    /** 오른손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
-    ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;
+    /** 그립 아날로그값(누르는 동안 매 프레임) — 손의 마찰 한계로 넘기고, 약하게 쥐어 못 든 아이템은 더 세게 쥐면 다시 쥔다. */
+    void OnGrabValueRight(const FInputActionValue& Value);
+    void OnGrabValueLeft(const FInputActionValue& Value);
+    void HandleGripValue(bool bLeft, float Value);
 
-    /** 매 Tick — 손 근처 아이템 이름표를 띄우고 카메라를 향하게 돌린다. */
-    void UpdateItemTooltip();
+    /** 잡기 입력 = 컨트롤러 그립 OR 접촉 쥐기. 합친 값이 바뀔 때만 HandleGrabStart/Release 를 부른다 —
+     *  한쪽이 쥔 채 다른 쪽이 떨어져도 놓지 않는다. */
+    void UpdateGrabInput(bool bLeft, ADroppedItemBase* Target = nullptr);
 
-    /** 이름표가 뜨는 손-아이템 거리(cm). 쥐기 반경보다 넓어야 "잡을 수 있다"를 미리 알려준다. */
-    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "10.0", ClampMax = "300.0"))
-    float TooltipRange = 70.f;
+    /** 컨트롤러 그립 누름 상태(왼손 0·오른손 1). */
+    bool bGripHeld[2] = { false, false };
 
-    /** 아이템 위로 이름표를 띄우는 높이(cm). */
-    UPROPERTY(EditAnywhere, Category = "UI", meta = (AllowPrivateAccess = "true"))
-    float TooltipHeightOffset = 15.f;
-
-    /** 직전에 이름표를 그린 아이템 — 대상이 바뀔 때만 텍스트를 다시 만든다(매 틱 SetText 는 비싸다). */
-    UPROPERTY(Transient)
-    TObjectPtr<ADroppedItemBase> TooltipTarget;
-
-    // --- 인벤토리 HUD ---
-    /** 인벤토리 패널 열림 상태 — HUD 위젯과 동기. */
-    UPROPERTY(BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
-    bool bInventoryOpen = false;
-
-    /** 매 Tick — 손목을 쳐다볼 때만 패널이 서서히 나타나도록 불투명도 보간.
-     *  상시 완전 불투명이면 왼손이 시야에 들어올 때마다 패널이 앞을 가린다. */
-    void UpdateHUDPanelGaze(float DeltaTime);
-
-    /** 현재 패널 불투명도(0~1). 시작은 투명 — 쳐다보기 전엔 안 보인다. */
-    float HUDPanelOpacity = 0.f;
-
-    /** 매 Tick — 패널이 HMD 를 마주보도록 월드 회전 갱신(열림 중에만).
-     *  WidgetComponent 의 가시면은 +X 쪽이므로 X 축을 카메라로 향하게 한다. */
-    void UpdateHUDPanelFacing();
-
-    /** 매 Tick — 채팅 패널이 열려 있는데 입력 포커스를 잃었으면(전송 완료·빈 Enter) 닫는다.
-     *  카메라 부착이라 별도 시선 페이드는 불필요 — 늘 정면이라 그냥 켜고 끈다. */
-    void UpdateChatPanelVisibility();
-
-    /** 패널·포인터 표시 동기 — 열림일 때만 위젯 컴포넌트와 광선을 켠다.
-     *  닫힘 상태에서 포인터를 켜두면 손을 흔들 때 슬롯이 호버되어 오작동한다. */
-    void ApplyInventoryPresentation(bool bOpen);
-
-    /** 트리거로 UI 를 누른 상태인지 — 열림 중에만 true. 닫을 때 강제 릴리즈에 쓴다. */
-    bool bPointerPressed = false;
-
-    /** 매 Tick — 포인터 광선·히트점을 실제 조준 결과에 맞춰 갱신(열림 중에만). */
-    void UpdatePointerVisual();
-
-    /** 광선 굵기(cm 지름). 얇을수록 조준점을 가리지 않지만 멀리서 안 보인다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.05", ClampMax = "5.0"))
-    float PointerBeamThickness = 0.4f;
-
-    /** 히트점 구 지름(cm). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.2", ClampMax = "10.0"))
-    float PointerDotSize = 1.2f;
-
-    /** 광선·히트점 색. 알파는 무시된다(불투명 이미시브). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (AllowPrivateAccess = "true"))
-    FLinearColor PointerColor = FLinearColor(0.15f, 0.75f, 1.f, 1.f);
-
-    /** 위젯을 실제로 겨눴을 때 색 — 슬롯 위에 올라갔는지 색으로 구분된다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (AllowPrivateAccess = "true"))
-    FLinearColor PointerHitColor = FLinearColor(1.f, 0.85f, 0.2f, 1.f);
-
-    /** 광선·히트점 공용 머티리얼 인스턴스. 색을 런타임에 바꾸려면 인스턴스가 필요하다. */
-    UPROPERTY(Transient)
-    UMaterialInstanceDynamic* PointerMID = nullptr;
-
-    /** 직전 프레임 히트 여부 — 색이 바뀔 때만 파라미터를 쓴다. */
-    bool bPointerWasHitting = false;
+    /** 합친 잡기 입력의 직전 값(왼손 0·오른손 1). */
+    bool bGrabInputActive[2] = { false, false };
 
 public:
-    /** 손(모션 컨트롤러) 월드 위치. 거래 패널의 물리 버튼처럼 외부에서 손 근접을 재는 곳이 쓴다. */
+    /** 인벤토리 패널이 열려 있는가 — 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다(UI 클릭·슬롯 이동·슬롯 발동). */
+    bool IsInventoryOpen() const;
+
+    /** 손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
+    ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;
+
+    /** 보이는 손(물리 손바닥) 월드 위치.public:
+    /** 보이는 손(물리 손바닥) 월드 위치. 시뮬레이션 전엔 모션 컨트롤러. 거래 패널 물리 버튼 등 손 근접 판정용. */
     UFUNCTION(BlueprintPure, Category = "VR")
     FVector GetHandLocation(bool bRightHand) const;
 
 private:
 
-    /** 쥔 아이템의 손안 자세를 델타로 밀어보고 절대값을 CSV 표기로 찍는다. 예: TuneGrab 0 0 1 0 15 0
-     *  전부 0 을 넣으면 밀지 않고 현재 값만 출력한다.
-     *  헤드셋을 쓴 채로는 수치를 읽을 수 없으므로, 찍힌 값을 DT_ItemRegistry 에 옮겨 확정한다. */
-    UFUNCTION(Exec)
-    void TuneGrab(float DX, float DY, float DZ, float DPitch, float DYaw, float DRoll);
-
-    /** 콘솔 진단 — 아바타 팔길이 vs 컨트롤러 도달거리 + 현재 스케일 로그/화면 출력.
-     *  팔 뻗은 자세에서 호출해 비율 확인. Reach > ArmLen 이면 아바타 팔이 짧음. */
-    UFUNCTION(Exec)
-    void LogIKMetrics();
-
-    /** 콘솔 진단 — 인벤토리 실제 내용 + HUD 위젯 연결 상태 덤프.
-     *  픽업이 안 먹은 건지, 먹었는데 UI 가 안 그려진 건지 한 번에 갈라준다. */
-    UFUNCTION(Exec)
-    void DumpInventoryHUD();
-
-    /** 콘솔에서 인벤토리 패널 열기/닫기 토글 (에디터 디버그용). 콘솔창에 ToggleInventory 입력. */
-    UFUNCTION(Exec)
-    void ToggleInventory();
-
     // --- 전투 ---
     UFUNCTION()
     void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-
-    // 동역학 근접 — 매 틱 손(컨트롤러) 위치에서 능동 스피어 오버랩(ECC_Pawn). 빠른 스윙이 NPC 닿으면 ½mv².
-    // 본 소켓 패시브 overlap 은 애니 본에서 이벤트 누락이 잦아 능동 쿼리로 대체.
-    void TryMeleeHits(const FVector& HandLoc, const FVector& HandVel, bool bRightHand);
-
-    // 손 속도 추적(Tick) — 컨트롤러 위치 델타/dt. cm/s. ½mv² 의 v 산출.
-    FVector PrevHandLocLeft  = FVector::ZeroVector;
-    FVector PrevHandLocRight = FVector::ZeroVector;
-    FVector HandVelLeft      = FVector::ZeroVector;
-    FVector HandVelRight     = FVector::ZeroVector;
-    bool bHandVelInit = false;
 
     // --- 사망/리스폰 ---
     UPROPERTY(EditDefaultsOnly, Category = "Combat")

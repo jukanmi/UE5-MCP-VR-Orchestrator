@@ -37,7 +37,7 @@ ocr review --audience agent --format json
 특정 기능 구현 요구사항이나 아키텍처 규칙 문서를 주입하여 "기획 의도에 맞게 코딩되었는지" 검증합니다.
 
 ```powershell
-ocr review --background-file docs/SPEC_crewai_multi_agent.md --audience agent
+ocr review --background-file docs/SPEC_<feature>.md --audience agent
 ```
 
 ### 2.3 특정 커밋 또는 브랜치 비교 리뷰
@@ -74,7 +74,7 @@ ocr config set model qwen2.5-coder:14b
 ```powershell
 # Anthropic Claude 설정
 ocr config set provider anthropic
-ocr config set model claude-3-5-sonnet-20241022
+ocr config set model claude-sonnet-5-5
 ocr config set providers.anthropic.api_key "sk-ant-..."
 
 # OpenAI 설정
@@ -95,6 +95,6 @@ ocr config set providers.openai.api_key "sk-..."
    - JSON 스키마 필드 누락 (`NPCActionKeys` 미사용)
 2. **2단계: 물리적 컴파일 및 UAT 검증 (`python tools/sol_pi.py verify all`)**:
    - C++ UBT 증분 빌드 (0 error)
-   - Python 51개 pytest 회귀 검증
+   - Python pytest 회귀 검증
    - UE5 헤드리스 UAT 엔진 테스트
 
