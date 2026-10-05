@@ -722,6 +722,12 @@ void ASmartNPCAIController::TickJevDaily()
     ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
     UNPCActionComponent* ActionComp = NPC ? NPC->GetActionComponent() : nullptr;
     if (!ActionComp) return;
+    // 플레이어를 따라가는 중(Follow/Track)에는 일상 활동(wander 등)을 시작하지 않는다 — 시작하면 추적이 끊긴다.
+    if (ActionComp->IsTracking())
+    {
+        JevDailyIdleSince = Now;
+        return;
+    }
     if (Now - ActionComp->GetLastLLMBatchTime() < static_cast<double>(JevDailyAfterLLMSeconds)) return;
 
     // 미연결이면 조용히 Idle 유지(경고 스팸 금지) — 재연결되면 다음 틱에 바로 요청한다.

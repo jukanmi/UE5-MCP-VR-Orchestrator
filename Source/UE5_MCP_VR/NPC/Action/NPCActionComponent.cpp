@@ -678,6 +678,13 @@ void UNPCActionComponent::OnActionCompleted()
 
     const EAction CompletedAction = CurrentAction.ActionType;
 
+    // 중복 큐잉 필터는 "큐 끝에 같은 액션이 이미 있을 때"만 막아야 한다. 그 액션이 끝나 큐가 비었으면 키를 풀어야
+    // 같은 명령을 다시 받을 수 있다(풀지 않으면 "따라와" 를 두 번째부터 조용히 삼켰다).
+    if (ActionQueue.IsEmpty() && QueueKey(CurrentAction) == LastQueuedKey)
+    {
+        LastQueuedKey.Reset();
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
 }
@@ -1753,13 +1760,17 @@ void UNPCActionComponent::AbortTacticalQuery()
     }
 }
 
-void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType)
+void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType /*SpeedType*/)
 {
-    if (!TargetActor) return;
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
-    FVector Dir = (OwnerCharacter->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal();
-    BaseMove(TargetActor->GetActorLocation() + Dir * 300.f, SpeedType);
+    // "따라와" 는 한 번 이동하고 끝나는 명령이 아니다 — 대상이 움직여도 계속 붙어 다녀야 하므로 지속 추적(Track)으로 건다.
+    // 예전엔 대상 근처 한 점으로 한 번만 이동해서, 이미 가까이 있으면 즉시 완료되고 플레이어가 걸어가도 따라오지 않았다.
+    // 추적은 다른 이동 액션·Stop 이 올 때까지 이어진다(ProcessNextAction 이 충돌 액션에서 끊는다).
+    if (!TargetActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: Follow 대상 없음 — 무시"), *GetOwnerAgentID());
+        return;
+    }
+    ExecuteTrack(TargetActor);
 }
 
 void UNPCActionComponent::ExecuteDialogue(const FString& DialogueText, const EFacialState Emotion) { BaseDialogue(DialogueText, Emotion); }
