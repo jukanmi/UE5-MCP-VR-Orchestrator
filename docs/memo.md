@@ -30,6 +30,14 @@
 - [ ] **채팅 입력창 글자·배경 모두 흰색** — `WBP_Chat` `ChatInput` 을 어두운 배경 + 흰 글자로 고침(`bac02c79`, 브랜치 `feature/pause-settings`). 한글이 안 써지던 건 입력이 안 보여서 그렇게 느껴졌을 가능성(Roboto 폰트 + 메뉴 한글은 정상). 헤드셋/PIE 에서 실제 키 입력으로 확인 필요 — 그래도 한글이 안 써지면 IME 문제로 별도.
 - [ ] **TakeDamage 중복 정리(리팩토링, 사용자 문의 단계)** — 데미지 공식 `max(0, Raw−Defense)×부위배율` 이 `EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`(SmartNPC)·`AVRPawn::TakeDamage` 4곳에 복제. `AVRPawn` 은 `ACharacter + IPlayerBase` 이고 `ACombatCharacter` 아래가 아니라 상속 통합은 안 맞음. 안: ① `FCharacterAttributesBase::ApplyIncomingDamage(Raw, PartMultiplier)` 로 공식만 모음(위험 거의 없음) ② `ACharacter` 와 두 갈래 사이 얇은 중간 클래스 `ADamageableCharacter` 에 TakeDamage 뼈대 + 훅(`SmartNPC` 는 반환값이 Raw·`ReactToHit(Raw)` 라 동작 보존하려면 전체 오버라이드 필요). 순수 리팩토링(동작 동일) — 브랜치는 `refactor/` 로. 방향 미정.
 
+- [ ] **서브퀘스트 목표 마커 — 방향 결정 대기** — 월드 마커·메뉴 지도는 메인 비트의 `quest_target_tag` 하나만 가리킨다(`side/*.yaml` 에 목표 태그 없음, 마커는 월드당 1개). 서브퀘스트를 받아도 안내가 안 생긴다. 선택지: ① 활성 서브 목표로 마커 이동(서브 YAML 에 `quest_target_tag`) ② 마커 여러 개(메인 1+서브별) ③ 길 안내 경로(네비) — 별도 SPEC. 사용자 결정 대기.
+- [ ] **Follow 중 전투 뒤 추적 복구** — `Follow` 는 지속 추적(`2e236262`)이지만 적대 반사로 전투에 들어가면 `ProcessNextAction` 이 추적을 끊고 `ExitCombat` 이 복구하지 않는다. `SPEC_party` M2 가 메운다(멤버는 전투 종료 후 다시 플레이어를 따라감).
+- [ ] **`StoryDirectorSettings` LoadConfig 오류 2건(에디터 시작 시)** — `EnemyClassMap`(`zombie`→`/Game/Blueprint/Enemy/BP_Enemy_Wraith_C`)·`ItemClassMap`(`holy_sword`→`/Game/Blueprint/Item/BP_DropItem_C`) import failed. 해당 BP 가 없거나 경로가 바뀐 것으로 보임 — 스토리 이벤트의 `spawn_enemy`·`spawn_item` 경로가 안 먹을 수 있다. 원인 확인 필요.
+- [ ] **`SignalAllies` 미디어 없음 경고 44건/세션** — `ActionData` 미매핑이면 무음 즉시완료(`pitfalls.md` B). 몽타주를 매핑하거나 액션 후보에서 빼기.
+- [ ] **`Content/Maps/NewProjectTest.umap` UAT 재생성** — 지워도(`9c699528`) `sol_pi verify all` 의 UAT 가 매번 다시 만든다(untracked). `.gitignore` 에 넣거나 UAT 가 맵을 안 열게 하는 결정 필요(현재는 untracked 로 방치).
+- [ ] **`.ignore` 파일이 계속 다시 생김** — 검색 도구(`rg`)가 읽는 파일이라 `docs`·`tools`·`OmniAgent_VR_System` 등이 검색에서 빠진다. 에디터·IDE 도구가 만드는 것으로 추정(원인 미확인). 생기면 지울 것.
+- [ ] **메뉴 지도 재촬영** — 맵 영역·내용이 바뀌면 `T_WorldMap` 을 다시 찍어야 한다(절차: `pitfalls.md` D 의 "메뉴 지도 텍스처"). 서브퀘스트 목표·POI 를 지도에 얹을 때(`SPEC_poi`, 위 마커 결정)도 같이.
+
 ### NPC 끌기·들기·던지기 — `SPEC_npc_lift_throw.md` (2026-10-02 착수)
 - **M1 구현했다가 코드 제거(2026-10-02, 사용자 결정 — 재정리 후 다시 만듦, 커밋 안 함)**. 손바닥 상자 2개 분할은 남김. 다시 만들 때 쓸 실측: ① 넉다운 후 안착 0.6초 만에 기상해 쓰러진 NPC 는 헤드셋에서 못 잡음 → 서 있는 NPC 를 쥐고 들 때 래그돌 전환으로 바꿈(사용자 결정) ② X_Bot 아래팔·주민 팔 전체에 물리 바디 없음 → 제약은 윗팔·어깨에 걸리고 감싼 아래팔이 흔들려, 지금 팔 위치로 놓기를 재면 매단 뒤 0.6~2초 만에 놓침 ③ 잡은 손을 NPC 뼈 캡슐 밀어내기에 그대로 두면 손가락이 팔에서 밀려 바로 놓침 ④ 손 60cm 순간이동이 매단 NPC 를 끌고 튐(골반 3m) ⑤ `MaxCarryMass` 5(88N)면 80kg 꿈쩍 안 함, 40(610N)이면 한 손 끌기·양손 들기 됨. NPC 질량 X_Bot 80.8·Farmer 79.7kg.
 
@@ -83,6 +91,14 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 ---
 
 ## Done
+
+- [x] **메뉴 M0~M3 + UI 컴포넌트 이전 (2026-10-05~06, 브랜치 `feature/pause-settings`, 헤드셋 확인 대부분 완료·M3 대기)** — M1 `47cd39df`: 왼손 Menu 버튼 메뉴(`UMenuPanelUIComponent`·`UMenuWidget`·`WBP_MenuPanel`·`IA_MenuToggle`), 열린 동안 이동·회전·공격·대시·상호작용·새로 쥐기 차단(`UVRPlayerUIComponent::BlocksGameplayInput`). 구조 `2dcec850`: UI 장면 컴포넌트 생성·튜닝값을 폰 생성자 → `UVRPlayerUIComponent` 런타임 생성으로 이전(VRPawn.cpp 1387→1329줄). M2 `bd865393`: 설정 화면(마스터 볼륨 서브믹스 `SetSubmixOutputVolume` + `USettingsSaveGame` 슬롯 저장·시작 적용). M3 `10511f20`·`96d8ad10`: 메인 목록 → 지도(`T_WorldMap` 정적 탑다운 + 앵커 마커)·파티(목업)·퀘스트, 서버 `Story` 블록에 `side_titles`. 헤드셋: 사용자가 Menu 버튼·시스템 메뉴 충돌·입력 차단·포인터·글자 대비·**소리 볼륨 실제 변화**·리팩토링 회귀 확인(DoList 2-8, 저장 유지·M3 만 남음). 함정은 `pitfalls.md` D.
+- [x] **채팅 입력창 글자·배경 흰색 수정 (2026-10-05, `bac02c79`)** — `WBP_Chat.ChatInput` 을 어두운 배경 + 흰 글자로 명시(월드 위젯은 기본 Slate 브러시가 흰색). 실제 한글 입력은 확인 대기(Todo).
+- [x] **퀘스트 마커 거리 비례 확대 (2026-10-05, `deb9f4b5`)** — `QuestMarkerActor`: 최소 2.5m·거리×0.1·최대 25m, 꼭짓점 높이 유지. PIE 5m → 스케일 2.5, 200m → 20.
+- [x] **`Follow` 지속 추적 + 같은 명령 중복 필터 해제 (2026-10-05, `2e236262`)** — 원인: Follow 가 한 점으로 한 번 이동하고 끝남 + `LastQueuedKey` 가 완료 뒤에도 남아 두 번째 "따라와" 를 삼킴. 수정: `ExecuteFollow` → `ExecuteTrack`, 큐가 비면 키 해제, 따라가는 중 Jev 일상 시작 금지. PIE: 가드가 플레이어 곁 2.2m 에서 멈췄다가 12m 이동 후 다시 따라옴.
+- [x] **저장소 정리 (2026-10-05)** — PR #30(`feat/reality_grab`→Develop, 48커밋) 머지, 로컬 브랜치 20개 삭제(`backup/*` 2개는 미머지 커밋이 있어 유지), `main` 을 Develop 위치로 올림(`026e3b70`), git flow(AVH) 초기화(production `main`·develop `Develop`·접두어 `feature/` 등), `docs/블로그` → `ai-log/블로그`(ignore 폴더) 이동.
+- [x] **프롬프트 감사 정리 (2026-10-05, `005a4def`)** — `/claude-api prompt-audit`: `add-envelope` 스킬의 낡은 경로(`interface_input.py`)·`pitfalls.md` 의 `.claude` ignore 오기·`gemini-tiki-taka` 스킬(삭제)·그래프 스킬 수치 상한 제거.
+- [x] **SPEC 3종 작성 (2026-10-05~06)** — `SPEC_poi`(이름 장소 시스템, C++ 해석), `SPEC_party`(멤버십·합류는 대화+호감도·일행은 따라다니되 반응 유지), `SPEC_pause_settings` M3(지도·파티 목업·퀘스트).
 
 
 완료 항목은 날짜와 함께 여기 적고, 주가 바뀌면 `docs/주간기록/2026-W##_주제.md` 로 옮기고 여기서 **삭제**한다. 비어 있는 것이 정상.

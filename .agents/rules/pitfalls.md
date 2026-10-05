@@ -91,6 +91,11 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **WS 는 서버보다 먼저 뜨면 Offline Mode 로 고착**: 5회 재접속 실패 후 `Switching to permanent Offline AI Mode`.
   **PIE 재시작으로는 안 풀리고 에디터를 재시작해야 한다.** 상태 확인은 `curl 127.0.0.1:8000/api/ws/status`.
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
+- **MCP 로 에셋을 고칠 땐 대상 객체에 `modify()` 를 먼저 건다(2026-10-05 실측)**: 위젯 속성(`color_and_opacity`·버튼 스타일)·`InputMappingContext.map_key` 는 `modify()` 없이 값만 바꾸고 `save_loaded_asset(only_if_is_dirty=False)` 해도 디스크에 안 남는다(`IMC_VR` 매핑이 통째로 빠졌고 PIE 는 메모리라 멀쩡해 보였다). 저장 뒤 `git status` 에 `.uasset` 이 `M` 인지로 판정. 로드된 에셋은 `delete_loaded_asset` 도 실패해 같은 이름 재생성이 막히니 다른 이름으로 만들고 옛것은 에디터를 닫은 뒤 파일로 지운다.
+- **월드 위젯의 기본 Slate 브러시는 흰색으로 그려진다(2026-10-05)**: `EditableTextBox`·`Button` 을 기본 스타일로 두면 배경이 흰색이라 흰 글자가 안 보인다. 배경 틴트(normal·hovered·focused·pressed)와 글자 색을 명시한다.
+- **메뉴 지도 텍스처(`T_WorldMap`, 2026-10-06)**: 에디터 월드에 `SceneCapture2D` 를 `(0,0,60000)` pitch -90 직교(`ortho_width` 51000)·`SCS_BASE_COLOR`·2048² `RTF_RGBA8` 로 두고 `capture_scene` → `RenderingLibrary.render_target_create_static_texture2d_editor_only` → `/Game/Core/interface/` 로 옮기고 **`compression_no_alpha=True`**(캡처 알파가 0 이라 안 끄면 반투명). 촬영 액터는 레벨에서 지울 것. 영역은 `NavMeshBoundsVolume`(중심 0,0·반경 25500)과 같고 위쪽 = 월드 +X·오른쪽 = +Y — 영역을 바꾸면 `UVRPlayerUIComponent` 의 `MapWorldCenter`·`MapWorldSize` 도 같이.
+- **에디터가 두 개 뜨면 MCP 가 안 붙는다(2026-10-05)**: 사용자가 따로 켠 에디터가 30010 을 잡으면 두 번째는 `HttpListener unable to bind` 로 Remote Control 이 죽는다. 빌드 전 `tasklist` 로 확인하고, MCP 가 응답하는 에디터면 저장 안 된 패키지가 없는지 본 뒤 `QUIT_EDITOR`.
+- **`Content/Maps/NewProjectTest.umap` 은 UAT 가 매번 다시 만든다(2026-10-05)**: 지워도 `verify all` 후 untracked 로 되살아난다 — 커밋하지 말 것(`.gitignore` 결정은 Memo).
 - **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/*`(skills 제외)·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 
 ### E. 파인튜닝
