@@ -1,6 +1,8 @@
 #include "Story/QuestMarkerActor.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -52,6 +54,19 @@ void AQuestMarkerActor::Tick(float DeltaSeconds)
     }
     const float T = GetWorld()->GetTimeSeconds();
     const FVector Base = Target->GetActorLocation();
-    SetActorLocation(Base + FVector(0.f, 0.f, HoverHeight + FMath::Sin(T * BobSpeed) * BobAmplitude));
+
+    // 멀수록 크게 — 크기가 고정이면 먼 곳에선 점이 된다. 카메라 거리에 비례해 높이를 정하고(클램프),
+    // 원뿔 기본 높이(100cm)·가로 비율(0.6)에 맞춰 스케일한다. 꼭짓점 높이가 변하지 않게 커진 만큼 반쯤 더 띄운다.
+    constexpr float ConeBaseHeight = 100.f;
+    float MarkerHeight = MinMarkerHeight;
+    if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        MarkerHeight = FMath::Clamp(FVector::Dist(Cam->GetCameraLocation(), Base) * DistanceScale, MinMarkerHeight, MaxMarkerHeight);
+    }
+    const float ScaleZ = MarkerHeight / ConeBaseHeight;
+    Mesh->SetRelativeScale3D(FVector(ScaleZ * 0.6f, ScaleZ * 0.6f, ScaleZ));
+    const float Hover = HoverHeight + (MarkerHeight - ConeBaseHeight) * 0.5f;
+
+    SetActorLocation(Base + FVector(0.f, 0.f, Hover + FMath::Sin(T * BobSpeed) * BobAmplitude));
     AddActorWorldRotation(FRotator(0.f, SpinSpeed * DeltaSeconds, 0.f));
 }
