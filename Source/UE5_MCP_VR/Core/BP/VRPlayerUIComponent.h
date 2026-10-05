@@ -10,6 +10,7 @@ class ADroppedItemBase;
 class UPlayerHUDWidget;
 class UChatWidget;
 class UMenuWidget;
+class USettingsSaveGame;
 class UHUDPanelUIComponent;
 class UChatPanelUIComponent;
 class UMenuPanelUIComponent;
@@ -75,9 +76,9 @@ public:
 
     /** 메뉴 패널 가상 캔버스 해상도(px). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu")
-    FVector2D MenuPanelDrawSize = FVector2D(500.f, 300.f);
+    FVector2D MenuPanelDrawSize = FVector2D(500.f, 380.f);
 
-    /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm. */
+    /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm(세로 380px 는 설정 화면이 들어가는 높이). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu", meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float MenuPanelScale = 0.12f;
 
@@ -189,11 +190,29 @@ private:
     UFUNCTION()
     void OnMenuResume();
 
+    UFUNCTION()
+    void OnMenuVolumeChanged(float Volume);
+
+    /** 저장된 설정을 불러와(없으면 기본값) 메뉴에 반영하고 적용한다. */
+    void LoadSettings();
+
+    /** 바뀐 설정이 있으면 슬롯에 쓴다. 메뉴를 닫을 때 부른다(슬라이더를 끄는 동안 매 프레임 쓰지 않는다). */
+    void SaveSettings();
+
+    /** 마스터 서브믹스 출력 볼륨(선형) — 모든 소리에 일괄 적용. */
+    void ApplyMasterVolume(float Volume);
+
     void UpdatePointerVisual();
     void UpdateItemTooltip();
 
     bool bInventoryOpen = false;
     bool bMenuOpen = false;
+
+    UPROPERTY(Transient)
+    USettingsSaveGame* Settings = nullptr;
+
+    /** 마지막 저장 이후 설정이 바뀌었는지. */
+    bool bSettingsDirty = false;
 
     /** 트리거로 UI 를 누른 상태인지 — 열림 중에만 true. 닫을 때 강제 릴리즈에 쓴다. */
     bool bPointerPressed = false;

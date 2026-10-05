@@ -23,7 +23,7 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 | 이름 | 진행상황 | 미결사항 | 비고 |
 |---|---|---|---|
 | [body_measure_prone](SPEC_body_measure_prone.md) | ⬜ M0 스파이크 → M1 눕히기 → M2 측정 | 다리 측정 절차(컨트롤러를 어느 지점에), 측정값 저장 위치·형식, 아바타 스케일 복원 여부, 기존 2초 자동 캘리브레이션과의 관계, 엎드린 캡슐 형태 | 현재 Prone 은 태그·캡슐만이고 몸 메시는 직립(W21 부터). 측정 UI 는 pause_settings 선행 |
-| [pause_settings](SPEC_pause_settings.md) | ⬜ M0 점검 → M1 메뉴 → M2 설정·저장 | 오디오 구성(사운드 클래스·믹스), 저장 수단, 메뉴가 열린 동안 입력 차단 여부, 메뉴 위치, 핸드트래킹 대체 입력, 시스템 메뉴 충돌 | 월드는 멈추지 않는 "메뉴". 왼손 Menu 버튼은 `IMC_VR` 에서 비어 있음 |
+| [pause_settings](SPEC_pause_settings.md) | 🔶 M0 ✅ M1 ✅ M2 ✅ 구현(헤드셋 없는 PIE 확인, 헤드셋 대기 DoList 2-8) | Menu 버튼 시스템 충돌, 메뉴↔인벤토리 겹침 우선순위, 실제 소리 변화(서브믹스), 핸드트래킹 대체 입력 | 브랜치 `feature/pause-settings`. 신체 측정 버튼은 자리만(`body_measure_prone` M2 가 연결) |
 
 ### NPC·Jevlike (Python/C++)
 

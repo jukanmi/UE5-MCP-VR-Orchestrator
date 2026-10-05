@@ -12,6 +12,9 @@
 #include "Inventory/Components/InventoryComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "MotionControllerComponent.h"
+#include "Core/Save/SettingsSaveGame.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundSubmix.h"
 #include "UI/BP/ChatWidget.h"
 #include "UI/BP/MenuWidget.h"
 #include "UI/Components/MenuPanelUIComponent.h"
@@ -155,8 +158,15 @@ void UVRPlayerUIComponent::Init()
         MenuPanel->SetWidgetClass(MenuWidgetClass);
         MenuPanel->InitWidget();
         MenuWidget = Cast<UMenuWidget>(MenuPanel->GetUserWidgetObject());
-        if (MenuWidget) MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
+        if (MenuWidget)
+        {
+            MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
+            MenuWidget->OnVolumeChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuVolumeChanged);
+        }
     }
+
+    // 메뉴 위젯이 없어도 저장된 볼륨은 적용한다.
+    LoadSettings();
 
     // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
     if (HUDPanel)
@@ -247,6 +257,7 @@ void UVRPlayerUIComponent::ToggleMenu()
 
     CloseInventory();   // 포인터·슬롯 입력 규칙이 겹치지 않게 인벤토리는 먼저 닫는다
     bMenuOpen = true;
+    MenuWidget->ShowMain();   // 항상 메인 화면에서 시작
     MenuPanel->Open();
     SyncPointer();
 }
@@ -255,13 +266,64 @@ void UVRPlayerUIComponent::CloseMenu()
 {
     if (!bMenuOpen) return;
     bMenuOpen = false;
-    if (AVRPawn* Pawn = GetPawn(); Pawn && MenuPanel) MenuPanel->Close();
+    if (MenuPanel) MenuPanel->Close();
+    SaveSettings();
     SyncPointer();
 }
 
 void UVRPlayerUIComponent::OnMenuResume()
 {
     CloseMenu();
+}
+
+// ============================================================================
+// 설정 — 저장·불러오기·적용
+// ============================================================================
+
+void UVRPlayerUIComponent::LoadSettings()
+{
+    if (UGameplayStatics::DoesSaveGameExist(USettingsSaveGame::SlotName, 0))
+    {
+        Settings = Cast<USettingsSaveGame>(UGameplayStatics::LoadGameFromSlot(USettingsSaveGame::SlotName, 0));
+    }
+    if (!Settings)
+    {
+        Settings = Cast<USettingsSaveGame>(UGameplayStatics::CreateSaveGameObject(USettingsSaveGame::StaticClass()));
+    }
+    bSettingsDirty = false;
+
+    if (MenuWidget) MenuWidget->SetVolumeValue(Settings->MasterVolume);
+    ApplyMasterVolume(Settings->MasterVolume);
+}
+
+void UVRPlayerUIComponent::SaveSettings()
+{
+    if (!Settings || !bSettingsDirty) return;
+    UGameplayStatics::SaveGameToSlot(Settings, USettingsSaveGame::SlotName, 0);
+    bSettingsDirty = false;
+    UE_LOG(LogTemp, Log, TEXT("[Settings] 저장: 마스터 볼륨 %.2f"), Settings->MasterVolume);
+}
+
+void UVRPlayerUIComponent::ApplyMasterVolume(float Volume)
+{
+    // 마스터 서브믹스 출력 볼륨 하나로 모든 소리를 조절한다 — 사운드 클래스·믹스 에셋이 필요 없다.
+    static const TCHAR* MasterSubmixPath = TEXT("/Engine/EngineSounds/Submixes/MasterSubmixDefault.MasterSubmixDefault");
+    USoundSubmix* Master = LoadObject<USoundSubmix>(nullptr, MasterSubmixPath);
+    if (!Master)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Settings] 마스터 서브믹스를 못 찾아 볼륨을 적용하지 못했다: %s"), MasterSubmixPath);
+        return;
+    }
+    Master->SetSubmixOutputVolume(this, Volume);
+    UE_LOG(LogTemp, Log, TEXT("[Settings] 마스터 볼륨 %.2f 적용"), Volume);
+}
+
+void UVRPlayerUIComponent::OnMenuVolumeChanged(float Volume)
+{
+    if (!Settings) return;
+    Settings->MasterVolume = FMath::Clamp(Volume, 0.f, 1.f);
+    bSettingsDirty = true;
+    ApplyMasterVolume(Settings->MasterVolume);   // 슬라이더를 움직이는 즉시 소리가 바뀐다
 }
 
 bool UVRPlayerUIComponent::PressPointer()
