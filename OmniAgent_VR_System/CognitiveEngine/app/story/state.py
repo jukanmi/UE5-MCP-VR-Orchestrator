@@ -103,6 +103,12 @@ class StoryMachine:
             "quest_target_tag": beat.quest_target_tag if beat else "",
             "side": [sid for sid, s in self.state.side.items() if s == SIDE_ACTIVE],
             "available_side": [sid for sid, s in self.state.side.items() if s == SIDE_AVAILABLE],
+            # 메뉴 퀘스트 화면용 표시명 — id 만 보내면 플레이어에게 s_moca_herbs 로 보인다.
+            "side_titles": {
+                sid: (self.content.sides[sid].title or sid)
+                for sid, s in self.state.side.items()
+                if s in (SIDE_ACTIVE, SIDE_AVAILABLE) and sid in self.content.sides
+            },
             "events": list(beat.events) if beat else [],
         }
 

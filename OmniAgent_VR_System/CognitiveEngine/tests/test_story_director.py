@@ -113,6 +113,7 @@ def test_story_event_sets_flag_and_transitions(machine):
         "quest_target_tag": "",
         "side": [],
         "available_side": [],
+        "side_titles": {},
         "events": [],
     }
 

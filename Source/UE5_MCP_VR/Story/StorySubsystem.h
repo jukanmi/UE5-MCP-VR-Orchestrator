@@ -36,6 +36,9 @@ struct FStoryState
     UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
     FString QuestTargetTag;
 
+    /** 서브퀘스트 id → 표시명(active·available 만). 메뉴 퀘스트 화면이 id 대신 보여 준다. */
+    UPROPERTY(BlueprintReadOnly, Category = "MCP|Story")
+    TMap<FString, FString> SideTitles;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryUpdated, const FStoryState&, State);
@@ -77,6 +80,9 @@ public:
      *  ApplyStoryJson 이 부르지만 디버그로 직접 호출해도 된다. */
     UFUNCTION(BlueprintCallable, Category = "MCP|Story")
     void SetQuestTarget(const FString& Tag);
+
+    /** 지금 마커가 가리키는 목표 액터(없거나 숨김이면 nullptr) — 메뉴 지도가 목표 위치를 찍는 데 쓴다. */
+    AActor* GetQuestTargetActor() const;
 
 private:
     UPROPERTY()

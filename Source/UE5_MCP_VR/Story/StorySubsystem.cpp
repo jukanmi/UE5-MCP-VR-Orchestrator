@@ -56,6 +56,16 @@ bool UStorySubsystem::ApplyStoryJson(const TSharedPtr<FJsonObject>& StoryObj)
         }
     }
 
+    const TSharedPtr<FJsonObject>* TitlesObj = nullptr;
+    if (StoryObj->TryGetObjectField(TEXT("side_titles"), TitlesObj) && TitlesObj)
+    {
+        for (const auto& Pair : (*TitlesObj)->Values)
+        {
+            FString Title;
+            if (Pair.Value.IsValid() && Pair.Value->TryGetString(Title)) State.SideTitles.Add(Pair.Key, Title);
+        }
+    }
+
     const TArray<TSharedPtr<FJsonValue>>* AvailArr = nullptr;
     if (StoryObj->TryGetArrayField(TEXT("available_side"), AvailArr))
     {
@@ -126,6 +136,11 @@ void UStorySubsystem::SetQuestTarget(const FString& Tag)
         QuestMarker = World->SpawnActor<AQuestMarkerActor>(AQuestMarkerActor::StaticClass(), FTransform::Identity, Params);
     }
     if (QuestMarker) QuestMarker->SetTarget(Target);
+}
+
+AActor* UStorySubsystem::GetQuestTargetActor() const
+{
+    return QuestMarker ? QuestMarker->GetTarget() : nullptr;
 }
 
 void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)

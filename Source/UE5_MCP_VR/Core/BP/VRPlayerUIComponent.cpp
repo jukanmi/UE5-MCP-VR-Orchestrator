@@ -15,6 +15,9 @@
 #include "Core/Save/SettingsSaveGame.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundSubmix.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Story/StorySubsystem.h"
 #include "UI/BP/ChatWidget.h"
 #include "UI/BP/MenuWidget.h"
 #include "UI/Components/MenuPanelUIComponent.h"
@@ -179,10 +182,16 @@ void UVRPlayerUIComponent::Init()
     ApplyInventoryPresentation(false);
 }
 
-void UVRPlayerUIComponent::Update(float /*DeltaTime*/)
+void UVRPlayerUIComponent::Update(float DeltaTime)
 {
     UpdatePointerVisual();
     UpdateItemTooltip();
+
+    if (bMenuOpen && MenuWidget)
+    {
+        MenuInfoAccum += DeltaTime;
+        UpdateMenuInfo();
+    }
 }
 
 // ============================================================================
@@ -274,6 +283,101 @@ void UVRPlayerUIComponent::CloseMenu()
 void UVRPlayerUIComponent::OnMenuResume()
 {
     CloseMenu();
+}
+
+// ============================================================================
+// 정보 화면 — 지도·파티·퀘스트
+// ============================================================================
+
+FVector2D UVRPlayerUIComponent::WorldToMapUV(const FVector& World) const
+{
+    // 위에서 내려다본 지도 이미지: 위쪽 = 월드 +X, 오른쪽 = 월드 +Y. 이미지 왼쪽 위가 (0,0).
+    const float Size = FMath::Max(MapWorldSize, 1.f);
+    return FVector2D((World.Y - MapWorldCenter.Y) / Size + 0.5f, 0.5f - (World.X - MapWorldCenter.X) / Size);
+}
+
+void UVRPlayerUIComponent::UpdateMenuInfo()
+{
+    AVRPawn* Pawn = GetPawn();
+    if (!MenuWidget || !Pawn) return;
+
+    switch (MenuWidget->GetScreen())
+    {
+    case EMenuScreen::Map:
+    {
+        // 플레이어 위치·방향(HMD 정면) — 방향 점은 앞쪽으로 조금 떨어진 곳.
+        const FVector Loc = Pawn->GetActorLocation();
+        FVector Fwd = Pawn->VRCamera ? Pawn->VRCamera->GetForwardVector() : Pawn->GetActorForwardVector();
+        Fwd.Z = 0.f;
+        Fwd = Fwd.GetSafeNormal();
+        const FVector2D PlayerUV = WorldToMapUV(Loc);
+        const FVector2D HeadingUV = PlayerUV + FVector2D(Fwd.Y, -Fwd.X) * MapHeadingLength;
+
+        // 퀘스트 목표 — 월드 마커와 같은 대상.
+        bool bQuest = false;
+        FVector2D QuestUV = FVector2D::ZeroVector;
+        if (const UStorySubsystem* Story = UStorySubsystem::Get(this))
+        {
+            if (const AActor* Target = Story->GetQuestTargetActor())
+            {
+                bQuest = true;
+                QuestUV = WorldToMapUV(Target->GetActorLocation());
+            }
+        }
+
+        // 일행(목업) 위치.
+        TArray<FVector2D> PartyUVs;
+        if (UNPCManager* Manager = UNPCManager::Get(this))
+        {
+            for (const FString& Id : MockPartyIds)
+            {
+                if (const ASmartNPC* NPC = Manager->GetNPCById(Id)) PartyUVs.Add(WorldToMapUV(NPC->GetActorLocation()));
+            }
+        }
+        MenuWidget->SetMapMarkers(true, PlayerUV, HeadingUV, bQuest, QuestUV, PartyUVs);
+        break;
+    }
+    case EMenuScreen::Party:
+    {
+        if (MenuInfoAccum < 0.25f) break;
+        MenuInfoAccum = 0.f;
+        TArray<FMenuPartyEntry> Entries;
+        if (UNPCManager* Manager = UNPCManager::Get(this))
+        {
+            for (const FString& Id : MockPartyIds)
+            {
+                ASmartNPC* NPC = Manager->GetNPCById(Id);
+                if (!NPC) continue;
+                FMenuPartyEntry Entry;
+                Entry.Name = Id;
+                Entry.HealthPct = FMath::Clamp(INPC::Execute_GetNPCAttributes(NPC).Resources.GetHealthPercent(), 0.f, 1.f);
+                Entries.Add(Entry);
+            }
+        }
+        MenuWidget->SetPartyEntries(Entries);
+        break;
+    }
+    case EMenuScreen::Quest:
+    {
+        if (MenuInfoAccum < 0.25f) break;
+        MenuInfoAccum = 0.f;
+        const UStorySubsystem* Story = UStorySubsystem::Get(this);
+        if (!Story || !Story->HasState())
+        {
+            MenuWidget->SetQuestInfo(TEXT("아직 받은 퀘스트 정보가 없습니다."), FString());
+            break;
+        }
+        const FStoryState& State = Story->GetCurrentState();
+        auto TitleOf = [&State](const FString& Id) { const FString* T = State.SideTitles.Find(Id); return T ? *T : Id; };
+        FString Side;
+        for (const FString& Id : State.Side) Side += FString::Printf(TEXT("• %s\n"), *TitleOf(Id));
+        for (const FString& Id : State.AvailableSide) Side += FString::Printf(TEXT("• %s (수락 가능)\n"), *TitleOf(Id));
+        MenuWidget->SetQuestInfo(State.QuestLog.IsEmpty() ? TEXT("메인 퀘스트 완료") : State.QuestLog, Side.IsEmpty() ? TEXT("진행 중인 서브퀘스트 없음") : Side.TrimEnd());
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 // ============================================================================

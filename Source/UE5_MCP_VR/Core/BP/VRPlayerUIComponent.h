@@ -74,9 +74,27 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat", meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float ChatPanelScale = 0.08f;
 
-    /** 메뉴 패널 가상 캔버스 해상도(px). */
+    /** 메뉴 패널 가상 캔버스 해상도(px). 지도 화면(정사각 지도)이 들어가는 크기. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu")
-    FVector2D MenuPanelDrawSize = FVector2D(500.f, 380.f);
+    FVector2D MenuPanelDrawSize = FVector2D(640.f, 560.f);
+
+    // ── 메뉴 정보 화면(지도·파티·퀘스트) 데이터 ──
+
+    /** 지도 이미지가 덮는 월드 영역의 중심(cm, X·Y). 지도 촬영 때 쓴 값과 같아야 마커가 맞는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu|Map")
+    FVector2D MapWorldCenter = FVector2D::ZeroVector;
+
+    /** 지도 이미지가 덮는 월드 한 변 길이(cm, 정사각). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu|Map", meta = (ClampMin = "1000.0"))
+    float MapWorldSize = 51000.f;
+
+    /** 지도에서 플레이어 방향 점을 얼마나 앞에 찍을지(지도 한 변 대비 비율). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu|Map", meta = (ClampMin = "0.0", ClampMax = "0.2"))
+    float MapHeadingLength = 0.03f;
+
+    /** 파티 화면 목업 일행(AgentID). `UPartySubsystem`(SPEC_party)이 생기면 이 목업을 지우고 그쪽을 읽는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu|Party")
+    TArray<FString> MockPartyIds = { TEXT("Elara"), TEXT("James"), TEXT("Skadi") };
 
     /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm(세로 380px 는 설정 화면이 들어가는 높이). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu", meta = (ClampMin = "0.01", ClampMax = "1.0"))
@@ -193,6 +211,12 @@ private:
     UFUNCTION()
     void OnMenuVolumeChanged(float Volume);
 
+    /** 메뉴가 열려 있는 동안 현재 화면에 필요한 데이터를 위젯에 밀어 넣는다(Update 가 부른다). */
+    void UpdateMenuInfo();
+
+    /** 월드 좌표 → 지도 UV(0~1, 왼쪽 위 0,0). 위에서 내려다본 이미지에서 +X 는 위, +Y 는 오른쪽. */
+    FVector2D WorldToMapUV(const FVector& World) const;
+
     /** 저장된 설정을 불러와(없으면 기본값) 메뉴에 반영하고 적용한다. */
     void LoadSettings();
 
@@ -213,6 +237,9 @@ private:
 
     /** 마지막 저장 이후 설정이 바뀌었는지. */
     bool bSettingsDirty = false;
+
+    /** 정보 화면 갱신 간격(초) 누적 — 지도는 매 틱, 파티·퀘스트 글은 이 간격으로. */
+    float MenuInfoAccum = 0.f;
 
     /** 트리거로 UI 를 누른 상태인지 — 열림 중에만 true. 닫을 때 강제 릴리즈에 쓴다. */
     bool bPointerPressed = false;
