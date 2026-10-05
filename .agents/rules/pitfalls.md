@@ -30,7 +30,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **스토리 디렉터(2026-09-18)**: `get_story()` None = 비활성(`STORY_ENABLED=0` 또는 main.yaml 부재) → 전 훅 no-op. 디렉터 LLM 은 `needs_direction`(전이·해금·캐시 없음) 일 때만 — replan 마다 도는 게 아니다. `gemma4:cloud` 는 grammar 미강제라 `npc_id` 를 `npc` 로 줄여 보냄(실측) → `AliasChoices` + 프롬프트 JSON 예시로 흡수. 타임아웃 5s 초과·402 는 작가 YAML 원문 폴백(qwen3:8b 폴백 금지 — 예시 복사 결함). `talked_to` 카운트는 `_handle_prompt` 성공 턴만(에러/빈 배치 제외). `Story` 블록은 갱신 직후 첫 응답에만 실림(`block_pending`) — UE5 재시작 시 최신 퀘스트 로그를 못 받는 구멍은 Phase B 에서 판단.
 - **대화 배선 4건(2026-09-18 전 루프 주행에서 발견, 전부 수정)**: ① `interface_input` 이름 추출이 UE 명시 타겟을 덮었다 → 명시 타겟 우선, 이름 추출은 타겟 없을 때만(자유 채팅). ② `KNOWLEDGE_BASE_PATH` 가 cwd 상대라 README 대로 repo 루트에서 띄우면 RAG 0건(빈 `<repo>/app/agents/knowledge` 자동 생성) → 절대경로. ③ 디렉터 goal 이 Stage2 에만 실려 비트 첫 턴 대사가 목표를 몰랐다 → Stage1 프롬프트 `Story objective` 1줄. ④ `num_ctx` 2048: RAG 실리자 프롬프트 2011 토큰, 생성 37 토큰에 잘려 `......` → 4096 + `done_reason=length` 경고. **대사 품질 의심 시 모델보다 이 배선부터** — 고치기 전엔 Guard 가 "성벽에 불이 났나?", 고친 뒤 "성 안은 이미 함락됐어… 안으로 들어와".
 - **전 루프 주행법(헤드셋 없이, 15분)**: `story_state.json` 삭제 + `knowledge/*/conversation_memory.json` 비움(이전 대사가 지배) → 서버 → PIE → `get_player_pawn` 텔레포트 + `CurrentTargetNPCID` 세팅 + `say_to_npc()` → 서버 로그 `[Story] 비트 전이` 확인. 보스는 `apply_damage(100000)`. 아이템은 `ItemManager.get_item_data_by_id` + `Inventory.add_item`. 디렉터 첫 호출은 5s 타임아웃 폴백이 정상(`ReadTimeout('')`).
-- **tests/ 회귀 기준선: pytest 75 passed**(2026-09-18, 라이브 gemma4:cloud 1건 포함 — Ollama 없으면 skip). `python -m tests.…` 불가(site-packages `tests` 패키지가 가림) → `python tests/파일.py`. test_pipeline·test_affinity 는 라이브 하네스라 유닛 수집 제외.
+- **tests/ 회귀**: 라이브 gemma4:cloud 1건 포함 — Ollama 없으면 skip. 개수는 `sol_pi verify python` 영수증 기준. `python -m tests.…` 불가(site-packages `tests` 패키지가 가림) → `python tests/파일.py`. test_pipeline·test_affinity 는 라이브 하네스라 유닛 수집 제외.
 
 ### B. NPC 전투 · AI
 - **Physics Asset 필수** — 없으면 `SetSimulatePhysics` 조용히 무효 + `FindClosestBone` None→Torso 폴백(부위 인지 무력화). 래그돌은 `UNPCRagdollComponent`(09-12 추출), 튜닝은 BP 의 `Ragdoll` 컴포넌트 Details.
@@ -75,7 +75,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **`style` 파라미터**: 어휘 단일 소스 = C++ `EMoveType`(Walk/Run/Sprint/Crouch), 미매칭은 Walk 폴백 + Warning. 액션별 의미 다름(Move/Follow=속도, Sing/Emote=미디어 키). `EMoveType` 추가 시 `ParseMoveStyle` 분기 필수(`test_move_style_vocabulary_matches_cpp` 가 잡음).
 - **`.claude/skills/` 는 디렉터리 형식만 로드된다**: `<name>/SKILL.md` 여야 하고 frontmatter `name:` 은 디렉터리명과
   같은 kebab-case. 평면 `skills/foo.md` 는 조용히 무시된다(에러 없음 — 스킬 목록에 안 뜨는 걸로만 판정 가능).
-  `.claude/` 전체가 gitignore 라 이 폴더의 소실·변경은 **git 으로 추적·복구 불가**. 이름이 유저/플러그인 스킬과
+  `.claude/*` 는 ignore 지만 `.claude/skills/` 는 추적된다(`.gitignore` 108-109). 이름이 유저/플러그인 스킬과
   겹치면 그쪽이 이기므로 프로젝트 스킬 이름은 충분히 구체적으로(`spec` 같은 일반어 금지).
 - **Mixamo 액션 애니는 In Place 배포본이 없다 — 루트 모션을 켜는 게 정답**: 이동이 Hips 트랙에 통째로 들어있어
   ① 루트모션 OFF 면 메시만 끌려갔다가 몽타주 끝에 캡슐로 스냅백 ② `bForceRootLock` 으로 묶으면 "밀려나는 그림인데
@@ -91,7 +91,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **WS 는 서버보다 먼저 뜨면 Offline Mode 로 고착**: 5회 재접속 실패 후 `Switching to permanent Offline AI Mode`.
   **PIE 재시작으로는 안 풀리고 에디터를 재시작해야 한다.** 상태 확인은 `curl 127.0.0.1:8000/api/ws/status`.
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
-- **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/`·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
+- **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/*`(skills 제외)·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 
 ### E. 파인튜닝
 → `OmniAgent_VR_System/CognitiveEngine/finetune/RESULT.md` "운영 주의점" 절. Stage2 12B 는 unsloth 미지원으로 보류(서빙은 qwen3:8b 로 대체) · VRAM 스필오버는 OOM 아닌 감속 · GGUF 변환 베이스 태그 인자 · 시드 데이터 페르소나 규칙.

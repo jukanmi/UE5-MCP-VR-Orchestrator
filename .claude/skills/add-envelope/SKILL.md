@@ -20,23 +20,17 @@ description: 새 Envelope 메시지 타입 추가 시 UE5↔Python 양쪽 동시
 
 **UE5 측 (C++)**
 
-1. **`EnvelopeBuilder`** — `Build<TypeName>()` 정적 메서드 추가
-   - 반환: `FMessageEnvelope` with `Type = "<type_name>"`
+1. **`Network/EnvelopeBuilder.h/.cpp`** — `EEnvelopeType` 값 + `EnvelopeTypeToString` 분기 + `Build*(const TSharedRef<FJsonObject>&)` 헬퍼
    - Parameters 내부 키: snake_case / 최상위 키: PascalCase (`NPCActionKeys` 상수 사용, 리터럴 문자열 금지)
 
-**Python 측**
+**Python 측** (`OmniAgent_VR_System/CognitiveEngine/app/`)
 
 2. **`schemas/envelope.py`** — `EEnvelopeType` enum에 `<TYPE_NAME> = "<type_name>"` 추가
-3. **`interface_input.py`** — 수신 분기 추가
-   ```python
-   elif envelope.type == EEnvelopeType.<TYPE_NAME>:
-       await handle_<type_name>(envelope, ...)
-   ```
-4. **핸들러 함수** — `handle_<type_name>()` 구현 (또는 기존 핸들러에 라우팅)
+3. **`main.py::_process_llm_message`** — 타입 분기에 `_handle_<type_name>` 핸들러 연결
 
 ### 검증 포인트
 
-- UE5에서 송신 시 Python `interface_input.py`가 타입을 인식하는지 확인
+- `tests/test_contract_sync.py` 가 세 곳의 정합을 검사 — 통과 확인
 - Python에서 송신 시 UE5 `EnvelopeBuilder` 역방향 타입이 있는지 확인 (양방향이면)
 - `MCPJsonUtils`에 폴백 키 추가 금지 — Python 출력이 상수와 맞지 않으면 Python 쪽 수정
 
