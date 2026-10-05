@@ -40,15 +40,10 @@
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
-#include "UI/Components/ChatPanelUIComponent.h"
-#include "UI/Components/MenuPanelUIComponent.h"
-#include "UI/Components/HUDPanelUIComponent.h"
-#include "UI/Components/ItemTooltipUIComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Villager/MerchantStall.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/WidgetComponent.h"
-#include "Components/WidgetInteractionComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -129,59 +124,6 @@ AVRPawn::AVRPawn()
 
     // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
-
-    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯. 카메라 정렬·시선 페이드·포인터 충돌은 UHUDPanelUIComponent.
-    // 카메라 부착(head-lock)은 피한다 — 상시 표시 패널이 시야에 고정되면 멀미를 유발한다.
-    HUDWidgetComp = CreateDefaultSubobject<UHUDPanelUIComponent>(TEXT("HUDWidgetComp"));
-    HUDWidgetComp->SetupAttachment(MotionControllerLeft);
-    HUDWidgetComp->SetRelativeLocation(HUDPanelLocation);
-    HUDWidgetComp->SetDrawSize(HUDPanelDrawSize);
-    HUDWidgetComp->SetRelativeScale3D(FVector(HUDPanelScale));
-
-    // 채팅 패널 — 예외적으로 카메라(VRCamera) 부착(이유·자동 닫기는 UChatPanelUIComponent).
-    // 카메라 앞에 있으니 Yaw 180 으로 카메라 쪽을 본다(양면이라 어느 면이든 읽힌다).
-    ChatWidgetComp = CreateDefaultSubobject<UChatPanelUIComponent>(TEXT("ChatWidgetComp"));
-    ChatWidgetComp->SetupAttachment(VRCamera);
-    ChatWidgetComp->SetRelativeLocation(ChatPanelOffset);
-    ChatWidgetComp->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
-    ChatWidgetComp->SetDrawSize(ChatPanelDrawSize);
-    ChatWidgetComp->SetRelativeScale3D(FVector(ChatPanelScale));
-
-    // 메뉴 패널 — 루트에 붙지만 월드 고정(절대 좌표). 열 때 시선 앞에 놓는다(UMenuPanelUIComponent).
-    MenuWidgetComp = CreateDefaultSubobject<UMenuPanelUIComponent>(TEXT("MenuWidgetComp"));
-    MenuWidgetComp->SetupAttachment(RootComponent);
-    MenuWidgetComp->SetDrawSize(MenuPanelDrawSize);
-    MenuWidgetComp->SetRelativeScale3D(FVector(MenuPanelScale));
-
-    // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
-    // 광선이 패널을 빗나간다.
-    HUDInteractor = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("HUDInteractor"));
-    HUDInteractor->SetupAttachment(MotionControllerRightAim);
-    HUDInteractor->InteractionDistance = HUDInteractionDistance;
-    HUDInteractor->InteractionSource = EWidgetInteractionSource::World;
-    HUDInteractor->bEnableHitTesting = true;
-    HUDInteractor->bShowDebug = false;          // 조준이 안 맞을 때 켜서 광선 확인
-    HUDInteractor->SetActive(false);            // 인벤토리 열림 중에만 활성
-
-    // 포인터 광선 실메시 — 원통을 조준축(+X)으로 눕혀 길이만 늘린다.
-    // 기본 원통은 Z축 100cm 이므로 Pitch -90 으로 Z 를 부모의 +X 에 맞춘다.
-    PointerBeam = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PointerBeam"));
-    PointerBeam->SetupAttachment(MotionControllerRightAim);
-    PointerBeam->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
-    // 광선이 자기 자신을 맞고 멈추지 않도록 콜리전 완전 차단. 그림자도 끈다(가는 막대의 그림자는 노이즈).
-    PointerBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PointerBeam->SetCastShadow(false);
-    PointerBeam->SetVisibility(false);
-
-    PointerDot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PointerDot"));
-    PointerDot->SetupAttachment(MotionControllerRightAim);
-    PointerDot->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PointerDot->SetCastShadow(false);
-    PointerDot->SetVisibility(false);
-
-    // 아이템 이름표 — 하나를 폰이 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
-    ItemTooltipComp = CreateDefaultSubobject<UItemTooltipUIComponent>(TEXT("ItemTooltipComp"));
-    ItemTooltipComp->SetupAttachment(RootComponent);
 
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
@@ -597,7 +539,7 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AVRPawn::OnMove(const FInputActionValue& Value)
 {
     // 메뉴가 열린 동안 이동 입력은 무시 — 월드가 계속 흐르므로 서 있는 채로 메뉴를 본다.
-    if (IsMenuOpen())
+    if (IsUIBlockingInput())
     {
         SetSprinting(false);
         LastMoveInput = FVector2D::ZeroVector;
@@ -705,7 +647,7 @@ void AVRPawn::UpdateStamina(float DeltaTime)
 
 void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
 {
-    if (SeatedFurniture.IsValid() || IsMenuOpen()) return;
+    if (SeatedFurniture.IsValid() || IsUIBlockingInput()) return;
 
     // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
     if (CurrentPosture != EVRPosture::Standing) return;
@@ -774,7 +716,7 @@ void AVRPawn::StopDash()
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
 {
-    if (IsMenuOpen())
+    if (IsUIBlockingInput())
     {
         TurnAxisInput = 0.f;
         return;
@@ -934,7 +876,7 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 
 void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 {
-    if (IsMenuOpen()) return;
+    if (IsUIBlockingInput()) return;
 
     // 착석 중이면 기상이 최우선(토글) — 다른 상호작용 차단.
     if (SeatedFurniture.IsValid())
@@ -1005,9 +947,9 @@ void AVRPawn::OnMenuToggle(const FInputActionValue& /*Value*/)
     if (PlayerUI) PlayerUI->ToggleMenu();
 }
 
-bool AVRPawn::IsMenuOpen() const
+bool AVRPawn::IsUIBlockingInput() const
 {
-    return PlayerUI && PlayerUI->IsMenuOpen();
+    return PlayerUI && PlayerUI->BlocksGameplayInput();
 }
 
 bool AVRPawn::IsInventoryOpen() const
@@ -1093,7 +1035,7 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
 
     // 메뉴가 열린 동안 새로 쥐지 않는다. 이미 쥔 물건은 유지하고 놓기·던지기는 그대로 허용.
-    if (IsMenuOpen()) return;
+    if (IsUIBlockingInput()) return;
     if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.

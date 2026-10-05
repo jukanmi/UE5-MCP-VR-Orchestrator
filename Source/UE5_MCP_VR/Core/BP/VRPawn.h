@@ -20,16 +20,11 @@ class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
 class UVRPlayerUIComponent;
-class UHUDPanelUIComponent;
-class UChatPanelUIComponent;
-class UMenuPanelUIComponent;
-class UItemTooltipUIComponent;
 class UVRMeleeComponent;
 class USphereComponent;
 class UVRHandComponent;
 class AKineticProjectile;
 class UWidgetComponent;
-class UWidgetInteractionComponent;
 class UStaticMeshComponent;
 class ADroppedItemBase;
 struct FItemData;
@@ -140,88 +135,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     UInventoryComponent* Inventory;
 
-    // ── UI — 로직·상태는 UVRPlayerUIComponent, 위젯을 띄우는 장면 컴포넌트는 컨트롤러·카메라에 붙어야 해서 여기 ──
+    // ── UI — 위젯 패널·포인터·이름표의 생성·상태·튜닝값은 전부 UVRPlayerUIComponent 가 갖는다. 폰은 입력을 넘기고 질의만 한다 ──
 
-    /** 왼손 패널·채팅·포인터·이름표의 로직과 위젯 클래스. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     UVRPlayerUIComponent* PlayerUI;
-
-    /** HUD 를 3D 공간에 띄우는 위젯 컴포넌트 — 왼손 컨트롤러 부착.
-     *  AddToViewport 는 VR 에서 쓰면 안 된다: OpenXR 은 양안을 한 장의 스테레오 타깃에
-     *  렌더하고 Slate 오버레이는 그 위에 한 번만 합성되므로, 화면 공간 위젯은 한쪽 눈에만
-     *  뜨거나 좌우로 늘어져 보인다. 월드 공간 위젯은 씬과 같이 양안 렌더되어 정상. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UHUDPanelUIComponent* HUDWidgetComp;
-
-    /** 채팅 패널 — VRCamera 에 부착된 월드공간 위젯. 카메라를 따라 움직이므로 시야에
-     *  고정되어 보이지만(화면 UI처럼), 씬과 같이 양안 렌더되어 HUDWidgetComp 와 같은
-     *  이유로 AddToViewport 문제를 피한다. 손 패널과 달리 상시 표시가 아니라
-     *  Enter 로 열고 포커스를 잃으면 닫는다(UVRPlayerUIComponent). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Chat")
-    UChatPanelUIComponent* ChatWidgetComp;
-
-    /** 메뉴 패널 — 왼손 Menu 버튼으로 열면 시선 앞에 놓이고 그 자리에 고정된다(머리를 따라오지 않음, UMenuPanelUIComponent). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Menu")
-    UMenuPanelUIComponent* MenuWidgetComp;
-
-    /** 메뉴 패널 가상 캔버스 해상도(px). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu")
-    FVector2D MenuPanelDrawSize = FVector2D(500.f, 300.f);
-
-    /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu", meta = (ClampMin = "0.01", ClampMax = "1.0"))
-    float MenuPanelScale = 0.12f;
-
-    /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
-    FVector ChatPanelOffset = FVector(80.f, 0.f, -15.f);
-
-    /** 채팅 패널 가상 캔버스 해상도(px). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
-    FVector2D ChatPanelDrawSize = FVector2D(500.f, 260.f);
-
-    /** 채팅 패널 월드 스케일. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat", meta = (ClampMin = "0.01", ClampMax = "1.0"))
-    float ChatPanelScale = 0.08f;
-
-    /** 오른손 UI 포인터 — 왼손 패널의 슬롯을 조준·클릭. 월드 공간 위젯은 마우스가 없으므로
-     *  이 컴포넌트가 광선을 쏴 가상 포인터 이벤트로 변환한다. 없으면 패널이 보이기만 하고
-     *  아무것도 눌리지 않는다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetInteractionComponent* HUDInteractor;
-
-    /** 포인터 광선 메시 — 조준 방향으로 뻗는 가는 원통. WidgetInteraction 의 bShowDebug 는
-     *  DrawDebug 라 Shipping 빌드에서 통째로 컴파일 제외되므로, 출시본에도 남는 실메시로 그린다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UStaticMeshComponent* PointerBeam;
-
-    /** 광선이 실제로 맞은 지점에 놓이는 작은 구. 맞은 게 없으면 숨는다 —
-     *  광선 끝이 허공이면 "지금 아무것도 안 겨눴다"가 그 자체로 표시된다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UStaticMeshComponent* PointerDot;
-
-    /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
-     *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UItemTooltipUIComponent* ItemTooltipComp;
-
-    /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
-
-    /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
-     *  세로는 인벤토리 패널(350px)과 상태 패널(게이지+채팅 로그+입력창, 292px)이 함께 들어갈
-     *  만큼 필요하다 — 모자라면 인벤토리를 연 순간 아래쪽이 캔버스 밖으로 잘려 나간다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector2D HUDPanelDrawSize = FVector2D(600.f, 660.f);
-
-    /** 패널 월드 스케일. 기본값은 600x660px → 약 24x26cm (손에 들린 태블릿 크기). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.01", ClampMax = "1.0"))
-    float HUDPanelScale = 0.04f;
-
-    /** UI 포인터 광선 길이(cm). 손 패널까지만 닿으면 되므로 짧게. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "20.0", ClampMax = "500.0"))
-    float HUDInteractionDistance = 150.f;
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
@@ -708,8 +625,8 @@ public:
     /** 인벤토리 패널이 열려 있는가 — 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다(UI 클릭·슬롯 이동·슬롯 발동). */
     bool IsInventoryOpen() const;
 
-    /** 메뉴가 열려 있는지 — 열림 중엔 이동·회전·공격·잡기·대시·상호작용 입력을 무시한다. */
-    bool IsMenuOpen() const;
+    /** UI(메뉴)가 게임 입력을 막고 있는지 — 이동·회전·공격·잡기·대시·상호작용을 무시한다. */
+    bool IsUIBlockingInput() const;
 
     /** 손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
     ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;

@@ -10,6 +10,12 @@ class ADroppedItemBase;
 class UPlayerHUDWidget;
 class UChatWidget;
 class UMenuWidget;
+class UHUDPanelUIComponent;
+class UChatPanelUIComponent;
+class UMenuPanelUIComponent;
+class UItemTooltipUIComponent;
+class UWidgetInteractionComponent;
+class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
 /**
@@ -34,6 +40,46 @@ public:
     /** 채팅 위젯 클래스 — BP_VRPawn 에서 WBP_Chat 지정. 미지정 시 채팅 UI 없음. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Chat")
     TSubclassOf<UChatWidget> ChatWidgetClass;
+
+    // ── 패널 배치·크기 튜닝값 (패널은 Init 에서 만든다 — 폰의 컨트롤러·카메라에 붙인다) ──
+
+    /** HUD 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HUD")
+    FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
+
+    /** HUD 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
+     *  세로는 인벤토리 패널(350px)과 상태 패널(게이지+채팅 로그+입력창, 292px)이 함께 들어갈
+     *  만큼 필요하다 — 모자라면 인벤토리를 연 순간 아래쪽이 캔버스 밖으로 잘려 나간다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HUD")
+    FVector2D HUDPanelDrawSize = FVector2D(600.f, 660.f);
+
+    /** HUD 패널 월드 스케일. 기본값은 600x660px → 약 24x26cm (손에 들린 태블릿 크기). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HUD", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float HUDPanelScale = 0.04f;
+
+    /** UI 포인터 광선 길이(cm). 손 패널까지만 닿으면 되므로 짧게. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HUD", meta = (ClampMin = "20.0", ClampMax = "500.0"))
+    float HUDInteractionDistance = 150.f;
+
+    /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
+    FVector ChatPanelOffset = FVector(80.f, 0.f, -15.f);
+
+    /** 채팅 패널 가상 캔버스 해상도(px). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
+    FVector2D ChatPanelDrawSize = FVector2D(500.f, 260.f);
+
+    /** 채팅 패널 월드 스케일. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float ChatPanelScale = 0.08f;
+
+    /** 메뉴 패널 가상 캔버스 해상도(px). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu")
+    FVector2D MenuPanelDrawSize = FVector2D(500.f, 300.f);
+
+    /** 메뉴 패널 월드 스케일(1px = 스케일 cm). 0.12 면 500px 가 약 60cm. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Menu", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float MenuPanelScale = 0.12f;
 
     /** 메뉴 위젯 클래스 — BP_VRPawn 에서 WBP_Menu 지정. 미지정 시 메뉴 없음. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Menu")
@@ -90,6 +136,9 @@ public:
     /** 인벤토리 패널 열림 상태 — HUD 위젯과 동기. 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다. */
     bool IsInventoryOpen() const { return bInventoryOpen; }
 
+    /** UI 가 게임 입력(이동·회전·공격·잡기·대시·상호작용)을 막고 있는지 — 메뉴가 열려 있는 동안 true. 폰이 입력마다 묻는다. */
+    bool BlocksGameplayInput() const { return bMenuOpen; }
+
     /** 메뉴 열림 상태. 열림 중엔 이동·회전·공격·잡기·대시·상호작용이 막히고 트리거는 UI 클릭이 된다. */
     bool IsMenuOpen() const { return bMenuOpen; }
 
@@ -127,6 +176,9 @@ public:
 private:
     AVRPawn* GetPawn() const;
 
+    /** 패널·포인터·이름표 장면 컴포넌트를 만들어 폰의 컨트롤러·카메라에 붙인다(한 번만). */
+    void CreateSceneComponents();
+
     /** 패널·포인터 표시 동기 — 열림일 때만 포인터와 광선을 켠다.
      *  닫힘 상태에서 포인터를 켜두면 손을 흔들 때 슬롯이 호버되어 오작동한다. */
     void ApplyInventoryPresentation(bool bOpen);
@@ -155,5 +207,35 @@ private:
     /** 광선·히트점 공용 머티리얼 인스턴스. 색을 런타임에 바꾸려면 인스턴스가 필요하다. */
     UPROPERTY(Transient)
     UMaterialInstanceDynamic* PointerMID = nullptr;
+
+    // ── 런타임에 만든 장면 컴포넌트 (GC 보호용 UPROPERTY) ──
+
+    /** 왼손 컨트롤러에 얹힌 HUD 패널. 카메라 부착(head-lock)은 피한다 — 상시 표시 패널이 시야에 고정되면 멀미. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UHUDPanelUIComponent* HUDPanel = nullptr;
+
+    /** 카메라에 붙은 채팅 패널 — Enter 로 열 때만 잠깐 시야에 고정된다. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UChatPanelUIComponent* ChatPanel = nullptr;
+
+    /** 열 때 시선 앞에 놓이고 그 자리에 고정되는 메뉴 패널. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UMenuPanelUIComponent* MenuPanel = nullptr;
+
+    /** 아이템 이름표 하나 — 대상만 바꿔 손 근처 아이템 위로 옮겨 쓴다. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UItemTooltipUIComponent* ItemTooltip = nullptr;
+
+    /** 오른손 UI 포인터 — 월드 공간 위젯엔 마우스가 없으므로 광선을 쏴 가상 포인터 이벤트로 바꾼다. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UWidgetInteractionComponent* Interactor = nullptr;
+
+    /** 포인터 광선 실메시 — bShowDebug 는 Shipping 에서 컴파일 제외라 출시본에도 남는 메시로 그린다. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UStaticMeshComponent* PointerBeam = nullptr;
+
+    /** 광선이 맞은 지점의 작은 구. 맞은 게 없으면 숨는다. */
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "UI")
+    UStaticMeshComponent* PointerDot = nullptr;
 
 };

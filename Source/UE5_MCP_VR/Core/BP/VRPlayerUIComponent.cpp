@@ -11,6 +11,7 @@
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "MotionControllerComponent.h"
 #include "UI/BP/ChatWidget.h"
 #include "UI/BP/MenuWidget.h"
 #include "UI/Components/MenuPanelUIComponent.h"
@@ -29,28 +30,101 @@ AVRPawn* UVRPlayerUIComponent::GetPawn() const
     return Cast<AVRPawn>(GetOwner());
 }
 
+void UVRPlayerUIComponent::CreateSceneComponents()
+{
+    AVRPawn* Pawn = GetPawn();
+    if (!Pawn || HUDPanel) return;   // 한 번만
+
+    // 런타임 생성 컴포넌트는 등록 + 인스턴스 컴포넌트 목록에 올려야 에디터 상세·직렬화·GC 에서 폰의 일부로 취급된다.
+    auto Register = [Pawn](USceneComponent* Comp)
+    {
+        Comp->RegisterComponent();
+        Pawn->AddInstanceComponent(Comp);
+    };
+
+    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯. 카메라 정렬·시선 페이드·포인터 충돌은 UHUDPanelUIComponent.
+    HUDPanel = NewObject<UHUDPanelUIComponent>(Pawn, TEXT("HUDWidgetComp"));
+    HUDPanel->SetupAttachment(Pawn->MotionControllerLeft);
+    HUDPanel->SetRelativeLocation(HUDPanelLocation);
+    HUDPanel->SetDrawSize(HUDPanelDrawSize);
+    HUDPanel->SetRelativeScale3D(FVector(HUDPanelScale));
+    Register(HUDPanel);
+
+    // 채팅 패널 — 예외적으로 카메라 부착(이유·자동 닫기는 UChatPanelUIComponent).
+    // 카메라 앞에 있으니 Yaw 180 으로 카메라 쪽을 본다(양면이라 어느 면이든 읽힌다).
+    ChatPanel = NewObject<UChatPanelUIComponent>(Pawn, TEXT("ChatWidgetComp"));
+    ChatPanel->SetupAttachment(Pawn->VRCamera);
+    ChatPanel->SetRelativeLocation(ChatPanelOffset);
+    ChatPanel->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
+    ChatPanel->SetDrawSize(ChatPanelDrawSize);
+    ChatPanel->SetRelativeScale3D(FVector(ChatPanelScale));
+    Register(ChatPanel);
+
+    // 메뉴 패널 — 루트에 붙지만 월드 고정(절대 좌표). 열 때 시선 앞에 놓는다(UMenuPanelUIComponent).
+    MenuPanel = NewObject<UMenuPanelUIComponent>(Pawn, TEXT("MenuWidgetComp"));
+    MenuPanel->SetupAttachment(Pawn->GetRootComponent());
+    MenuPanel->SetDrawSize(MenuPanelDrawSize);
+    MenuPanel->SetRelativeScale3D(FVector(MenuPanelScale));
+    Register(MenuPanel);
+
+    // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어 광선이 패널을 빗나간다.
+    Interactor = NewObject<UWidgetInteractionComponent>(Pawn, TEXT("HUDInteractor"));
+    Interactor->SetupAttachment(Pawn->MotionControllerRightAim);
+    Interactor->InteractionDistance = HUDInteractionDistance;
+    Interactor->InteractionSource = EWidgetInteractionSource::World;
+    Interactor->bEnableHitTesting = true;
+    Interactor->bShowDebug = false;          // 조준이 안 맞을 때 켜서 광선 확인
+    Interactor->bAutoActivate = false;       // 인벤토리·메뉴 열림 중에만 활성
+    Register(Interactor);
+
+    // 포인터 광선 실메시 — 원통을 조준축(+X)으로 눕혀 길이만 늘린다.
+    // 기본 원통은 Z축 100cm 이므로 Pitch -90 으로 Z 를 부모의 +X 에 맞춘다.
+    PointerBeam = NewObject<UStaticMeshComponent>(Pawn, TEXT("PointerBeam"));
+    PointerBeam->SetupAttachment(Pawn->MotionControllerRightAim);
+    PointerBeam->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+    // 광선이 자기 자신을 맞고 멈추지 않도록 콜리전 완전 차단. 그림자도 끈다(가는 막대의 그림자는 노이즈).
+    PointerBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PointerBeam->SetCastShadow(false);
+    PointerBeam->SetVisibility(false);
+    Register(PointerBeam);
+
+    PointerDot = NewObject<UStaticMeshComponent>(Pawn, TEXT("PointerDot"));
+    PointerDot->SetupAttachment(Pawn->MotionControllerRightAim);
+    PointerDot->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PointerDot->SetCastShadow(false);
+    PointerDot->SetVisibility(false);
+    Register(PointerDot);
+
+    // 아이템 이름표 — 하나를 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
+    ItemTooltip = NewObject<UItemTooltipUIComponent>(Pawn, TEXT("ItemTooltipComp"));
+    ItemTooltip->SetupAttachment(Pawn->GetRootComponent());
+    Register(ItemTooltip);
+}
+
 void UVRPlayerUIComponent::Init()
 {
     AVRPawn* Pawn = GetPawn();
     if (!Pawn) return;
 
+    CreateSceneComponents();
+
     // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
     // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
-    if (Pawn->PointerBeam && Pawn->PointerDot)
+    if (PointerBeam && PointerDot)
     {
-        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) Pawn->PointerBeam->SetStaticMesh(Cylinder);
-        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   Pawn->PointerDot->SetStaticMesh(Sphere);
+        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
+        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
 
         // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
         PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
         if (PointerMID)
         {
-            Pawn->PointerBeam->SetMaterial(0, PointerMID);
-            Pawn->PointerDot->SetMaterial(0, PointerMID);
+            PointerBeam->SetMaterial(0, PointerMID);
+            PointerDot->SetMaterial(0, PointerMID);
         }
 
         // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
-        Pawn->PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
+        PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
     }
 
     // HUD·채팅 위젯 생성 — 로컬 플레이어 컨트롤러일 때만.
@@ -59,35 +133,35 @@ void UVRPlayerUIComponent::Init()
     APlayerController* PC = Cast<APlayerController>(Pawn->GetController());
     if (PC && PC->IsLocalController())
     {
-        if (HUDWidgetClass && Pawn->HUDWidgetComp)
+        if (HUDWidgetClass && HUDPanel)
         {
-            Pawn->HUDWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-            Pawn->HUDWidgetComp->SetWidgetClass(HUDWidgetClass);
-            Pawn->HUDWidgetComp->InitWidget();
-            HUDWidget = Cast<UPlayerHUDWidget>(Pawn->HUDWidgetComp->GetUserWidgetObject());
+            HUDPanel->SetOwnerPlayer(PC->GetLocalPlayer());
+            HUDPanel->SetWidgetClass(HUDWidgetClass);
+            HUDPanel->InitWidget();
+            HUDWidget = Cast<UPlayerHUDWidget>(HUDPanel->GetUserWidgetObject());
         }
-        if (ChatWidgetClass && Pawn->ChatWidgetComp)
+        if (ChatWidgetClass && ChatPanel)
         {
-            Pawn->ChatWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-            Pawn->ChatWidgetComp->SetWidgetClass(ChatWidgetClass);
-            Pawn->ChatWidgetComp->InitWidget();
-            ChatWidget = Cast<UChatWidget>(Pawn->ChatWidgetComp->GetUserWidgetObject());
+            ChatPanel->SetOwnerPlayer(PC->GetLocalPlayer());
+            ChatPanel->SetWidgetClass(ChatWidgetClass);
+            ChatPanel->InitWidget();
+            ChatWidget = Cast<UChatWidget>(ChatPanel->GetUserWidgetObject());
         }
     }
 
-    if (PC && PC->IsLocalController() && MenuWidgetClass && Pawn->MenuWidgetComp)
+    if (PC && PC->IsLocalController() && MenuWidgetClass && MenuPanel)
     {
-        Pawn->MenuWidgetComp->SetOwnerPlayer(PC->GetLocalPlayer());
-        Pawn->MenuWidgetComp->SetWidgetClass(MenuWidgetClass);
-        Pawn->MenuWidgetComp->InitWidget();
-        MenuWidget = Cast<UMenuWidget>(Pawn->MenuWidgetComp->GetUserWidgetObject());
+        MenuPanel->SetOwnerPlayer(PC->GetLocalPlayer());
+        MenuPanel->SetWidgetClass(MenuWidgetClass);
+        MenuPanel->InitWidget();
+        MenuWidget = Cast<UMenuWidget>(MenuPanel->GetUserWidgetObject());
         if (MenuWidget) MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
     }
 
     // HUDWidgetComp 가 블루프린트 직렬화 캐시 등으로 비활성화되어 있는 경우 방어
-    if (Pawn->HUDWidgetComp)
+    if (HUDPanel)
     {
-        Pawn->HUDWidgetComp->SetVisibility(true);
+        HUDPanel->SetVisibility(true);
     }
 
     // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
@@ -126,7 +200,7 @@ void UVRPlayerUIComponent::ApplyInventoryPresentation(bool bOpen)
 
     // 패널은 숨기지 않는다 — HP·스태미나 게이지가 상시 표시되고 인벤토리 슬롯만 위젯 내부에서 접힌다.
     // 연 동안엔 시선과 무관하게 불투명(슬롯을 조준하다 고개가 조금 돌아갔다고 흐려지면 조작이 끊긴다).
-    if (Pawn->HUDWidgetComp) Pawn->HUDWidgetComp->bForceOpaque = bOpen;
+    if (HUDPanel) HUDPanel->bForceOpaque = bOpen;
     SyncPointer();
 }
 
@@ -136,7 +210,7 @@ void UVRPlayerUIComponent::SyncPointer()
     if (!Pawn) return;
 
     const bool bOn = bInventoryOpen || bMenuOpen;
-    if (UWidgetInteractionComponent* Interactor = Pawn->HUDInteractor)
+    if (Interactor)
     {
         // 닫을 때 눌린 채로 두면 다음에 열었을 때 첫 클릭이 씹힌다.
         if (!bOn && bPointerPressed)
@@ -151,8 +225,8 @@ void UVRPlayerUIComponent::SyncPointer()
     // 닫는 프레임에 바로 끈다 — Tick 을 기다리면 한 프레임 광선이 남는다.
     if (!bOn)
     {
-        if (Pawn->PointerBeam) Pawn->PointerBeam->SetVisibility(false);
-        if (Pawn->PointerDot)  Pawn->PointerDot->SetVisibility(false);
+        if (PointerBeam) PointerBeam->SetVisibility(false);
+        if (PointerDot)  PointerDot->SetVisibility(false);
     }
 }
 
@@ -163,7 +237,7 @@ void UVRPlayerUIComponent::SyncPointer()
 void UVRPlayerUIComponent::ToggleMenu()
 {
     AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->MenuWidgetComp || !MenuWidget) return;   // 위젯 클래스 미지정이면 메뉴 없음
+    if (!Pawn || !MenuPanel || !MenuWidget) return;   // 위젯 클래스 미지정이면 메뉴 없음
 
     if (bMenuOpen)
     {
@@ -173,7 +247,7 @@ void UVRPlayerUIComponent::ToggleMenu()
 
     CloseInventory();   // 포인터·슬롯 입력 규칙이 겹치지 않게 인벤토리는 먼저 닫는다
     bMenuOpen = true;
-    Pawn->MenuWidgetComp->Open();
+    MenuPanel->Open();
     SyncPointer();
 }
 
@@ -181,7 +255,7 @@ void UVRPlayerUIComponent::CloseMenu()
 {
     if (!bMenuOpen) return;
     bMenuOpen = false;
-    if (AVRPawn* Pawn = GetPawn(); Pawn && Pawn->MenuWidgetComp) Pawn->MenuWidgetComp->Close();
+    if (AVRPawn* Pawn = GetPawn(); Pawn && MenuPanel) MenuPanel->Close();
     SyncPointer();
 }
 
@@ -194,8 +268,8 @@ bool UVRPlayerUIComponent::PressPointer()
 {
     // 인벤토리 열림 중 트리거는 UI 클릭 — 안 막으면 슬롯을 누를 때마다 손앞으로 발사체가 나간다.
     AVRPawn* Pawn = GetPawn();
-    if (!(bInventoryOpen || bMenuOpen) || !Pawn || !Pawn->HUDInteractor) return false;
-    Pawn->HUDInteractor->PressPointerKey(EKeys::LeftMouseButton);
+    if (!(bInventoryOpen || bMenuOpen) || !Pawn || !Interactor) return false;
+    Interactor->PressPointerKey(EKeys::LeftMouseButton);
     bPointerPressed = true;
     return true;
 }
@@ -203,8 +277,8 @@ bool UVRPlayerUIComponent::PressPointer()
 void UVRPlayerUIComponent::ReleasePointer()
 {
     AVRPawn* Pawn = GetPawn();
-    if (!bPointerPressed || !Pawn || !Pawn->HUDInteractor) return;
-    Pawn->HUDInteractor->ReleasePointerKey(EKeys::LeftMouseButton);
+    if (!bPointerPressed || !Pawn || !Interactor) return;
+    Interactor->ReleasePointerKey(EKeys::LeftMouseButton);
     bPointerPressed = false;
 }
 
@@ -303,7 +377,7 @@ void UVRPlayerUIComponent::DumpInventoryHUD() const
         Report(FString::Printf(TEXT("  - %s x%d"), *Slot.ItemData.ItemID, Slot.Count));
     }
 
-    const UWidgetComponent* HUDWidgetComp = Pawn->HUDWidgetComp;
+    const UWidgetComponent* HUDWidgetComp = HUDPanel;
     Report(FString::Printf(TEXT("HUDWidget=%s  HUDWidgetComp=%s  visible=%d  open=%d"),
         HUDWidget ? TEXT("OK") : TEXT("NULL"),
         HUDWidgetComp ? TEXT("OK") : TEXT("NULL"),
@@ -327,7 +401,7 @@ void UVRPlayerUIComponent::DumpInventoryHUD() const
 void UVRPlayerUIComponent::OpenChat()
 {
     AVRPawn* Pawn = GetPawn();
-    if (Pawn && Pawn->ChatWidgetComp) Pawn->ChatWidgetComp->Open();
+    if (Pawn && ChatPanel) ChatPanel->Open();
 }
 
 // 포인터 광선 갱신 — 조준 결과(WidgetInteraction 의 마지막 히트)를 그대로 그린다.
@@ -335,9 +409,9 @@ void UVRPlayerUIComponent::OpenChat()
 void UVRPlayerUIComponent::UpdatePointerVisual()
 {
     AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->PointerBeam || !Pawn->PointerDot || !Pawn->HUDInteractor) return;
-    UStaticMeshComponent* Beam = Pawn->PointerBeam;
-    UStaticMeshComponent* Dot = Pawn->PointerDot;
+    if (!Pawn || !PointerBeam || !PointerDot || !Interactor) return;
+    UStaticMeshComponent* Beam = PointerBeam;
+    UStaticMeshComponent* Dot = PointerDot;
 
     if (!(bInventoryOpen || bMenuOpen))
     {
@@ -346,9 +420,9 @@ void UVRPlayerUIComponent::UpdatePointerVisual()
         return;
     }
 
-    const FHitResult& Hit = Pawn->HUDInteractor->GetLastHitResult();
+    const FHitResult& Hit = Interactor->GetLastHitResult();
     const bool bHit = Hit.bBlockingHit;
-    const float Length = bHit ? Hit.Distance : Pawn->HUDInteractor->InteractionDistance;
+    const float Length = bHit ? Hit.Distance : Interactor->InteractionDistance;
 
     // 원통 기본 크기 100cm(지름 100) 기준 → 실치수/100 이 스케일.
     Beam->SetRelativeScale3D(FVector(PointerBeamThickness / 100.f,
@@ -377,12 +451,12 @@ void UVRPlayerUIComponent::UpdatePointerVisual()
 void UVRPlayerUIComponent::UpdateItemTooltip()
 {
     AVRPawn* Pawn = GetPawn();
-    if (!Pawn || !Pawn->ItemTooltipComp) return;
+    if (!Pawn || !ItemTooltip) return;
 
     // 이미 쥔 물건에는 이름표가 필요 없다 — 손에 든 걸 다시 설명할 이유가 없고,
     // 손을 따라다니는 이름표는 시야만 가린다.
     const UInventoryComponent* Inventory = Pawn->Inventory;
     const bool bHolding = Inventory && (Inventory->GetHeldItem(EEquipmentSlot::MainHand)
                                      || Inventory->GetHeldItem(EEquipmentSlot::OffHand));
-    Pawn->ItemTooltipComp->ShowForItem(bHolding ? nullptr : Pawn->FindNearestItemNearHand(TooltipRange, /*bLeft=*/false));
+    ItemTooltip->ShowForItem(bHolding ? nullptr : Pawn->FindNearestItemNearHand(TooltipRange, /*bLeft=*/false));
 }
