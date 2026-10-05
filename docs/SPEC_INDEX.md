@@ -2,7 +2,7 @@
 
 SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완료 기준은 각 SPEC 본문.
 **갱신 규칙**: SPEC 의 마일스톤이 바뀌면 이 표의 그 줄도 같이 고친다. SPEC 이 끝나면 `docs/done/` 으로 옮기고 아래 "완료" 표로 내린다.
-마지막 갱신: 2026-10-04.
+마지막 갱신: 2026-10-05.
 
 범례: ✅ 완료 · 🔶 진행 중 · ⬜ 착수 전 · ⏸ 보류 · ❓ 상태 줄 없음
 
@@ -31,6 +31,7 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 |---|---|---|---|
 | [jev_daily](SPEC_jev_daily.md) | 🔶 M1 ✅(2026-09-24) M2 학습 ✅ | 골드셋 50건 사람 채점·일치율, 대화 중 판정 보강 여부, 튜닝값(반경·풀 상한·대기 시간), 멀리 있는 NPC 에게 GiveItem 오지정 여지 | 골드셋이 look_at·stay 편중. 실제 POI 시스템은 별도 SPEC |
 | [jev_neuro_symbolic_st](SPEC_jev_neuro_symbolic_st.md) | 🔶 Phase 1~3 코드 ✅(2026-09-22) | `BREAKTHROUGH_GAIN` 헤드셋 체감 튜닝, 전투 라벨 재생성·재학습(선택) | StateTree 에셋 바인딩은 동작 변화 0 이라 보류 |
+| [poi](SPEC_poi.md) | ⬜ M1 액터·등록소 → M2 `target_poi` 이동 → M3 대사·RAG → M4 스토리 구역(인터뷰 2026-10-05) | 노출 상한 N·별칭 길이, M3 "근처" 반경, `Type` 어휘(M1 미사용), SLM id 오류 잦으면 구제 재검토 | 해석은 C++ `UPOIManager`(Python 은 어휘 검증만). jev_daily `pois` 풀 계약 유지 |
 | [python_cpp_contract](SPEC_python_cpp_contract.md) | ❓ 코드 대조 리뷰(2026-09-18)만 있음 | 판정표의 "구현 가치 있음" 항목(예: `stats` 송신)이 구현됐는지 | 상태 줄 없음. 본문 판정표 기준으로 정리 필요 |
 
 ---
