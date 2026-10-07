@@ -1457,33 +1457,9 @@ def handle_location_decision(request):
 
 ## 2. 전체 시퀀스
 
-```mermaid
-sequenceDiagram
-    participant NPC as ASmartNPC
-    participant NSC as NPCStateComponent
-    participant NM as UNPCManager
-    participant WS as UWebSocketClient
-    participant PY as FastAPI
-    participant LG as LangGraph
+<iframe src="diagrams/ue5-python-sequence.html" title="UE5 ↔ Python 메시지 시퀀스" loading="lazy" style="width:100%;height:1180px;border:0;border-radius:4px;background:#0b0f17"></iframe>
 
-    NPC->>NSC: 인지 이벤트
-    NSC->>NSC: 0.3s Batching
-    NSC->>NM:  SendEventReport
-    NM->>WS:   SendMessage
-    WS-->>PY:  /ws/llm
-
-    PY->>PY:   validate_auth_token
-    PY->>PY:   is_stale_packet 2s
-    PY->>LG:   ainvoke
-    LG->>LG:   II → Sup → Diag → IO → Rules
-    LG-->>PY:  ActionBatch
-
-    PY-->>WS:  ActionBatch JSON
-    WS->>NM:   OnLLMMessageReceived
-    NM->>NM:   ParseModeActionRequestFromObject
-    NM->>NPC:  DeliverToNPC
-    NPC->>NPC: ExecuteActionBatch
-```
+> 코드(커밋 `e703f005`) 기준으로 다시 그림. 인지 보고(`emergency_report`)는 통보 전용이라 빈 배치만 돌려주고, 행동은 `prompt` 응답(`ModeActionRequest`)에서 나온다. 서버 stale 임계는 10초. 원본 JSON: `docs/diagrams/ue5-python-sequence.source.json` (archify 스킬로 재생성).
 
 ---
 

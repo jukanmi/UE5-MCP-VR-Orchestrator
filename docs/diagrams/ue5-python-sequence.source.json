@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "UE5 ↔ Python 메시지 시퀀스",
+    "locale": "en",
+    "output": ".archify/sequence-ue5-python-20261007-120000/ue5-python-sequence.html",
+    "viewBox": [1080, 640],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jukanmi/UE5-MCP-VR-Orchestrator.git",
+      "revision": "e703f0052c4a6c9042b783c2c9c40e975ac2aeff",
+      "link_mode": "local-only"
+    }
+  },
+  "participants": [
+    {
+      "id": "act",
+      "type": "frontend",
+      "label": "ActionComponent",
+      "sublabel": "NPC 행동 큐",
+      "sources": [
+        { "path": "Source/UE5_MCP_VR/NPC/Action/NPCActionComponent.cpp", "line": 459, "end_line": 469, "label": "ExecuteActionBatch" },
+        { "path": "Source/UE5_MCP_VR/NPC/Action/NPCActionComponent.cpp", "line": 490, "end_line": 496, "label": "빈 배치는 Mode 유지" }
+      ]
+    },
+    {
+      "id": "npc",
+      "type": "frontend",
+      "label": "ASmartNPC",
+      "sublabel": "AgentID 로 조회",
+      "sources": [
+        { "path": "Source/UE5_MCP_VR/NPC/BP/SmartNPC.cpp", "line": 77, "end_line": 83, "label": "ExecuteActionBatch 전달" }
+      ]
+    },
+    {
+      "id": "state",
+      "type": "frontend",
+      "label": "StateComponent",
+      "sublabel": "NPC 인지·plan 보관",
+      "sources": [
+        { "path": "Source/UE5_MCP_VR/NPC/Components/NPCStateComponent.cpp", "line": 150, "end_line": 170, "label": "0.3s 디바운스" },
+        { "path": "Source/UE5_MCP_VR/NPC/Components/NPCStateComponent.cpp", "line": 172, "end_line": 217, "label": "FlushEventReport" }
+      ]
+    },
+    {
+      "id": "mgr",
+      "type": "frontend",
+      "label": "UNPCManager",
+      "sublabel": "WebSocket 송수신·라우팅",
+      "sources": [
+        { "path": "Source/UE5_MCP_VR/NPC/Subsystems/NPCManager.cpp", "line": 681, "end_line": 691, "label": "SendEventReport" },
+        { "path": "Source/UE5_MCP_VR/NPC/Subsystems/NPCManager.cpp", "line": 217, "end_line": 275, "label": "SendPlayerDialogue" },
+        { "path": "Source/UE5_MCP_VR/NPC/Subsystems/NPCManager.cpp", "line": 174, "end_line": 200, "label": "DeliverParsedActionBatches" }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI /ws/llm",
+      "sublabel": "인증·stale·타입 분기",
+      "sources": [
+        { "path": "OmniAgent_VR_System/CognitiveEngine/app/main.py", "line": 167, "end_line": 193, "label": "메시지마다 태스크" },
+        { "path": "OmniAgent_VR_System/CognitiveEngine/app/main.py", "line": 209, "end_line": 263, "label": "인증·stale·분기" },
+        { "path": "OmniAgent_VR_System/CognitiveEngine/app/main.py", "line": 372, "end_line": 424, "label": "emergency_report" }
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "backend",
+      "label": "LangGraph",
+      "sublabel": "Supervisor 허브",
+      "sources": [
+        { "path": "OmniAgent_VR_System/CognitiveEngine/app/graph.py", "line": 50, "end_line": 80, "label": "노드·엣지" }
+      ]
+    }
+  ],
+  "segments": [
+    { "from": 150, "to": 285, "label": "인지 통보" },
+    { "from": 295, "to": 410, "label": "대화·계획" },
+    { "from": 420, "to": 520, "label": "실행 전달" }
+  ],
+  "messages": [
+    { "id": "perception", "from": "npc", "to": "state", "y": 170, "label": "인지 이벤트", "variant": "default" },
+    { "id": "flush", "from": "state", "to": "mgr", "y": 200, "label": "0.3s 배치 · 위험도 상위 4개", "variant": "default" },
+    { "id": "emergency", "from": "mgr", "to": "api", "y": 230, "label": "emergency_report", "variant": "emphasis" },
+    { "id": "notify-ack", "from": "api", "to": "mgr", "y": 262, "label": "빈 ActionBatch", "variant": "return", "note": "통보 전용 — 호감도·기억만 갱신" },
+    { "id": "prompt", "from": "mgr", "to": "api", "y": 318, "label": "prompt", "variant": "emphasis", "note": "대사·plan·인벤·주변 컨텍스트" },
+    { "id": "invoke", "from": "api", "to": "graph", "y": 348, "label": "ainvoke", "variant": "security", "note": "인증·10초 stale 검사 통과 후" },
+    { "id": "graph-result", "from": "graph", "to": "api", "y": 378, "label": "ActionBatches · NpcPlans", "variant": "return" },
+    { "id": "mode-request", "from": "api", "to": "mgr", "y": 408, "label": "ModeActionRequest", "variant": "emphasis" },
+    { "id": "store-plan", "from": "mgr", "to": "state", "y": 446, "label": "Plan 저장", "variant": "dashed" },
+    { "id": "deliver", "from": "mgr", "to": "npc", "y": 478, "label": "DeliverToNPC", "variant": "default" },
+    { "id": "execute", "from": "npc", "to": "act", "y": 508, "label": "ExecuteActionBatch", "variant": "default", "note": "ActionQueue 적재 → StateTree 실행" }
+  ],
+  "activations": [
+    { "participant": "state", "from": 165, "to": 205, "type": "frontend" },
+    { "participant": "mgr", "from": 195, "to": 268, "type": "frontend" },
+    { "participant": "api", "from": 225, "to": 268, "type": "backend" },
+    { "participant": "mgr", "from": 313, "to": 513, "type": "frontend" },
+    { "participant": "api", "from": 313, "to": 413, "type": "backend" },
+    { "participant": "graph", "from": 343, "to": 383, "type": "backend" },
+    { "participant": "npc", "from": 473, "to": 513, "type": "frontend" },
+    { "participant": "act", "from": 503, "to": 513, "type": "frontend" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "단일 채널·타입 분기",
+      "items": [
+        "UE5 와 Python 은 ws://127.0.0.1:8000/ws/llm 하나만 쓴다",
+        "서버는 메시지마다 별도 태스크로 처리해 응답 순서를 보장하지 않는다",
+        "prompt 는 msg_id 로 매칭한다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "emergency_report 는 통보 전용",
+      "items": [
+        "반사 판단은 UE5 척수 테이블이 먼저 끝낸다",
+        "위험도가 임계 미만이면 응답 없이 통보만 한다",
+        "빈 배치는 BehaviorMode 를 되돌리지 않는다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "행동은 prompt 에서 나온다",
+      "items": [
+        "LangGraph 는 Supervisor 를 허브로 Interface_Input, Dialogue, Interface_Output, Rules 를 오간다",
+        "응답의 NpcPlans 는 NPCStateComponent 에 저장된다",
+        "ActionBatches 는 AgentID 로 라우팅돼 NPC 별 큐에 쌓인다"
+      ]
+    }
+  ]
+}
