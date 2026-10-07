@@ -73,6 +73,53 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
   CC0 — Quaternius 전부(Parchment→SpellScroll 포함) · Bedroll(Kenney) · Telescope·Toolbox(CreativeTrio) · Mic(iPoly3D). Fab 스탠다드(무료) — Medieval Blacksmith tools pack(RepairHammer).
 - 함정: Quaternius FBX 는 실물 크기가 아니고 모델마다 배율이 다름(단검 156cm, 나침반 91cm). `set_lod_build_settings` 의 BuildScale 은 저장만 되고 즉시 재빌드되지 않아 크기가 안 바뀜 — FBX 는 `import_uniform_scale` 재임포트, GLB 는 액터 스케일 후 `merge_static_mesh_actors` 로 구움. 병합 결과 이름엔 `SM_` 접두가 자동으로 붙는다. 레벨 배치 `BP_DropItem` 은 메시를 테이블에서 다시 읽지 않아(에디터 편집 시만 `SyncMeshFromItemData`) 메시 교체 시 배치 액터를 따로 갱신·저장해야 함(World Partition 셀은 `WorldPartitionBlueprintLibrary.load_actors` 로 로드).
 
+### 아이디어 메모 (사용자가 던진 것, 기록만 — 검토·착수 전, 2026-10-07~)
+- [ ] **Whistle — 가벼운 음성 인식(STT) 모델** (2026-10-07, 검색 확인) — Cactus Compute 가 2026-10-02 공개. 16.9MB 한 파일·CPU 만·의존성 없음·첫 토큰 11ms(M4 Pro), LibriSpeech 등에서 Whisper base 보다 낮은 WER 주장. 가중치 HF `Cactus-Compute/whistle`, 엔진 GitHub `cactus-compute/needle`(`pip install cactus-needle`, C API `needle_load`/`needle_transcribe`). 30초 단위 일괄 처리(스트리밍 언급 없음).
+  **한국어 미지원** — 영·독·불·스·이·네덜란드·폴란드 7개만. 라이선스 페이지에 명시 없음(HF 모델 카드 확인 필요). 지금 Whisper 계열을 쓰는 한국어 음성 입력 대체로는 부적합, 한국어 추가 여부만 추적. (동명이인: 칭화대 THU-SPMI 의 Whistle 은 다국어 음소 지도 CTC Conformer 90/218/543MB 연구 모델 — 별개.)
+  출처: https://cactuscompute.com/blog/whistle · https://huggingface.co/THU-SPMI/whistle-large
+- [ ] **Phonon-2 — 영어 전용 STT** (2026-10-07, 검색 확인) — Fermion Research 가 2026-09-29 공개. NVIDIA Parakeet TDT 0.6B v3 를 2.1비트로 양자화한 164MB(원본 2.5GB), 7개 영어 세트 평균 WER 5.21%(원본 4.96%·Whisper large-v3-turbo 6.58%), M5 맥북에어 174배속·H100 배치 6,680배속. Windows CPU·CUDA(Docker)·MLX 지원, 구두점·대소문자·단어별 타임스탬프. 라이선스 CC-BY-4.0(출처 표기), CLI 는 Apache-2.0. HF `FermionResearch/Phonon-2`.
+  **영어 전용 — 한국어 X**, 스트리밍 언급 없음. Whistle 과 같은 이유로 한국어 입력엔 부적합. 한국어 STT 후보는 아래 항목.
+  출처: https://huggingface.co/FermionResearch/Phonon-2
+- [ ] **한국어 STT 후보 — CPU 로 도는 소형 조건** (2026-10-07, 검색 수집·미검증) — 조건: 16GB VRAM 을 UE5·Ollama 가 쓰므로 CPU 추론 가능한 소형. 기준표는 `models.handy.computer/languages/ko`(FLEURS 한국어 낭독 음성·Q8_0 양자화·Ryzen 4750U 노트북 CPU, 속도는 실시간 배수 — 1 미만이면 실시간 불가). 이전 음성 서버는 faster-whisper `large-v3` GPU(2026-09-12 폐기, 복원은 `ef8c663a^`).
+  | 모델 | CER % | 크기 | CPU 속도 | 라이선스 | 비고 |
+  | --- | --- | --- | --- | --- | --- |
+  | Fun-ASR-MLT-Nano-2512 | 5.20 | 0.83GB | 4.5× | Apache-2.0(HF 카드·저장소 기준, 순위표는 FunASR v1.1 로 적어 불일치) | 표에서 "종합 추천". 소형 중 정확도 최고. 800M·31개 언어(한국어 포함). 아래 상세 |
+  | Qwen3-ASR-0.6B | 5.82 | 0.79GB | 4.3× | Apache-2.0 | 실제 0.9B 파라미터. **스트리밍은 vLLM 백엔드에서만**(Linux 중심) |
+  | whisper-small | 7.70 | 0.25GB | 3.4× | Apache-2.0 | 가장 무난·생태계 큼, 정확도는 한 단계 아래 |
+  | SenseVoiceSmall | 8.27 | 0.24GB | 15.5× | FunASR 모델 라이선스 | 가장 빠름. 정확도 낮음 |
+  | moonshine-base-ko / tiny-ko | 8.12 / 9.00 | 0.07 / 0.03GB | 미표기 | MIT | 극소형, 속도 수치 없음 |
+  - 주의: ① 벤치는 깨끗한 낭독 음성 — 마이크·VR 잡음·짧은 명령 발화에서의 순위는 미검증 ② 푸시투토크(말 끝나고 변환)면 스트리밍 불필요, 지금 구조가 그랬다 ③ 후보 간 CER 차(5.2~5.8)는 신뢰구간 안쪽일 수 있음 ④ FunASR 라이선스는 상용 허용이라 하나 조건 확인 필요.
+  - **Fun-ASR-MLT-Nano-2512 상세**(2026-10-07): 800M, FunASR 계열, 핫워드·ITN(숫자·날짜 정규화) 지원. **CPU 경로 = llama.cpp/GGUF** — GPU·Python 없이 단독 바이너리, Linux·macOS·**Windows 프리빌트** 있음(저장소 릴리스). 그 밖에 vLLM(스트리밍 SDK·WebSocket·VAD, 청크 720ms 예시)·transformers 5.17. 공식 한국어 CER 없음("재현 가능한 평가 공개 시 추가" 문구) — 5.20 은 제3자 수치. 스트리밍은 vLLM 경로뿐이라 CPU 에선 푸시투토크 일괄 변환 전제. 동명 `Fun-ASR-Nano-2512` 는 중·영·일(+중국 방언)용이라 한국어엔 MLT 쪽. 최대 오디오 길이·GGUF 가중치 정확한 저장소명은 미확인.
+  출처: https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512 · https://github.com/QwenAudio/Fun-ASR
+  - **다른 한국어 벤치(자발 발화 기준, 2026-10-07)** — 위 FLEURS 는 낭독이라 쉽다. 실제 대화 음성(KsponSpeech)·전화 음성(AIHub)은 오류가 3배 가까이 커진다. 오류율은 하드웨어와 무관하므로 GPU 에서 잰 수치도 소형 모델 비교엔 유효.
+    | 모델(소형·CPU 가능) | KsponSpeech clean / other CER % | FLEURS CER % | 출처 |
+    | --- | --- | --- | --- |
+    | Zipformer 스트리밍 ko(155.7M, int8) | **7.18 / 7.14**(청크 64 기준 7.53) | — | HF `kangkyu/icefall-asr-ko-streaming-zipformer-174m` |
+    | Qwen3-ASR-0.6B | 18.56 / 16.26 | 5.82 | OpenKoASR |
+    | whisper-small | 23.21 / 21.44 | 7.70 | OpenKoASR |
+    | whisper-base | 30.40 / 27.80 | 12.98 | OpenKoASR |
+    | whisper-tiny | 37.20 / 34.99 | 19.07 | OpenKoASR |
+    | moonshine-base-ko | 미측정 | 8.0(F32) | HF 카드 |
+    - **눈에 띄는 것: sherpa-onnx 한국어 스트리밍 Zipformer** — 155.7M·Apache-2.0·**CPU 전용 설계**, int8 RTF 0.049(실시간의 20배, CPU 기종 미기재), 청크 16/32/64 = 지연 320ms/640ms/1.28s·CER 8.26/7.82/7.53. 훈련 데이터 ≈6,500h(KsponSpeech 964h + AIHub 약 5,500h)라 **KsponSpeech 수치는 도메인 안쪽(유리한 평가)** — 다른 모델과 같은 잣대로 보면 안 됨. 진짜 스트리밍이라 말하는 도중 자막·조기 반응에 유리. 한계: 어휘 2,460 음절이라 고유명사·게임 용어 약함(핫워드 없음), Windows 는 카드에 언급 없음(sherpa-onnx 자체는 Windows 빌드 제공), 청크 크기 고정(16/32/64).
+    - **OpenKoASR 리더보드**(`GT-KIM/open-korean-automatic-speech-recognition`)는 Whisper·Qwen3-ASR 만 있고 Fun-ASR·SenseVoice·Moonshine·Zipformer 는 없음 → 이 후보들끼리 같은 데이터로 잰 비교표는 아직 없다. 결과 제출 이슈 양식은 있음. 직접 재야 함.
+    - 한국어 소형 Whisper 파인튜닝(예: ENERZAi EZWhisper-Small 1.58비트 70MB, 자체 보고로 small 18%→6.45%)도 있으나 모델 공개 여부·평가셋 미확인.
+    출처: https://gt-kim.github.io/open-korean-automatic-speech-recognition/leaderboard_data.json · https://huggingface.co/kangkyu/icefall-asr-ko-streaming-zipformer-174m · https://huggingface.co/moonshine-ai/moonshine-tiny-ko · https://www.edge-ai-vision.com/2025/11/small-models-big-heat-conquering-korean-asr-with-low-bit-whisper/
+  - 다음 한 걸음(착수 시): 실제 마이크 녹음 20~30문장(게임 명령체)으로 Fun-ASR-Nano·Qwen3-ASR-0.6B·whisper-small CER·지연 직접 비교.
+  출처: https://models.handy.computer/languages/ko · https://huggingface.co/Qwen/Qwen3-ASR-0.6B · https://github.com/FunAudioLLM/SenseVoice
+- [ ] **Jevlike 대체·보강 후보군** (2026-10-07, 검색 수집 — 미검증, 수치는 각 저장소 자체 주장) — 현행 `vinnylarouge/jevlike`(MIT, 바이트 단위 인코더·0.19MB, 메뉴 합성 98%)는 단일 패스 옵션 스코어러. 같은 입출력(문맥 + 옵션 N개 → 옵션별 확률)을 내는 오픈소스가 여럿 나옴:
+  | 이름 | 기반·크기 | 구조 | 비고 |
+  | --- | --- | --- | --- |
+  | `olanotolu/jevbetter` | 해시 n-gram + 2층 트랜스포머 | 경쟁 옵션 어텐션 + 게이트 헤드 + 온도 보정 | **jevlike JSONL 포맷 호환(데이터 재사용 가능)**, MIT. 자체 벤치 top-1 0.916 vs 0.873·보정오차 절반, 대신 처리량 40 vs 4,608 menus/s(100배 느림, CPU 기준). 별 15개 |
+  | `wfzyx/von` | ModernBERT-large 395M | 옵션 마커 + 온도 보정 | Apache-2.0, 로컬 23ms(A10G)·96ms(4 vCPU). **영어 전용(한국어 X)**, 가중치 고정·보정만 재학습. 컨텍스트 8192 |
+  | `NandhaKishorM/laya` | ModernBERT-large 322~421M | 비자기회귀 + 전용 스코어 헤드 | **100개+ 언어** 주장. 학습 지원 여부 미확인 |
+  | `TianyuCodings/NanoJev` | Qwen3-0.6B | 공유 백본 + 결정 헤드 | 가장 작은 LLM 계열, 학습 파이프라인 포함 |
+  | `jaredpalmer/kev` | Qwen3.5 0.8~9B + LoRA | 옵션 표현 비교 포인터 헤드 | TypeSafe SDK 호환 API(`/v1/systemone`). 별 약 1.4k |
+  | `bespokelabsai/nimble` | Qwen3.5-9B + LoRA | 후보 로짓 추출 | 학습 레시피·평가·데이터 큐레이션 공개 |
+  | `theoleecj/semif` · `Rizzo-AI-Academy/rizzo-flow` | Qwen3.5-4B · 1.7~4B | 학습 없이 로짓 추출(llama.cpp) | 가장 쉬움, 대신 16GB VRAM 을 LLM 과 나눠 써야 함 |
+  - 관련: Cactus **Needle3**(121M·8~29MB·Apache-2.0)는 도구 호출·구조 추출·임베딩용이라 "옵션 확률" 스코어러와는 결이 다름(신뢰도 점수만). 평가용으로 `JevBench` 가 언급됨(arXiv 2609.30243 `JevOut` 도 참고).
+  - 판단 보류 사유: 현행은 0.19MB·5~20ms 로 충분하고 LLM·Ollama 가 이미 VRAM 을 씀. 검토 가치가 있는 건 ① `jevbetter`(데이터 그대로 비교 학습, 골드셋 `eval` 로 jevlike 와 맞대결) ② `laya`(한국어 문맥을 직접 먹여야 할 때). 한국어 컨텍스트를 쓰는지는 `jev_dataset.py` 확인 필요.
+  출처: https://github.com/olanotolu/jevbetter · https://huggingface.co/wfzyx/von · https://www.datacamp.com/blog/top-open-source-jev-alternatives · https://huggingface.co/Cactus-Compute/needle3
+
 ### 백로그 (착수 미정, 2026-07 발굴분 — 필요 대두 시 개별 `/feature-spec`)
 - [ ] (참고) **오목 아이템 충돌체 CoACD** — 양동이·컵·바구니 테두리·손잡이 정밀도가 필요할 때 엔진 자동 볼록 분해(양동이 현재 20헐) 대신 CoACD 로 굽기. 손가락은 캡슐 유지(매 프레임 재용접·GJK 비용, 2026-10-02 판단).
 - [ ] **C++ 대형 함수 분할**: `OnTacticalCandidatesDone` 182줄 · `OnTargetPerceptionUpdated` 165줄 · `OnLLMMessageReceived` 133줄→타입별 핸들러. `ExecuteInteraction` 은 switch 본질 → 유지.
