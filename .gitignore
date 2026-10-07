@@ -180,3 +180,8 @@ Content/StarterContent/
 RawAssets/
 # AI 작업 및 대화 아카이브 로그
 ai-log/
+
+# archify 스킬(npx skills add 로 설치, 재설치 가능)·설치 기록·다이어그램 작업 폴더 — 미추적
+.claude/skills/archify/
+skills-lock.json
+.archify/
