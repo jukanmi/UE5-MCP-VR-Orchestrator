@@ -344,7 +344,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
     float BendRatioMaxUp = 0.95f;
 
-    /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. */
+    /** 허리 숙이기 걷기 속도 = WalkSpeed × 이 값. 서기(1.0)와 쭈그리기(CrouchSpeed/WalkSpeed) 사이. 전력질주 중엔 적용 안 함. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "1.0"))
+    float BendSpeedRatio = 0.75f;
+
+    /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. 엎드리기 캡슐은 눕히지 않고 이 높이의 수직 캡슐로 둔다
+     *  (캡슐이 HMD 높이를 따라 연속으로 줄어들어 바닥·천장 스윕으로 침투를 막는다). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "60.0"))
     float MinCapsuleHalfHeight = 22.f;
 

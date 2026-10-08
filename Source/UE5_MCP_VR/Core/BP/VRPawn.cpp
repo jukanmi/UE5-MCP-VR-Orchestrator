@@ -1278,13 +1278,16 @@ void AVRPawn::ApplyMovementSpeed()
 
     const float Base = CurrentStats.Movement.WalkSpeed;
 
-    // 자세별 속도 클램프 — Standing·Bending 100% / Crouching = CrouchSpeed / Prone = 20%
+    // 자세별 속도 클램프 — Standing 100% / Bending = BendSpeedRatio / Crouching = CrouchSpeed / Prone = 20%
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
-    case EVRPosture::Bending:   // M1: 서기와 동일 (속도 조정은 후속 단계)
         // Sprint 는 선 자세에서만 — 웅크림/포복은 아래 분기가 각자 속도를 덮어써 자동 억제.
         MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base;
+        break;
+    case EVRPosture::Bending:
+        // 전력질주 중 상체가 숙여져도 질주는 유지(스태미나·대시 규칙과 동일), 걷기만 감속.
+        MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base * BendSpeedRatio;
         break;
     case EVRPosture::Crouching:
         MC->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed;
