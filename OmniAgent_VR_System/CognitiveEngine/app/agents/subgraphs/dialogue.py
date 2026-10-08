@@ -32,6 +32,7 @@ import yaml
 import os
 import re
 import asyncio
+import random
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, Optional
@@ -45,7 +46,7 @@ from ...utils import db_manager
 from ...utils.id_utils import ci_get, ci_id_map
 from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
 from ...server_state import STATE
-from .prompts import DIALOGUE_STRUCTURED_PROMPT, PARTY_PROMPT_LINE, PLAN_SYSTEM_PROMPT
+from .prompts import DIALOGUE_STRUCTURED_PROMPT, PARTY_PROMPT_LINE, PARTY_VOCAB_PROMPT, PLAN_SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
@@ -261,12 +262,73 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     return _Stage1Context(fmt_kwargs, valid_targets, clean_query, natural_context)
 
 
+# 파티 합류 게이트 — NPC→플레이어 호감도가 이 값 이상일 때만 JoinParty 허용(초안값, PIE 에서 확정).
+PARTY_JOIN_AFFINITY = 20
+# C++ UPartySubsystem::MaxSize 와 같은 값. C++ 가드가 최종 방어이고 서버는 거절 대사를 위해 미리 안다.
+PARTY_MAX_SIZE = 4
+
+# LLM 재호출 없이 결정론적으로 쓰는 거절 대사(합류 수락 대사를 덮어쓴다).
+_PARTY_REFUSE_LOW_AFFINITY = (
+    "미안하지만 아직은 같이 갈 만큼 서로를 잘 모르잖아요.",
+    "글쎄요, 지금은 같이 다니기가 좀 어렵겠어요.",
+    "선뜻 따라나서기엔 아직 믿음이 부족해요. 미안해요.",
+)
+_PARTY_REFUSE_FULL = (
+    "이미 일행이 가득 찼어요. 지금은 더 같이 갈 수가 없겠네요.",
+    "함께 다니는 사람이 너무 많아요. 다음에 기회가 되면 같이 가요.",
+)
+
+
+async def _gate_party_actions(resp: DialogueResponse, npc_id: str, player_id: str) -> None:
+    """Stage1 응답의 JoinParty/LeaveParty 를 서버 상태로 사후검증(in-place, LLM 재호출 없음).
+    - JoinParty: 이미 멤버면 제거(무의미). 비멤버인데 정원 초과 또는 호감도 미달이면 제거하고 speech 를 거절 대사로 교체
+      (수락 대사가 남으면 NPC 가 승낙하고도 안 따라오는 모순이 된다).
+    - LeaveParty: 멤버가 아니면 제거."""
+    if not any(a.type in ("JoinParty", "LeaveParty") for a in resp.actions):
+        return
+
+    is_member = npc_id in STATE.party_members
+    refuse: tuple[str, ...] | None = None
+    kept = []
+    for act in resp.actions:
+        if act.type == "LeaveParty" and not is_member:
+            logger.info(f"[Party] 비멤버 LeaveParty 제거: {npc_id}")
+            continue
+        if act.type == "JoinParty":
+            if is_member:
+                logger.info(f"[Party] 이미 멤버인 JoinParty 제거: {npc_id}")
+                continue
+            if len(STATE.party_members) >= PARTY_MAX_SIZE:
+                refuse = _PARTY_REFUSE_FULL
+            else:
+                try:
+                    score = (await db_manager.get_affinity(npc_id, player_id)).affinity_score
+                except Exception as e:
+                    logger.error(f"[Party] 호감도 조회 실패 ({npc_id}), 거절 처리: {e}")
+                    score = 0
+                if score < PARTY_JOIN_AFFINITY:
+                    refuse = _PARTY_REFUSE_LOW_AFFINITY
+                    logger.info(f"[Party] 호감도 미달 JoinParty 거절: {npc_id} ({score} < {PARTY_JOIN_AFFINITY})")
+            if refuse:
+                continue
+        kept.append(act)
+    if refuse:
+        # 거절했는데 플레이어를 따라가면 "못 가요" 하면서 따라오는 모순 — 플레이어 대상(빈 타깃 포함) Follow/Track 도 뺀다.
+        player_keys = {"", "player", player_id.lower()}
+        kept = [a for a in kept if not (a.type in ("Follow", "Track") and a.target.lower() in player_keys)]
+        # 수락 표정·어조가 거절 대사에 붙지 않게 중립으로 되돌린다.
+        resp.speech = random.choice(refuse)
+        resp.facial = "Neutral"
+        resp.tone = ""
+    resp.actions = kept
+
+
 async def _run_stage1_llm(
     ctx: _Stage1Context, npc_id: str, log_extra: dict | None = None
 ) -> tuple[DialogueResponse, bool]:
     """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
     전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved)."""
-    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
+    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs) + "\n" + PARTY_VOCAB_PROMPT
     if STATE.party_members:
         structured_content += "\n" + PARTY_PROMPT_LINE.format(members=", ".join(sorted(STATE.party_members)))
     user_content = f"Context: {ctx.natural_context}"
@@ -348,6 +410,8 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
         "valid_targets": ctx.valid_targets or [],
     }
     resp, plan_achieved = await _run_stage1_llm(ctx, npc_id, log_extra)
+    # 메모리 기록 전에 게이트를 건다 — 거절된 수락 대사가 기억에 남으면 이후 턴이 "수락했다" 로 이어진다.
+    await _gate_party_actions(resp, npc_id, state["vr_context"].player_id or "Player")
     _record_dialogue_memory(npc_id, resp, ctx.clean_query, ctx.natural_context)
     return npc_id, resp, plan_achieved
 

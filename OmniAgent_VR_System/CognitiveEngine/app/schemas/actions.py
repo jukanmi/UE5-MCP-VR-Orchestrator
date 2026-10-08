@@ -56,7 +56,8 @@ EAction = Literal[
     "Dance",
     "Sing",
     # 파티 — C++ EAction::JoinParty/LeaveParty 와 1:1. 이 Literal 은 DialogueActionItem.type 이라 Stage1 구조화 출력
-    # grammar 에 그대로 들어간다 — 서버 호감도 게이트(M3) 전까지 LLM 이 낼 수 있고, C++ 방어는 정원 4명뿐이다.
+    # grammar 에 그대로 들어간다 — LLM 이 낼 수는 있지만 dialogue.py 의 _gate_party_actions 가 호감도·정원·멤버 여부로
+    # 사후 필터링한다(미달이면 액션 제거 + 거절 대사). C++ 정원 4명 가드는 최종 방어로 유지.
     "JoinParty",
     "LeaveParty",
 ]

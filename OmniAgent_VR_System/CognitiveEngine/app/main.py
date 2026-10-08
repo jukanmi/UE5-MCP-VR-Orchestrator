@@ -327,9 +327,13 @@ def _handle_party_update(envelope: MessageEnvelope) -> str:
 
 
 async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:
-    """적대 perception(danger>=0.5)을 일으킨 대상에게 호감도 -5 감점 (side-effect)."""
+    """적대 perception(danger>=0.5)을 일으킨 대상에게 호감도 -5 감점 (side-effect).
+    가해자·피해자가 모두 일행이면 감점하지 않는다(파티원끼리의 오타가 동료 관계를 깎아 해산으로 번지는 것 방지).
+    플레이어는 일행 집합에 없으므로 플레이어와의 관계는 영향받지 않는다."""
     for p in perceptions:
         if p.danger_score >= 0.5 and p.target_id:
+            if agent_id in STATE.party_members and p.target_id in STATE.party_members:
+                continue
             # 캐시 prime — 미존재 시 DB에서 로드하거나 기본값(0)으로 생성
             await db_manager.get_affinity(agent_id, p.target_id)
             # 동기 sqlite 쓰기 → 이벤트 루프 블로킹 방지 위해 스레드 오프로드 (codebase idiom).
