@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISightTargetInterface.h"
 #include "NativeGameplayTags.h"
 #include "Core/Types/PlayerGameplayTags.h"
 #include "HeadMountedDisplayTypes.h"
@@ -65,7 +66,7 @@ class UCapsuleComponent;
  *  - A버튼 → DetectNearbyNPC (반경 500cm 중 최근접)
  */
 UCLASS()
-class UE5_MCP_VR_API AVRPawn : public ACharacter, public IPlayerBase
+class UE5_MCP_VR_API AVRPawn : public ACharacter, public IPlayerBase, public IAISightTargetInterface
 {
     GENERATED_BODY()
 
@@ -373,6 +374,34 @@ public:
     /** 자세 전이 시 브로드캐스트. AnimBP / UI 가 바인딩. */
     UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
     FOnVRPostureChanged OnPostureChanged;
+
+    /** 은신 기준 시야 거리(cm) — 자세 계수를 곱해 적·NPC 가 이 자세의 플레이어를 보는 최대 거리를 정한다.
+     *  서 있을 땐 제한 없음(관찰자 자신의 SightRadius 만 적용). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "100.0"))
+    float StealthReferenceRange = 3000.f;
+
+    /** 허리 숙이기 시야 거리 계수. 서기(제한 없음) > 허리 숙이기 > 쭈그리기 > 엎드리기 순이어야 한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorBending = 0.8f;
+
+    /** 쭈그리기 시야 거리 계수. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorCrouching = 0.6f;
+
+    /** 엎드리기 시야 거리 계수. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorProne = 0.35f;
+
+    /** 현재 자세에서 적·NPC 가 플레이어를 볼 수 있는 최대 거리(cm). 0 이하면 제한 없음(서기). */
+    UFUNCTION(BlueprintPure, Category = "VR|Stealth")
+    float GetStealthSightRange() const;
+
+    /** 시야 판정 단일 진입점 — AI 퍼셉션(적·NPC 공용)이 플레이어를 볼 때 호출. 자세별 거리 제한 후 시선 차단 검사. */
+    virtual UAISense_Sight::EVisibilityResult CanBeSeenFrom(
+        const FCanBeSeenFromContext& Context, FVector& OutSeenLocation,
+        int32& OutNumberOfLoSChecksPerformed, int32& OutNumberOfAsyncLosCheckRequested,
+        float& OutSightStrength, int32* UserData = nullptr,
+        const FOnPendingVisibilityQueryProcessedDelegate* Delegate = nullptr) override;
 
     /** 외부 트리거(예: 양손 그립 동시 입력)로 캘리브레이션 재시작. */
     UFUNCTION(BlueprintCallable, Category = "VR|Posture")

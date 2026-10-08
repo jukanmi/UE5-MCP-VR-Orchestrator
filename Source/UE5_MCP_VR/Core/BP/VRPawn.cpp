@@ -492,6 +492,54 @@ void AVRPawn::UpdateBodyPlacement()
     Body->SetWorldLocation(FVector(Neck.X, Neck.Y, Current.Z));
 }
 
+float AVRPawn::GetStealthSightRange() const
+{
+    float Factor = 0.f;
+    switch (CurrentPosture)
+    {
+    case EVRPosture::Bending:   Factor = StealthFactorBending;   break;
+    case EVRPosture::Crouching: Factor = StealthFactorCrouching; break;
+    case EVRPosture::Prone:     Factor = StealthFactorProne;     break;
+    case EVRPosture::Standing:  return 0.f;
+    }
+    return StealthReferenceRange * Factor;
+}
+
+UAISense_Sight::EVisibilityResult AVRPawn::CanBeSeenFrom(
+    const FCanBeSeenFromContext& Context, FVector& OutSeenLocation,
+    int32& OutNumberOfLoSChecksPerformed, int32& OutNumberOfAsyncLosCheckRequested,
+    float& OutSightStrength, int32* /*UserData*/,
+    const FOnPendingVisibilityQueryProcessedDelegate* /*Delegate*/)
+{
+    OutNumberOfAsyncLosCheckRequested = 0;
+    OutSightStrength = 1.f;
+
+    const FVector TargetLoc = GetActorLocation();
+
+    // 자세별 시야 거리 제한 — 서기(0)는 제한 없이 관찰자 SightRadius 에 맡긴다.
+    const float Range = GetStealthSightRange();
+    if (Range > 0.f && FVector::DistSquared(Context.ObserverLocation, TargetLoc) > FMath::Square(Range))
+    {
+        return UAISense_Sight::EVisibilityResult::NotVisible;
+    }
+
+    // 기본 AI 시선 검사와 동일 — 관찰자 시점에서 플레이어까지 가시성 채널 직선이 막히지 않아야 보인다.
+    UWorld* World = GetWorld();
+    if (!World) return UAISense_Sight::EVisibilityResult::NotVisible;
+
+    FHitResult Hit;
+    const FCollisionQueryParams Params(SCENE_QUERY_STAT(AILineOfSight), true, Context.IgnoreActor);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, Context.ObserverLocation, TargetLoc, ECC_Visibility, Params);
+    ++OutNumberOfLoSChecksPerformed;
+
+    if (!bHit || Hit.GetActor() == this)
+    {
+        OutSeenLocation = TargetLoc;
+        return UAISense_Sight::EVisibilityResult::Visible;
+    }
+    return UAISense_Sight::EVisibilityResult::NotVisible;
+}
+
 void AVRPawn::UpdateDynamicCapsule(float DeltaTime)
 {
     if (!bCalibrated) return;
