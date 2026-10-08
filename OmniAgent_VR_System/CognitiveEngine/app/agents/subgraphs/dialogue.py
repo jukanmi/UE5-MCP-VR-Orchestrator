@@ -365,20 +365,67 @@ def _norm_speech(text: str) -> str:
     return re.sub(r"[\W_]+", "", text)
 
 
+# 문장 단위 반복 판정 — 문장 하나를 매번 그대로 붙이면 전체 유사도는 낮아도(실측 0.765) 복사 대사다.
+# 정규화 길이가 이 값 미만인 문장("안녕", "알겠어")은 겹쳐도 자연스러우므로 제외.
+REPEAT_SENTENCE_MIN_CHARS = 8
+REPEAT_SENTENCE_SIMILARITY = 0.9
+
+
+def _sentences(text: str) -> list[str]:
+    """., ?, !, 。, 줄바꿈 기준 문장 분리(빈 조각 제거)."""
+    return [t.strip() for t in re.split(r"[.?!。\n]+", text) if t.strip()]
+
+
 def _repeated_line(speech: str, chat_history: str, npc_id: str) -> str:
-    """기록(chat_history 문자열)의 같은 NPC 발화 중 speech 와 동일/매우 유사한 줄을 돌려준다. 없으면 ""."""
+    """기록(chat_history 문자열)의 같은 NPC 발화와 겹치는 부분을 돌려준다. 없으면 "".
+    1) 전체 발화가 직전 줄과 동일/매우 유사하면 그 줄 전체, 2) 아니면 긴 문장 하나라도 이전 발화의
+    문장과 (거의) 같으면 그 문장. 재생성 금지 문구에 이 반환값을 쓴다."""
     new = _norm_speech(speech)
-    if len(new) < REPEAT_MIN_CHARS:
-        return ""
     prefix = f"{npc_id}: ".casefold()
-    for line in chat_history.splitlines():
-        if not line.casefold().startswith(prefix):
-            continue
-        prev = line[len(prefix):].strip()
-        old = _norm_speech(prev)
-        if old and (old == new or SequenceMatcher(None, old, new).ratio() >= REPEAT_SIMILARITY):
-            return prev
+    prevs = [ln[len(prefix):].strip() for ln in chat_history.splitlines() if ln.casefold().startswith(prefix)]
+
+    if len(new) >= REPEAT_MIN_CHARS:
+        for prev in prevs:
+            old = _norm_speech(prev)
+            if old and (old == new or SequenceMatcher(None, old, new).ratio() >= REPEAT_SIMILARITY):
+                return prev
+
+    old_sents = _history_sentences(prevs)
+    for sent in _sentences(speech):
+        if _sentence_repeated(sent, old_sents):
+            return sent
     return ""
+
+
+def _history_sentences(prevs: list[str]) -> list[str]:
+    """이전 발화들의 문장을 정규화한 목록(길이 기준 미달 제외)."""
+    return [n for prev in prevs for sent in _sentences(prev) if len(n := _norm_speech(sent)) >= REPEAT_SENTENCE_MIN_CHARS]
+
+
+def _sentence_repeated(sent: str, old_norms: list[str]) -> bool:
+    ns = _norm_speech(sent)
+    if len(ns) < REPEAT_SENTENCE_MIN_CHARS:
+        return False
+    return any(old == ns or SequenceMatcher(None, old, ns).ratio() >= REPEAT_SENTENCE_SIMILARITY for old in old_norms)
+
+
+# 반복 문장을 뺀 뒤 남은 대사의 정규화 길이가 이 값 미만이면 빼지 않는다(빈 대사 방지).
+REPEAT_STRIP_MIN_CHARS = 4
+
+
+def _strip_repeated_sentences(speech: str, chat_history: str, npc_id: str) -> tuple[str, list[str]]:
+    """이전 발화와 겹치는 문장만 speech 에서 제거한다. 반환: (남은 대사, 제거한 문장들).
+    제거 후 남는 게 너무 짧거나 제거할 게 없으면 (원본, []) — 재생성도 금지 문구를 무시할 때의 최후 수단."""
+    prefix = f"{npc_id}: ".casefold()
+    prevs = [ln[len(prefix):].strip() for ln in chat_history.splitlines() if ln.casefold().startswith(prefix)]
+    old_norms = _history_sentences(prevs)
+    pieces = re.findall(r"[^.?!。\n]+[.?!。]*", speech)  # 문장부호 포함 조각
+    kept = [p.strip() for p in pieces if not _sentence_repeated(p, old_norms)]
+    removed = [p.strip() for p in pieces if _sentence_repeated(p, old_norms)]
+    rest = " ".join(kept)
+    if not removed or len(_norm_speech(rest)) < REPEAT_STRIP_MIN_CHARS:
+        return speech, []
+    return rest, removed
 
 
 async def _call_stage1(
@@ -473,6 +520,12 @@ async def _run_stage1_llm(
         if retry is not None:
             _clean_stage1_resp(retry)
             resp = retry
+        # 재생성도(또는 재생성 실패로 유지된 원 응답도) 문장 반복이면 그 문장만 잘라낸다 — 기록 전에 해야
+        # 반복이 기록에 더 쌓이지 않는다. 남는 대사가 너무 짧으면 그대로 둔다.
+        stripped, removed = _strip_repeated_sentences(resp.speech, str(ctx.fmt_kwargs.get("chat_history", "")), npc_id)
+        if removed:
+            logger.info(f"[Dialogue] 반복 문장 제거 ({npc_id}): {removed}")
+            resp.speech = stripped
 
     plan_achieved = bool(resp.plan_achieved)
     if plan_achieved:

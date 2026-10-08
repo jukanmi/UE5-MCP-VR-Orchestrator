@@ -401,3 +401,60 @@ def test_repeat_retry_skips_fallback_and_keeps_original_on_failure():
     assert llm.await_count == 2 and resp.speech == first.speech
     retry_log = llm.await_args_list[1].kwargs["log_extra"]
     assert retry_log["repeat_retry"] is True and retry_log["repeat_discarded_speech"] == first.speech
+
+
+# 실측(Guard 에게 "안녕" 3회): 문장 하나를 매번 그대로 붙이는 복사 — 전체 유사도 0.765 라 줄 단위로는 못 잡는다.
+_GUARD_LINES = [
+    "반갑다. 성문은 여전히 이곳에 남아있군.",
+    "무슨 일이지? 성문은 여전히 이곳에 남아있군.",
+    "어서 와. 성문은 여전히 이곳에 남아있군.",
+]
+
+
+def test_sentence_level_repeat_detected_on_measured_sequence():
+    from app.agents.subgraphs.dialogue import _repeated_line
+
+    history = "Player: 안녕\n" + f"Guard: {_GUARD_LINES[0]}"
+    assert _repeated_line(_GUARD_LINES[1], history, "Guard") == "성문은 여전히 이곳에 남아있군"
+    history += "\nPlayer: 안녕\n" + f"Guard: {_GUARD_LINES[1]}"
+    assert _repeated_line(_GUARD_LINES[2], history, "Guard") == "성문은 여전히 이곳에 남아있군"
+    assert _repeated_line(_GUARD_LINES[0], "", "Guard") == ""  # 기록 없음
+
+
+def test_short_overlapping_sentences_are_not_repeat():
+    from app.agents.subgraphs.dialogue import _repeated_line
+
+    history = "Player: 안녕\nGuard: 안녕. 알겠어. 무슨 일로 왔지?"
+    assert _repeated_line("안녕. 알겠어. 오늘은 날씨가 좋군.", history, "Guard") == ""
+
+
+def test_retry_prompt_names_the_repeated_sentence():
+    history = "Player: 안녕\nElara: " + _GUARD_LINES[0]
+    resp, llm = _run_with_replies(history, _GUARD_LINES[1], "오랜만이군, 잘 지냈나?")
+    assert llm.await_count == 2 and resp.speech == "오랜만이군, 잘 지냈나?"
+    assert '"성문은 여전히 이곳에 남아있군"' in llm.await_args_list[1].args[1]
+
+
+def test_repeated_sentence_stripped_when_retry_also_repeats():
+    history = "Player: 안녕\nGuard: " + _GUARD_LINES[0]
+    from app.agents.subgraphs.dialogue import _run_stage1_llm
+
+    replies = [DialogueResponse(mode="Common", facial="Neutral", speech=sp, actions=[])
+               for sp in (_GUARD_LINES[1], "무슨 일로 온 거지? 성문은 여전히 이곳에 남아있군.")]
+    ctx = _chat_ctx(history)
+    ctx.fmt_kwargs["name"] = "Guard"
+    with patch("app.agents.subgraphs.dialogue.ollama_structured", new_callable=AsyncMock, side_effect=replies) as llm:
+        resp, _ = asyncio.run(_run_stage1_llm(ctx, "Guard"))
+    assert llm.await_count == 2  # 재생성은 1회뿐
+    assert resp.speech == "무슨 일로 온 거지?"  # 반복 문장만 제거
+
+
+def test_strip_keeps_speech_when_remainder_too_short():
+    from app.agents.subgraphs.dialogue import _strip_repeated_sentences
+
+    history = "Player: 안녕\nGuard: " + _GUARD_LINES[0]
+    speech = "응. 성문은 여전히 이곳에 남아있군."  # 제거하면 "응." 만 남아 빈 대사에 가깝다
+    assert _strip_repeated_sentences(speech, history, "Guard") == (speech, [])
+    # 원 응답이 반복이고 재생성이 실패해도 같은 규칙으로 제거된다
+    rest, removed = _strip_repeated_sentences("무슨 일이지? 성문은 여전히 이곳에 남아있군.", history, "Guard")
+    assert rest == "무슨 일이지?" and removed == ["성문은 여전히 이곳에 남아있군."]
