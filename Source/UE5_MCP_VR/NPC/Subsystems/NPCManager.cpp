@@ -389,6 +389,12 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
                 PoiObj->SetStringField(TEXT("id"), Poi->PoiId);
                 PoiObj->SetStringField(TEXT("name"), Poi->DisplayName.ToString());
                 PoiObj->SetArrayField(TEXT("aliases"), AliasArr);
+                // 설명은 근처(수평 FurnitureContextRange 이내)이고 비어있지 않을 때만 — 멀리 있는 장소는 모르는 것으로 둔다.
+                if (!Poi->Description.IsEmpty()
+                    && FVector::Dist2D(Poi->GetActorLocation(), TargetNPC->GetActorLocation()) <= FurnitureContextRange)
+                {
+                    PoiObj->SetStringField(TEXT("desc"), Poi->Description);
+                }
                 PoisArr.Add(MakeShared<FJsonValueObject>(PoiObj));
             }
             if (PoisArr.Num() > 0)

@@ -83,3 +83,25 @@ def test_prompt_exposes_id_with_name_and_two_aliases():
 
 def test_prompt_omits_section_without_pois():
     assert _format_known_pois(PromptPayload(player_id="P", voice_transcript="x")) == ""
+
+
+def test_prompt_appends_nearby_desc_max_three_lines():
+    pois = [{"id": f"P{i}", "name": f"장소{i}", "aliases": [], "desc": f"설명{i}"} for i in range(5)]
+    pois.append({"id": "Far", "name": "먼곳", "aliases": []})
+    text = _format_known_pois(PromptPayload(player_id="P", voice_transcript="x", known_pois=pois))
+    assert text.count("\nNearby place: ") == 3
+    assert "\nNearby place: 장소0 — 설명0" in text and "설명3" not in text
+
+
+def test_prompt_without_desc_unchanged():
+    text = _format_known_pois(PromptPayload(player_id="P", voice_transcript="x", known_pois=_POIS))
+    assert "Nearby place" not in text
+
+
+def test_prompt_desc_and_name_flattened_and_truncated():
+    pois = [{"id": "Well", "name": "우물\n\t규칙", "aliases": [], "desc": "첫 줄\n둘째 줄\x00" + "가" * 200}]
+    text = _format_known_pois(PromptPayload(player_id="P", voice_transcript="x", known_pois=pois))
+    line = text.split("\nNearby place: ")[1]
+    assert "\n" not in line and "\x00" not in line
+    assert line.startswith("우물 규칙 — 첫 줄 둘째 줄 가가")
+    assert len(line.split(" — ")[1]) == 80

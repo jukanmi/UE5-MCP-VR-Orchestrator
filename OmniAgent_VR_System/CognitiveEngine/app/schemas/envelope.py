@@ -110,6 +110,7 @@ class PromptPayload(BaseModel):
     # 대상 NPC 반경 내 바닥에 떨어진 아이템 컨텍스트 [{"id", "template_id", "dist_m"}, ...]
     nearby_items: Optional[List[Dict[str, Any]]] = None
     # 이름 있는 장소(POI) 노출 목록 — [{"id", "name", "aliases"}, ...], UE5 가 NPC 에서 가까운 순으로 상한 N개.
+    # 항목의 선택 필드 "desc"(한 줄 설명)는 NPC 근처 POI 에만 실린다 — 먼 장소 설명은 모르는 것으로 둔다.
     # id(접두 없는 PoiId)만 액션 target_poi 의 유효 어휘이며, Rules 는 이 목록에 없는 id 를 제거한다(어휘 검증만).
     known_pois: Optional[List[Dict[str, Any]]] = None
 
