@@ -408,25 +408,40 @@ void AVRPawn::UpdatePosture()
 
     const float Ratio = GetCurrentHMDHeight() / CalibratedStandingHeight;
 
-    // 슈미트 트리거 패턴 — 진입/복귀 임계값을 분리해 데드존 확보
+    // HMD 피치 하향 각도(도, 아래를 볼수록 +) — UE 피치는 위가 +.
+    const float PitchDown = VRCamera
+        ? static_cast<float>(-FRotator::NormalizeAxis(VRCamera->GetComponentRotation().Pitch))
+        : 0.f;
+
+    // 슈미트 트리거 패턴 — 진입/복귀 임계값을 분리해 데드존 확보. 높이(쭈그리기·엎드리기)가 허리 숙이기보다 우선.
+    // 허리 숙이기 = 쭈그리기 진입 전 높이대 중 낮은 구간 + 고개 숙임. 서서 고개만 숙이면 비율이 BendRatioMax 이상에 머문다.
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
-        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching);
+        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
+        else if (Ratio < BendRatioMax && PitchDown >= BendPitchDownDeg)
+            TransitionTo(EVRPosture::Bending, Ratio, PitchDown);
+        break;
+    case EVRPosture::Bending:
+        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
+        else if (PitchDown < BendPitchUpDeg || Ratio > BendRatioMaxUp)
+            TransitionTo(EVRPosture::Standing, Ratio, PitchDown);
         break;
     case EVRPosture::Crouching:
-        if (Ratio > StandingRatioUp)       TransitionTo(EVRPosture::Standing);
-        else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone);
+        if (Ratio > StandingRatioUp)       TransitionTo(EVRPosture::Standing, Ratio, PitchDown);
+        else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone, Ratio, PitchDown);
         break;
     case EVRPosture::Prone:
-        if (Ratio > ProneRatioUp) TransitionTo(EVRPosture::Crouching);
+        if (Ratio > ProneRatioUp) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
         break;
     }
 }
 
-void AVRPawn::TransitionTo(EVRPosture NewPosture)
+void AVRPawn::TransitionTo(EVRPosture NewPosture, float Ratio, float PitchDownDeg)
 {
     if (NewPosture == CurrentPosture) return;
+
+    const EVRPosture PrevPosture = CurrentPosture;
 
     // 이전 자세 태그 회수
     switch (CurrentPosture)
@@ -434,6 +449,7 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
     case EVRPosture::Standing:  RemoveStateTag(TAG_State_Posture_Standing);  break;
     case EVRPosture::Crouching: RemoveStateTag(TAG_State_Posture_Crouching); break;
     case EVRPosture::Prone:     RemoveStateTag(TAG_State_Posture_Prone);     break;
+    case EVRPosture::Bending:   RemoveStateTag(TAG_State_Posture_Bending);   break;
     }
 
     CurrentPosture = NewPosture;
@@ -444,13 +460,16 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
     case EVRPosture::Standing:  AddStateTag(TAG_State_Posture_Standing);  break;
     case EVRPosture::Crouching: AddStateTag(TAG_State_Posture_Crouching); break;
     case EVRPosture::Prone:     AddStateTag(TAG_State_Posture_Prone);     break;
+    case EVRPosture::Bending:   AddStateTag(TAG_State_Posture_Bending);   break;
     }
 
     // 이동속도 재적용 (ApplyMovementSpeed가 CurrentPosture를 참조)
     ApplyMovementSpeed();
 
-    UE_LOG(LogTemp, Verbose, TEXT("[VRPawn] Posture -> %s"),
-           *UEnum::GetValueAsString(CurrentPosture));
+    // 판정 튜닝용 — 전이 순간의 높이 비율·피치 하향을 한 줄로 남긴다.
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] Posture %s -> %s (높이비율 %.2f, 피치하향 %.1f도)"),
+           *UEnum::GetValueAsString(PrevPosture), *UEnum::GetValueAsString(CurrentPosture),
+           Ratio, PitchDownDeg);
 
     OnPostureChanged.Broadcast(CurrentPosture);
 }
@@ -645,7 +664,7 @@ void AVRPawn::UpdateStamina(float DeltaTime)
     //  · 자세: Crouching/Prone 은 ApplyMovementSpeed 가 Sprint 속도를 안 쓰므로 소모도 없어야 한다.
     //  · 실제 이동: 벽에 막혀 제자리인데 스틱만 최대로 밀고 있을 때 스태미나가 마르는 건 부자연스럽다.
     const bool bConsuming = bIsSprinting
-        && CurrentPosture == EVRPosture::Standing
+        && (CurrentPosture == EVRPosture::Standing || CurrentPosture == EVRPosture::Bending)
         && GetVelocity().SizeSquared2D() > KINDA_SMALL_NUMBER;
 
     if (bConsuming)
@@ -678,7 +697,7 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     if (SeatedFurniture.IsValid() || IsUIBlockingInput()) return;
 
     // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
-    if (CurrentPosture != EVRPosture::Standing) return;
+    if (CurrentPosture != EVRPosture::Standing && CurrentPosture != EVRPosture::Bending) return;
 
     UWorld* World = GetWorld();
     UCharacterMovementComponent* MC = GetCharacterMovement();
@@ -1259,10 +1278,11 @@ void AVRPawn::ApplyMovementSpeed()
 
     const float Base = CurrentStats.Movement.WalkSpeed;
 
-    // 자세별 속도 클램프 — Standing 100% / Crouching = CrouchSpeed / Prone = 20%
+    // 자세별 속도 클램프 — Standing·Bending 100% / Crouching = CrouchSpeed / Prone = 20%
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
+    case EVRPosture::Bending:   // M1: 서기와 동일 (속도 조정은 후속 단계)
         // Sprint 는 선 자세에서만 — 웅크림/포복은 아래 분기가 각자 속도를 덮어써 자동 억제.
         MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base;
         break;

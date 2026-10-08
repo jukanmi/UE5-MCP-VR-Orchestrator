@@ -30,13 +30,15 @@ class UStaticMeshComponent;
 class ADroppedItemBase;
 struct FItemData;
 
-/** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
+/** VR 자세 — HMD 높이 비율(서기·쭈그리기·엎드리기) + HMD 피치와 높이 구간(허리 숙이기)으로 판정.
+ *  AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. 기존 값 번호 유지를 위해 Bending 은 끝에 추가. */
 UENUM(BlueprintType)
 enum class EVRPosture : uint8
 {
     Standing  UMETA(DisplayName = "Standing"),
     Crouching UMETA(DisplayName = "Crouching"),
-    Prone     UMETA(DisplayName = "Prone")
+    Prone     UMETA(DisplayName = "Prone"),
+    Bending   UMETA(DisplayName = "Bending")
 };
 
 /** 자세 전이 알림용 델리게이트 — AnimBP·UI 등이 폴링 대신 이 이벤트로 반응. */
@@ -324,6 +326,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "0.6"))
     float ProneRatioUp = 0.45f;
 
+    /** Standing → Bending 진입 HMD 피치 하향 각도(도). 이 각도 이상 숙이고 높이도 허리 숙이기 구간이어야 진입. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "80.0"))
+    float BendPitchDownDeg = 30.f;
+
+    /** Bending → Standing 복귀 피치 하향 각도(도). BendPitchDownDeg 보다 작아야 데드존이 생긴다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "5.0", ClampMax = "70.0"))
+    float BendPitchUpDeg = 20.f;
+
+    /** Standing → Bending 진입 높이 비율 상한. 쭈그리기 진입(StandingRatioDown) 이상 ~ 이 값 미만에서만 허리 숙이기.
+     *  서서 고개만 숙이면 비율이 거의 안 내려가 이 값 이상에 머물러 Standing 으로 남는다.
+     *  StandingRatioDown < BendRatioMax < BendRatioMaxUp 이어야 함. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
+    float BendRatioMax = 0.93f;
+
+    /** Bending → Standing 복귀 높이 비율. BendRatioMax 보다 커야 데드존이 생긴다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
+    float BendRatioMaxUp = 0.95f;
+
     /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "60.0"))
     float MinCapsuleHalfHeight = 22.f;
@@ -543,7 +563,7 @@ private:
     void UpdatePosture();
 
     /** 자세 전이 — Enum/태그 갱신 + 이동속도 적용 + OnPostureChanged 브로드캐스트 */
-    void TransitionTo(EVRPosture NewPosture);
+    void TransitionTo(EVRPosture NewPosture, float Ratio, float PitchDownDeg);
 
     /** 매 Tick — 동적 캡슐 리사이즈 + Rising Floor 역보정 (VInterp 스무딩) */
     void UpdateDynamicCapsule(float DeltaTime);
