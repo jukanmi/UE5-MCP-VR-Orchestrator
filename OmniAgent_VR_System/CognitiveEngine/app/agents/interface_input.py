@@ -222,6 +222,26 @@ def _format_nearby_items(vr_context: GesPrompt) -> str:
     return ". Items on the ground you can PickUp (use the id as target): " + "; ".join(parts)
 
 
+def _format_known_pois(vr_context: GesPrompt) -> str:
+    """이름 있는 장소 조각 — 'Id(표시명/별칭)' 한 줄씩. 없으면 "".
+    WHY: LLM 이 "우물로 가" 를 장소 id 로 옮기려면 어휘가 프롬프트에 있어야 한다. 좌표는 싣지 않고
+    (UE5 가 id 로 해석) 별칭은 단서용으로 2개까지만 — 토큰 다이어트. 순서는 UE5 가 보낸 가까운 순."""
+    pois = getattr(vr_context, "known_pois", None) or []
+    lines = []
+    for p in pois:
+        pid = p.get("id")
+        if not pid:
+            continue
+        labels = [str(x) for x in [p.get("name"), *(p.get("aliases") or [])[:2]] if x]
+        lines.append(f"{pid}({'/'.join(labels)})" if labels else str(pid))
+    if not lines:
+        return ""
+    return (
+        ". Places you can walk to — for a Move to one of them, leave target empty and put its id"
+        " (the part before the parentheses) in poi:\n" + "\n".join(lines)
+    )
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
@@ -248,6 +268,7 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     natural_context += _format_plan_context(state)
     natural_context += _format_nearby_furniture(vr_context)
     natural_context += _format_nearby_items(vr_context)
+    natural_context += _format_known_pois(vr_context)
 
     return natural_context
 

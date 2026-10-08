@@ -361,6 +361,10 @@ public:
     void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk,
                      ETacticalMoveState TacticalState = ETacticalMoveState::Default);
 
+    /** Move 의 target_poi 경로 — UPOIManager 로 PoiId → 위치를 풀고 NavMesh 투영 후 POI 의 도착 반경으로 BaseMove.
+     *  미등록 id·투영 실패는 경고 로그만 남기고 이동하지 않는다(bActionAwaitingAsync 미설정 → 호출측이 즉시 완료 처리). */
+    void ExecuteMoveToPoi(const FString& PoiId, EMoveType SpeedType);
+
     // ============================================================================
     // [전술 위치 결정 파이프라인 API]
     // ============================================================================

@@ -33,6 +33,9 @@ public:
     /** Origin 에서 수평 Radius(cm) 이내 POI 목록. */
     TArray<APOIActor*> GetInRadius(const FVector& Origin, float Radius) const;
 
+    /** Origin 에서 수평 거리 가까운 순으로 최대 Max 개. LLM 프롬프트 노출처럼 상한이 필요한 곳용. */
+    TArray<APOIActor*> GetNearest(const FVector& Origin, int32 Max) const;
+
     /** Type 이 일치하는 POI 목록. */
     TArray<APOIActor*> GetByType(const FString& Type) const;
 

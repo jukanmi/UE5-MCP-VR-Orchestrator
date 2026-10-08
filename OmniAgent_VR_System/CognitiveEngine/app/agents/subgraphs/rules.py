@@ -165,9 +165,14 @@ def _clamp_numeric_param(action_type: str, params: dict, corrections: list) -> N
         corrections.append(f"{label} 비유효 → 기본값 {invalid_val}")
 
 
-def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | None = None) -> tuple:
+def validate_and_clamp_action(
+    action: "GameAction", runtime_targets: set[str] | None = None, runtime_pois: set[str] | None = None
+) -> tuple:
     """
     단일 액션의 파라미터를 검증하고 범위를 보정(clamp)한다.
+
+    runtime_pois: 프롬프트에 노출한 POI id 집합(known_pois). target_poi 가 여기 없으면 액션 제거 —
+    None/빈 집합은 "노출한 장소 없음" 이라 target_poi 는 전부 무효(표시명·별칭도 구제하지 않는다).
 
     Returns:
         (action | None, corrections: list[str])
@@ -190,6 +195,13 @@ def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | 
     # ── [신규] 타겟 ID 검증 ─────────────────────────────────────
     if not _is_target_id_valid(target_id, runtime_targets):
         reason = f"유효하지 않은 target_id '{target_id}' → 액션 제거"
+        logger.warning(f"[Rules] X {reason}")
+        return None, [reason]
+
+    # ── POI 어휘 검증 — 좌표 변환은 UE5 몫, 여기선 노출한 id 인지만 본다 ──
+    poi_id = params.get("target_poi")
+    if poi_id and poi_id not in (runtime_pois or ()):
+        reason = f"노출되지 않은 target_poi '{poi_id}' → 액션 제거 (action: {action.ActionType})"
         logger.warning(f"[Rules] X {reason}")
         return None, [reason]
 
@@ -217,7 +229,10 @@ def validate_and_clamp_action(action: "GameAction", runtime_targets: set[str] | 
 
 
 def _validate_batch(
-    batch: "ActionBatch", runtime_targets: set[str] | None = None, log_ctx: dict | None = None
+    batch: "ActionBatch",
+    runtime_targets: set[str] | None = None,
+    log_ctx: dict | None = None,
+    runtime_pois: set[str] | None = None,
 ) -> "ActionBatch":
     """단일 ActionBatch 검증/클램핑. 공통 로직.
     log_ctx: 파인튜닝 로그 조인 키({"msg_id","attempt"}) — 지정 시 판정 결과 jsonl 기록."""
@@ -229,7 +244,7 @@ def _validate_batch(
     mode_before = batch.Mode
 
     for action in batch.Actions:
-        validated_action, corrections = validate_and_clamp_action(action, runtime_targets)
+        validated_action, corrections = validate_and_clamp_action(action, runtime_targets, runtime_pois)
         if validated_action is None:
             all_corrections.extend(corrections)
             continue
@@ -295,12 +310,15 @@ def rules_node(state: AgentState) -> dict:
     runtime_list = state["vr_context"].valid_targets
     runtime_targets: set[str] | None = set(runtime_list) if runtime_list else None
 
+    # 프롬프트에 노출한 POI id — target_poi 어휘 검증용. 없으면 빈 집합(target_poi 전부 무효).
+    runtime_pois = {str(p["id"]) for p in (state["vr_context"].known_pois or []) if p.get("id")}
+
     # 파인튜닝 로그 조인 키 — Stage1 LLM 레코드와 msg_id+attempt 로 매칭 (train_logger)
     log_ctx = {"msg_id": state.get("msg_id", ""), "attempt": state.get("rules_retry_count", 0)}
 
     validated_batches: dict = {}
     for npc_id, batch in action_batches.items():
-        validated_batches[npc_id] = _validate_batch(batch, runtime_targets, log_ctx)
+        validated_batches[npc_id] = _validate_batch(batch, runtime_targets, log_ctx, runtime_pois)
         _evaluate_and_update_affinity(state, validated_batches[npc_id])
 
     # 단일 NPC 호환: action_batch 도 채움

@@ -102,6 +102,8 @@ class DialogueActionItem(BaseModel):
     target: str = Field(default="", description="Player, Self, Enemy or an NPC name; '' if none")
     item: str = Field(default="", description="Item name; '' if none")
     loc: str = Field(default="", description="Location id; '' if none")
+    # 노출된 장소 목록(known_pois)의 id 그대로. 좌표 해석은 UE5(UPOIManager)가 한다 — 여기선 id 만 낸다.
+    poi: str = Field(default="", description="Place id from the listed places, for Move; '' if none")
     # 어휘 단일 소스는 C++ EMoveType(NPCActionTypes.h) — Walk/Run/Sprint/Crouch.
     # ParseMoveStyle 이 미매칭 값을 Walk 로 폴백하며 경고 로그를 남긴다.
     style: str = Field(default="", description="Modifier: Walk/Run/Sprint/Crouch for Move, emote name for Emote")
@@ -120,6 +122,7 @@ class DialogueActionItem(BaseModel):
 DIALOGUE_ACTION_FIELD_MAP: tuple = (
     ("target_id", "target"),
     ("target_loc", "loc"),
+    ("target_poi", "poi"),
     ("item", "item"),
     ("style", "style"),
     ("amount", "amount"),

@@ -19,6 +19,7 @@ namespace NPCActionKeys
 
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
+    inline const FString Key_TargetPoi  = TEXT("target_poi");   // Move 목적지 POI id(접두 없는 PoiId). Python 은 어휘 검증만, 좌표는 UPOIManager 가 해석
 
     // --- Action Parameter Keys (Parameters 내부 — snake_case 통일, 2026-07-11 결정) ---
     // Key_Direction 은 전투 셀렉터(Dodge 측면 스텝)가 내부 주입. 나머지는 ExecuteInteraction

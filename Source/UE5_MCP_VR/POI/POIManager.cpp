@@ -61,6 +61,22 @@ TArray<APOIActor*> UPOIManager::GetInRadius(const FVector& Origin, float Radius)
     return Result;
 }
 
+TArray<APOIActor*> UPOIManager::GetNearest(const FVector& Origin, int32 Max) const
+{
+    TArray<APOIActor*> Result;
+    for (const TPair<FString, TObjectPtr<APOIActor>>& Pair : Pois)
+    {
+        if (IsValid(Pair.Value)) Result.Add(Pair.Value);
+    }
+    // TArray<T*>::Sort 는 술어에 역참조된 T& 를 넘긴다(포인터 인자는 컴파일 오류).
+    Result.Sort([&Origin](const APOIActor& A, const APOIActor& B)
+    {
+        return FVector::DistSquared2D(A.GetActorLocation(), Origin) < FVector::DistSquared2D(B.GetActorLocation(), Origin);
+    });
+    if (Result.Num() > Max) Result.SetNum(Max);
+    return Result;
+}
+
 TArray<APOIActor*> UPOIManager::GetByType(const FString& Type) const
 {
     TArray<APOIActor*> Result;

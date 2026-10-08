@@ -370,6 +370,34 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
 
+    // ── POI 어휘 노출 — known_pois: [{id,name,aliases}] 가까운 순 상한 PoiPromptLimit.
+    // LLM 이 이 중 하나를 Move 의 target_poi 로 내면 Python 은 이 id 집합으로만 사후검증하고,
+    // 좌표 해석은 수신 후 UNPCActionComponent::ExecuteMoveToPoi 가 UPOIManager 로 한다.
+    if (TargetNPC)
+    {
+        if (const UPOIManager* PoiMgr = GetWorld() ? GetWorld()->GetSubsystem<UPOIManager>() : nullptr)
+        {
+            TArray<TSharedPtr<FJsonValue>> PoisArr;
+            for (const APOIActor* Poi : PoiMgr->GetNearest(TargetNPC->GetActorLocation(), PoiPromptLimit))
+            {
+                TArray<TSharedPtr<FJsonValue>> AliasArr;
+                for (const FString& Alias : Poi->Aliases)
+                {
+                    AliasArr.Add(MakeShared<FJsonValueString>(Alias));
+                }
+                TSharedPtr<FJsonObject> PoiObj = MakeShared<FJsonObject>();
+                PoiObj->SetStringField(TEXT("id"), Poi->PoiId);
+                PoiObj->SetStringField(TEXT("name"), Poi->DisplayName.ToString());
+                PoiObj->SetArrayField(TEXT("aliases"), AliasArr);
+                PoisArr.Add(MakeShared<FJsonValueObject>(PoiObj));
+            }
+            if (PoisArr.Num() > 0)
+            {
+                Payload->SetArrayField(TEXT("known_pois"), PoisArr);
+            }
+        }
+    }
+
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
     const FString Envelope = FEnvelopeBuilder::BuildPrompt(Payload);

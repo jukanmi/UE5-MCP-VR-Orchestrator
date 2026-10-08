@@ -91,6 +91,9 @@ public:
      *  타겟 enum(valid_targets, 빈 가구만)에 노출. 공간 현실성: 멀리 있는 가구는 모름. */
     static constexpr float FurnitureContextRange = 1500.f;
 
+    /** 프롬프트(known_pois)에 노출하는 POI 상한. 넘으면 대화 NPC 기준 가까운 순으로 자른다(SLM 토큰 다이어트). */
+    static constexpr int32 PoiPromptLimit = 8;
+
     /** 주변 인지 수집 — 가구·바닥 아이템·POI 는 FurnitureContextRange, 인물은 시야 퍼셉션 기준. */
     FNPCNearbyContext CollectNearbyContext(const ASmartNPC* NPC);
 

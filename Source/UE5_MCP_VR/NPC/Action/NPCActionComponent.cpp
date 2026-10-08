@@ -34,6 +34,8 @@
 #include "NavigationSystem.h" // BaseMove 목적지 NavMesh 투영(벽 끼임 방지)
 #include "Furniture/Subsystems/FurnitureManager.h" // Jev daily 가구 검증
 #include "Party/PartySubsystem.h" // JoinParty/LeaveParty 멤버십 위임
+#include "POI/POIManager.h" // Move target_poi 해석
+#include "POI/POIActor.h"
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -1041,6 +1043,13 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Idle:         ExecuteIdle(); break;
     case EAction::Move:
     {
+        // target_poi — 장소 id 로 이동. 좌표는 등록소가 해석하고 실패는 경고만(아래 tail 이 즉시 완료).
+        const FString PoiId = Params.FindRef(NPCActionKeys::Key_TargetPoi);
+        if (!PoiId.IsEmpty())
+        {
+            ExecuteMoveToPoi(PoiId, ParseMoveStyle(StyleStr));
+            break;
+        }
         // 전투 풋워크(셀렉터 전용 style) — 달리면서 타겟을 계속 본다(옆걸음·뒷걸음). 새 EAction 대신 style 변형.
         const bool bFootwork = TargetActor && (StyleStr == TEXT("Strafe") || StyleStr == TEXT("Disengage"));
         ExecuteMove(Location, TargetActor, bFootwork ? EMoveType::Run : ParseMoveStyle(StyleStr));
@@ -1338,6 +1347,33 @@ void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActo
 
     StartTacticalQuery(ContextLocs);
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] ExecuteMove: target_loc 없음 → EQS+LLM 파이프라인 시작"));
+}
+
+void UNPCActionComponent::ExecuteMoveToPoi(const FString& PoiId, EMoveType SpeedType)
+{
+    const UWorld* World = GetWorld();
+    const UPOIManager* PoiMgr = World ? World->GetSubsystem<UPOIManager>() : nullptr;
+    const APOIActor* Poi = PoiMgr ? PoiMgr->FindById(PoiId) : nullptr;
+    if (!Poi)
+    {
+        // 표시명·별칭이 id 자리에 온 경우도 여기로 온다 — 구제하지 않고 실패를 로그로 드러낸다.
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 미등록 POI id '%s' — Move 건너뜀"), *GetOwnerAgentID(), *PoiId);
+        return;
+    }
+
+    // BaseMove 내부 투영은 실패 시 원 좌표로 계속 가므로, POI 는 여기서 먼저 투영해 실패를 막는다
+    // (NavMesh 밖에 놓인 POI 로 대충 이동하면 잘못된 배치가 숨는다).
+    FNavLocation NavLoc;
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!NavSys || !NavSys->ProjectPointToNavigation(Poi->GetActorLocation(), NavLoc, FVector(200.f, 200.f, 300.f)))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: POI '%s' 가 NavMesh 밖이라 이동 실패 — 위치 (%s)"),
+            *GetOwnerAgentID(), *PoiId, *Poi->GetActorLocation().ToString());
+        return;
+    }
+
+    // 도착 반경은 POI 별 속성. 0 근처는 도달 판정이 불가능해 BaseMove 기본값(50) 아래로는 내리지 않는다.
+    BaseMove(NavLoc.Location, SpeedType, FMath::Max(Poi->ArrivalRadius, 50.f));
 }
 
 // ============================================================================
@@ -2819,9 +2855,10 @@ namespace
 
 FString UNPCActionComponent::QueueKey(const FGameAction& Action)
 {
-    return FString::Printf(TEXT("%s|%s|%s|%s|%s"), *UEnum::GetValueAsString(Action.ActionType),
+    return FString::Printf(TEXT("%s|%s|%s|%s|%s|%s"), *UEnum::GetValueAsString(Action.ActionType),
         *Action.Parameters.FindRef(NPCActionKeys::Key_TargetID),
         *Action.Parameters.FindRef(NPCActionKeys::Key_TargetLoc),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_TargetPoi), // 목적지가 다른 POI Move 를 중복으로 오인하지 않게
         *Action.Parameters.FindRef(NPCActionKeys::Key_Item),
         *Action.Parameters.FindRef(NPCActionKeys::Key_Style));
 }
