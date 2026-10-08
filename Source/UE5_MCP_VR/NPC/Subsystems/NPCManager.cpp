@@ -8,6 +8,8 @@
 #include "NPC/Action/SmartNPCAIController.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
+#include "POI/POIActor.h"
+#include "POI/POIManager.h"
 #include "Story/StorySubsystem.h"
 #include "Party/PartySubsystem.h"
 #include "NPC/Struct/NPCActionKeys.h"
@@ -427,16 +429,17 @@ FNPCNearbyContext UNPCManager::CollectNearbyContext(const ASmartNPC* NPC)
         }
     }
 
-    ScanPois();
-    for (const TPair<FString, TWeakObjectPtr<AActor>>& Pair : PoiActors)
+    // Id 는 `POI_<PoiId>`, Type 은 PoiId — 종전 `POI_` 태그 목업과 같은 풀 값(jev 로그·desc 회귀 방지).
+    if (const UPOIManager* PoiMgr = GetWorld() ? GetWorld()->GetSubsystem<UPOIManager>() : nullptr)
     {
-        const AActor* Poi = Pair.Value.Get();
-        if (!Poi || FVector::Dist2D(Poi->GetActorLocation(), NpcLoc) > FurnitureContextRange) continue;
-        FNPCNearbyContext::FEntry& E = Ctx.Pois.AddDefaulted_GetRef();
-        E.Id = Pair.Key;
-        E.Type = Pair.Key.RightChop(4); // "POI_" 뒤 이름
-        E.Location = Poi->GetActorLocation();
-        E.DistM = DistM(E.Location);
+        for (const APOIActor* Poi : PoiMgr->GetInRadius(NpcLoc, FurnitureContextRange))
+        {
+            FNPCNearbyContext::FEntry& E = Ctx.Pois.AddDefaulted_GetRef();
+            E.Id = TEXT("POI_") + Poi->PoiId;
+            E.Type = Poi->PoiId;
+            E.Location = Poi->GetActorLocation();
+            E.DistM = DistM(E.Location);
+        }
     }
 
     // 인물 — 전투 Jev 와 같은 소스(시야 퍼셉션). ResolveActionTarget 이 해석 가능한 플레이어·등록 NPC 만.
@@ -468,33 +471,6 @@ FNPCNearbyContext UNPCManager::CollectNearbyContext(const ASmartNPC* NPC)
         }
     }
     return Ctx;
-}
-
-void UNPCManager::ScanPois()
-{
-    if (bPoiScanned) return;
-    UWorld* World = GetWorld();
-    if (!World) return;
-    bPoiScanned = true;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        for (const FName& Tag : It->Tags)
-        {
-            const FString TagStr = Tag.ToString();
-            if (TagStr.StartsWith(TEXT("POI_")))
-            {
-                PoiActors.Add(TagStr, *It);
-            }
-        }
-    }
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] POI 목업 %d개 수집(POI_ 태그)"), PoiActors.Num());
-}
-
-AActor* UNPCManager::FindPoi(const FString& PoiId)
-{
-    ScanPois();
-    const TWeakObjectPtr<AActor>* Found = PoiActors.Find(PoiId);
-    return Found ? Found->Get() : nullptr;
 }
 
 void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
