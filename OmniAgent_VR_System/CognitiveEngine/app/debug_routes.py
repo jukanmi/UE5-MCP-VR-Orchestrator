@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from .schemas.actions import ActionBatch, GameAction, ModeActionRequest
 from .schemas.envelope import EEnvelopeType, MessageEnvelope
 from .server_state import STATE
+from .services.jev_service import get_jev_service
 from .utils import db_manager, llm_factory
 
 logger = logging.getLogger("api")
@@ -199,7 +200,7 @@ async def api_npc_command(npc_id: str, req: NpcCommandRequest):
 
 @router.get("/api/ws/status")
 async def api_ws_status():
-    return {"connected": STATE.active_llm_ws is not None}
+    return {"connected": STATE.active_llm_ws is not None, "jev": get_jev_service().status()}
 
 
 class DebugPromptRequest(BaseModel):

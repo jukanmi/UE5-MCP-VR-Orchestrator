@@ -63,6 +63,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **월드 위젯 앞면** — 단면(two-sided 끔) 위젯은 −X 면이 읽히는 면이라 +X 를 카메라 반대로 돌려야 보인다. 양면이면 +X 를 카메라로 돌려도 글자가 정상(2026-10-03 PIE 화면 캡처). 프로젝트 규약: 월드 UI 는 `UWorldUIComponent` 상속(양면 + +X→카메라).
 - **아이템 충돌 수 세기**: `StaticMeshEditorSubsystem.get_simple_collision_count` 는 상자·구·캡슐만 센다 — 볼록 헐은 `get_convex_collision_count` 로 따로.
 - Sprint 해제는 `IA_Move` `Completed`/`Canceled`(`OnMoveReleased`) — `Triggered` 는 입력 0 에서 안 오고 `OnMove` 가 조기 return.
+- **몸 메시 회전은 `UpdateBodyRotation` 이 매 틱 덮어쓴다** — Python 으로 `mesh.relative_rotation` 을 줘도 무효(눕힘·yaw 모두 `BodyLeanDeg`·`SmoothedBodyYaw` 에서 계산). 헤드셋 없는 PIE 자세 시험은 `VRCamera.relative_location`(Z=키×비율)·`relative_rotation`(피치)을 바꾸고, 판정·보간이 도는 시간이 필요하니 설정과 읽기를 별도 호출로 나눌 것(한 호출 안 `sleep` 은 게임 스레드를 막는다). 편하게 선 비율은 측정 키 대비 0.94~0.95 라 높이 임계를 0.93 근처에 두면 고개만 숙여도 걸린다.
 
 ### D. 통신 · DX
 - **상세 문서 `docs/index.html`**: **`docs/index.html`** (브라우저로 열기). 주요 앵커: `#ai-codebase-guide`(아키텍처) · `#tts-plan`(TTS 계획) · `#langgraph`(LangGraph) · `#integration-guide`(통합 시퀀스). 로드맵은 `docs/Memo.md` Todo 섹션·`docs/DoList.md` 가 담당(index.html 에 별도 `#todo` 없음, 2026-07-27 중복 방지로 참조 제거).
@@ -91,6 +92,11 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **WS 는 서버보다 먼저 뜨면 Offline Mode 로 고착**: 5회 재접속 실패 후 `Switching to permanent Offline AI Mode`.
   **PIE 재시작으로는 안 풀리고 에디터를 재시작해야 한다.** 상태 확인은 `curl 127.0.0.1:8000/api/ws/status`.
 - **에디터 MCP**: `ue_run_python` 으로 에셋·프로퍼티·`WidgetTree`(`find_object(".../WBP:WidgetTree.X")`) 편집 가능. **K2Node 그래프 노드만 불가** → 사용자 수작업. RemoteControl 설정은 `Saved/Config/…/RemoteControl.ini`(미추적) — 새 환경마다 UI 재설정. 에디터 켜진 채 에셋 파일은 잠김(`git rm` "Invalid argument").
+- **MCP 로 에셋을 고칠 땐 대상 객체에 `modify()` 를 먼저 건다(2026-10-05 실측)**: 위젯 속성(`color_and_opacity`·버튼 스타일)·`InputMappingContext.map_key` 는 `modify()` 없이 값만 바꾸고 `save_loaded_asset(only_if_is_dirty=False)` 해도 디스크에 안 남는다(`IMC_VR` 매핑이 통째로 빠졌고 PIE 는 메모리라 멀쩡해 보였다). 저장 뒤 `git status` 에 `.uasset` 이 `M` 인지로 판정. 로드된 에셋은 `delete_loaded_asset` 도 실패해 같은 이름 재생성이 막히니 다른 이름으로 만들고 옛것은 에디터를 닫은 뒤 파일로 지운다.
+- **월드 위젯의 기본 Slate 브러시는 흰색으로 그려진다(2026-10-05)**: `EditableTextBox`·`Button` 을 기본 스타일로 두면 배경이 흰색이라 흰 글자가 안 보인다. 배경 틴트(normal·hovered·focused·pressed)와 글자 색을 명시한다.
+- **메뉴 지도 텍스처(`T_WorldMap`, 2026-10-06)**: 에디터 월드에 `SceneCapture2D` 를 `(0,0,60000)` pitch -90 직교(`ortho_width` 51000)·`SCS_BASE_COLOR`·2048² `RTF_RGBA8` 로 두고 `capture_scene` → `RenderingLibrary.render_target_create_static_texture2d_editor_only` → `/Game/Core/interface/` 로 옮기고 **`compression_no_alpha=True`**(캡처 알파가 0 이라 안 끄면 반투명). 촬영 액터는 레벨에서 지울 것. 영역은 `NavMeshBoundsVolume`(중심 0,0·반경 25500)과 같고 위쪽 = 월드 +X·오른쪽 = +Y — 영역을 바꾸면 `UVRPlayerUIComponent` 의 `MapWorldCenter`·`MapWorldSize` 도 같이.
+- **에디터가 두 개 뜨면 MCP 가 안 붙는다(2026-10-05)**: 사용자가 따로 켠 에디터가 30010 을 잡으면 두 번째는 `HttpListener unable to bind` 로 Remote Control 이 죽는다. 빌드 전 `tasklist` 로 확인하고, MCP 가 응답하는 에디터면 저장 안 된 패키지가 없는지 본 뒤 `QUIT_EDITOR`.
+- **`Content/Maps/NewProjectTest.umap` 은 UAT 가 매번 다시 만든다(2026-10-05)**: 지워도 `verify all` 후 untracked 로 되살아난다 — 커밋하지 말 것(`.gitignore` 결정은 Memo).
 - **gitignore(2026-09-24 현행)**: `personas/`·`knowledge/`·`models/`·`.claude/*`(skills 제외)·`.mcp.json`·`*.txt`·`.obsidian/` 로컬 전용. `docs/`·`tests/` 는 추적(docs 는 2026-09-21 부터). NPC 4인: Skadi(과격 여성 해적선장)·Moca(ASMR 여성 스트리머)·Elara(근엄 남성 기사단장)·James(Skadi 해적단 항법사).
 
 ### E. 파인튜닝
@@ -150,3 +156,4 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
   `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
 - **U-4. `sol_pi.py build` 워치독 300초** — 룰 캐시 재생성처럼 오래 걸리는 빌드는 중간에 죽고 `cl.exe` 만 taskkill 됨
   (`dotnet.exe` 호스트는 안 죽음). 워치독에 끊긴 뒤 재실행하면 이미 컴파일된 `.obj` 는 재사용되니 그냥 다시 돌리면 된다.
+- **U-12. 에디터를 `-log` 로 띄우면 콘솔 창 클릭(텍스트 선택 모드)에 게임이 멈춘다** — 창 제목이 "선택 …UnrealEditor.exe" 로 바뀌고 MCP(30010)가 무응답이 된다. MCP 로 띄울 땐 `-log` 없이 `Start-Process`, 걸렸으면 에디터를 닫고 다시 띄운다.

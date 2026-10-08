@@ -1,6 +1,7 @@
 #include "NPC/BP/SmartNPC.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Party/PartySubsystem.h"
 #include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "NPC/Components/NPCStateComponent.h"
@@ -66,6 +67,16 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (UNPCManager* Manager = UNPCManager::Get(this))
     {
         Manager->UnregisterNPC(AgentID);
+    }
+
+    // 비사망 Destroy 만 해산 — PIE 종료·레벨 전환·WP 셀 언로드(RemovedFromWorld)는 NPC 가 곧 되살아나거나 월드가 끝나는 것이라
+    // 멤버십을 지키고 party_update 송신도 피한다. 이미 Leave 된 사망 경로와 겹쳐도 무동작이라 안전하다.
+    if (EndPlayReason == EEndPlayReason::Destroyed)
+    {
+        if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+        {
+            Party->Leave(AgentID);
+        }
     }
 
     Super::EndPlay(EndPlayReason);
@@ -153,6 +164,12 @@ void ASmartNPC::HandleDeath()
     {
         Manager->SendStoryEvent(TEXT("npc_died"), AgentID, AgentID);
         Manager->UnregisterNPC(AgentID);
+    }
+
+    // 일행이 죽으면 자동 해산 — party_update(leave) 는 파티 서브시스템 델리게이트가 서버로 보낸다.
+    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        Party->Leave(AgentID);
     }
 
     // 4. AI 컨트롤러 해제 — BT 완전 중단

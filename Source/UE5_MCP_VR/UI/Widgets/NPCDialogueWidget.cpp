@@ -42,7 +42,9 @@ TSharedRef<SWidget> UNPCDialogueWidget::RebuildWidget()
 
         Font.Size = 30;
         DialogueText->SetFont(Font);
-        DialogueText->SetAutoWrapText(true);
+        // AutoWrapText 가 아니라 고정 폭으로 줄바꿈한다. DrawAtDesiredSize 위젯에서 AutoWrap 은
+        // 줄바꿈 폭이 직전 프레임의 좁은 폭에 묶여, 긴 대사가 폭 252px·높이 638px 짜리 기둥이 됐다.
+        DialogueText->SetWrapTextAt(640.f);
 
         Box->AddChildToVerticalBox(SpeakerName);
         Box->AddChildToVerticalBox(DialogueText);

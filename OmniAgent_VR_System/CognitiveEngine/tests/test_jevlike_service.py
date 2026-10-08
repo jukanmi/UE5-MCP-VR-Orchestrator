@@ -287,3 +287,93 @@ def test_daily_body_and_event_signals() -> None:
     )
     text = talked.text("target")
     assert "talk:recent/Elara" in text and "hp:high" in text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 기동 워밍·로드 상태 노출 (PROPOSAL P8)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_status_heuristic_fallback(service: JevlikeService) -> None:
+    st = service.status()
+    assert st["mode"] == "heuristic" and st["daily"] == "heuristic" and st["combat"] == "heuristic"
+    assert st["loaded_at"] is None and st["checkpoint_exists"] is False
+    assert service.warmup() >= 0.0  # 모델 없어도 예외 없이 즉시 반환
+
+
+def test_warm_jev_service_returns_status(monkeypatch: pytest.MonkeyPatch, service: JevlikeService) -> None:
+    from app.services import jev_service as js
+
+    monkeypatch.setattr(js, "_SERVICE", service)
+    st = js.warm_jev_service()
+    assert st["mode"] == "heuristic" and st["combat"] == "heuristic"
+
+
+def test_ws_status_exposes_jev_and_keeps_connected(monkeypatch: pytest.MonkeyPatch, service: JevlikeService) -> None:
+    import asyncio
+
+    from app import debug_routes
+    from app.services import jev_service as js
+
+    monkeypatch.setattr(js, "_SERVICE", service)
+    out = asyncio.run(debug_routes.api_ws_status())
+    assert "connected" in out and out["jev"]["mode"] == "heuristic"
+
+
+def _fake_load(monkeypatch: pytest.MonkeyPatch, seen: list) -> None:
+    """jevlike.model 을 가짜로 교체 — select_device 인자를 seen 에 기록, 모델은 호출 가능한 더미."""
+    import sys
+    import types
+
+    class _Probs:
+        def softmax(self, _d):
+            return self
+
+        def __getitem__(self, _i):
+            return self
+
+        def cpu(self):
+            return self
+
+        def tolist(self):
+            return [0.2, 0.3, 0.5]
+
+    class _Model:
+        def eval(self):
+            return self
+
+        def __call__(self, _batch):
+            return _Probs()
+
+    mod = types.ModuleType("jevlike.model")
+    mod.select_device = lambda d: seen.append(d) or d  # type: ignore[attr-defined]
+    mod.load_checkpoint = lambda path, dev: (_Model(), lambda xs: xs, None)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "jevlike.model", mod)
+
+
+def test_status_model_mode_with_fake_model(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app.services import jev_service as js
+
+    seen: list = []
+    _fake_load(monkeypatch, seen)
+    ckpt = tmp_path / "fake.pt"
+    ckpt.write_bytes(b"x")
+    calls: list = []
+    monkeypatch.setattr(js.JevlikeService, "_model_probs", lambda self, c, o=None: calls.append(c) or [0.2, 0.3, 0.5])
+    svc = js.JevlikeService(checkpoint_path=str(ckpt))
+    st = svc.status()
+    assert st["mode"] == "model" and st["daily"] == "model" and st["combat"] == "heuristic"
+    assert st["loaded_at"] is not None
+    assert st["checkpoint"] == "fake.pt"  # 파일명만, 절대경로 아님
+    svc.warmup()
+    assert calls == ["warmup"]  # 워밍이 모델 경로를 탄다
+
+
+def test_jev_device_env_is_applied(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app.services import jev_service as js
+
+    seen: list = []
+    _fake_load(monkeypatch, seen)
+    ckpt = tmp_path / "fake.pt"
+    ckpt.write_bytes(b"x")
+    monkeypatch.setenv("JEV_DEVICE", "cpu")
+    svc = js.JevlikeService(checkpoint_path=str(ckpt))
+    assert seen == ["cpu"] and svc.status()["device"] == "cpu"

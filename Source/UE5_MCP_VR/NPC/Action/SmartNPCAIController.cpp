@@ -11,6 +11,7 @@
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Party/PartySubsystem.h"   // 파티원은 Jev daily 억제·전투 종료 후 추적 재개
 #include "Network/EnvelopeBuilder.h"
 #include "Dom/JsonObject.h"
 
@@ -248,6 +249,10 @@ void ASmartNPCAIController::ExitCombat(AActor* DeadTarget)
     {
         W->GetTimerManager().ClearTimer(CombatTargetLostTimer);
     }
+
+    // 파티원이면 전투 중 끊긴 플레이어 추적을 즉시 다시 건다(StopAllActions 가 추적을 풀었다).
+    // 넉다운·사망 등 가드에 걸리면 건너뛰고 TickJevDaily 의 주기 복구가 잡는다.
+    if (UNPCActionComponent* ActionComp = NPC->GetActionComponent()) ActionComp->ResumePartyTracking();
 }
 
 void ASmartNPCAIController::StopSightTracking()
@@ -651,7 +656,10 @@ void ASmartNPCAIController::HandleJevDecisionResponse(const TSharedPtr<FJsonObje
         bJevInFlightDaily = false;
         if (ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn()))
         {
-            if (UNPCActionComponent* ActionComp = NPC->GetActionComponent()) ActionComp->ApplyJevDaily(*Payload);
+            // 요청을 보낸 뒤 합류한 경우 늦은 응답이 추적을 끊지 않게 버린다.
+            const UPartySubsystem* Party = UPartySubsystem::Get(this);
+            const bool bPartyMember = Party && Party->IsMember(NPC->AgentID);
+            if (UNPCActionComponent* ActionComp = NPC->GetActionComponent(); ActionComp && !bPartyMember) ActionComp->ApplyJevDaily(*Payload);
         }
         return;
     }
@@ -717,11 +725,31 @@ void ASmartNPCAIController::TickJevDaily()
         JevDailyIdleSince = Now;
         return;
     }
-    if (Now - JevDailyIdleSince < static_cast<double>(JevDailyIdleSeconds) || bJevRequestInFlight || bJevRequestPending) return;
 
     ASmartNPC* NPC = Cast<ASmartNPC>(GetPawn());
     UNPCActionComponent* ActionComp = NPC ? NPC->GetActionComponent() : nullptr;
     if (!ActionComp) return;
+
+    // 파티원은 일상 요청을 보내지 않는다(서버 부하·추적 단절 방지). 대신 이 틱(큐 비고 비전투)을 이용해
+    // 반사·넉다운·리스폰 등으로 끊긴 플레이어 추적을 1초 간격으로 스스로 복구한다 — 가드는 ResumePartyTracking 안.
+    const UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (Party && Party->IsMember(NPC->AgentID))
+    {
+        if (Now - JevDailyIdleSince >= 1.0)
+        {
+            JevDailyIdleSince = Now;
+            ActionComp->ResumePartyTracking();
+        }
+        return;
+    }
+
+    if (Now - JevDailyIdleSince < static_cast<double>(JevDailyIdleSeconds) || bJevRequestInFlight || bJevRequestPending) return;
+    // 플레이어를 따라가는 중(Follow/Track)에는 일상 활동(wander 등)을 시작하지 않는다 — 시작하면 추적이 끊긴다.
+    if (ActionComp->IsTracking())
+    {
+        JevDailyIdleSince = Now;
+        return;
+    }
     if (Now - ActionComp->GetLastLLMBatchTime() < static_cast<double>(JevDailyAfterLLMSeconds)) return;
 
     // 미연결이면 조용히 Idle 유지(경고 스팸 금지) — 재연결되면 다음 틱에 바로 요청한다.

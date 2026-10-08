@@ -125,7 +125,7 @@ def process_batch(path: str, model: str, timeout: int, workers: int) -> tuple[in
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="gemma4-e4b-dialogue-v2")
+    ap.add_argument("--model", default="gemma4-e4b-dialogue-v1")
     ap.add_argument("--only", default="", help="배치 번호 쉼표 목록 (미지정 시 전체)")
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--timeout", type=int, default=90)

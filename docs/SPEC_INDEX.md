@@ -2,7 +2,7 @@
 
 SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완료 기준은 각 SPEC 본문.
 **갱신 규칙**: SPEC 의 마일스톤이 바뀌면 이 표의 그 줄도 같이 고친다. SPEC 이 끝나면 `docs/done/` 으로 옮기고 아래 "완료" 표로 내린다.
-마지막 갱신: 2026-10-05.
+마지막 갱신: 2026-10-08.
 
 범례: ✅ 완료 · 🔶 진행 중 · ⬜ 착수 전 · ⏸ 보류 · ❓ 상태 줄 없음
 
@@ -18,20 +18,12 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 | [npc_lift_throw](SPEC_npc_lift_throw.md) | ⏸ M1 구현 후 코드 제거(2026-10-02) | 충돌 피해 속도 임계·계수 PIE 튜닝 | friction_grip M2(양손) 구현으로 선행 조건 충족, 헤드셋 확인 뒤 재착수. 실측·함정은 memo |
 | [npc_grip](SPEC_npc_grip.md) | ⬜ M1~M3 착수 전(인터뷰 2026-09-24) | 붙잡기 `EAction` 을 LLM 선택지에서 뺄지, 반사 룰 발동 조건, 룸스케일로 걸어서 벗어날 때 처리, 뿌리치기 속도·최대 지속 시간 | grip_pose M1(`FItemData` 형상 유형) 선행 |
 
-### VR 자세·메뉴 (2026-10-04 신규)
-
-| 이름 | 진행상황 | 미결사항 | 비고 |
-|---|---|---|---|
-| [body_measure_prone](SPEC_body_measure_prone.md) | ⬜ M0 스파이크 → M1 눕히기 → M2 측정 | 다리 측정 절차(컨트롤러를 어느 지점에), 측정값 저장 위치·형식, 아바타 스케일 복원 여부, 기존 2초 자동 캘리브레이션과의 관계, 엎드린 캡슐 형태 | 현재 Prone 은 태그·캡슐만이고 몸 메시는 직립(W21 부터). 측정 UI 는 pause_settings 선행 |
-| [pause_settings](SPEC_pause_settings.md) | ⬜ M0 점검 → M1 메뉴 → M2 설정·저장 | 오디오 구성(사운드 클래스·믹스), 저장 수단, 메뉴가 열린 동안 입력 차단 여부, 메뉴 위치, 핸드트래킹 대체 입력, 시스템 메뉴 충돌 | 월드는 멈추지 않는 "메뉴". 왼손 Menu 버튼은 `IMC_VR` 에서 비어 있음 |
-
 ### NPC·Jevlike (Python/C++)
 
 | 이름 | 진행상황 | 미결사항 | 비고 |
 |---|---|---|---|
-| [jev_daily](SPEC_jev_daily.md) | 🔶 M1 ✅(2026-09-24) M2 학습 ✅ | 골드셋 50건 사람 채점·일치율, 대화 중 판정 보강 여부, 튜닝값(반경·풀 상한·대기 시간), 멀리 있는 NPC 에게 GiveItem 오지정 여지 | 골드셋이 look_at·stay 편중. 실제 POI 시스템은 별도 SPEC |
+| [jev_daily](SPEC_jev_daily.md) | 🔶 M1 ✅(2026-09-24) M2 학습 ✅ | 골드셋 50건 사람 채점·일치율, 대화 중 판정 보강 여부, 튜닝값(반경·풀 상한·대기 시간), 멀리 있는 NPC 에게 GiveItem 오지정 여지 | 골드셋이 look_at·stay 편중. `pois` 풀 소스는 poi M1 로 `UPOIManager` 전환(2026-10-08). 체크포인트 git 추적·기동 워밍(`08b97bd3`) |
 | [jev_neuro_symbolic_st](SPEC_jev_neuro_symbolic_st.md) | 🔶 Phase 1~3 코드 ✅(2026-09-22) | `BREAKTHROUGH_GAIN` 헤드셋 체감 튜닝, 전투 라벨 재생성·재학습(선택) | StateTree 에셋 바인딩은 동작 변화 0 이라 보류 |
-| [poi](SPEC_poi.md) | ⬜ M1 액터·등록소 → M2 `target_poi` 이동 → M3 대사·RAG → M4 스토리 구역(인터뷰 2026-10-05) | 노출 상한 N·별칭 길이, M3 "근처" 반경, `Type` 어휘(M1 미사용), SLM id 오류 잦으면 구제 재검토 | 해석은 C++ `UPOIManager`(Python 은 어휘 검증만). jev_daily `pois` 풀 계약 유지 |
 | [python_cpp_contract](SPEC_python_cpp_contract.md) | ❓ 코드 대조 리뷰(2026-09-18)만 있음 | 판정표의 "구현 가치 있음" 항목(예: `stats` 송신)이 구현됐는지 | 상태 줄 없음. 본문 판정표 기준으로 정리 필요 |
 
 ---
@@ -40,6 +32,11 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 
 | 이름 | 진행상황 | 미결사항 | 비고 |
 |---|---|---|---|
+| [posture](done/SPEC_posture.md) | ✅ M1~M4 (2026-10-08, 헤드셋 확인 완료 DoList 2-10) | 임계·눕힘 곡선은 실사용으로 조정(`BendRatioMax` 0.88·`BodyLeanDegPerRatio` 110°·`BodyLeanMaxDeg` 68°), 은신 계수 0.8·0.6·0.35, 팀 자동 인지(`ShouldAutomaticallySeeTarget`)는 은신 거리 제한 우회 | 게임 판정 = 키 대비 비율 + HMD 각도(이산 4자세), 몸 = 메시 눕히기 + PBIK. body_measure_prone M0·M1 대체 |
+| [poi](done/SPEC_poi.md) | ✅ M1~M4 (2026-10-08, 헤드셋 없는 PIE 확인 — 헤드셋 DoList 2-9) | 노출 상한 N=8·별칭 2개 초안값 조정, `Type` 어휘, 파인튜닝 데이터에 `poi` 필드 없음(bench 4/5) | POI 11개·스토리 구역 PoiId 연결. Bridge POI 위치(다리 밑) 확인 필요 |
+| [party](done/SPEC_party.md) | ✅ M1~M3 (2026-10-08) + 서버 의도 매핑(`945c6468`) | 이탈 시 따라붙기, 스토리 영입 비트 연동, 합류 호감도 +20 초안값, v4 재학습 여부 | 대화 합류·"멈춰" 보호·해산 PIE 확인. 전투 후 추적 재개는 헤드셋(DoList 2-9) |
+| [pause_settings](done/SPEC_pause_settings.md) | ✅ M0~M3 (2026-10-05~06, 헤드셋 확인 완료 DoList 2-8) | 없음 | 브랜치 `feature/pause-settings` — Develop 머지 대기. 지도 점 테두리(`11aafbef`) |
+| [body_measure_prone](done/SPEC_body_measure_prone.md) | ✅ M2 신체 측정(2026-10-08 `80f93d31`, 헤드셋 DoList 2-9) · M0·M1 은 posture M4 로 대체 | 없음(남은 자세·몸 작업은 posture) | 왼손 X 4단계 측정·별도 SaveGame·자동 보정 대체 |
 | [vr_ghost_hand](done/SPEC_vr_ghost_hand.md) | ✅ M1~M3 (2026-09-30~10-02, 헤드셋 확인) | 드라이브·임계 튜닝은 실사용으로 해소 | 팔 통과는 SPEC 밖. 이후 손 컴포넌트 분리·드라이브 통합 |
 | [vr_grip_pose](done/SPEC_vr_grip_pose.md) | ✅ M0~M4 (2026-09-30, 헤드셋 확인) | 가구 등 인벤토리 밖 물체 쥐기는 범위 밖 | 마찰·양손은 friction_grip 이 이어감 |
 | [npc_bone_collision](done/SPEC_npc_bone_collision.md) | ✅ M1~M3 (2026-10-02, 헤드셋 확인) | Imp·Puglin 무기 손·Rogue 발·Warrior 갑옷 뼈 값(수동 조정) | 밀기는 접촉 기준으로 교체됨 |

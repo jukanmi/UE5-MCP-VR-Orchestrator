@@ -55,6 +55,11 @@ EAction = Literal[
     "Pray",
     "Dance",
     "Sing",
+    # 파티 — C++ EAction::JoinParty/LeaveParty 와 1:1. 이 Literal 은 DialogueActionItem.type 이라 Stage1 구조화 출력
+    # grammar 에 그대로 들어간다 — LLM 이 낼 수는 있지만 dialogue.py 의 _gate_party_actions 가 호감도·정원·멤버 여부로
+    # 사후 필터링한다(미달이면 액션 제거 + 거절 대사). C++ 정원 4명 가드는 최종 방어로 유지.
+    "JoinParty",
+    "LeaveParty",
 ]
 
 
@@ -90,13 +95,15 @@ def fallback_batch(npc_id: str, facial: str = "Neutral", emotion: str = "Neutral
 
 class DialogueActionItem(BaseModel):
     """Stage1 구조화 출력용 액션 항목. type 이 EAction Literal 이라
-    Ollama structured output 이 34개 유효 액션만 생성 — 잘못된 Type 원천 차단.
+    Ollama structured output 이 EAction 에 속한 액션만 생성 — 잘못된 Type 원천 차단.
     직렬화 시 빈 키는 [Action:] 태그에서 생략 (interface_output 매핑 기준)."""
 
     type: EAction = Field(description="Action to perform, e.g. Attack, Block, Move, GiveItem, Follow")
     target: str = Field(default="", description="Player, Self, Enemy or an NPC name; '' if none")
     item: str = Field(default="", description="Item name; '' if none")
     loc: str = Field(default="", description="Location id; '' if none")
+    # 노출된 장소 목록(known_pois)의 id 그대로. 좌표 해석은 UE5(UPOIManager)가 한다 — 여기선 id 만 낸다.
+    poi: str = Field(default="", description="Place id from the listed places, for Move; '' if none")
     # 어휘 단일 소스는 C++ EMoveType(NPCActionTypes.h) — Walk/Run/Sprint/Crouch.
     # ParseMoveStyle 이 미매칭 값을 Walk 로 폴백하며 경고 로그를 남긴다.
     style: str = Field(default="", description="Modifier: Walk/Run/Sprint/Crouch for Move, emote name for Emote")
@@ -115,6 +122,7 @@ class DialogueActionItem(BaseModel):
 DIALOGUE_ACTION_FIELD_MAP: tuple = (
     ("target_id", "target"),
     ("target_loc", "loc"),
+    ("target_poi", "poi"),
     ("item", "item"),
     ("style", "style"),
     ("amount", "amount"),

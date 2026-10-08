@@ -16,16 +16,15 @@ import re
 import random
 import argparse
 import collections
-import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ENGINE_ROOT = os.path.abspath(os.path.join(_HERE, "../../.."))  # CognitiveEngine
 sys.path.insert(0, _ENGINE_ROOT)
 
 from app.agents.subgraphs.dialogue import _format_speech_style  # noqa: E402 — sys.path 등록 후 임포트
-from app.agents.subgraphs.prompts import DIALOGUE_STRUCTURED_PROMPT  # noqa: E402
 from app.agents.subgraphs.rules import validate_and_clamp_action  # noqa: E402
 from app.schemas.actions import DIALOGUE_ACTION_FIELD_MAP, GameAction  # noqa: E402
+from serving_prompt import format_stage1_system  # noqa: E402 — 서빙 프롬프트 조립 단일 소스
 
 RAW_DIR = os.path.join(_ENGINE_ROOT, "finetune", "data", "raw")
 SYNTH_DIR = _HERE
@@ -84,6 +83,8 @@ def load_parquet_lorebook_scenarios() -> list:
     if not os.path.exists(parquet_path):
         print(f"[Warn] parquet file not found at {parquet_path}, skipping parquet lorebook")
         return []
+
+    import pandas as pd  # 지연 임포트 — 프롬프트 조립 스모크 테스트가 pandas 없이도 모듈을 불러오게
 
     df = pd.read_parquet(parquet_path)
     scenarios = []
@@ -203,14 +204,12 @@ def build_system(
     sentiment: str = "Neutral (Score: 0)",
     chat_history: str = "No previous conversation",
 ) -> str:
-    return DIALOGUE_STRUCTURED_PROMPT.format(
+    return format_stage1_system(
         name=persona["name"],
         role=persona.get("role", ""),
         traits=persona.get("traits", []),
         speech_style=_format_speech_style(persona.get("speech_style")),
-        memory="None",
         sentiment=sentiment,
-        rag_context="None",
         chat_history=chat_history,
         inventory=inventory,
         valid_targets=", ".join(valid_targets) if valid_targets else "Player, Self, Enemy, or an NPC name",

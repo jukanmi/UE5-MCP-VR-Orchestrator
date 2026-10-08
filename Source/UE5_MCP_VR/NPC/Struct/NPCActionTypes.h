@@ -134,6 +134,10 @@ enum class EAction : uint8
 	Pray          UMETA(DisplayName = "Pray"),
 	Dance         UMETA(DisplayName = "Dance"),
 	Sing          UMETA(DisplayName = "Sing"),
+
+    //Party — 기존 값 번호 유지를 위해 enum 끝에 추가
+	JoinParty     UMETA(DisplayName = "JoinParty"),
+	LeaveParty    UMETA(DisplayName = "LeaveParty"),
 };
 /**
  * ============================================================================

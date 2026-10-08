@@ -32,6 +32,7 @@ class EEnvelopeType(str, Enum):
     STORY_EVENT = "story_event"  # 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거
     JEV_QUERY = "jev_query"  # UE5 정규화 전투 지표 → 로컬 jevlike 전술 편향 요청
     JEV_DECISION = "jev_decision"  # Python → UE5 전술 편향 회신(stance/승수/noul). 수신 전용
+    PARTY_UPDATE = "party_update"  # UE5 파티 합류·해산 증분 통보 → 서버 일행 집합 갱신
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +109,10 @@ class PromptPayload(BaseModel):
     nearby_furniture: Optional[List[Dict[str, Any]]] = None
     # 대상 NPC 반경 내 바닥에 떨어진 아이템 컨텍스트 [{"id", "template_id", "dist_m"}, ...]
     nearby_items: Optional[List[Dict[str, Any]]] = None
+    # 이름 있는 장소(POI) 노출 목록 — [{"id", "name", "aliases"}, ...], UE5 가 NPC 에서 가까운 순으로 상한 N개.
+    # 항목의 선택 필드 "desc"(한 줄 설명)는 NPC 근처 POI 에만 실린다 — 먼 장소 설명은 모르는 것으로 둔다.
+    # id(접두 없는 PoiId)만 액션 target_poi 의 유효 어휘이며, Rules 는 이 목록에 없는 id 를 제거한다(어휘 검증만).
+    known_pois: Optional[List[Dict[str, Any]]] = None
 
 
 class EmergencyReportPayload(BaseModel):
@@ -162,6 +167,14 @@ class StoryEventPayload(BaseModel):
     @property
     def flag_name(self) -> str:
         return self.name if self.event == "flag" else f"{self.event}:{self.name}"
+
+
+class PartyUpdatePayload(BaseModel):
+    """party_update 타입의 payload. 합류·해산 한 건마다 증분으로 온다(C++ UPartySubsystem 이 정본).
+    재연결 직후에는 C++ 가 현재 멤버 전원을 join 으로 다시 보내므로 join 은 멱등이어야 한다."""
+
+    agent_id: str
+    change: Literal["join", "leave"]
 
 
 class JevQueryPayload(BaseModel):
@@ -223,6 +236,10 @@ class MessageEnvelope(BaseModel):
     def parse_story_event_payload(self) -> StoryEventPayload:
         """payload를 StoryEventPayload로 파싱. type이 story_event일 때만 호출할 것."""
         return StoryEventPayload(**self.payload)
+
+    def parse_party_update_payload(self) -> PartyUpdatePayload:
+        """payload를 PartyUpdatePayload로 파싱. type이 party_update일 때만 호출할 것."""
+        return PartyUpdatePayload(**self.payload)
 
     def parse_jev_query_payload(self) -> JevQueryPayload:
         """payload를 JevQueryPayload로 파싱. type이 jev_query일 때만 호출할 것."""

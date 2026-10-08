@@ -32,9 +32,9 @@ _ENGINE_ROOT = os.path.abspath(os.path.join(_HERE, "../../.."))  # CognitiveEngi
 sys.path.insert(0, _ENGINE_ROOT)
 
 from app.agents.subgraphs.dialogue import _format_speech_style  # noqa: E402
-from app.agents.subgraphs.prompts import DIALOGUE_STRUCTURED_PROMPT  # noqa: E402
 from app.agents.subgraphs.rules import validate_and_clamp_action  # noqa: E402
 from app.schemas.actions import DIALOGUE_ACTION_FIELD_MAP, GameAction  # noqa: E402
+from serving_prompt import format_stage1_system  # noqa: E402 — 서빙 프롬프트 조립 단일 소스
 
 SYNTH_DIR = _HERE
 PROCESSED_DIR = os.path.join(_ENGINE_ROOT, "finetune", "data", "processed")
@@ -94,14 +94,12 @@ def build_system(persona: dict, valid_targets: list, inventory: str,
                   sentiment: str = "Neutral (Score: 0)",
                   chat_history: str = "No previous conversation") -> str:
     """서빙 _collect_stage1_context 와 동일 조립 — 세션 상태(메모리 등)는 중립 기본값."""
-    return DIALOGUE_STRUCTURED_PROMPT.format(
+    return format_stage1_system(
         name=persona["name"],
         role=persona.get("role", ""),
         traits=persona.get("traits", []),
         speech_style=_format_speech_style(persona.get("speech_style")),
-        memory="None",
         sentiment=sentiment,
-        rag_context="None",
         chat_history=chat_history,
         inventory=inventory,
         valid_targets=", ".join(valid_targets) if valid_targets else "Player, Self, Enemy, or an NPC name",

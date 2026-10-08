@@ -20,8 +20,24 @@
 - [ ] M2 양손 — 구현(2026-10-04), 헤드셋 없는 PIE 확인(한 손 0.15 로 못 드는 횃불을 두 손 0.15+0.15 로 듦·기록 손이 놓으면 기록이 다른 손으로 넘어가 안 떨어짐·마지막 손이 놓아야 떨어짐). 헤드셋 확인 대기(DoList 1-23). 결과·함정은 SPEC "M2 결과". 두 번째 손은 인벤토리 슬롯이 비어 폰의 "못 든 물건 다시 쥐기" 루프가 매 프레임 재쥐던 버그 수정.
 
 ### 포복 몸 눕히기·신체 측정 + 메뉴·설정 UI — SPEC 작성(2026-10-04, 착수 전)
-- [ ] `SPEC_body_measure_prone.md` — 헤드셋에서 Prone 이어도 몸이 직립이라 머리가 HMD 위치까지 못 감(자세 시스템은 태그·캡슐만, 몸 눕히는 코드 없음 — 헤드셋 없는 PIE 판정은 정상). M0 스파이크 → M1 눕히기 → M2 신체 측정(키·팔 벌림·다리는 컨트롤러를 다리에 대고).
-- [ ] `SPEC_pause_settings.md` — 왼손 Menu 버튼으로 메뉴(월드는 안 멈춤)·설정(신체 측정 캘리브레이션·사운드 볼륨, 로컬 저장). 신체 측정 M2 의 선행.
+- [ ] **`feature/pause-settings` → Develop 머지** — 메뉴 M0~M3 헤드셋 확인 완료(DoList 2-8), SPEC 은 `docs/done/` 이관(2026-10-08). 이 브랜치에 파티·POI·신체 측정·LLM 개선도 쌓여 있어 PR 범위 정리 필요.
+
+### 2026-10-05 헤드셋 테스트에서 나온 버그·점검 (미착수 — 결정·수정 대기)
+- [ ] **`GetMass()` 경고 "피직스 시뮬레이션 옵션이 켜져있어야 질량 구하기 가능" 반복(세션당 40건)** — 원인: 물리가 꺼진 아이템(상인 진열품·부착 중)의 질량을 `ItemMesh->GetMass()` 로 읽음. 호출처 `VRHandComponent.cpp` `CanHold`(:850)·접촉 쥐기(:653)·`GrabWithPhysics`(:877)·`HeldMassScale`(:305/309). `VRMeleeComponent.cpp:97` 은 이미 `GetMassOverride()` 로 회피. 수정안: `ADroppedItemBase::GetMassKg()` 를 두고 `UPrimitiveComponent::CalculateMass()`(오버라이드 있으면 그 값, 없으면 형상 계산, 물리 꺼져도 경고 없음)로 한 곳에 모은 뒤 4곳 교체. 진열품 판정이 0kg 으로 새는지도 같이 확인. 별도 `bugfix/` 로.
+- [ ] **가드·제임스가 서로 싸움 — 호감도 누적(2026-10-05 13:16 세션)** — `affinity.db`: `Guard→James -20`·`Guard→Moca -15`·`Moca→Guard -10`·`Guard→Elara -5` 전부 `Hostile Hit`. 서버가 danger≥0.5 지각마다 -5(`main.py::_apply_hostile_affinity`)라 아군끼리 피격(Hit)이 반복되면 -30 이하 적대로 넘어가 교전. `seed.py` 는 보스·적·플레이어만 시딩하고 아군↔아군은 초기화하지 않아 테스트 잔재가 남음(`Guard→Unknown -40` 도 이미 Hostile). ① 즉시: `seed_affinity` 에 아군↔아군 0 시딩 추가 + 서버 재시작 ② 근본: 아군이 왜 서로를 때리는지(후보: `KineticDamage` 동역학 피해·투사체/범위 공격·래그돌 충돌) — 싸움이 붙는 장면의 서버 `[Affinity] … -5` 로그와 UE `TakeDamage` 가해자 로그 필요.
+- [ ] **채팅 입력창 글자·배경 모두 흰색** — `WBP_Chat` `ChatInput` 을 어두운 배경 + 흰 글자로 고침(`bac02c79`, 브랜치 `feature/pause-settings`). 한글이 안 써지던 건 입력이 안 보여서 그렇게 느껴졌을 가능성(Roboto 폰트 + 메뉴 한글은 정상). 헤드셋/PIE 에서 실제 키 입력으로 확인 필요 — 그래도 한글이 안 써지면 IME 문제로 별도. **2026-10-08 사용자 재보고("게임 내 채팅창에 한글이 안 쳐짐")**: 채팅창이 `UWidgetComponent`(World 공간, `UChatPanelUIComponent`) 위젯이라 OS IME 조합이 가상 창에 안 닿는 엔진 한계로 추정(미검증). 선택지: 뷰포트 오버레이 채팅창(데스크톱 입력용)·음성 STT. 영문 입력 여부부터 확인.
+- [ ] **TakeDamage 중복 정리(리팩토링, 사용자 문의 단계)** — 데미지 공식 `max(0, Raw−Defense)×부위배율` 이 `EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`(SmartNPC)·`AVRPawn::TakeDamage` 4곳에 복제. `AVRPawn` 은 `ACharacter + IPlayerBase` 이고 `ACombatCharacter` 아래가 아니라 상속 통합은 안 맞음. 안: ① `FCharacterAttributesBase::ApplyIncomingDamage(Raw, PartMultiplier)` 로 공식만 모음(위험 거의 없음) ② `ACharacter` 와 두 갈래 사이 얇은 중간 클래스 `ADamageableCharacter` 에 TakeDamage 뼈대 + 훅(`SmartNPC` 는 반환값이 Raw·`ReactToHit(Raw)` 라 동작 보존하려면 전체 오버라이드 필요). 순수 리팩토링(동작 동일) — 브랜치는 `refactor/` 로. 방향 미정.
+
+- [ ] **서브퀘스트 목표 마커 — 방향 결정 대기** — 월드 마커·메뉴 지도는 메인 비트의 `quest_target_tag` 하나만 가리킨다(`side/*.yaml` 에 목표 태그 없음, 마커는 월드당 1개). 서브퀘스트를 받아도 안내가 안 생긴다. 선택지: ① 활성 서브 목표로 마커 이동(서브 YAML 에 `quest_target_tag`) ② 마커 여러 개(메인 1+서브별) ③ 길 안내 경로(네비) — 별도 SPEC. 사용자 결정 대기.
+- [ ] **POI 이동 서버 보정 여부 결정(2026-10-08 PIE)** — "광장으로 가" 에 SLM 이 `Move` 만 내고 `target_poi` 를 비워 임의 이동(0.9m). 파티 의도 매핑처럼 발화에 노출 POI 의 표시명·별칭이 있고 `Move` 에 `target_poi` 가 없으면 서버가 채우는 보정을 넣을지(SPEC_poi D4 "구제 없음 — SLM 실측 뒤 필요하면 추가" 조항의 그 시점). 권장: 넣는다(재학습 없이 즉시).
+- [ ] **v4 재학습 여부 결정** — 서버 보정(의도 매핑·Stop→Idle·게이트)으로 동작은 하지만 원시 출력은 파티 꼬리에 의존(꼬리 없으면 JoinParty 0/5), 적대 호감도에도 합류 시도. `tools/finetune_eval/stage1_bench.py --suite new --prod-tail --seed-history` 로 재측정 후 결정. 재학습 시 학습 중 Ollama·UE 종료 필요(VRAM 16GB).
+- [ ] **Bridge POI 위치** — 다리 밑 지면(z≈10, NavMesh 투영 13800,-1406,60)에 놓임. 다리 상판이어야 하면 이동.
+- [ ] **POI·파티 초안값 PIE 조정** — 합류 호감도 +20·프롬프트 POI 노출 8개·장소 설명 반경 15m(`FurnitureContextRange`)·설명 80자.
+- [ ] **`StoryDirectorSettings` LoadConfig 오류 2건(에디터 시작 시)** — `EnemyClassMap`(`zombie`→`/Game/Blueprint/Enemy/BP_Enemy_Wraith_C`)·`ItemClassMap`(`holy_sword`→`/Game/Blueprint/Item/BP_DropItem_C`) import failed. 해당 BP 가 없거나 경로가 바뀐 것으로 보임 — 스토리 이벤트의 `spawn_enemy`·`spawn_item` 경로가 안 먹을 수 있다. 원인 확인 필요.
+- [ ] **`SignalAllies` 미디어 없음 경고 44건/세션** — `ActionData` 미매핑이면 무음 즉시완료(`pitfalls.md` B). 몽타주를 매핑하거나 액션 후보에서 빼기.
+- [ ] **`Content/Maps/NewProjectTest.umap` UAT 재생성** — 지워도(`9c699528`) `sol_pi verify all` 의 UAT 가 매번 다시 만든다(untracked). `.gitignore` 에 넣거나 UAT 가 맵을 안 열게 하는 결정 필요(현재는 untracked 로 방치).
+- [ ] **`.ignore` 파일이 계속 다시 생김** — 검색 도구(`rg`)가 읽는 파일이라 `docs`·`tools`·`OmniAgent_VR_System` 등이 검색에서 빠진다. 에디터·IDE 도구가 만드는 것으로 추정(원인 미확인). 생기면 지울 것.
+- [ ] **메뉴 지도 재촬영** — 맵 영역·내용이 바뀌면 `T_WorldMap` 을 다시 찍어야 한다(절차: `pitfalls.md` D 의 "메뉴 지도 텍스처"). 서브퀘스트 목표·POI 를 지도에 얹을 때(`SPEC_poi`, 위 마커 결정)도 같이.
 
 ### NPC 끌기·들기·던지기 — `SPEC_npc_lift_throw.md` (2026-10-02 착수)
 - **M1 구현했다가 코드 제거(2026-10-02, 사용자 결정 — 재정리 후 다시 만듦, 커밋 안 함)**. 손바닥 상자 2개 분할은 남김. 다시 만들 때 쓸 실측: ① 넉다운 후 안착 0.6초 만에 기상해 쓰러진 NPC 는 헤드셋에서 못 잡음 → 서 있는 NPC 를 쥐고 들 때 래그돌 전환으로 바꿈(사용자 결정) ② X_Bot 아래팔·주민 팔 전체에 물리 바디 없음 → 제약은 윗팔·어깨에 걸리고 감싼 아래팔이 흔들려, 지금 팔 위치로 놓기를 재면 매단 뒤 0.6~2초 만에 놓침 ③ 잡은 손을 NPC 뼈 캡슐 밀어내기에 그대로 두면 손가락이 팔에서 밀려 바로 놓침 ④ 손 60cm 순간이동이 매단 NPC 를 끌고 튐(골반 3m) ⑤ `MaxCarryMass` 5(88N)면 80kg 꿈쩍 안 함, 40(610N)이면 한 손 끌기·양손 들기 됨. NPC 질량 X_Bot 80.8·Farmer 79.7kg.
@@ -58,13 +74,59 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
   CC0 — Quaternius 전부(Parchment→SpellScroll 포함) · Bedroll(Kenney) · Telescope·Toolbox(CreativeTrio) · Mic(iPoly3D). Fab 스탠다드(무료) — Medieval Blacksmith tools pack(RepairHammer).
 - 함정: Quaternius FBX 는 실물 크기가 아니고 모델마다 배율이 다름(단검 156cm, 나침반 91cm). `set_lod_build_settings` 의 BuildScale 은 저장만 되고 즉시 재빌드되지 않아 크기가 안 바뀜 — FBX 는 `import_uniform_scale` 재임포트, GLB 는 액터 스케일 후 `merge_static_mesh_actors` 로 구움. 병합 결과 이름엔 `SM_` 접두가 자동으로 붙는다. 레벨 배치 `BP_DropItem` 은 메시를 테이블에서 다시 읽지 않아(에디터 편집 시만 `SyncMeshFromItemData`) 메시 교체 시 배치 액터를 따로 갱신·저장해야 함(World Partition 셀은 `WorldPartitionBlueprintLibrary.load_actors` 로 로드).
 
+### 아이디어 메모 (사용자가 던진 것, 기록만 — 검토·착수 전, 2026-10-07~)
+- [ ] **Whistle — 가벼운 음성 인식(STT) 모델** (2026-10-07, 검색 확인) — Cactus Compute 가 2026-10-02 공개. 16.9MB 한 파일·CPU 만·의존성 없음·첫 토큰 11ms(M4 Pro), LibriSpeech 등에서 Whisper base 보다 낮은 WER 주장. 가중치 HF `Cactus-Compute/whistle`, 엔진 GitHub `cactus-compute/needle`(`pip install cactus-needle`, C API `needle_load`/`needle_transcribe`). 30초 단위 일괄 처리(스트리밍 언급 없음).
+  **한국어 미지원** — 영·독·불·스·이·네덜란드·폴란드 7개만. 라이선스 페이지에 명시 없음(HF 모델 카드 확인 필요). 지금 Whisper 계열을 쓰는 한국어 음성 입력 대체로는 부적합, 한국어 추가 여부만 추적. (동명이인: 칭화대 THU-SPMI 의 Whistle 은 다국어 음소 지도 CTC Conformer 90/218/543MB 연구 모델 — 별개.)
+  출처: https://cactuscompute.com/blog/whistle · https://huggingface.co/THU-SPMI/whistle-large
+- [ ] **Phonon-2 — 영어 전용 STT** (2026-10-07, 검색 확인) — Fermion Research 가 2026-09-29 공개. NVIDIA Parakeet TDT 0.6B v3 를 2.1비트로 양자화한 164MB(원본 2.5GB), 7개 영어 세트 평균 WER 5.21%(원본 4.96%·Whisper large-v3-turbo 6.58%), M5 맥북에어 174배속·H100 배치 6,680배속. Windows CPU·CUDA(Docker)·MLX 지원, 구두점·대소문자·단어별 타임스탬프. 라이선스 CC-BY-4.0(출처 표기), CLI 는 Apache-2.0. HF `FermionResearch/Phonon-2`.
+  **영어 전용 — 한국어 X**, 스트리밍 언급 없음. Whistle 과 같은 이유로 한국어 입력엔 부적합. 한국어 STT 후보는 아래 항목.
+  출처: https://huggingface.co/FermionResearch/Phonon-2
+- [ ] **한국어 STT 후보 — CPU 로 도는 소형 조건** (2026-10-07, 검색 수집·미검증) — 조건: 16GB VRAM 을 UE5·Ollama 가 쓰므로 CPU 추론 가능한 소형. 기준표는 `models.handy.computer/languages/ko`(FLEURS 한국어 낭독 음성·Q8_0 양자화·Ryzen 4750U 노트북 CPU, 속도는 실시간 배수 — 1 미만이면 실시간 불가). 이전 음성 서버는 faster-whisper `large-v3` GPU(2026-09-12 폐기, 복원은 `ef8c663a^`).
+  | 모델 | CER % | 크기 | CPU 속도 | 라이선스 | 비고 |
+  | --- | --- | --- | --- | --- | --- |
+  | Fun-ASR-MLT-Nano-2512 | 5.20 | 0.83GB | 4.5× | Apache-2.0(HF 카드·저장소 기준, 순위표는 FunASR v1.1 로 적어 불일치) | 표에서 "종합 추천". 소형 중 정확도 최고. 800M·31개 언어(한국어 포함). 아래 상세 |
+  | Qwen3-ASR-0.6B | 5.82 | 0.79GB | 4.3× | Apache-2.0 | 실제 0.9B 파라미터. **스트리밍은 vLLM 백엔드에서만**(Linux 중심) |
+  | whisper-small | 7.70 | 0.25GB | 3.4× | Apache-2.0 | 가장 무난·생태계 큼, 정확도는 한 단계 아래 |
+  | SenseVoiceSmall | 8.27 | 0.24GB | 15.5× | FunASR 모델 라이선스 | 가장 빠름. 정확도 낮음 |
+  | moonshine-base-ko / tiny-ko | 8.12 / 9.00 | 0.07 / 0.03GB | 미표기 | MIT | 극소형, 속도 수치 없음 |
+  - 주의: ① 벤치는 깨끗한 낭독 음성 — 마이크·VR 잡음·짧은 명령 발화에서의 순위는 미검증 ② 푸시투토크(말 끝나고 변환)면 스트리밍 불필요, 지금 구조가 그랬다 ③ 후보 간 CER 차(5.2~5.8)는 신뢰구간 안쪽일 수 있음 ④ FunASR 라이선스는 상용 허용이라 하나 조건 확인 필요.
+  - **Fun-ASR-MLT-Nano-2512 상세**(2026-10-07): 800M, FunASR 계열, 핫워드·ITN(숫자·날짜 정규화) 지원. **CPU 경로 = llama.cpp/GGUF** — GPU·Python 없이 단독 바이너리, Linux·macOS·**Windows 프리빌트** 있음(저장소 릴리스). 그 밖에 vLLM(스트리밍 SDK·WebSocket·VAD, 청크 720ms 예시)·transformers 5.17. 공식 한국어 CER 없음("재현 가능한 평가 공개 시 추가" 문구) — 5.20 은 제3자 수치. 스트리밍은 vLLM 경로뿐이라 CPU 에선 푸시투토크 일괄 변환 전제. 동명 `Fun-ASR-Nano-2512` 는 중·영·일(+중국 방언)용이라 한국어엔 MLT 쪽. 최대 오디오 길이·GGUF 가중치 정확한 저장소명은 미확인.
+  출처: https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512 · https://github.com/QwenAudio/Fun-ASR
+  - **다른 한국어 벤치(자발 발화 기준, 2026-10-07)** — 위 FLEURS 는 낭독이라 쉽다. 실제 대화 음성(KsponSpeech)·전화 음성(AIHub)은 오류가 3배 가까이 커진다. 오류율은 하드웨어와 무관하므로 GPU 에서 잰 수치도 소형 모델 비교엔 유효.
+    | 모델(소형·CPU 가능) | KsponSpeech clean / other CER % | FLEURS CER % | 출처 |
+    | --- | --- | --- | --- |
+    | Zipformer 스트리밍 ko(155.7M, int8) | **7.18 / 7.14**(청크 64 기준 7.53) | — | HF `kangkyu/icefall-asr-ko-streaming-zipformer-174m` |
+    | Qwen3-ASR-0.6B | 18.56 / 16.26 | 5.82 | OpenKoASR |
+    | whisper-small | 23.21 / 21.44 | 7.70 | OpenKoASR |
+    | whisper-base | 30.40 / 27.80 | 12.98 | OpenKoASR |
+    | whisper-tiny | 37.20 / 34.99 | 19.07 | OpenKoASR |
+    | moonshine-base-ko | 미측정 | 8.0(F32) | HF 카드 |
+    - **눈에 띄는 것: sherpa-onnx 한국어 스트리밍 Zipformer** — 155.7M·Apache-2.0·**CPU 전용 설계**, int8 RTF 0.049(실시간의 20배, CPU 기종 미기재), 청크 16/32/64 = 지연 320ms/640ms/1.28s·CER 8.26/7.82/7.53. 훈련 데이터 ≈6,500h(KsponSpeech 964h + AIHub 약 5,500h)라 **KsponSpeech 수치는 도메인 안쪽(유리한 평가)** — 다른 모델과 같은 잣대로 보면 안 됨. 진짜 스트리밍이라 말하는 도중 자막·조기 반응에 유리. 한계: 어휘 2,460 음절이라 고유명사·게임 용어 약함(핫워드 없음), Windows 는 카드에 언급 없음(sherpa-onnx 자체는 Windows 빌드 제공), 청크 크기 고정(16/32/64).
+    - **OpenKoASR 리더보드**(`GT-KIM/open-korean-automatic-speech-recognition`)는 Whisper·Qwen3-ASR 만 있고 Fun-ASR·SenseVoice·Moonshine·Zipformer 는 없음 → 이 후보들끼리 같은 데이터로 잰 비교표는 아직 없다. 결과 제출 이슈 양식은 있음. 직접 재야 함.
+    - 한국어 소형 Whisper 파인튜닝(예: ENERZAi EZWhisper-Small 1.58비트 70MB, 자체 보고로 small 18%→6.45%)도 있으나 모델 공개 여부·평가셋 미확인.
+    출처: https://gt-kim.github.io/open-korean-automatic-speech-recognition/leaderboard_data.json · https://huggingface.co/kangkyu/icefall-asr-ko-streaming-zipformer-174m · https://huggingface.co/moonshine-ai/moonshine-tiny-ko · https://www.edge-ai-vision.com/2025/11/small-models-big-heat-conquering-korean-asr-with-low-bit-whisper/
+  - 다음 한 걸음(착수 시): 실제 마이크 녹음 20~30문장(게임 명령체)으로 Fun-ASR-Nano·Qwen3-ASR-0.6B·whisper-small CER·지연 직접 비교.
+  출처: https://models.handy.computer/languages/ko · https://huggingface.co/Qwen/Qwen3-ASR-0.6B · https://github.com/FunAudioLLM/SenseVoice
+- [ ] **Jevlike 대체·보강 후보군** (2026-10-07, 검색 수집 — 미검증, 수치는 각 저장소 자체 주장) — 현행 `vinnylarouge/jevlike`(MIT, 바이트 단위 인코더·0.19MB, 메뉴 합성 98%)는 단일 패스 옵션 스코어러. 같은 입출력(문맥 + 옵션 N개 → 옵션별 확률)을 내는 오픈소스가 여럿 나옴:
+  | 이름 | 기반·크기 | 구조 | 비고 |
+  | --- | --- | --- | --- |
+  | `olanotolu/jevbetter` | 해시 n-gram + 2층 트랜스포머 | 경쟁 옵션 어텐션 + 게이트 헤드 + 온도 보정 | **jevlike JSONL 포맷 호환(데이터 재사용 가능)**, MIT. 자체 벤치 top-1 0.916 vs 0.873·보정오차 절반, 대신 처리량 40 vs 4,608 menus/s(100배 느림, CPU 기준). 별 15개 |
+  | `wfzyx/von` | ModernBERT-large 395M | 옵션 마커 + 온도 보정 | Apache-2.0, 로컬 23ms(A10G)·96ms(4 vCPU). **영어 전용(한국어 X)**, 가중치 고정·보정만 재학습. 컨텍스트 8192 |
+  | `NandhaKishorM/laya` | ModernBERT-large 322~421M | 비자기회귀 + 전용 스코어 헤드 | **100개+ 언어** 주장. 학습 지원 여부 미확인 |
+  | `TianyuCodings/NanoJev` | Qwen3-0.6B | 공유 백본 + 결정 헤드 | 가장 작은 LLM 계열, 학습 파이프라인 포함 |
+  | `jaredpalmer/kev` | Qwen3.5 0.8~9B + LoRA | 옵션 표현 비교 포인터 헤드 | TypeSafe SDK 호환 API(`/v1/systemone`). 별 약 1.4k |
+  | `bespokelabsai/nimble` | Qwen3.5-9B + LoRA | 후보 로짓 추출 | 학습 레시피·평가·데이터 큐레이션 공개 |
+  | `theoleecj/semif` · `Rizzo-AI-Academy/rizzo-flow` | Qwen3.5-4B · 1.7~4B | 학습 없이 로짓 추출(llama.cpp) | 가장 쉬움, 대신 16GB VRAM 을 LLM 과 나눠 써야 함 |
+  - 관련: Cactus **Needle3**(121M·8~29MB·Apache-2.0)는 도구 호출·구조 추출·임베딩용이라 "옵션 확률" 스코어러와는 결이 다름(신뢰도 점수만). 평가용으로 `JevBench` 가 언급됨(arXiv 2609.30243 `JevOut` 도 참고).
+  - 판단 보류 사유: 현행은 0.19MB·5~20ms 로 충분하고 LLM·Ollama 가 이미 VRAM 을 씀. 검토 가치가 있는 건 ① `jevbetter`(데이터 그대로 비교 학습, 골드셋 `eval` 로 jevlike 와 맞대결) ② `laya`(한국어 문맥을 직접 먹여야 할 때). 한국어 컨텍스트를 쓰는지는 `jev_dataset.py` 확인 필요.
+  출처: https://github.com/olanotolu/jevbetter · https://huggingface.co/wfzyx/von · https://www.datacamp.com/blog/top-open-source-jev-alternatives · https://huggingface.co/Cactus-Compute/needle3
+
 ### 백로그 (착수 미정, 2026-07 발굴분 — 필요 대두 시 개별 `/feature-spec`)
 - [ ] (참고) **오목 아이템 충돌체 CoACD** — 양동이·컵·바구니 테두리·손잡이 정밀도가 필요할 때 엔진 자동 볼록 분해(양동이 현재 20헐) 대신 CoACD 로 굽기. 손가락은 캡슐 유지(매 프레임 재용접·GJK 비용, 2026-10-02 판단).
 - [ ] **C++ 대형 함수 분할**: `OnTacticalCandidatesDone` 182줄 · `OnTargetPerceptionUpdated` 165줄 · `OnLLMMessageReceived` 133줄→타입별 핸들러. `ExecuteInteraction` 은 switch 본질 → 유지.
 - [ ] **스텁 2종 존치**: Craft 레시피 검증(레시피 데이터 설계 선행)·DetectEntities 확장. (Drop 스폰은 08-31 해소.)
 - [ ] (선택) `ItemManager` 인벤토리 JSON 직렬화를 `FJsonObjectConverter` 규격화(현행 수제 문자열).
 - [ ] **문서 부채**: CLAUDE.md `#todo` 앵커의 `src-todo` 블록이 index.html 에 없음 · `src-bt-guide` 는 구 BT 가이드(ST 마이그레이션 후 스테일).
-- [ ] (선택) POI 명명 위치 시스템 — "EastBridge" 류 장소명 이동. 현행은 FVector target_loc 만.
 - [ ] **LLM latency hiding(bark)** — LLM 왕복 동안 UE5 로컬 정형 bark·고민 애니 즉출. 애니 에셋 엮임.
 - [ ] (소형) Constrained Generation — BehaviorMode·인벤토리 기반 액션 enum grammar 사전 제약. 현행은 valid_targets enum + rules 사후검증.
 - [ ] VR 멀티플레이어 · Quest 3 스탠드얼론 APK(W22 보류 결정 재검토 시점 미정) — 스펙 미작성.
@@ -76,6 +138,27 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 ---
 
 ## Done
+
+- [x] **자세 시스템 SPEC_posture M1~M4 (2026-10-08, `7ed86d1c`~`61e632ef`)** — M1 `Bending` 판정(HMD 피치 30°+높이 비율 0.75~0.93, 복귀 20°/0.95)·태그·전이 로그 / M2 허리 숙이기 걷기 `BendSpeedRatio` 0.75, 엎드리기 캡슐은 수직 최소 높이 유지로 결정 / M3 `AVRPawn` 이 `IAISightTargetInterface` 구현해 자세별 시야 거리(0.8·0.6·0.35 × 3000cm) 한 곳에서 제한(적·NPC 공용) / M4 몸 연속 변형 = 메시를 발 피벗으로 앞으로 눕히기(`BodyLeanDegPerRatio` 110°, 상한 68°) + 발을 뒤로 빼 머리 본을 HMD 에 맞춤, PBIK 병용 — 기하식은 머리 본이 15cm 높게 남아 PIE 실측 곡선으로 대체(오차 1.5~6.4cm). `/federated` 로 워크트리에서 구현 후 메인 체리픽. 헤드셋 확인 완료(DoList 2-10) — 로그에서 찾은 두 결함 수정: 쭈그리기→서기→허리 숙이기 한 프레임 깜박임(쭈그리기에서 바로 Bending), 편하게 선 비율이 0.94~0.95 라 `BendRatioMax` 0.93 은 고개만 숙여도 걸림 → 0.88/복귀 0.91.
+
+- [x] **NPC LLM·Jev 개선 3~5 (2026-10-08, `08b97bd3`·`16c07bc5`·`ef3ee85d`)** — Stage2 를 클라우드 `gemma4:31b-cloud`(4s 타임아웃·로컬 qwen3:8b 폴백·2회 실패 90s 쿨다운, `STAGE2_USE_CLOUD=0` 으로 끔), e4b keep_alive 30m + 240s 핑. Jev 운영 체크포인트 git 추적·기동 워밍·`/api/ws/status` jev 필드(`JEV_DEVICE`). 생성기 story_goal KeyError 수리·스모크 테스트, stage1_bench `--suite/--prod-tail/--seed-history` 파티·POI 케이스(Moca 기록 백업·원복). 반복 발화 문장 단위 감지 → 1회 재생성 → 그래도 반복이면 반복 문장 제거(PIE: Guard "성문은 여전히…" 제거 확인). 남은 것: v4 재학습 여부는 bench(파티 꼬리 없으면 JoinParty 0/5) 보고 결정, Guard 기록에 기존 반복 4줄 잔존.
+- [x] **NPC 대화 파티 의도 매핑·기록 정리 (2026-10-08, `945c6468`)** — "같이 가자"·"일행이 되어줘" → JoinParty(호감도 게이트 통과), 파티원 "멈춰" → Idle(해산 방지), "헤어지자" → LeaveParty. 목적지 붙은 이동 요청·부정·명사 단독 제외. 대화 기록에서 Event 분리, 파티 지시 꼬리는 키워드·파티원일 때만. 제안서 `docs/PROPOSAL_npc_llm_jev.md`. PIE 확인 완료. "파인튜닝 SLM 이 JoinParty·target_poi 를 내지 않음" Todo 는 서버 보정으로 해소(POI target_poi 는 bench 4/5).
+
+- [x] **신체 측정 M2 (2026-10-08, `80f93d31`)** — 설정 → "신체 측정", 왼손 X 로 4단계(키·T자세 팔 벌림·오른손 컨트롤러 무릎·엉덩이) 측정, 큰 안내 텍스트(단계·결과·실패·취소), `UBodyMeasureSaveGame` 별도 슬롯, 저장값 있으면 2초 안정화 후 저장 키로 자동 보정 대체(저장·로드 모두 범위 검증). 팔·무릎·엉덩이는 저장·표시만 — 눕힌 몸 비례 연결은 `SPEC_body_measure_prone` M0·M1(미착수) 뒤. 헤드셋 확인 DoList 2-9.
+
+- [x] **파티 M1~M3 (2026-10-08, `7c9a9b15`·`ce8cfa84`·`67c261ca`, `/federated` 서브에이전트)** — `UPartySubsystem`(정원 4)·`JoinParty`/`LeaveParty`·증분 `party_update`(재연결 시 재송신, 서버는 연결마다 초기화). 합류 시 플레이어 추적·Jev 일상 억제·1초 자기 복구(반사·넉다운·리스폰 뒤)·전투 종료 후 재개, Stop=해산, Destroyed 때만 Leave. 서버 호감도 게이트(+20)·거절 대사·파티원 간 피격 무시. 전투 뒤 추적 미복구 Todo 해소. PIE(디버그 명령): 합류·추적·일상 억제·해산·서버 동기 확인. LLM 경유 합류는 위 Todo.
+- [x] **POI M1~M4 (2026-10-08, `2c8046e2`·`8371bd4e`·`0edd3e95`·`3981a61f`, 워크트리 통합·삭제)** — `APOIActor`·`UPOIManager`, jev 풀 소스 전환(`POI_`+PoiId), `target_poi` 이동(Python 어휘 검증만·UE 해석), 근처 POI 설명 프롬프트 노출, 스토리 구역 PoiId 연결. 레벨 POI 11개(Gate·Plaza·Well + 구역 8곳). PIE: 등록·patrol dest=POI_Well·"우물로 가" 도착·우물 설명 대사·zone_enter 불변 확인.
+- [x] **NPC 말풍선 기둥 현상 (2026-10-08, `7de7a6fb`)** — AutoWrap+DrawAtDesiredSize 로 55자 대사가 2.5m×6.4m 기둥. 고정 줄바꿈 640·스케일 0.25·아래 피벗. 헤드셋 확인 DoList 2-9.
+- [x] **메뉴 지도 점 검정 테두리 (2026-10-08, 미커밋)** — 점이 지도 배경처럼 보여 둥근 점 + 검정 2px 테두리(`MenuWidget::StyleMapDot`).
+- [x] **`/federated` 스킬 (2026-10-08, 미커밋)** — Gemini 대신 Master=메인 세션·Dev/리뷰=Sonnet 서브에이전트. 마일스톤 끝까지 진행 후 한 번에 cherry-pick·워크트리 삭제, 워크트리 함정(RemoteControl.ini·`.env`·U-6·에디터 떠 있으면 빌드 거부).
+
+- [x] **메뉴 M0~M3 + UI 컴포넌트 이전 (2026-10-05~06, 브랜치 `feature/pause-settings`, 헤드셋 확인 대부분 완료·M3 대기)** — M1 `47cd39df`: 왼손 Menu 버튼 메뉴(`UMenuPanelUIComponent`·`UMenuWidget`·`WBP_MenuPanel`·`IA_MenuToggle`), 열린 동안 이동·회전·공격·대시·상호작용·새로 쥐기 차단(`UVRPlayerUIComponent::BlocksGameplayInput`). 구조 `2dcec850`: UI 장면 컴포넌트 생성·튜닝값을 폰 생성자 → `UVRPlayerUIComponent` 런타임 생성으로 이전(VRPawn.cpp 1387→1329줄). M2 `bd865393`: 설정 화면(마스터 볼륨 서브믹스 `SetSubmixOutputVolume` + `USettingsSaveGame` 슬롯 저장·시작 적용). M3 `10511f20`·`96d8ad10`: 메인 목록 → 지도(`T_WorldMap` 정적 탑다운 + 앵커 마커)·파티(목업)·퀘스트, 서버 `Story` 블록에 `side_titles`. 헤드셋: 사용자가 Menu 버튼·시스템 메뉴 충돌·입력 차단·포인터·글자 대비·**소리 볼륨 실제 변화**·리팩토링 회귀 확인(DoList 2-8, 저장 유지·M3 만 남음). 함정은 `pitfalls.md` D.
+- [x] **채팅 입력창 글자·배경 흰색 수정 (2026-10-05, `bac02c79`)** — `WBP_Chat.ChatInput` 을 어두운 배경 + 흰 글자로 명시(월드 위젯은 기본 Slate 브러시가 흰색). 실제 한글 입력은 확인 대기(Todo).
+- [x] **퀘스트 마커 거리 비례 확대 (2026-10-05, `deb9f4b5`)** — `QuestMarkerActor`: 최소 2.5m·거리×0.1·최대 25m, 꼭짓점 높이 유지. PIE 5m → 스케일 2.5, 200m → 20.
+- [x] **`Follow` 지속 추적 + 같은 명령 중복 필터 해제 (2026-10-05, `2e236262`)** — 원인: Follow 가 한 점으로 한 번 이동하고 끝남 + `LastQueuedKey` 가 완료 뒤에도 남아 두 번째 "따라와" 를 삼킴. 수정: `ExecuteFollow` → `ExecuteTrack`, 큐가 비면 키 해제, 따라가는 중 Jev 일상 시작 금지. PIE: 가드가 플레이어 곁 2.2m 에서 멈췄다가 12m 이동 후 다시 따라옴.
+- [x] **저장소 정리 (2026-10-05)** — PR #30(`feat/reality_grab`→Develop, 48커밋) 머지, 로컬 브랜치 20개 삭제(`backup/*` 2개는 미머지 커밋이 있어 유지), `main` 을 Develop 위치로 올림(`026e3b70`), git flow(AVH) 초기화(production `main`·develop `Develop`·접두어 `feature/` 등), `docs/블로그` → `ai-log/블로그`(ignore 폴더) 이동.
+- [x] **프롬프트 감사 정리 (2026-10-05, `005a4def`)** — `/claude-api prompt-audit`: `add-envelope` 스킬의 낡은 경로(`interface_input.py`)·`pitfalls.md` 의 `.claude` ignore 오기·`gemini-tiki-taka` 스킬(삭제)·그래프 스킬 수치 상한 제거.
+- [x] **SPEC 3종 작성 (2026-10-05~06)** — `SPEC_poi`(이름 장소 시스템, C++ 해석), `SPEC_party`(멤버십·합류는 대화+호감도·일행은 따라다니되 반응 유지), `SPEC_pause_settings` M3(지도·파티 목업·퀘스트).
 
 
 완료 항목은 날짜와 함께 여기 적고, 주가 바뀌면 `docs/주간기록/2026-W##_주제.md` 로 옮기고 여기서 **삭제**한다. 비어 있는 것이 정상.

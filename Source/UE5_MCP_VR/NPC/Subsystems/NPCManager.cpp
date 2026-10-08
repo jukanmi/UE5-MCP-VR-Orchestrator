@@ -8,7 +8,11 @@
 #include "NPC/Action/SmartNPCAIController.h"
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
+#include "POI/POIActor.h"
+#include "POI/POIManager.h"
 #include "Story/StorySubsystem.h"
+#include "Party/PartySubsystem.h"
+#include "NPC/Struct/NPCActionKeys.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
@@ -33,10 +37,18 @@ void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
+    // 파티 변경 구독이 Initialize 시점에 성립하려면 PartySubsystem 이 먼저 만들어져 있어야 한다.
+    if (UPartySubsystem* Party = Collection.InitializeDependency<UPartySubsystem>())
+    {
+        Party->OnPartyChanged.AddDynamic(this, &UNPCManager::OnPartyChanged);
+    }
+
     LLMClient = NewObject<ULLMNetworkClient>(this);
     if (LLMClient)
     {
         LLMClient->OnMessageReceived.AddDynamic(this, &UNPCManager::OnLLMMessageReceived);
+        // InitializeLLM 이 연결을 시작하므로 연결 콜백 바인딩이 먼저여야 첫 연결도 놓치지 않는다.
+        LLMClient->OnConnectionChanged.AddDynamic(this, &UNPCManager::OnLLMConnectionChanged);
         LLMClient->InitializeLLM();
     }
 
@@ -57,7 +69,16 @@ void UNPCManager::Deinitialize()
         World->GetTimerManager().ClearTimer(StateUpdateTimerHandle);
     }
 
-    if (LLMClient) LLMClient->Disconnect();
+    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        Party->OnPartyChanged.RemoveDynamic(this, &UNPCManager::OnPartyChanged);
+    }
+
+    if (LLMClient)
+    {
+        LLMClient->OnConnectionChanged.RemoveDynamic(this, &UNPCManager::OnLLMConnectionChanged);
+        LLMClient->Disconnect();
+    }
 
     ActiveNPCs.Empty();
     LLMClient = nullptr;
@@ -349,6 +370,40 @@ void UNPCManager::SendPlayerDialogue(const FString& PlayerID, const FString& Tar
         Payload->SetArrayField(TEXT("valid_targets"), TargetsArr);
     }
 
+    // ── POI 어휘 노출 — known_pois: [{id,name,aliases}] 가까운 순 상한 PoiPromptLimit.
+    // LLM 이 이 중 하나를 Move 의 target_poi 로 내면 Python 은 이 id 집합으로만 사후검증하고,
+    // 좌표 해석은 수신 후 UNPCActionComponent::ExecuteMoveToPoi 가 UPOIManager 로 한다.
+    if (TargetNPC)
+    {
+        if (const UPOIManager* PoiMgr = GetWorld() ? GetWorld()->GetSubsystem<UPOIManager>() : nullptr)
+        {
+            TArray<TSharedPtr<FJsonValue>> PoisArr;
+            for (const APOIActor* Poi : PoiMgr->GetNearest(TargetNPC->GetActorLocation(), PoiPromptLimit))
+            {
+                TArray<TSharedPtr<FJsonValue>> AliasArr;
+                for (const FString& Alias : Poi->Aliases)
+                {
+                    AliasArr.Add(MakeShared<FJsonValueString>(Alias));
+                }
+                TSharedPtr<FJsonObject> PoiObj = MakeShared<FJsonObject>();
+                PoiObj->SetStringField(TEXT("id"), Poi->PoiId);
+                PoiObj->SetStringField(TEXT("name"), Poi->DisplayName.ToString());
+                PoiObj->SetArrayField(TEXT("aliases"), AliasArr);
+                // 설명은 근처(수평 FurnitureContextRange 이내)이고 비어있지 않을 때만 — 멀리 있는 장소는 모르는 것으로 둔다.
+                if (!Poi->Description.IsEmpty()
+                    && FVector::Dist2D(Poi->GetActorLocation(), TargetNPC->GetActorLocation()) <= FurnitureContextRange)
+                {
+                    PoiObj->SetStringField(TEXT("desc"), Poi->Description);
+                }
+                PoisArr.Add(MakeShared<FJsonValueObject>(PoiObj));
+            }
+            if (PoisArr.Num() > 0)
+            {
+                Payload->SetArrayField(TEXT("known_pois"), PoisArr);
+            }
+        }
+    }
+
     Payload->SetBoolField(TEXT("requires_replan"), bRequiresReplan);
 
     const FString Envelope = FEnvelopeBuilder::BuildPrompt(Payload);
@@ -408,16 +463,17 @@ FNPCNearbyContext UNPCManager::CollectNearbyContext(const ASmartNPC* NPC)
         }
     }
 
-    ScanPois();
-    for (const TPair<FString, TWeakObjectPtr<AActor>>& Pair : PoiActors)
+    // Id 는 `POI_<PoiId>`, Type 은 PoiId — 종전 `POI_` 태그 목업과 같은 풀 값(jev 로그·desc 회귀 방지).
+    if (const UPOIManager* PoiMgr = GetWorld() ? GetWorld()->GetSubsystem<UPOIManager>() : nullptr)
     {
-        const AActor* Poi = Pair.Value.Get();
-        if (!Poi || FVector::Dist2D(Poi->GetActorLocation(), NpcLoc) > FurnitureContextRange) continue;
-        FNPCNearbyContext::FEntry& E = Ctx.Pois.AddDefaulted_GetRef();
-        E.Id = Pair.Key;
-        E.Type = Pair.Key.RightChop(4); // "POI_" 뒤 이름
-        E.Location = Poi->GetActorLocation();
-        E.DistM = DistM(E.Location);
+        for (const APOIActor* Poi : PoiMgr->GetInRadius(NpcLoc, FurnitureContextRange))
+        {
+            FNPCNearbyContext::FEntry& E = Ctx.Pois.AddDefaulted_GetRef();
+            E.Id = TEXT("POI_") + Poi->PoiId;
+            E.Type = Poi->PoiId;
+            E.Location = Poi->GetActorLocation();
+            E.DistM = DistM(E.Location);
+        }
     }
 
     // 인물 — 전투 Jev 와 같은 소스(시야 퍼셉션). ResolveActionTarget 이 해석 가능한 플레이어·등록 NPC 만.
@@ -449,33 +505,6 @@ FNPCNearbyContext UNPCManager::CollectNearbyContext(const ASmartNPC* NPC)
         }
     }
     return Ctx;
-}
-
-void UNPCManager::ScanPois()
-{
-    if (bPoiScanned) return;
-    UWorld* World = GetWorld();
-    if (!World) return;
-    bPoiScanned = true;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        for (const FName& Tag : It->Tags)
-        {
-            const FString TagStr = Tag.ToString();
-            if (TagStr.StartsWith(TEXT("POI_")))
-            {
-                PoiActors.Add(TagStr, *It);
-            }
-        }
-    }
-    UE_LOG(LogTemp, Log, TEXT("[NPCManager] POI 목업 %d개 수집(POI_ 태그)"), PoiActors.Num());
-}
-
-AActor* UNPCManager::FindPoi(const FString& PoiId)
-{
-    ScanPois();
-    const TWeakObjectPtr<AActor>* Found = PoiActors.Find(PoiId);
-    return Found ? Found->Get() : nullptr;
 }
 
 void UNPCManager::SendStateToMCP(const FGameStateData& StateData)
@@ -707,6 +736,39 @@ void UNPCManager::SendStoryEvent(const FString& Event, const FString& Name, cons
     }
     LLMClient->SendMessage(FEnvelopeBuilder::BuildStoryEvent(Payload));
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] story_event 전송: %s/%s"), *Event, *Name);
+}
+
+void UNPCManager::SendPartyUpdate(const FString& AgentID, bool bJoined)
+{
+    if (!LLMClient || !LLMClient->IsConnected())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] party_update 미전송(서버 미연결): %s %s"), *AgentID, bJoined ? TEXT("join") : TEXT("leave"));
+        return;
+    }
+    // 키는 Python PartyUpdatePayload 와 1:1 (agent_id/change).
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(NPCActionKeys::Party_AgentID, AgentID);
+    Payload->SetStringField(NPCActionKeys::Party_Change,
+        bJoined ? NPCActionKeys::Party_ChangeJoin : NPCActionKeys::Party_ChangeLeave);
+    LLMClient->SendMessage(FEnvelopeBuilder::BuildPartyUpdate(Payload));
+}
+
+void UNPCManager::OnPartyChanged(const FString& AgentID, bool bJoined)
+{
+    SendPartyUpdate(AgentID, bJoined);
+}
+
+void UNPCManager::OnLLMConnectionChanged(bool bIsConnected)
+{
+    if (!bIsConnected) return;
+
+    if (const UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        for (const FString& MemberID : Party->GetMembers())
+        {
+            SendPartyUpdate(MemberID, true);
+        }
+    }
 }
 
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)

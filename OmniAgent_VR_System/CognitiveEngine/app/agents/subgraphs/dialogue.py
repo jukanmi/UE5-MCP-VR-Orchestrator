@@ -32,19 +32,23 @@ import yaml
 import os
 import re
 import asyncio
+import random
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, Optional
-from ...utils.llm_factory import ollama_structured, STAGE1_MODEL, STAGE2_MODEL
+from ...utils.llm_factory import ollama_structured, stage2_structured, STAGE1_MODEL
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
+from ..party_intent import detect_party_intent
 from ..state import AgentState
 from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
 from ...utils.id_utils import ci_get, ci_id_map
 from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
-from .prompts import DIALOGUE_STRUCTURED_PROMPT, PLAN_SYSTEM_PROMPT
+from ...server_state import STATE
+from .prompts import DIALOGUE_STRUCTURED_PROMPT, PARTY_PROMPT_LINE, PARTY_VOCAB_PROMPT, PLAN_SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
@@ -260,57 +264,268 @@ async def _collect_stage1_context(state: AgentState, npc_id: str) -> _Stage1Cont
     return _Stage1Context(fmt_kwargs, valid_targets, clean_query, natural_context)
 
 
-async def _run_stage1_llm(
-    ctx: _Stage1Context, npc_id: str, log_extra: dict | None = None
-) -> tuple[DialogueResponse, bool]:
-    """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
-    전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved)."""
-    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
-    user_content = f"Context: {ctx.natural_context}"
+# 파티 합류 게이트 — NPC→플레이어 호감도가 이 값 이상일 때만 JoinParty 허용(초안값, PIE 에서 확정).
+PARTY_JOIN_AFFINITY = 20
+# C++ UPartySubsystem::MaxSize 와 같은 값. C++ 가드가 최종 방어이고 서버는 거절 대사를 위해 미리 안다.
+PARTY_MAX_SIZE = 4
 
-    logger.info(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")
+# LLM 재호출 없이 결정론적으로 쓰는 거절 대사(합류 수락 대사를 덮어쓴다).
+_PARTY_REFUSE_LOW_AFFINITY = (
+    "미안하지만 아직은 같이 갈 만큼 서로를 잘 모르잖아요.",
+    "글쎄요, 지금은 같이 다니기가 좀 어렵겠어요.",
+    "선뜻 따라나서기엔 아직 믿음이 부족해요. 미안해요.",
+)
+_PARTY_REFUSE_FULL = (
+    "이미 일행이 가득 찼어요. 지금은 더 같이 갈 수가 없겠네요.",
+    "함께 다니는 사람이 너무 많아요. 다음에 기회가 되면 같이 가요.",
+)
 
-    resp = None
+
+async def _gate_party_actions(resp: DialogueResponse, npc_id: str, player_id: str) -> None:
+    """Stage1 응답의 JoinParty/LeaveParty 를 서버 상태로 사후검증(in-place, LLM 재호출 없음).
+    - JoinParty: 이미 멤버면 제거(무의미). 비멤버인데 정원 초과 또는 호감도 미달이면 제거하고 speech 를 거절 대사로 교체
+      (수락 대사가 남으면 NPC 가 승낙하고도 안 따라오는 모순이 된다).
+    - LeaveParty: 멤버가 아니면 제거."""
+    if not any(a.type in ("JoinParty", "LeaveParty") for a in resp.actions):
+        return
+
+    is_member = npc_id in STATE.party_members
+    refuse: tuple[str, ...] | None = None
+    kept = []
+    for act in resp.actions:
+        if act.type == "LeaveParty" and not is_member:
+            logger.info(f"[Party] 비멤버 LeaveParty 제거: {npc_id}")
+            continue
+        if act.type == "JoinParty":
+            if is_member:
+                logger.info(f"[Party] 이미 멤버인 JoinParty 제거: {npc_id}")
+                continue
+            if len(STATE.party_members) >= PARTY_MAX_SIZE:
+                refuse = _PARTY_REFUSE_FULL
+            else:
+                try:
+                    score = (await db_manager.get_affinity(npc_id, player_id)).affinity_score
+                except Exception as e:
+                    logger.error(f"[Party] 호감도 조회 실패 ({npc_id}), 거절 처리: {e}")
+                    score = 0
+                if score < PARTY_JOIN_AFFINITY:
+                    refuse = _PARTY_REFUSE_LOW_AFFINITY
+                    logger.info(f"[Party] 호감도 미달 JoinParty 거절: {npc_id} ({score} < {PARTY_JOIN_AFFINITY})")
+            if refuse:
+                continue
+        kept.append(act)
+    if refuse:
+        # 거절했는데 플레이어를 따라가면 "못 가요" 하면서 따라오는 모순 — 플레이어 대상(빈 타깃 포함) Follow/Track 도 뺀다.
+        player_keys = {"", "player", player_id.lower()}
+        kept = [a for a in kept if not (a.type in ("Follow", "Track") and a.target.lower() in player_keys)]
+        # 수락 표정·어조가 거절 대사에 붙지 않게 중립으로 되돌린다.
+        resp.speech = random.choice(refuse)
+        resp.facial = "Neutral"
+        resp.tone = ""
+    resp.actions = kept
+
+
+def _apply_party_intent(resp: DialogueResponse, npc_id: str, transcript: str, player_id: str) -> None:
+    """SLM 이 못 내는 파티 어휘를 플레이어 발화 키워드로 보정(in-place). _gate_party_actions 앞에서 호출 —
+    치환된 JoinParty 가 호감도·정원 게이트를 그대로 거친다. 액션을 새로 만들지는 않고 치환만 한다.
+    - 초대 + 비멤버: 플레이어 대상 Follow → JoinParty ("같이 가자" 가 학습상 Follow 라서).
+    - 해산 + 멤버: Follow(플레이어 대상)/Stop → LeaveParty.
+    - 멤버의 Stop: 해산 키워드가 없으면 Idle ("멈춰" 한마디로 UE 에서 Stop=해산 되는 것 방지)."""
+    intent = detect_party_intent(transcript)
+    is_member = npc_id in STATE.party_members
+    player_keys = {"", "player", player_id.lower()}
+
+    out = []
+    for act in resp.actions:
+        player_follow = act.type == "Follow" and act.target.lower() in player_keys
+        if intent == "invite" and not is_member and player_follow:
+            logger.info(f"[Party] 초대 발화 Follow → JoinParty 치환: {npc_id}")
+            act.type, act.target = "JoinParty", ""
+        elif intent == "dismiss" and is_member and (player_follow or act.type == "Stop"):
+            logger.info(f"[Party] 해산 발화 {act.type} → LeaveParty 치환: {npc_id}")
+            act.type, act.target = "LeaveParty", ""
+        elif is_member and act.type == "Stop":
+            logger.info(f"[Party] 해산 키워드 없는 파티원 Stop → Idle 치환: {npc_id}")
+            act.type = "Idle"
+        if act.type in ("JoinParty", "LeaveParty") and any(o.type == act.type for o in out):
+            continue  # 치환 결과가 SLM 이 이미 낸 같은 액션과 겹치면 하나만
+        out.append(act)
+    resp.actions = out
+
+
+# 직전 발화 복사 판정 — 공백·구두점 제거 후 유사도(SequenceMatcher ratio)가 이 값 이상이면 반복으로 본다.
+REPEAT_SIMILARITY = 0.85
+# 정규화 후 이 길이 미만(예: "네", "그래요")은 반복이 자연스러우므로 검사하지 않는다.
+REPEAT_MIN_CHARS = 4
+# 반복 시 1회 재생성 온도 (기본 0.5).
+REPEAT_RETRY_TEMPERATURE = 0.8
+
+
+def _norm_speech(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text)
+
+
+# 문장 단위 반복 판정 — 문장 하나를 매번 그대로 붙이면 전체 유사도는 낮아도(실측 0.765) 복사 대사다.
+# 정규화 길이가 이 값 미만인 문장("안녕", "알겠어")은 겹쳐도 자연스러우므로 제외.
+REPEAT_SENTENCE_MIN_CHARS = 8
+REPEAT_SENTENCE_SIMILARITY = 0.9
+
+
+def _sentences(text: str) -> list[str]:
+    """., ?, !, 。, 줄바꿈 기준 문장 분리(빈 조각 제거)."""
+    return [t.strip() for t in re.split(r"[.?!。\n]+", text) if t.strip()]
+
+
+def _repeated_line(speech: str, chat_history: str, npc_id: str) -> str:
+    """기록(chat_history 문자열)의 같은 NPC 발화와 겹치는 부분을 돌려준다. 없으면 "".
+    1) 전체 발화가 직전 줄과 동일/매우 유사하면 그 줄 전체, 2) 아니면 긴 문장 하나라도 이전 발화의
+    문장과 (거의) 같으면 그 문장. 재생성 금지 문구에 이 반환값을 쓴다."""
+    new = _norm_speech(speech)
+    prefix = f"{npc_id}: ".casefold()
+    prevs = [ln[len(prefix):].strip() for ln in chat_history.splitlines() if ln.casefold().startswith(prefix)]
+
+    if len(new) >= REPEAT_MIN_CHARS:
+        for prev in prevs:
+            old = _norm_speech(prev)
+            if old and (old == new or SequenceMatcher(None, old, new).ratio() >= REPEAT_SIMILARITY):
+                return prev
+
+    old_sents = _history_sentences(prevs)
+    for sent in _sentences(speech):
+        if _sentence_repeated(sent, old_sents):
+            return sent
+    return ""
+
+
+def _history_sentences(prevs: list[str]) -> list[str]:
+    """이전 발화들의 문장을 정규화한 목록(길이 기준 미달 제외)."""
+    return [n for prev in prevs for sent in _sentences(prev) if len(n := _norm_speech(sent)) >= REPEAT_SENTENCE_MIN_CHARS]
+
+
+def _sentence_repeated(sent: str, old_norms: list[str]) -> bool:
+    ns = _norm_speech(sent)
+    if len(ns) < REPEAT_SENTENCE_MIN_CHARS:
+        return False
+    return any(old == ns or SequenceMatcher(None, old, ns).ratio() >= REPEAT_SENTENCE_SIMILARITY for old in old_norms)
+
+
+# 반복 문장을 뺀 뒤 남은 대사의 정규화 길이가 이 값 미만이면 빼지 않는다(빈 대사 방지).
+REPEAT_STRIP_MIN_CHARS = 4
+
+
+def _strip_repeated_sentences(speech: str, chat_history: str, npc_id: str) -> tuple[str, list[str]]:
+    """이전 발화와 겹치는 문장만 speech 에서 제거한다. 반환: (남은 대사, 제거한 문장들).
+    제거 후 남는 게 너무 짧거나 제거할 게 없으면 (원본, []) — 재생성도 금지 문구를 무시할 때의 최후 수단."""
+    prefix = f"{npc_id}: ".casefold()
+    prevs = [ln[len(prefix):].strip() for ln in chat_history.splitlines() if ln.casefold().startswith(prefix)]
+    old_norms = _history_sentences(prevs)
+    pieces = re.findall(r"[^.?!。\n]+[.?!。]*", speech)  # 문장부호 포함 조각
+    kept = [p.strip() for p in pieces if not _sentence_repeated(p, old_norms)]
+    removed = [p.strip() for p in pieces if _sentence_repeated(p, old_norms)]
+    rest = " ".join(kept)
+    if not removed or len(_norm_speech(rest)) < REPEAT_STRIP_MIN_CHARS:
+        return speech, []
+    return rest, removed
+
+
+async def _call_stage1(
+    system_prompt: str,
+    user_content: str,
+    ctx: _Stage1Context,
+    npc_id: str,
+    temperature: float,
+    log_extra: dict | None,
+    allow_fallback: bool = True,
+) -> DialogueResponse | None:
+    """Stage1 e4b 호출 — 구조화 해피패스 → (allow_fallback 시) 구조화 폴백(target enum 없음). 실패면 None."""
     try:
         # 구조화 출력: actions 필드를 스키마에 박아 e4b 가 액션을 빠뜨리지 못하게 강제.
         # Ollama format 직접 호출(langchain with_structured_output 우회) — 실측 2.9배 빠름.
-        resp = await ollama_structured(
-            structured_content,
+        return await ollama_structured(
+            system_prompt,
             user_content,
             DialogueResponse,
             # valid_targets 있으면 target enum grammar 강제 (없으면 None → 기본 스키마).
             schema_override=_dialogue_schema_with_targets(ctx.valid_targets),
             model_name=STAGE1_MODEL,
-            # temp 0.7→0.5: 미사여구 드리프트 억제(Tier2). 0.4 는 반복적, 0.6 는 과격/장황 드리프트 —
+            # 기본 temp 0.5: 미사여구 드리프트 억제(Tier2). 0.4 는 반복적, 0.6 는 과격/장황 드리프트 —
             # 스윕 결과 0.5 가 자연스러움·다양성·캐릭터 유지 균형점(실측).
-            temperature=0.5,
+            temperature=temperature,
             num_predict=300,
             log_extra=log_extra,
         )
     except Exception as e:
         logger.warning(f"[Dialogue] Stage1 LLM 오류 ({npc_id}), 구조화 폴백 재시도: {e}")
-        # 폴백도 구조화: target enum 없이(폴백은 valid_targets 미보장) 기본 스키마 + temp↑(다양성).
-        try:
-            resp = await ollama_structured(
-                structured_content,
-                user_content,
-                DialogueResponse,
-                model_name=STAGE1_MODEL,
-                temperature=0.7,
-                num_predict=300,
-                log_extra={**log_extra, "fallback": True} if log_extra else None,
-            )
-        except Exception as e2:
-            logger.warning(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
-            resp = None
+        if not allow_fallback:
+            return None
+    # 폴백도 구조화: target enum 없이(폴백은 valid_targets 미보장) 기본 스키마 + temp↑(다양성).
+    try:
+        return await ollama_structured(
+            system_prompt,
+            user_content,
+            DialogueResponse,
+            model_name=STAGE1_MODEL,
+            temperature=max(0.7, temperature),
+            num_predict=300,
+            log_extra={**log_extra, "fallback": True} if log_extra else None,
+        )
+    except Exception as e2:
+        logger.warning(f"[Dialogue] Stage1 폴백 재시도 실패 ({npc_id}), 기본 응답: {e2}")
+        return None
 
-    if resp is None:
-        resp = DialogueResponse(mode="Common", facial="Neutral", speech="...", tone="confused", actions=[])
 
-    # byte-fallback 토큰 정제 — 구조화 obj 필드에 in-place(정규식 텍스트 왕복 없이 parity).
-    # cross-module 정제 중복 회피: interface_output 은 이미 정제된 speech 가정.
+def _clean_stage1_resp(resp: DialogueResponse) -> None:
+    """byte-fallback 토큰 정제 — 구조화 obj 필드에 in-place(정규식 텍스트 왕복 없이 parity).
+    cross-module 정제 중복 회피: interface_output 은 이미 정제된 speech 가정."""
     resp.speech = _decode_byte_tokens((resp.speech or "").strip()) or "..."
     resp.tone = _decode_byte_tokens((resp.tone or "").strip())
+
+
+async def _run_stage1_llm(
+    ctx: _Stage1Context, npc_id: str, log_extra: dict | None = None
+) -> tuple[DialogueResponse, bool]:
+    """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
+    전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved).
+    새 speech 가 같은 NPC 의 직전 발화 기록과 거의 같으면 온도를 올려 정확히 1회만 재호출한다."""
+    structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
+    # 파티 어휘 꼬리는 초대/해산 발화이거나 대상이 파티원일 때만 — 매 턴 붙이면 프롬프트만 불어난다.
+    if detect_party_intent(ctx.clean_query) or npc_id in STATE.party_members:
+        structured_content += "\n" + PARTY_VOCAB_PROMPT
+    if STATE.party_members:
+        structured_content += "\n" + PARTY_PROMPT_LINE.format(members=", ".join(sorted(STATE.party_members)))
+    user_content = f"Context: {ctx.natural_context}"
+
+    logger.info(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")
+
+    resp = await _call_stage1(structured_content, user_content, ctx, npc_id, 0.5, log_extra)
+    if resp is None:
+        resp = DialogueResponse(mode="Common", facial="Neutral", speech="...", tone="confused", actions=[])
+    _clean_stage1_resp(resp)
+
+    # 직전 발화 복사 방지(대사 확정 단계 — 파티 의도 보정·게이트보다 먼저). 재호출도 반복이면 그대로 쓴다.
+    prev = _repeated_line(resp.speech, str(ctx.fmt_kwargs.get("chat_history", "")), npc_id)
+    if prev:
+        logger.info(f"[Dialogue] 직전 발화 반복 감지 ({npc_id}), 1회 재생성: '{prev[:40]}'")
+        retry = await _call_stage1(
+            structured_content,
+            f'{user_content}\n직전 문장을 반복하지 말 것: "{prev}"',
+            ctx,
+            npc_id,
+            REPEAT_RETRY_TEMPERATURE,
+            # repeat_retry/repeat_discarded_speech: 같은 턴의 첫 행(버려진 원 응답)을 학습 데이터 추출 때
+            # 거를 수 있게 하는 표식 — discarded_speech 와 같은 speech 를 가진 같은 msg_id/npc_id 행이 폐기 대상.
+            {**log_extra, "repeat_retry": True, "repeat_discarded_speech": resp.speech} if log_extra else None,
+            allow_fallback=False,  # 재생성은 해피패스 1회만 — 최악 호출 수 = 원래 경로 + 1
+        )
+        if retry is not None:
+            _clean_stage1_resp(retry)
+            resp = retry
+        # 재생성도(또는 재생성 실패로 유지된 원 응답도) 문장 반복이면 그 문장만 잘라낸다 — 기록 전에 해야
+        # 반복이 기록에 더 쌓이지 않는다. 남는 대사가 너무 짧으면 그대로 둔다.
+        stripped, removed = _strip_repeated_sentences(resp.speech, str(ctx.fmt_kwargs.get("chat_history", "")), npc_id)
+        if removed:
+            logger.info(f"[Dialogue] 반복 문장 제거 ({npc_id}): {removed}")
+            resp.speech = stripped
 
     plan_achieved = bool(resp.plan_achieved)
     if plan_achieved:
@@ -345,6 +560,11 @@ async def _dialogue_single(state: AgentState, npc_id: str) -> tuple[str, Dialogu
         "valid_targets": ctx.valid_targets or [],
     }
     resp, plan_achieved = await _run_stage1_llm(ctx, npc_id, log_extra)
+    player_id = state["vr_context"].player_id or "Player"
+    # 의도 매핑(Follow→JoinParty·Stop 보호)을 게이트 앞에서 — 치환 결과가 호감도·정원 게이트를 거치게.
+    _apply_party_intent(resp, npc_id, ctx.clean_query, player_id)
+    # 메모리 기록 전에 게이트를 건다 — 거절된 수락 대사가 기억에 남으면 이후 턴이 "수락했다" 로 이어진다.
+    await _gate_party_actions(resp, npc_id, player_id)
     _record_dialogue_memory(npc_id, resp, ctx.clean_query, ctx.natural_context)
     return npc_id, resp, plan_achieved
 
@@ -381,11 +601,10 @@ async def _generate_plans(
 
     logger.info(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
     try:
-        result = await ollama_structured(
+        result = await stage2_structured(
             PLAN_SYSTEM_PROMPT,
             sections,
             PlanBatchResponse,
-            model_name=STAGE2_MODEL,
             temperature=0.3,
             # plan-only 는 NPC 당 ~100토큰 (goal 1구절 + steps 2-4개). 여유 2배.
             num_predict=220 * len(raw_responses),

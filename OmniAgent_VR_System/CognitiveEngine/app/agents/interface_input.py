@@ -24,6 +24,7 @@
 import logging
 import re
 import unicodedata
+from .party_intent import detect_party_intent
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 from ..utils.id_utils import ci_id_map, ci_get
@@ -222,6 +223,49 @@ def _format_nearby_items(vr_context: GesPrompt) -> str:
     return ". Items on the ground you can PickUp (use the id as target): " + "; ".join(parts)
 
 
+POI_DESC_MAX_CHARS = 80
+
+
+def _one_line(text: object) -> str:
+    """개행·제어문자를 공백으로 바꿔 한 줄로 만들고 POI_DESC_MAX_CHARS 자로 자른다."""
+    return " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(text)).split())[:POI_DESC_MAX_CHARS]
+
+
+def _format_known_pois(vr_context: GesPrompt) -> str:
+    """이름 있는 장소 조각 — 'Id(표시명/별칭)' 한 줄씩. 없으면 "".
+    WHY: LLM 이 "우물로 가" 를 장소 id 로 옮기려면 어휘가 프롬프트에 있어야 한다. 좌표는 싣지 않고
+    (UE5 가 id 로 해석) 별칭은 단서용으로 2개까지만 — 토큰 다이어트. 순서는 UE5 가 보낸 가까운 순."""
+    pois = getattr(vr_context, "known_pois", None) or []
+    lines = []
+    for p in pois:
+        pid = p.get("id")
+        if not pid:
+            continue
+        labels = [str(x) for x in [p.get("name"), *(p.get("aliases") or [])[:2]] if x]
+        lines.append(f"{pid}({'/'.join(labels)})" if labels else str(pid))
+    if not lines:
+        return ""
+    # 근처 장소 설명 — UE5 가 근처(수평 반경 이내)·비어있지 않은 POI 에만 desc 를 채운다. 가까운 순 3줄 상한(토큰 다이어트).
+    # 에디터 입력 문자열이라 개행·제어문자가 섞일 수 있어, 한 줄 공백으로 정리하고 길이를 자른다(프롬프트 줄 구조 보호).
+    descs = [
+        f"{_one_line(p.get('name') or p['id'])} — {_one_line(p['desc'])}"
+        for p in pois
+        if p.get("id") and p.get("desc")
+    ][:3]
+    near = "".join(f"\nNearby place: {d}" for d in descs)
+    return (
+        ". Places you can walk to — for a Move to one of them, leave target empty and put its id"
+        " (the part before the parentheses) in poi:\n" + "\n".join(lines) + near
+    )
+
+
+# 파티 의도 사전 힌트 — SLM 은 합류/해산 어휘를 학습하지 못해 서버가 한 문장으로 알려준다(사후 보정은 dialogue).
+_PARTY_HINTS = {
+    "invite": "플레이어가 일행 합류를 청한다. 받아들이면 JoinParty, 거절이면 대사로만",
+    "dismiss": "플레이어가 일행 해산을 청한다. 일행이면 LeaveParty",
+}
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
@@ -248,6 +292,10 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     natural_context += _format_plan_context(state)
     natural_context += _format_nearby_furniture(vr_context)
     natural_context += _format_nearby_items(vr_context)
+    natural_context += _format_known_pois(vr_context)
+    hint = _PARTY_HINTS.get(detect_party_intent(transcript))
+    if hint:
+        natural_context += f". Hint: {hint}"
 
     return natural_context
 

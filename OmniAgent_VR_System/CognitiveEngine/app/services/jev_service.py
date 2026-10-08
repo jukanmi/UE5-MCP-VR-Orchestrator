@@ -107,16 +107,18 @@ def apply_personality(probs: List[float], metrics: Dict[str, Any]) -> List[float
 class JevlikeService:
     """체크포인트가 있으면 jevlike 모델, 없으면 휴리스틱. 두 경로 모두 evaluate_tactics 형식 동일."""
 
-    def __init__(self, checkpoint_path: str = DEFAULT_CHECKPOINT, device: str = "auto") -> None:
+    def __init__(self, checkpoint_path: str = DEFAULT_CHECKPOINT, device: Optional[str] = None) -> None:
         self.checkpoint_path = checkpoint_path
         self.options = list(OPTIONS)
         self._model: Any = None
         self._collator: Any = None
         self._device: Any = None
+        self.loaded_at: Optional[float] = None  # 모델 로드 성공 시각(epoch). 휴리스틱이면 None.
         self._load(device)
 
     # ── 모델 로드 ────────────────────────────────────────────────────────
-    def _load(self, device: str) -> None:
+    def _load(self, device: Optional[str]) -> None:
+        device = device or os.environ.get("JEV_DEVICE", "auto")  # 호출 시점에 읽음: auto|cpu|cuda
         if not os.path.exists(self.checkpoint_path):
             logger.info(f"[Jev] 체크포인트 없음({self.checkpoint_path}) → 휴리스틱 폴백")
             return
@@ -126,6 +128,7 @@ class JevlikeService:
             self._device = select_device(device)
             self._model, self._collator, _ = load_checkpoint(self.checkpoint_path, self._device)
             self._model.eval()
+            self.loaded_at = time.time()
             logger.info(f"[Jev] jevlike 로드 완료 device={self._device}")
         except Exception as e:  # ImportError 포함 — 어떤 실패든 휴리스틱으로
             self._model = None
@@ -134,6 +137,24 @@ class JevlikeService:
     @property
     def model_loaded(self) -> bool:
         return self._model is not None
+
+    def status(self) -> Dict[str, Any]:
+        """로드 상태 스냅샷(관측용). 전투는 체크포인트가 있어도 설계상 휴리스틱(evaluate_tactics 주석 참조)."""
+        return {
+            "mode": "model" if self.model_loaded else "heuristic",
+            "checkpoint": os.path.basename(self.checkpoint_path),  # 서버 로컬 경로 노출 방지(로그엔 절대경로)
+            "device": str(self._device) if self._device is not None else None,
+            "checkpoint_exists": os.path.exists(self.checkpoint_path),
+            "loaded_at": self.loaded_at,
+            "daily": "model" if self.model_loaded else "heuristic",
+            "combat": "heuristic",
+        }
+
+    def warmup(self) -> float:
+        """더미 입력 1회 추론으로 첫 호출 지연(CUDA 컨텍스트·커널 초기화)을 미리 치른다. 소요 ms 반환."""
+        t0 = time.perf_counter()
+        self._model_probs("warmup", self.options)  # 모델 없으면 즉시 None
+        return (time.perf_counter() - t0) * 1000.0
 
     # ── 추론 ────────────────────────────────────────────────────────────
     def _model_probs(self, context: str, options: Optional[List[str]] = None) -> Optional[List[float]]:
@@ -227,6 +248,19 @@ def get_jev_service() -> JevlikeService:
     if _SERVICE is None:
         _SERVICE = JevlikeService()
     return _SERVICE
+
+
+def warm_jev_service() -> Dict[str, Any]:
+    """기동 시 호출(블로킹 — to_thread 로). torch import·체크포인트 로드·더미 추론을 미리 치르고 상태를 INFO 로 남긴다."""
+    t0 = time.perf_counter()
+    svc = get_jev_service()
+    warm_ms = svc.warmup()
+    st = svc.status()
+    logger.info(
+        f"[Jev] 기동 워밍 mode={st['mode']} daily={st['daily']} combat={st['combat']}(설계상 휴리스틱) "
+        f"warm={warm_ms:.0f}ms total={(time.perf_counter() - t0) * 1000:.0f}ms ckpt={st['checkpoint']}"
+    )
+    return st
 
 
 # ─────────────────────────────────────────────────────────────────────────────

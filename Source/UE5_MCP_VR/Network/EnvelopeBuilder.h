@@ -29,6 +29,7 @@ enum class EEnvelopeType : uint8
     StoryEvent,     // "story_event" - 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거. 송신 코드는 Phase B
     JevQuery,       // "jev_query"   - 정규화 전투 지표 → 로컬 jevlike 전술 편향 요청
     JevDecision,    // "jev_decision" - Python → UE5 전술 편향 회신. 수신 전용(송신 빌더 없음) — 문자열 계약 동기화용
+    PartyUpdate,    // "party_update" - 파티 합류·해산 증분 통보(C++ → Python). 서버가 프롬프트에 현재 일행을 노출
 };
 
 class UE5_MCP_VR_API FEnvelopeBuilder
@@ -81,6 +82,12 @@ public:
      *                  domain 누락 = combat(metrics: hp_pct·distance_m·enemy_count·is_flanked), daily 는 SPEC_jev_daily D3·D5
      */
     static FString BuildJevQuery(const TSharedRef<FJsonObject>& Payload);
+
+    /**
+     * party_update Envelope 생성. 합류·해산 한 건마다 증분으로 보낸다.
+     * @param Payload - {agent_id, change: "join"|"leave"} (Python PartyUpdatePayload 와 1:1)
+     */
+    static FString BuildPartyUpdate(const TSharedRef<FJsonObject>& Payload);
 
 private:
     // ─────────────────────────────────────────────────────────────────────

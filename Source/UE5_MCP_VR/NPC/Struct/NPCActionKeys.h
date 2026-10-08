@@ -19,6 +19,7 @@ namespace NPCActionKeys
 
     // --- Location Keys (위치 정보 키) ---
     inline const FString Key_TargetLoc  = TEXT("target_loc");
+    inline const FString Key_TargetPoi  = TEXT("target_poi");   // Move 목적지 POI id(접두 없는 PoiId). Python 은 어휘 검증만, 좌표는 UPOIManager 가 해석
 
     // --- Action Parameter Keys (Parameters 내부 — snake_case 통일, 2026-07-11 결정) ---
     // Key_Direction 은 전투 셀렉터(Dodge 측면 스텝)가 내부 주입. 나머지는 ExecuteInteraction
@@ -32,6 +33,12 @@ namespace NPCActionKeys
     inline const FString Key_GetAmount     = TEXT("get_amount");
     inline const FString Key_Amount        = TEXT("amount");
     inline const FString Key_ItemIDs       = TEXT("item_ids");
+
+    // --- party_update Parameters 키 (C++ → Python, snake_case) ---
+    inline const FString Party_AgentID     = TEXT("agent_id");
+    inline const FString Party_Change      = TEXT("change");
+    inline const FString Party_ChangeJoin  = TEXT("join");
+    inline const FString Party_ChangeLeave = TEXT("leave");
 
     // --- ActionBatch Protocol Keys (최상위 PascalCase — MCPJsonUtils 파싱용) ---
     inline const FString Proto_Mode          = TEXT("Mode");

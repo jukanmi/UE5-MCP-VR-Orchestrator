@@ -18,7 +18,7 @@ struct FNPCNearbyContext
     struct FEntry
     {
         FString Id;
-        FString Type;       // 가구: Seat/Bed/Unknown · 바닥 아이템: template_id · POI: 이름 · 인물: player/npc
+        FString Type;       // 가구: Seat/Bed/Unknown · 바닥 아이템: template_id · POI: PoiId · 인물: player/npc
         FString Relation;   // 인물만: friendly/neutral/hostile
         bool bOccupied = false; // 가구만
         float DistM = 0.f;
@@ -27,7 +27,7 @@ struct FNPCNearbyContext
 
     TArray<FEntry> Furniture;        // FurnitureContextRange 안, 점유 포함
     TArray<FEntry> GroundItems;      // FurnitureContextRange 안
-    TArray<FEntry> Pois;             // `POI_<이름>` 태그 액터(POI 시스템 전 목업), FurnitureContextRange 안
+    TArray<FEntry> Pois;             // UPOIManager 등록 POI(Id=`POI_<PoiId>`), FurnitureContextRange 안
     TArray<FEntry> PerceivedActors;  // 시야 인지 중인 플레이어·등록 NPC(사망·자신 제외)
     TArray<TSharedPtr<FJsonValue>> Inventory; // GetInventoryJson 원소 그대로(category·equipped 포함)
 };
@@ -71,6 +71,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Story")
     void SendStoryEvent(const FString& Event, const FString& Name, const FString& AgentID = TEXT(""));
 
+    /** party_update Envelope 송신 — 합류·해산 한 건(증분). 서버 미연결이면 버린다(재연결 때 현재 멤버 전원을 join 으로 재송신). */
+    void SendPartyUpdate(const FString& AgentID, bool bJoined);
+
     // === 디버그: ActionBatch JSON 직접 주입(서버 없이 배치 분배 검증) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")
     void OnWebSocketMessageReceived(const FString& JsonMessage);
@@ -88,11 +91,11 @@ public:
      *  타겟 enum(valid_targets, 빈 가구만)에 노출. 공간 현실성: 멀리 있는 가구는 모름. */
     static constexpr float FurnitureContextRange = 1500.f;
 
+    /** 프롬프트(known_pois)에 노출하는 POI 상한. 넘으면 대화 NPC 기준 가까운 순으로 자른다(SLM 토큰 다이어트). */
+    static constexpr int32 PoiPromptLimit = 8;
+
     /** 주변 인지 수집 — 가구·바닥 아이템·POI 는 FurnitureContextRange, 인물은 시야 퍼셉션 기준. */
     FNPCNearbyContext CollectNearbyContext(const ASmartNPC* NPC);
-
-    /** POI 목업 조회 — 태그 문자열(`POI_Gate`)로 액터를 찾는다. 없으면 nullptr. */
-    AActor* FindPoi(const FString& PoiId);
 
     UFUNCTION(BlueprintCallable, Category = "MCP|AI")
     void SendStateToMCP(const FGameStateData& StateData);
@@ -125,12 +128,6 @@ private:
     /** 동시 넉다운 수(트리거형이라 평소 0). */
     int32 ActiveKnockdownCount = 0;
 
-    /** POI 태그 액터 캐시 — 레벨 배치물이라 첫 조회 때 한 번만 훑는다.
-     *  ponytail: 런타임 스폰 POI 는 못 본다. 실제 POI 시스템이 들어오면 그쪽 등록소로 교체. */
-    TMap<FString, TWeakObjectPtr<AActor>> PoiActors;
-    bool bPoiScanned = false;
-    void ScanPois();
-
     /** AgentID → NPC. 등록/해제는 RegisterNPC/UnregisterNPC 만. */
     UPROPERTY()
     TMap<FString, ASmartNPC*> ActiveNPCs;
@@ -158,6 +155,14 @@ private:
 
     UFUNCTION()
     void OnLLMMessageReceived(const FString& JsonMessage);
+
+    /** 파티 멤버 변경 → party_update 송신. */
+    UFUNCTION()
+    void OnPartyChanged(const FString& AgentID, bool bJoined);
+
+    /** 소켓 (재)연결 직후 현재 멤버 전원을 join 으로 재송신 — 증분이라 서버 재시작 뒤 상태가 어긋나는 것을 메운다. */
+    UFUNCTION()
+    void OnLLMConnectionChanged(bool bIsConnected);
 
     UFUNCTION()
     void HandleNPCDialogue(const FString& AgentID, const FString& DialogueText);

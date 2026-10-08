@@ -1,6 +1,7 @@
 #include "Core/BP/VRPawn.h"
 #include "Core/BP/VRHandComponent.h"
 #include "Core/BP/VRPlayerUIComponent.h"
+#include "Core/BP/VRBodyMeasureComponent.h"
 #include "Core/Debug/VRCheatManager.h"
 #include "Core/BP/VRMeleeComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
@@ -23,6 +24,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "NativeGameplayTags.h"
 #include "Perception/AISense_Sight.h"
+#include "AnimationRuntime.h"
+#include "Engine/SkeletalMesh.h"
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
@@ -40,14 +43,10 @@
 #include "Inventory/Components/InventoryComponent.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Subsystems/ItemManager.h"
-#include "UI/Components/ChatPanelUIComponent.h"
-#include "UI/Components/HUDPanelUIComponent.h"
-#include "UI/Components/ItemTooltipUIComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Villager/MerchantStall.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/WidgetComponent.h"
-#include "Components/WidgetInteractionComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -120,6 +119,7 @@ AVRPawn::AVRPawn()
     HandRight->GripOffset = FRotator(0.f, 0.f, -90.f);
 
     PlayerUI = CreateDefaultSubobject<UVRPlayerUIComponent>(TEXT("PlayerUI"));
+    BodyMeasure = CreateDefaultSubobject<UVRBodyMeasureComponent>(TEXT("BodyMeasure"));
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -128,53 +128,6 @@ AVRPawn::AVRPawn()
 
     // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
-
-    // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯. 카메라 정렬·시선 페이드·포인터 충돌은 UHUDPanelUIComponent.
-    // 카메라 부착(head-lock)은 피한다 — 상시 표시 패널이 시야에 고정되면 멀미를 유발한다.
-    HUDWidgetComp = CreateDefaultSubobject<UHUDPanelUIComponent>(TEXT("HUDWidgetComp"));
-    HUDWidgetComp->SetupAttachment(MotionControllerLeft);
-    HUDWidgetComp->SetRelativeLocation(HUDPanelLocation);
-    HUDWidgetComp->SetDrawSize(HUDPanelDrawSize);
-    HUDWidgetComp->SetRelativeScale3D(FVector(HUDPanelScale));
-
-    // 채팅 패널 — 예외적으로 카메라(VRCamera) 부착(이유·자동 닫기는 UChatPanelUIComponent).
-    // 카메라 앞에 있으니 Yaw 180 으로 카메라 쪽을 본다(양면이라 어느 면이든 읽힌다).
-    ChatWidgetComp = CreateDefaultSubobject<UChatPanelUIComponent>(TEXT("ChatWidgetComp"));
-    ChatWidgetComp->SetupAttachment(VRCamera);
-    ChatWidgetComp->SetRelativeLocation(ChatPanelOffset);
-    ChatWidgetComp->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
-    ChatWidgetComp->SetDrawSize(ChatPanelDrawSize);
-    ChatWidgetComp->SetRelativeScale3D(FVector(ChatPanelScale));
-
-    // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어
-    // 광선이 패널을 빗나간다.
-    HUDInteractor = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("HUDInteractor"));
-    HUDInteractor->SetupAttachment(MotionControllerRightAim);
-    HUDInteractor->InteractionDistance = HUDInteractionDistance;
-    HUDInteractor->InteractionSource = EWidgetInteractionSource::World;
-    HUDInteractor->bEnableHitTesting = true;
-    HUDInteractor->bShowDebug = false;          // 조준이 안 맞을 때 켜서 광선 확인
-    HUDInteractor->SetActive(false);            // 인벤토리 열림 중에만 활성
-
-    // 포인터 광선 실메시 — 원통을 조준축(+X)으로 눕혀 길이만 늘린다.
-    // 기본 원통은 Z축 100cm 이므로 Pitch -90 으로 Z 를 부모의 +X 에 맞춘다.
-    PointerBeam = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PointerBeam"));
-    PointerBeam->SetupAttachment(MotionControllerRightAim);
-    PointerBeam->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
-    // 광선이 자기 자신을 맞고 멈추지 않도록 콜리전 완전 차단. 그림자도 끈다(가는 막대의 그림자는 노이즈).
-    PointerBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PointerBeam->SetCastShadow(false);
-    PointerBeam->SetVisibility(false);
-
-    PointerDot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PointerDot"));
-    PointerDot->SetupAttachment(MotionControllerRightAim);
-    PointerDot->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PointerDot->SetCastShadow(false);
-    PointerDot->SetVisibility(false);
-
-    // 아이템 이름표 — 하나를 폰이 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
-    ItemTooltipComp = CreateDefaultSubobject<UItemTooltipUIComponent>(TEXT("ItemTooltipComp"));
-    ItemTooltipComp->SetupAttachment(RootComponent);
 
     // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
     bUseControllerRotationYaw  = false;
@@ -248,7 +201,25 @@ void AVRPawn::BeginPlay()
     // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
     if (PlayerUI) PlayerUI->Init();
 
-    if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+    if (GetMesh())
+    {
+        MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+
+        // 눕힘 피벗(발) → 머리 본 높이 — 레퍼런스 포즈 기준. 몸을 눕혔을 때 머리 본이 HMD 아래 목 위치에 오도록 발을 빼는 거리 계산에 쓴다.
+        if (const USkeletalMesh* Asset = GetMesh()->GetSkeletalMeshAsset())
+        {
+            const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+            const int32 HeadIndex = Ref.FindBoneIndex(TEXT("Head"));
+            if (HeadIndex != INDEX_NONE)
+            {
+                HeadBoneHeight = FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, HeadIndex).GetLocation().Z;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 몸 메시에 Head 본이 없어 눕힘 기준 높이 %.0fcm 기본값을 쓴다"), HeadBoneHeight);
+            }
+        }
+    }
 
     if (HandLeft)  HandLeft->InitPhysics();
     if (HandRight) HandRight->InitPhysics();
@@ -338,6 +309,14 @@ void AVRPawn::Tick(float DeltaTime)
 // 자세 시스템 — 캘리브레이션 / 자세 판정 / 동적 캡슐
 // ============================================================================
 
+void AVRPawn::SetStandingHeight(float Height)
+{
+    GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
+    GetWorldTimerManager().ClearTimer(CalibrationFinishTimer);
+    CalibratedStandingHeight = Height;
+    bCalibrated = true;
+}
+
 void AVRPawn::StartCalibration()
 {
     // 진행 중 타이머가 있으면 정리
@@ -372,6 +351,17 @@ void AVRPawn::FinishCalibration()
 {
     GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
 
+    // 신체 측정으로 저장한 키가 있으면 평균 대신 그 값을 기준 높이로 확정한다. 확정 시점은 자동 캘리브레이션과 같다 —
+    // 대기 시간 동안은 bCalibrated=false 라 HMD 트래킹이 안정되기 전의 값으로 캡슐·자세가 흔들리지 않는다.
+    float SavedHeight = 0.f;
+    if (BodyMeasure && BodyMeasure->GetSavedHeight(SavedHeight))
+    {
+        CalibratedStandingHeight = SavedHeight;
+        bCalibrated = true;
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 저장된 신체 측정 키 사용 = %.1f cm"), SavedHeight);
+        return;
+    }
+
     if (CalibrationSampleCount > 0)
     {
         CalibratedStandingHeight = CalibrationAccum / CalibrationSampleCount;
@@ -396,7 +386,12 @@ float AVRPawn::GetCurrentHMDHeight() const
 
     // 캡슐 발 기준 절대 높이 = 카메라 월드 Z - 액터 월드 Z + 캡슐 절반 높이.
     // 액터 피벗이 캡슐 정중앙이므로, 발은 액터Z - HalfHeight 에 있다.
-    return VRCamera->GetComponentLocation().Z - GetActorLocation().Z + InterpedCapsuleHalfHeight;
+    return HeightAboveFloor(VRCamera->GetComponentLocation().Z);
+}
+
+float AVRPawn::HeightAboveFloor(float WorldZ) const
+{
+    return WorldZ - GetActorLocation().Z + InterpedCapsuleHalfHeight;
 }
 
 // ----------------------------------------------------------------------------
@@ -433,25 +428,45 @@ void AVRPawn::UpdatePosture()
 
     const float Ratio = GetCurrentHMDHeight() / CalibratedStandingHeight;
 
-    // 슈미트 트리거 패턴 — 진입/복귀 임계값을 분리해 데드존 확보
+    // HMD 피치 하향 각도(도, 아래를 볼수록 +) — UE 피치는 위가 +.
+    const float PitchDown = VRCamera
+        ? static_cast<float>(-FRotator::NormalizeAxis(VRCamera->GetComponentRotation().Pitch))
+        : 0.f;
+
+    // 슈미트 트리거 패턴 — 진입/복귀 임계값을 분리해 데드존 확보. 높이(쭈그리기·엎드리기)가 허리 숙이기보다 우선.
+    // 허리 숙이기 = 쭈그리기 진입 전 높이대 중 낮은 구간 + 고개 숙임. 서서 고개만 숙이면 비율이 BendRatioMax 이상에 머문다.
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
-        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching);
+        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
+        else if (Ratio < BendRatioMax && PitchDown >= BendPitchDownDeg)
+            TransitionTo(EVRPosture::Bending, Ratio, PitchDown);
+        break;
+    case EVRPosture::Bending:
+        if (Ratio < StandingRatioDown) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
+        else if (PitchDown < BendPitchUpDeg || Ratio > BendRatioMaxUp)
+            TransitionTo(EVRPosture::Standing, Ratio, PitchDown);
         break;
     case EVRPosture::Crouching:
-        if (Ratio > StandingRatioUp)       TransitionTo(EVRPosture::Standing);
-        else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone);
+        // 일어서다 허리 숙이기 조건이 이미 맞으면 Standing 을 거치지 않고 바로 Bending — 한 프레임 서기 깜박임·이벤트 2번 방지.
+        if (Ratio > StandingRatioUp)
+        {
+            const bool bBend = Ratio < BendRatioMax && PitchDown >= BendPitchDownDeg;
+            TransitionTo(bBend ? EVRPosture::Bending : EVRPosture::Standing, Ratio, PitchDown);
+        }
+        else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone, Ratio, PitchDown);
         break;
     case EVRPosture::Prone:
-        if (Ratio > ProneRatioUp) TransitionTo(EVRPosture::Crouching);
+        if (Ratio > ProneRatioUp) TransitionTo(EVRPosture::Crouching, Ratio, PitchDown);
         break;
     }
 }
 
-void AVRPawn::TransitionTo(EVRPosture NewPosture)
+void AVRPawn::TransitionTo(EVRPosture NewPosture, float Ratio, float PitchDownDeg)
 {
     if (NewPosture == CurrentPosture) return;
+
+    const EVRPosture PrevPosture = CurrentPosture;
 
     // 이전 자세 태그 회수
     switch (CurrentPosture)
@@ -459,6 +474,7 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
     case EVRPosture::Standing:  RemoveStateTag(TAG_State_Posture_Standing);  break;
     case EVRPosture::Crouching: RemoveStateTag(TAG_State_Posture_Crouching); break;
     case EVRPosture::Prone:     RemoveStateTag(TAG_State_Posture_Prone);     break;
+    case EVRPosture::Bending:   RemoveStateTag(TAG_State_Posture_Bending);   break;
     }
 
     CurrentPosture = NewPosture;
@@ -469,13 +485,16 @@ void AVRPawn::TransitionTo(EVRPosture NewPosture)
     case EVRPosture::Standing:  AddStateTag(TAG_State_Posture_Standing);  break;
     case EVRPosture::Crouching: AddStateTag(TAG_State_Posture_Crouching); break;
     case EVRPosture::Prone:     AddStateTag(TAG_State_Posture_Prone);     break;
+    case EVRPosture::Bending:   AddStateTag(TAG_State_Posture_Bending);   break;
     }
 
     // 이동속도 재적용 (ApplyMovementSpeed가 CurrentPosture를 참조)
     ApplyMovementSpeed();
 
-    UE_LOG(LogTemp, Verbose, TEXT("[VRPawn] Posture -> %s"),
-           *UEnum::GetValueAsString(CurrentPosture));
+    // 판정 튜닝용 — 전이 순간의 높이 비율·피치 하향을 한 줄로 남긴다.
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] Posture %s -> %s (높이비율 %.2f, 피치하향 %.1f도)"),
+           *UEnum::GetValueAsString(PrevPosture), *UEnum::GetValueAsString(CurrentPosture),
+           Ratio, PitchDownDeg);
 
     OnPostureChanged.Broadcast(CurrentPosture);
 }
@@ -495,7 +514,61 @@ void AVRPawn::UpdateBodyPlacement()
     const FTransform Eye = VRCamera->GetComponentTransform();
     const FVector Neck = Eye.GetLocation() + Eye.GetRotation().RotateVector(EyeToNeckOffset);
     const FVector Current = Body->GetComponentLocation();
-    Body->SetWorldLocation(FVector(Neck.X, Neck.Y, Current.Z));
+
+    // 눕힌 만큼 머리 본이 앞으로 나가므로 발(메시 원점)을 시선 반대로 빼 서 있을 때와 같은 수평 위치에 머리 본을 둔다.
+    const float Setback = HeadBoneHeight * Body->GetComponentScale().Z * FMath::Sin(FMath::DegreesToRadians(BodyLeanDeg));
+    const FVector Facing = FRotator(0.f, SmoothedBodyYaw, 0.f).Vector();
+    Body->SetWorldLocation(FVector(Neck.X - Facing.X * Setback, Neck.Y - Facing.Y * Setback, Current.Z));
+}
+
+float AVRPawn::GetStealthSightRange() const
+{
+    float Factor = 0.f;
+    switch (CurrentPosture)
+    {
+    case EVRPosture::Bending:   Factor = StealthFactorBending;   break;
+    case EVRPosture::Crouching: Factor = StealthFactorCrouching; break;
+    case EVRPosture::Prone:     Factor = StealthFactorProne;     break;
+    case EVRPosture::Standing:  return 0.f;
+    }
+    return StealthReferenceRange * Factor;
+}
+
+UAISense_Sight::EVisibilityResult AVRPawn::CanBeSeenFrom(
+    const FCanBeSeenFromContext& Context, FVector& OutSeenLocation,
+    int32& OutNumberOfLoSChecksPerformed, int32& OutNumberOfAsyncLosCheckRequested,
+    float& OutSightStrength, int32* /*UserData*/,
+    const FOnPendingVisibilityQueryProcessedDelegate* /*Delegate*/)
+{
+    OutNumberOfAsyncLosCheckRequested = 0;
+    OutSightStrength = 1.f;
+
+    const FVector TargetLoc = GetActorLocation();
+
+    // 자세별 시야 거리 제한 — 서기(0)는 제한 없이 관찰자 SightRadius 에 맡긴다.
+    const float Range = GetStealthSightRange();
+    if (Range > 0.f && FVector::DistSquared(Context.ObserverLocation, TargetLoc) > FMath::Square(Range))
+    {
+        return UAISense_Sight::EVisibilityResult::NotVisible;
+    }
+
+    // 기본 AI 시선 검사와 동일 — 관찰자 시점에서 플레이어까지 가시성 채널 직선이 막히지 않아야 보인다.
+    UWorld* World = GetWorld();
+    if (!World) return UAISense_Sight::EVisibilityResult::NotVisible;
+
+    FHitResult Hit;
+    const FCollisionQueryParams Params(SCENE_QUERY_STAT(AILineOfSight), true, Context.IgnoreActor);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, Context.ObserverLocation, TargetLoc, ECC_Visibility, Params);
+    ++OutNumberOfLoSChecksPerformed;
+
+    // 엔진 기본 판정과 동일 — 플레이어 본인뿐 아니라 플레이어 소유 액터(들고 있는 아이템 등)에 먼저 맞아도 보인 것으로 친다.
+    const AActor* HitActor = Hit.GetActor();
+    if (!bHit || (HitActor && HitActor->IsOwnedBy(this)))
+    {
+        OutSeenLocation = TargetLoc;
+        return UAISense_Sight::EVisibilityResult::Visible;
+    }
+    return UAISense_Sight::EVisibilityResult::NotVisible;
 }
 
 void AVRPawn::UpdateDynamicCapsule(float DeltaTime)
@@ -562,6 +635,9 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         }
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
+        if (IA_MenuToggle)      EIC->BindAction(IA_MenuToggle,      ETriggerEvent::Started, this, &AVRPawn::OnMenuToggle);
+        if (IA_BodyMeasureCapture) EIC->BindAction(IA_BodyMeasureCapture, ETriggerEvent::Started, this, &AVRPawn::OnBodyMeasureCapture);
+        else UE_LOG(LogTemp, Warning, TEXT("[VRPawn] IA_BodyMeasureCapture 가 비어 있어 신체 측정 단계가 넘어가지 않는다 — BP_VRPawn 에 지정하라"));
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
         {
@@ -588,6 +664,14 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void AVRPawn::OnMove(const FInputActionValue& Value)
 {
+    // 메뉴가 열린 동안 이동 입력은 무시 — 월드가 계속 흐르므로 서 있는 채로 메뉴를 본다.
+    if (IsUIBlockingInput())
+    {
+        SetSprinting(false);
+        LastMoveInput = FVector2D::ZeroVector;
+        return;
+    }
+
     // 착석 중 스틱 이동 잠금 — 기상은 Interact 재입력(토글)만.
     if (SeatedFurniture.IsValid())
     {
@@ -659,7 +743,7 @@ void AVRPawn::UpdateStamina(float DeltaTime)
     //  · 자세: Crouching/Prone 은 ApplyMovementSpeed 가 Sprint 속도를 안 쓰므로 소모도 없어야 한다.
     //  · 실제 이동: 벽에 막혀 제자리인데 스틱만 최대로 밀고 있을 때 스태미나가 마르는 건 부자연스럽다.
     const bool bConsuming = bIsSprinting
-        && CurrentPosture == EVRPosture::Standing
+        && (CurrentPosture == EVRPosture::Standing || CurrentPosture == EVRPosture::Bending)
         && GetVelocity().SizeSquared2D() > KINDA_SMALL_NUMBER;
 
     if (bConsuming)
@@ -689,10 +773,10 @@ void AVRPawn::UpdateStamina(float DeltaTime)
 
 void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
 {
-    if (SeatedFurniture.IsValid()) return;
+    if (SeatedFurniture.IsValid() || IsUIBlockingInput()) return;
 
     // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
-    if (CurrentPosture != EVRPosture::Standing) return;
+    if (CurrentPosture != EVRPosture::Standing && CurrentPosture != EVRPosture::Bending) return;
 
     UWorld* World = GetWorld();
     UCharacterMovementComponent* MC = GetCharacterMovement();
@@ -758,6 +842,12 @@ void AVRPawn::StopDash()
 
 void AVRPawn::OnTurn(const FInputActionValue& Value)
 {
+    if (IsUIBlockingInput())
+    {
+        TurnAxisInput = 0.f;
+        return;
+    }
+
     const FVector2D Stick = Value.Get<FVector2D>();
 
     // 인벤토리가 열려 있는 동안 같은 스틱이 회전과 슬롯 이동을 겸하면 아이템을 고르다 몸이 돈다.
@@ -798,24 +888,51 @@ void AVRPawn::UpdateBodyRotation(float DeltaTime)
 {
     if (!VRCamera || !GetMesh()) return;
 
-    // 착석 중에는 의자 방향을 유지하고 고개만 회전
-    if (SeatedFurniture.IsValid()) return;
+    // 착석 중에는 의자 방향을 유지하고 고개만 회전. 눕혀 있었다면 수직으로 되돌린다.
+    if (SeatedFurniture.IsValid())
+    {
+        if (BodyLeanDeg > KINDA_SMALL_NUMBER)
+        {
+            // 가구가 액터 yaw 를 돌려 놓았을 수 있으니 낡은 시선 yaw 가 아니라 액터 yaw 기준으로 세운다.
+            BodyLeanDeg = 0.f;
+            SmoothedBodyYaw = GetActorRotation().Yaw;
+            GetMesh()->SetWorldRotation(FRotator(0.f, SmoothedBodyYaw + BodyMeshYawOffset, 0.f));
+        }
+        return;
+    }
 
     // HMD(헤드셋)가 바라보는 수평 월드 각도
     const float CameraYaw = VRCamera->GetComponentRotation().Yaw;
-    const float DesiredYaw = CameraYaw + BodyMeshYawOffset;
 
-    if (BodyRotationInterpSpeed > 0.f && DeltaTime > KINDA_SMALL_NUMBER)
+    if (BodyRotationInterpSpeed > 0.f && DeltaTime > KINDA_SMALL_NUMBER && bBodyYawInit)
     {
-        const FRotator CurrentRot = GetMesh()->GetComponentRotation();
-        const FRotator TargetRot(0.f, DesiredYaw, 0.f);
-        const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, BodyRotationInterpSpeed);
-        GetMesh()->SetWorldRotation(FRotator(0.f, NewRot.Yaw, 0.f));
+        SmoothedBodyYaw = FMath::RInterpTo(FRotator(0.f, SmoothedBodyYaw, 0.f), FRotator(0.f, CameraYaw, 0.f),
+                                           DeltaTime, BodyRotationInterpSpeed).Yaw;
     }
     else
     {
-        GetMesh()->SetWorldRotation(FRotator(0.f, DesiredYaw, 0.f));
+        SmoothedBodyYaw = CameraYaw;
     }
+    bBodyYawInit = true;
+
+    // 눕힘 — HMD 가 키 대비 낮아진 비율에 비례해 앞으로 눕힌다(상한 BodyLeanMaxDeg).
+    // 기하(cos θ = 높이 ÷ 접힘 한계)로 풀면 머리 본이 15cm 가까이 높게 남았다: 눕히면 다리가 펴져 몸이 길어지고,
+    // 안 눕힌 구간은 FBIK 가 몸을 못 접는다. PIE 에서 비율 0.9~0.35 를 재서 머리 본 오차가 작은 기울기로 맞췄다.
+    float TargetLean = 0.f;
+    if (bCalibrated && CalibratedStandingHeight > KINDA_SMALL_NUMBER)
+    {
+        const float Ratio = GetCurrentHMDHeight() / CalibratedStandingHeight;
+        TargetLean = FMath::Clamp((1.f - Ratio) * BodyLeanDegPerRatio, 0.f, BodyLeanMaxDeg);
+    }
+    BodyLeanDeg = DeltaTime > KINDA_SMALL_NUMBER
+        ? FMath::FInterpTo(BodyLeanDeg, TargetLean, DeltaTime, HeightInterpSpeed)
+        : TargetLean;
+
+    // 회전 = 시선 yaw → 앞으로 눕힘(UE 피치 음수 = 앞으로 숙임) → 메시 정면 보정.
+    const FQuat Facing = FRotator(0.f, SmoothedBodyYaw, 0.f).Quaternion();
+    const FQuat Lean = FRotator(-BodyLeanDeg, 0.f, 0.f).Quaternion();
+    const FQuat MeshFix = FRotator(0.f, BodyMeshYawOffset, 0.f).Quaternion();
+    GetMesh()->SetWorldRotation(Facing * Lean * MeshFix);
 }
 
 void AVRPawn::SyncCapsuleToHMD()
@@ -912,6 +1029,8 @@ void AVRPawn::OnAttackMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupte
 
 void AVRPawn::OnInteract(const FInputActionValue& /*Value*/)
 {
+    if (IsUIBlockingInput()) return;
+
     // 착석 중이면 기상이 최우선(토글) — 다른 상호작용 차단.
     if (SeatedFurniture.IsValid())
     {
@@ -974,6 +1093,22 @@ ADroppedItemBase* AVRPawn::FindNearestItem(const FVector& Origin, float Radius, 
 void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 {
     if (PlayerUI) PlayerUI->ToggleInventory();
+}
+
+void AVRPawn::OnMenuToggle(const FInputActionValue& /*Value*/)
+{
+    if (PlayerUI) PlayerUI->ToggleMenu();
+}
+
+void AVRPawn::OnBodyMeasureCapture(const FInputActionValue& /*Value*/)
+{
+    // IsUIBlockingInput 으로 막지 않는다 — 측정은 메뉴가 열려 있는 동안에만 돌고, 측정 중이 아니면 Capture 가 무시한다.
+    if (BodyMeasure) BodyMeasure->Capture();
+}
+
+bool AVRPawn::IsUIBlockingInput() const
+{
+    return PlayerUI && PlayerUI->BlocksGameplayInput();
 }
 
 bool AVRPawn::IsInventoryOpen() const
@@ -1058,6 +1193,8 @@ void AVRPawn::HandleGrabStart(bool bLeft, ADroppedItemBase* Target)
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
     UMotionControllerComponent* HandController = bLeft ? MotionControllerLeft : MotionControllerRight;
 
+    // 메뉴가 열린 동안 새로 쥐지 않는다. 이미 쥔 물건은 유지하고 놓기·던지기는 그대로 허용.
+    if (IsUIBlockingInput()) return;
     if (!Inventory || Inventory->GetHeldItem(HandSlot) || !HandController) return;
 
     // 인벤토리를 연 상태의 그립은 "고른 슬롯을 발동한다"는 뜻 — 월드 아이템 줍기와 겹치지 않는다.
@@ -1247,12 +1384,16 @@ void AVRPawn::ApplyMovementSpeed()
 
     const float Base = CurrentStats.Movement.WalkSpeed;
 
-    // 자세별 속도 클램프 — Standing 100% / Crouching = CrouchSpeed / Prone = 20%
+    // 자세별 속도 클램프 — Standing 100% / Bending = BendSpeedRatio / Crouching = CrouchSpeed / Prone = 20%
     switch (CurrentPosture)
     {
     case EVRPosture::Standing:
         // Sprint 는 선 자세에서만 — 웅크림/포복은 아래 분기가 각자 속도를 덮어써 자동 억제.
         MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base;
+        break;
+    case EVRPosture::Bending:
+        // 전력질주 중 상체가 숙여져도 질주는 유지(스태미나·대시 규칙과 동일), 걷기만 감속.
+        MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base * BendSpeedRatio;
         break;
     case EVRPosture::Crouching:
         MC->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed;

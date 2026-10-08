@@ -38,6 +38,9 @@ HANGUL_TOKEN_RATIO = 0.6
 OTHER_TOKEN_RATIO = 0.25
 
 
+# 프롬프트에 'Recent events:' 로 따로 싣는 Event 항목 상한.
+MAX_EVENT_LINES = 2
+
 # 메모리 파일 저장 경로
 MEMORY_BASE_PATH = "app/agents/knowledge"
 
@@ -266,17 +269,29 @@ class ConversationMemory:
         return self.entries[-k:] if self.entries else []
 
     def get_context_string(self, k: int = 5) -> str:
-        """LLM 프롬프트에 삽입할 최근 대화 컨텍스트 문자열 반환."""
-        recent = self.get_recent_entries(k)
-        if not recent:
+        """LLM 프롬프트에 삽입할 최근 대화 컨텍스트 문자열 반환.
+        Event(피격·목격 등 통보 기록)는 대화와 분리한다 — 섞으면 Event 가 대화 슬롯을 차지하고 모델이
+        Event 문장을 NPC 발화처럼 복사한다. 대화는 최근 항목, Event 는 별도 'Recent events:' 최대 2줄이며
+        합계(헤더 포함)는 기존과 같은 k 줄을 넘지 않는다(Event 는 최근 2k 항목 안에서만)."""
+        recent = self.get_recent_entries(2 * k)
+        all_events = [e for e in recent if e.speaker == "Event" and not e.is_summary]
+        # 헤더 1줄 + 대화 최소 1줄을 남기도록 Event 수를 제한 — 헤더 포함 전체가 k 줄을 넘지 않는다.
+        events = all_events[-min(MAX_EVENT_LINES, max(k - 2, 0)) :] if k > 2 else []
+        # 상한 밖 오래된 Event 는 버린다(대화로 새지 않게). 대화는 Event 를 뺀 최근 항목.
+        dropped_ids = {id(e) for e in all_events}  # dataclass eq 는 값 비교라 id 로 제외(동일 내용 대화 오삭제 방지)
+        dialogue = [e for e in recent if id(e) not in dropped_ids][-max(k - len(events) - (1 if events else 0), 1) :]
+        if not dialogue and not events:
             return ""
 
         lines = []
-        for entry in recent:
+        for entry in dialogue:
             if entry.is_summary:
                 lines.append(f"[Past events] {entry.content}")
             else:
                 lines.append(f"{entry.speaker}: {entry.content}")
+        if events:
+            lines.append("Recent events:")
+            lines.extend(f"- {e.content}" for e in events)
 
         return "\n".join(lines)
 

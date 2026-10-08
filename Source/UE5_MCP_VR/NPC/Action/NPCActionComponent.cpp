@@ -2,6 +2,7 @@
 #include "UI/Trade/TradeSessionActor.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Components/NPCRagdollComponent.h" // 파티 추적 재개 가드(넉다운 중 건너뜀)
 #include "NPC/Components/NPCInventoryComponent.h"
 #include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Struct/NPCActionKeys.h"
@@ -32,6 +33,9 @@
 #include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #include "NavigationSystem.h" // BaseMove 목적지 NavMesh 투영(벽 끼임 방지)
 #include "Furniture/Subsystems/FurnitureManager.h" // Jev daily 가구 검증
+#include "Party/PartySubsystem.h" // JoinParty/LeaveParty 멤버십 위임
+#include "POI/POIManager.h" // Move target_poi 해석
+#include "POI/POIActor.h"
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -532,6 +536,7 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         // [의도(Why)] 모든 동작 중지(Emergency Stop) 등 최우선 순위는 즉각 반영하여 불필요한 연산을 막습니다.
         if (Action.ActionType == EAction::Stop)
         {
+            ExecuteLeaveParty(); // Stop = 해산(파티원일 때만 동작) — 추적 해제 후 일상 복귀
             ExecuteIdle();
             continue;
         }
@@ -677,6 +682,13 @@ void UNPCActionComponent::OnActionCompleted()
     ClearActiveActionState();
 
     const EAction CompletedAction = CurrentAction.ActionType;
+
+    // 중복 큐잉 필터는 "큐 끝에 같은 액션이 이미 있을 때"만 막아야 한다. 그 액션이 끝나 큐가 비었으면 키를 풀어야
+    // 같은 명령을 다시 받을 수 있다(풀지 않으면 "따라와" 를 두 번째부터 조용히 삼켰다).
+    if (ActionQueue.IsEmpty() && QueueKey(CurrentAction) == LastQueuedKey)
+    {
+        LastQueuedKey.Reset();
+    }
 
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] %s: Action '%s' Completed."),
         *GetOwnerAgentID(), *UEnum::GetValueAsString(CompletedAction));
@@ -1031,6 +1043,13 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     case EAction::Idle:         ExecuteIdle(); break;
     case EAction::Move:
     {
+        // target_poi — 장소 id 로 이동. 좌표는 등록소가 해석하고 실패는 경고만(아래 tail 이 즉시 완료).
+        const FString PoiId = Params.FindRef(NPCActionKeys::Key_TargetPoi);
+        if (!PoiId.IsEmpty())
+        {
+            ExecuteMoveToPoi(PoiId, ParseMoveStyle(StyleStr));
+            break;
+        }
         // 전투 풋워크(셀렉터 전용 style) — 달리면서 타겟을 계속 본다(옆걸음·뒷걸음). 새 EAction 대신 style 변형.
         const bool bFootwork = TargetActor && (StyleStr == TEXT("Strafe") || StyleStr == TEXT("Disengage"));
         ExecuteMove(Location, TargetActor, bFootwork ? EMoveType::Run : ParseMoveStyle(StyleStr));
@@ -1163,6 +1182,10 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     // 자세 해제는 가구·좌표가 필요 없어 ExecuteLifestyleAction 경로를 타지 않는다
     // (그쪽은 가구 타겟 필수 방어가 걸려 있어 무타겟이면 즉시 반환).
     case EAction::StandUp:      ExecuteStandUp(); break;
+
+    // Party — 즉시형(서브시스템 호출 후 말미의 OnActionCompleted)
+    case EAction::JoinParty:    ExecuteJoinParty(); break;
+    case EAction::LeaveParty:   ExecuteLeaveParty(); break;
 
     case EAction::Wait:
         // 즉시형으로 처리(아래 tail에서 OnActionCompleted). duration 기반 실제 대기가 필요하면
@@ -1324,6 +1347,33 @@ void UNPCActionComponent::ExecuteMove(FVector TargetLocation, AActor* TargetActo
 
     StartTacticalQuery(ContextLocs);
     UE_LOG(LogTemp, Log, TEXT("[NPCAction] ExecuteMove: target_loc 없음 → EQS+LLM 파이프라인 시작"));
+}
+
+void UNPCActionComponent::ExecuteMoveToPoi(const FString& PoiId, EMoveType SpeedType)
+{
+    const UWorld* World = GetWorld();
+    const UPOIManager* PoiMgr = World ? World->GetSubsystem<UPOIManager>() : nullptr;
+    const APOIActor* Poi = PoiMgr ? PoiMgr->FindById(PoiId) : nullptr;
+    if (!Poi)
+    {
+        // 표시명·별칭이 id 자리에 온 경우도 여기로 온다 — 구제하지 않고 실패를 로그로 드러낸다.
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: 미등록 POI id '%s' — Move 건너뜀"), *GetOwnerAgentID(), *PoiId);
+        return;
+    }
+
+    // BaseMove 내부 투영은 실패 시 원 좌표로 계속 가므로, POI 는 여기서 먼저 투영해 실패를 막는다
+    // (NavMesh 밖에 놓인 POI 로 대충 이동하면 잘못된 배치가 숨는다).
+    FNavLocation NavLoc;
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!NavSys || !NavSys->ProjectPointToNavigation(Poi->GetActorLocation(), NavLoc, FVector(200.f, 200.f, 300.f)))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: POI '%s' 가 NavMesh 밖이라 이동 실패 — 위치 (%s)"),
+            *GetOwnerAgentID(), *PoiId, *Poi->GetActorLocation().ToString());
+        return;
+    }
+
+    // 도착 반경은 POI 별 속성. 0 근처는 도달 판정이 불가능해 BaseMove 기본값(50) 아래로는 내리지 않는다.
+    BaseMove(NavLoc.Location, SpeedType, FMath::Max(Poi->ArrivalRadius, 50.f));
 }
 
 // ============================================================================
@@ -1753,13 +1803,17 @@ void UNPCActionComponent::AbortTacticalQuery()
     }
 }
 
-void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType SpeedType)
+void UNPCActionComponent::ExecuteFollow(AActor* TargetActor, EMoveType /*SpeedType*/)
 {
-    if (!TargetActor) return;
-    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-    if (!OwnerCharacter) return;
-    FVector Dir = (OwnerCharacter->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal();
-    BaseMove(TargetActor->GetActorLocation() + Dir * 300.f, SpeedType);
+    // "따라와" 는 한 번 이동하고 끝나는 명령이 아니다 — 대상이 움직여도 계속 붙어 다녀야 하므로 지속 추적(Track)으로 건다.
+    // 예전엔 대상 근처 한 점으로 한 번만 이동해서, 이미 가까이 있으면 즉시 완료되고 플레이어가 걸어가도 따라오지 않았다.
+    // 추적은 다른 이동 액션·Stop 이 올 때까지 이어진다(ProcessNextAction 이 충돌 액션에서 끊는다).
+    if (!TargetActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: Follow 대상 없음 — 무시"), *GetOwnerAgentID());
+        return;
+    }
+    ExecuteTrack(TargetActor);
 }
 
 void UNPCActionComponent::ExecuteDialogue(const FString& DialogueText, const EFacialState Emotion) { BaseDialogue(DialogueText, Emotion); }
@@ -2614,6 +2668,45 @@ void UNPCActionComponent::ExecuteStandUp()
     else      BaseSitUp();
 }
 
+void UNPCActionComponent::ExecuteJoinParty()
+{
+    // 멤버십 정본은 UPartySubsystem — 여기서는 호출만 한다. 정원 초과 거절은 서버 판정과 별개의 최종 가드.
+    // 즉시형이라 bActionAwaitingAsync=false 인 채로 돌아가면 ExecuteInteraction 말미가 완료 처리한다.
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->Join(GetOwnerAgentID()))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: JoinParty 실패 — 정원 초과이거나 파티 서브시스템 없음"), *GetOwnerAgentID());
+        return;
+    }
+    StopTracking(); // 이미 다른 대상을 추적 중이었어도 플레이어로 갈아탄다
+    ResumePartyTracking(); // 합류 즉시 플레이어 지속 추적 — 기존 Follow 와 같은 Track 경로
+}
+
+void UNPCActionComponent::ExecuteLeaveParty()
+{
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->IsMember(GetOwnerAgentID())) return; // 비멤버의 다른 Track 을 끊지 않는다
+
+    Party->Leave(GetOwnerAgentID());
+    StopTracking(); // 추적 해제 — 일상 활동은 TickJevDaily 가 멤버십을 보므로 Leave 만으로 복귀
+}
+
+void UNPCActionComponent::ResumePartyTracking()
+{
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->IsMember(GetOwnerAgentID()) || IsTracking()) return;
+
+    // 반사·대화·전투·넉다운이 진행 중이면 덮어쓰지 않는다 — 끝난 뒤 TickJevDaily 의 주기 호출이 다시 잡는다.
+    if (GetBehaviorMode() == ENPCBehaviorMode::Combat || bIsBusy || HasPendingActions()) return;
+    const ACombatCharacter* OwnerChar = Cast<ACombatCharacter>(GetOwner());
+    if (!OwnerChar || OwnerChar->bIsDead) return;
+    if (OwnerChar->RagdollComponent && OwnerChar->RagdollComponent->IsKnockedDown()) return;
+
+    AActor* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+    if (!IsValid(Player) || ACombatCharacter::IsActorDead(Player)) return; // 플레이어 시체를 따라다니지 않는다
+    ExecuteTrack(Player);
+}
+
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
 {
     const FVector Dest = TargetEntity ? TargetEntity->GetActorLocation() : Location;
@@ -2762,9 +2855,10 @@ namespace
 
 FString UNPCActionComponent::QueueKey(const FGameAction& Action)
 {
-    return FString::Printf(TEXT("%s|%s|%s|%s|%s"), *UEnum::GetValueAsString(Action.ActionType),
+    return FString::Printf(TEXT("%s|%s|%s|%s|%s|%s"), *UEnum::GetValueAsString(Action.ActionType),
         *Action.Parameters.FindRef(NPCActionKeys::Key_TargetID),
         *Action.Parameters.FindRef(NPCActionKeys::Key_TargetLoc),
+        *Action.Parameters.FindRef(NPCActionKeys::Key_TargetPoi), // 목적지가 다른 POI Move 를 중복으로 오인하지 않게
         *Action.Parameters.FindRef(NPCActionKeys::Key_Item),
         *Action.Parameters.FindRef(NPCActionKeys::Key_Style));
 }

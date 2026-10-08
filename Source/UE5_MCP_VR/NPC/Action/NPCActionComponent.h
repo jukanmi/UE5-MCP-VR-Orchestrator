@@ -185,6 +185,9 @@ public:
     /** Track 지속 추적 중인지 — 액션은 즉시 완료되지만 따라가는 중이라 Idle 이 아니다. */
     bool IsTracking() const { return TrackedTarget.IsValid(); }
 
+    /** 파티원이면 플레이어 지속 추적을 (재)개시한다 — 합류 직후·전투 종료 후 공용. 비멤버·플레이어 사망·이미 추적 중이면 무동작. */
+    void ResumePartyTracking();
+
     // ============================================================================
     // Jev daily — 비전투 일상 활동 (SPEC_jev_daily). 요청·세대·워치독은 컨트롤러, 풀·조립·주입·선점은 여기.
     // ============================================================================
@@ -357,6 +360,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteMove(FVector Location, AActor* TargetActor, EMoveType SpeedType = EMoveType::Walk,
                      ETacticalMoveState TacticalState = ETacticalMoveState::Default);
+
+    /** Move 의 target_poi 경로 — UPOIManager 로 PoiId → 위치를 풀고 NavMesh 투영 후 POI 의 도착 반경으로 BaseMove.
+     *  미등록 id·투영 실패는 경고 로그만 남기고 이동하지 않는다(bActionAwaitingAsync 미설정 → 호출측이 즉시 완료 처리). */
+    void ExecuteMoveToPoi(const FString& PoiId, EMoveType SpeedType);
 
     // ============================================================================
     // [전술 위치 결정 파이프라인 API]
@@ -825,5 +832,16 @@ public:
     /** 자세 해제(앉기/눕기 → 기립). 현재 자세 플래그가 몽타주를 결정하며, 서 있으면 무동작. */
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteStandUp();
+
+    // ----------------------------------------------------------------------------
+    // [7] Party
+    // ----------------------------------------------------------------------------
+    /** 파티 합류 — UPartySubsystem::Join 위임. 정원이 차면 거절(경고 로그 후 그대로 완료, 실패 채널은 없다). */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteJoinParty();
+
+    /** 파티 해산 — UPartySubsystem::Leave 위임. 멤버가 아니면 무동작. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteLeaveParty();
 
 };

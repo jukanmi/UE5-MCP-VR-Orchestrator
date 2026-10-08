@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISightTargetInterface.h"
 #include "NativeGameplayTags.h"
 #include "Core/Types/PlayerGameplayTags.h"
 #include "HeadMountedDisplayTypes.h"
@@ -20,26 +21,25 @@ class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
 class UVRPlayerUIComponent;
-class UHUDPanelUIComponent;
-class UChatPanelUIComponent;
-class UItemTooltipUIComponent;
 class UVRMeleeComponent;
+class UVRBodyMeasureComponent;
 class USphereComponent;
 class UVRHandComponent;
 class AKineticProjectile;
 class UWidgetComponent;
-class UWidgetInteractionComponent;
 class UStaticMeshComponent;
 class ADroppedItemBase;
 struct FItemData;
 
-/** VR 자세 — HMD Z 높이 비율로 판정. AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. */
+/** VR 자세 — HMD 높이 비율(서기·쭈그리기·엎드리기) + HMD 피치와 높이 구간(허리 숙이기)으로 판정.
+ *  AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. 기존 값 번호 유지를 위해 Bending 은 끝에 추가. */
 UENUM(BlueprintType)
 enum class EVRPosture : uint8
 {
     Standing  UMETA(DisplayName = "Standing"),
     Crouching UMETA(DisplayName = "Crouching"),
-    Prone     UMETA(DisplayName = "Prone")
+    Prone     UMETA(DisplayName = "Prone"),
+    Bending   UMETA(DisplayName = "Bending")
 };
 
 /** 자세 전이 알림용 델리게이트 — AnimBP·UI 등이 폴링 대신 이 이벤트로 반응. */
@@ -66,7 +66,7 @@ class UCapsuleComponent;
  *  - A버튼 → DetectNearbyNPC (반경 500cm 중 최근접)
  */
 UCLASS()
-class UE5_MCP_VR_API AVRPawn : public ACharacter, public IPlayerBase
+class UE5_MCP_VR_API AVRPawn : public ACharacter, public IPlayerBase, public IAISightTargetInterface
 {
     GENERATED_BODY()
 
@@ -139,76 +139,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     UInventoryComponent* Inventory;
 
-    // ── UI — 로직·상태는 UVRPlayerUIComponent, 위젯을 띄우는 장면 컴포넌트는 컨트롤러·카메라에 붙어야 해서 여기 ──
+    // ── UI — 위젯 패널·포인터·이름표의 생성·상태·튜닝값은 전부 UVRPlayerUIComponent 가 갖는다. 폰은 입력을 넘기고 질의만 한다 ──
 
-    /** 왼손 패널·채팅·포인터·이름표의 로직과 위젯 클래스. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     UVRPlayerUIComponent* PlayerUI;
 
-    /** HUD 를 3D 공간에 띄우는 위젯 컴포넌트 — 왼손 컨트롤러 부착.
-     *  AddToViewport 는 VR 에서 쓰면 안 된다: OpenXR 은 양안을 한 장의 스테레오 타깃에
-     *  렌더하고 Slate 오버레이는 그 위에 한 번만 합성되므로, 화면 공간 위젯은 한쪽 눈에만
-     *  뜨거나 좌우로 늘어져 보인다. 월드 공간 위젯은 씬과 같이 양안 렌더되어 정상. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UHUDPanelUIComponent* HUDWidgetComp;
-
-    /** 채팅 패널 — VRCamera 에 부착된 월드공간 위젯. 카메라를 따라 움직이므로 시야에
-     *  고정되어 보이지만(화면 UI처럼), 씬과 같이 양안 렌더되어 HUDWidgetComp 와 같은
-     *  이유로 AddToViewport 문제를 피한다. 손 패널과 달리 상시 표시가 아니라
-     *  Enter 로 열고 포커스를 잃으면 닫는다(UVRPlayerUIComponent). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Chat")
-    UChatPanelUIComponent* ChatWidgetComp;
-
-    /** 채팅 패널의 카메라 기준 로컬 오프셋(cm) — 정면 아래쪽에 배치. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
-    FVector ChatPanelOffset = FVector(80.f, 0.f, -15.f);
-
-    /** 채팅 패널 가상 캔버스 해상도(px). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat")
-    FVector2D ChatPanelDrawSize = FVector2D(500.f, 260.f);
-
-    /** 채팅 패널 월드 스케일. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Chat", meta = (ClampMin = "0.01", ClampMax = "1.0"))
-    float ChatPanelScale = 0.08f;
-
-    /** 오른손 UI 포인터 — 왼손 패널의 슬롯을 조준·클릭. 월드 공간 위젯은 마우스가 없으므로
-     *  이 컴포넌트가 광선을 쏴 가상 포인터 이벤트로 변환한다. 없으면 패널이 보이기만 하고
-     *  아무것도 눌리지 않는다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UWidgetInteractionComponent* HUDInteractor;
-
-    /** 포인터 광선 메시 — 조준 방향으로 뻗는 가는 원통. WidgetInteraction 의 bShowDebug 는
-     *  DrawDebug 라 Shipping 빌드에서 통째로 컴파일 제외되므로, 출시본에도 남는 실메시로 그린다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UStaticMeshComponent* PointerBeam;
-
-    /** 광선이 실제로 맞은 지점에 놓이는 작은 구. 맞은 게 없으면 숨는다 —
-     *  광선 끝이 허공이면 "지금 아무것도 안 겨눴다"가 그 자체로 표시된다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UStaticMeshComponent* PointerDot;
-
-    /** 아이템 이름표 — 월드에 떨어진 아이템 위에 뜬다. 아이템마다 위젯을 달면 개수만큼
-     *  틱이 늘어나므로, 폰이 하나만 들고 대상만 바꿔 옮겨 쓴다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-    UItemTooltipUIComponent* ItemTooltipComp;
-
-    /** 패널의 왼손 컨트롤러 기준 위치(cm). 손등 위쪽에 얹히는 값이 기본. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector HUDPanelLocation = FVector(4.f, 0.f, 12.f);
-
-    /** 위젯 가상 캔버스 해상도(px). 실제 월드 크기는 이 값 × HUDPanelScale(1px=1cm 기준).
-     *  세로는 인벤토리 패널(350px)과 상태 패널(게이지+채팅 로그+입력창, 292px)이 함께 들어갈
-     *  만큼 필요하다 — 모자라면 인벤토리를 연 순간 아래쪽이 캔버스 밖으로 잘려 나간다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-    FVector2D HUDPanelDrawSize = FVector2D(600.f, 660.f);
-
-    /** 패널 월드 스케일. 기본값은 600x660px → 약 24x26cm (손에 들린 태블릿 크기). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "0.01", ClampMax = "1.0"))
-    float HUDPanelScale = 0.04f;
-
-    /** UI 포인터 광선 길이(cm). 손 패널까지만 닿으면 되므로 짧게. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "20.0", ClampMax = "500.0"))
-    float HUDInteractionDistance = 150.f;
+    /** 신체 측정 상태기계(설정 화면의 측정 버튼으로 시작, 왼손 X 로 단계 진행) — 저장한 키가 있으면 시작 때 자동 캘리브레이션 대신 쓴다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
+    UVRBodyMeasureComponent* BodyMeasure;
 
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
@@ -250,6 +188,14 @@ public:
     /** 왼손 Y버튼 → 인벤토리 HUD 열기/닫기 토글 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_InventoryToggle;
+
+    /** 왼손 Menu 버튼 → 메뉴 열기/닫기 토글 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_MenuToggle;
+
+    /** 왼손 X버튼 → 신체 측정 중 지금 단계 값을 잰다. 측정 중이 아니면 무시. 메뉴 입력 차단과 무관하게 항상 받는다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_BodyMeasureCapture;
 
     /** 오른손 B버튼 → 대쉬. 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -381,7 +327,30 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "0.6"))
     float ProneRatioUp = 0.45f;
 
-    /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. */
+    /** Standing → Bending 진입 HMD 피치 하향 각도(도). 이 각도 이상 숙이고 높이도 허리 숙이기 구간이어야 진입. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "80.0"))
+    float BendPitchDownDeg = 30.f;
+
+    /** Bending → Standing 복귀 피치 하향 각도(도). BendPitchDownDeg 보다 작아야 데드존이 생긴다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "5.0", ClampMax = "70.0"))
+    float BendPitchUpDeg = 20.f;
+
+    /** Standing → Bending 진입 높이 비율 상한. 쭈그리기 진입(StandingRatioDown) 이상 ~ 이 값 미만에서만 허리 숙이기.
+     *  서서 고개만 숙이면 비율이 거의 안 내려가 이 값 이상에 머물러 Standing 으로 남는다.
+     *  StandingRatioDown < BendRatioMax < BendRatioMaxUp 이어야 함. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
+    float BendRatioMax = 0.88f;
+
+    /** Bending → Standing 복귀 높이 비율. BendRatioMax 보다 커야 데드존이 생긴다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
+    float BendRatioMaxUp = 0.91f;
+
+    /** 허리 숙이기 걷기 속도 = WalkSpeed × 이 값. 서기(1.0)와 쭈그리기(CrouchSpeed/WalkSpeed) 사이. 전력질주 중엔 적용 안 함. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "1.0"))
+    float BendSpeedRatio = 0.75f;
+
+    /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. 엎드리기 캡슐은 눕히지 않고 이 높이의 수직 캡슐로 둔다
+     *  (캡슐이 HMD 높이를 따라 연속으로 줄어들어 바닥·천장 스윕으로 침투를 막는다). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "60.0"))
     float MinCapsuleHalfHeight = 22.f;
 
@@ -406,6 +375,34 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
     FOnVRPostureChanged OnPostureChanged;
 
+    /** 은신 기준 시야 거리(cm) — 자세 계수를 곱해 적·NPC 가 이 자세의 플레이어를 보는 최대 거리를 정한다.
+     *  서 있을 땐 제한 없음(관찰자 자신의 SightRadius 만 적용). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "100.0"))
+    float StealthReferenceRange = 3000.f;
+
+    /** 허리 숙이기 시야 거리 계수. 서기(제한 없음) > 허리 숙이기 > 쭈그리기 > 엎드리기 순이어야 한다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorBending = 0.8f;
+
+    /** 쭈그리기 시야 거리 계수. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorCrouching = 0.6f;
+
+    /** 엎드리기 시야 거리 계수. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float StealthFactorProne = 0.35f;
+
+    /** 현재 자세에서 적·NPC 가 플레이어를 볼 수 있는 최대 거리(cm). 0 이하면 제한 없음(서기). */
+    UFUNCTION(BlueprintPure, Category = "VR|Stealth")
+    float GetStealthSightRange() const;
+
+    /** 시야 판정 단일 진입점 — AI 퍼셉션(적·NPC 공용)이 플레이어를 볼 때 호출. 자세별 거리 제한 후 시선 차단 검사. */
+    virtual UAISense_Sight::EVisibilityResult CanBeSeenFrom(
+        const FCanBeSeenFromContext& Context, FVector& OutSeenLocation,
+        int32& OutNumberOfLoSChecksPerformed, int32& OutNumberOfAsyncLosCheckRequested,
+        float& OutSightStrength, int32* UserData = nullptr,
+        const FOnPendingVisibilityQueryProcessedDelegate* Delegate = nullptr) override;
+
     /** 외부 트리거(예: 양손 그립 동시 입력)로 캘리브레이션 재시작. */
     UFUNCTION(BlueprintCallable, Category = "VR|Posture")
     void StartCalibration();
@@ -413,6 +410,12 @@ public:
     /** 현재 HMD가 바닥(=캡슐 발) 기준으로 얼마나 높이 있는지(cm). */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VR|Posture")
     float GetCurrentHMDHeight() const;
+
+    /** 월드 Z 를 바닥(=캡슐 발) 기준 높이(cm)로 바꾼다. GetCurrentHMDHeight 와 같은 좌표계 — 신체 측정이 컨트롤러 높이를 잴 때 쓴다. */
+    float HeightAboveFloor(float WorldZ) const;
+
+    /** 자세 판정 기준 높이를 확정한다(자동 샘플링 중단 + bCalibrated). 저장된 신체 측정값 적용·측정 직후 갱신 공통 경로. */
+    void SetStandingHeight(float Height);
 
     // ============================================================================
     // FBIK Effector — Control Rig 입력용. 모두 몸체 메시(GetMesh()) 컴포넌트 공간.
@@ -443,6 +446,18 @@ public:
     /** 몸(메시) 회전 추종 보간 속도 (0이면 HMD 시선과 즉시 1:1 동기화, >0이면 부드럽게 추종). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0"))
     float BodyRotationInterpSpeed = 0.f;
+
+    /** 키 대비 HMD 높이가 1 줄어들 때마다 눕히는 각도(도). 0.1 낮아지면 이 값의 10% 만큼 앞으로 눕는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "200.0"))
+    float BodyLeanDegPerRatio = 110.f;
+
+    /** 몸 눕힘 상한(도). 90 이면 완전히 수평 — 엎드려도 상체를 든 모양이 되도록 그보다 작게 둔다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float BodyLeanMaxDeg = 68.f;
+
+    /** 현재 몸 눕힘 각도(도, 0 = 수직). 캡슐 보간과 같은 속도(HeightInterpSpeed)로 목표를 따라간다. */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "VR|Body")
+    float BodyLeanDeg = 0.f;
 
     // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
     // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
@@ -523,6 +538,8 @@ private:
     /** Enter 키 — HUD 채팅 칸에 포커스. 입력 중 Enter 는 텍스트박스가 먼저 먹으므로 여기 안 온다. */
     void OnChatKey();
     void OnInventoryToggle(const FInputActionValue& Value);
+    void OnMenuToggle(const FInputActionValue& Value);
+    void OnBodyMeasureCapture(const FInputActionValue& Value);
 
     // --- 로코모션 ---
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */
@@ -533,6 +550,13 @@ private:
 
     /** 아바타 몸(스켈레탈 메시)이 HMD(헤드셋) 시선 Yaw를 항상 바라보도록 정렬 — 매 Tick 호출 */
     void UpdateBodyRotation(float DeltaTime);
+
+    /** 몸 눕힘을 뺀 순수 몸 방향 yaw(= 시선 yaw 추종값). 눕힌 메시 회전에서 yaw 를 역산하면 틀어지므로 따로 들고 있다. */
+    float SmoothedBodyYaw = 0.f;
+
+    /** 메시 원점(발)에서 머리 본까지 높이(cm) — BeginPlay 에 레퍼런스 포즈에서 읽는다. */
+    float HeadBoneHeight = 130.f;
+    bool bBodyYawInit = false;
 
     /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
     float TurnAxisInput = 0.f;
@@ -592,7 +616,7 @@ private:
     void UpdatePosture();
 
     /** 자세 전이 — Enum/태그 갱신 + 이동속도 적용 + OnPostureChanged 브로드캐스트 */
-    void TransitionTo(EVRPosture NewPosture);
+    void TransitionTo(EVRPosture NewPosture, float Ratio, float PitchDownDeg);
 
     /** 매 Tick — 동적 캡슐 리사이즈 + Rising Floor 역보정 (VInterp 스무딩) */
     void UpdateDynamicCapsule(float DeltaTime);
@@ -689,6 +713,9 @@ private:
 public:
     /** 인벤토리 패널이 열려 있는가 — 열림 중엔 트리거·스틱·그립의 뜻이 바뀐다(UI 클릭·슬롯 이동·슬롯 발동). */
     bool IsInventoryOpen() const;
+
+    /** UI(메뉴)가 게임 입력을 막고 있는지 — 이동·회전·공격·잡기·대시·상호작용을 무시한다. */
+    bool IsUIBlockingInput() const;
 
     /** 손 근처 반경 내 최근접 드랍 아이템. 쥐기와 이름표가 같은 판정을 쓰도록 한 곳에 둔다. */
     ADroppedItemBase* FindNearestItemNearHand(float Radius, bool bLeft) const;
