@@ -172,9 +172,28 @@ def test_member_join_dropped_and_non_member_leave_dropped_speech_kept():
     assert [a.type for a in r.actions] == ["LeaveParty"]
 
 
-def test_party_vocab_always_in_prompt_and_stop_semantics():
-    prompt = _stage1_system_prompt()
-    assert "JoinParty" in prompt and "LeaveParty" in prompt and "Stop ONLY" in prompt
+def _stage1_prompt_for(transcript: str, npc: str = "Elara") -> str:
+    from app.agents.subgraphs.dialogue import _run_stage1_llm, _Stage1Context
+
+    fmt = dict(
+        name=npc, role="Healer", traits="kind", speech_style="", memory="None", sentiment="Neutral",
+        story_goal="None", rag_context="None", chat_history="None", inventory="None", valid_targets="Player",
+    )
+    ctx = _Stage1Context(fmt, None, transcript, f"Player said: {transcript}")
+    resp = DialogueResponse(mode="Common", facial="Neutral", speech="안녕", actions=[])
+    with patch("app.agents.subgraphs.dialogue.ollama_structured", new_callable=AsyncMock, return_value=resp) as llm:
+        asyncio.run(_run_stage1_llm(ctx, npc))
+    return llm.await_args.args[0]
+
+
+def test_party_vocab_tail_only_on_invite_dismiss_or_member():
+    assert "JoinParty" not in _stage1_system_prompt()  # 잡담 + 비멤버: 꼬리 없음
+    for text in ("우리 일행에 합류해 줄래?", "이제 해산하자"):
+        prompt = _stage1_prompt_for(text)
+        assert "JoinParty" in prompt and "LeaveParty" in prompt and "Stop ONLY" in prompt
+    STATE.party_members.add("Elara")
+    assert "Stop ONLY" in _stage1_prompt_for("안녕")  # 파티원이면 잡담에도 붙는다
+    assert "Stop ONLY" not in _stage1_prompt_for("안녕", npc="James")  # 다른 NPC 는 아님
 
 
 def _hostile_calls(agent: str, target: str) -> list:
@@ -194,3 +213,191 @@ def test_hostile_affinity_skipped_only_between_party_members():
     assert _hostile_calls("James", "Elara") == []  # 반대 방향도 동일
     assert len(_hostile_calls("Elara", "Player")) == 1  # 플레이어는 집합 밖 — 정상 감점
     assert len(_hostile_calls("Elara", "Goblin")) == 1
+
+
+# ── 서버 의도 매핑 · 파티원 Stop 보호 · 반복 재생성 ───────────────────────────
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("우리 일행에 합류해 줄래", "invite"),
+        ("같이 가자", "invite"),
+        ("함께 가요", "invite"),
+        ("우리 팀에 들어와", "invite"),
+        ("일행에서 빠져 줘", "dismiss"),  # '일행' 이 있어도 해산이 우선
+        ("이제 해산하자", "dismiss"),
+        ("그만 따라와", "dismiss"),
+        ("스팀 켜 줘", ""),  # 단어 일부 '팀'
+        ("파티션 나눠", ""),
+        ("해산물 사 와", ""),
+        ("같이 가져와", ""),
+        ("나 따라와", ""),  # 따라와 는 초대 아님 — Follow 유지
+        ("멈춰", ""),
+        # 어미 변형 — 양성
+        ("같이 가자고 했잖아", "invite"),
+        ("같이 갈까", "invite"),
+        ("같이 가줄래", "invite"),
+        ("같이 갈래?", "invite"),
+        ("일행이 돼 줘", "invite"),
+        ("일행으로 받아줘", "invite"),
+        ("일행에 들어와", "invite"),
+        ("일행 하자", "invite"),
+        ("동료가 돼 줘", "invite"),
+        ("동료로 삼을게", "invite"),
+        ("파티에 들어와", "invite"),
+        ("파티 하자", "invite"),
+        ("팀 하자", "invite"),
+        ("팀이 되자", "invite"),
+        # 명사 단독 · 부정 · 이동 요청 — 음성
+        ("일행이 어디 있어?", ""),
+        ("동료가 필요해", ""),
+        ("합류하지 마", ""),
+        ("일행 안 해", ""),
+        ("같이 가기 싫어", ""),
+        ("같이 가자, 저 상점으로", ""),
+        ("함께 가요 마을로", ""),
+        ("같이 가자 시장에", ""),
+        ("같이 가자 시장까지", ""),
+        ("해산하지 마", ""),
+        ("헤어지기 전에 인사하자", ""),
+        # 해산 청유·명령·의지형 — 양성
+        ("헤어지자", "dismiss"),
+        ("헤어져", "dismiss"),
+        ("헤어질래", "dismiss"),
+        ("헤어지죠", "dismiss"),
+    ],
+)
+def test_detect_party_intent_keywords(text, expected):
+    from app.agents.party_intent import detect_party_intent
+
+    assert detect_party_intent(text) == expected
+
+
+def _intent(resp: DialogueResponse, npc: str, transcript: str, member: bool) -> DialogueResponse:
+    from app.agents.subgraphs.dialogue import _apply_party_intent
+
+    if member:
+        STATE.party_members.add(npc)
+    _apply_party_intent(resp, npc, transcript, "Player")
+    return resp
+
+
+def _follow_player() -> DialogueResponse:
+    from app.schemas.actions import DialogueActionItem
+
+    r = _resp()
+    r.actions = [DialogueActionItem(type="Follow", target="Player")]
+    return r
+
+
+def test_invite_follow_becomes_join_then_hits_affinity_gate():
+    r = _intent(_follow_player(), "Elara", "같이 가자", member=False)
+    assert [a.type for a in r.actions] == ["JoinParty"]
+    r = _gate(r, "Elara", 0)  # 치환된 JoinParty 가 호감도 게이트에서 거절된다
+    assert r.actions == []
+
+    r = _intent(_follow_player(), "James", "나 따라와", member=False)  # 초대 아님 — Follow 유지
+    assert [a.type for a in r.actions] == ["Follow"]
+    assert _intent(_resp(), "Moca", "같이 가자", member=False).actions == []  # 액션 없으면 추가하지 않는다
+
+
+def test_dismiss_member_stop_or_follow_becomes_leave():
+    assert [a.type for a in _intent(_resp("Stop"), "Elara", "해산하자", member=True).actions] == ["LeaveParty"]
+    assert [a.type for a in _intent(_follow_player(), "James", "그만 따라와", member=True).actions] == ["LeaveParty"]
+    # 비멤버는 해산 대상이 아니다 — Stop 그대로
+    assert [a.type for a in _intent(_resp("Stop"), "Moca", "해산하자", member=False).actions] == ["Stop"]
+
+
+def test_member_stop_without_dismiss_keyword_becomes_idle():
+    assert [a.type for a in _intent(_resp("Stop"), "Elara", "멈춰", member=True).actions] == ["Idle"]
+    assert [a.type for a in _intent(_resp("Stop"), "Moca", "멈춰", member=False).actions] == ["Stop"]
+
+
+def test_invite_hint_in_natural_context():
+    from app.agents.interface_input import _PARTY_HINTS
+
+    assert "JoinParty" in _PARTY_HINTS["invite"] and "LeaveParty" in _PARTY_HINTS["dismiss"]
+
+
+def _chat_ctx(chat_history: str):
+    from app.agents.subgraphs.dialogue import _Stage1Context
+
+    fmt = dict(
+        name="Elara", role="Healer", traits="kind", speech_style="", memory="None", sentiment="Neutral",
+        story_goal="None", rag_context="None", chat_history=chat_history, inventory="None", valid_targets="Player",
+    )
+    return _Stage1Context(fmt, None, "hi", "Player said: hi")
+
+
+def _run_with_replies(chat_history: str, *speeches: str):
+    from app.agents.subgraphs.dialogue import _run_stage1_llm
+
+    replies = [DialogueResponse(mode="Common", facial="Neutral", speech=sp, actions=[]) for sp in speeches]
+    with patch("app.agents.subgraphs.dialogue.ollama_structured", new_callable=AsyncMock, side_effect=replies) as llm:
+        resp, _ = asyncio.run(_run_stage1_llm(_chat_ctx(chat_history), "Elara"))
+    return resp, llm
+
+
+def test_repeated_line_triggers_single_retry_with_higher_temperature():
+    history = "Player: 안녕\nElara: 그래, 아직도 남아있어.\nEvent: 무언가 보였다"
+    resp, llm = _run_with_replies(history, "그래 아직도 남아있어!", "어서 와요, 오랜만이네요.")
+    assert llm.await_count == 2 and resp.speech == "어서 와요, 오랜만이네요."
+    first, second = llm.await_args_list
+    assert second.kwargs["temperature"] > first.kwargs["temperature"]
+    assert "직전 문장을 반복하지 말 것" in second.args[1]
+
+
+def test_retry_happens_once_and_nonrepeat_or_short_skips():
+    history = "Player: 안녕\nElara: 그래, 아직도 남아있어."
+    resp, llm = _run_with_replies(history, "그래, 아직도 남아있어.", "그래, 아직도 남아있어.")
+    assert llm.await_count == 2 and resp.speech == "그래, 아직도 남아있어."  # 재호출도 반복이면 그대로
+    _, llm = _run_with_replies(history, "처음 보는 얼굴이군요.")
+    assert llm.await_count == 1
+    _, llm = _run_with_replies("Elara: 네.", "네.")  # 너무 짧은 대사는 검사 제외
+    assert llm.await_count == 1
+
+
+def test_context_string_splits_events_from_dialogue():
+    from app.utils.memory_manager import ConversationMemory, MemoryEntry
+
+    m = ConversationMemory.__new__(ConversationMemory)  # 파일 I/O 없이 entries 만 채운다
+    rows = [("Player", "안녕"), ("Elara", "어서 와요"), ("Event", "좀비가 보였다"), ("Player", "뭐야?"),
+            ("Event", "플레이어가 피격당했다"), ("Elara", "조심해요"), ("Event", "문이 열렸다")]
+    m.entries = [MemoryEntry("t", sp, c) for sp, c in rows]
+    out = m.get_context_string(5).splitlines()
+    # 헤더 포함 전체 5줄(k) 상한 — 대화 2줄 + 헤더 + Event 2줄
+    assert out == ["Player: 뭐야?", "Elara: 조심해요",
+                   "Recent events:", "- 플레이어가 피격당했다", "- 문이 열렸다"]
+    assert len(out) <= 5 and "좀비가 보였다" not in "\n".join(out)  # 2줄 상한 밖의 오래된 Event
+    m.entries = [MemoryEntry("t", "Player", "안녕"), MemoryEntry("t", "Elara", "네")]
+    assert m.get_context_string(5) == "Player: 안녕\nElara: 네"  # Event 없으면 종전과 동일
+
+
+def _hint_context(transcript: str) -> str:
+    from app.agents.interface_input import interface_input_node
+
+    state = {"vr_context": {"player_id": "P", "voice_transcript": transcript, "target_npc_id": "Elara", "timestamp": 0.0},
+             "target_npc": "Elara", "target_npcs": ["Elara"]}
+    return interface_input_node(state)["natural_context"]
+
+
+def test_natural_context_hint_only_on_real_invite():
+    assert "Hint:" in _hint_context("같이 가자") and "JoinParty" in _hint_context("같이 가자")
+    assert "LeaveParty" in _hint_context("이제 헤어지자")
+    assert "Hint:" not in _hint_context("안녕")
+    assert "Hint:" not in _hint_context("같이 가자, 저 상점으로")  # 이동 요청
+
+
+def test_repeat_retry_skips_fallback_and_keeps_original_on_failure():
+    history = "Player: 안녕\nElara: 그래, 아직도 남아있어."
+    from app.agents.subgraphs.dialogue import _run_stage1_llm
+
+    first = DialogueResponse(mode="Common", facial="Neutral", speech="그래, 아직도 남아있어.", actions=[])
+    # 재생성 호출이 예외 — 폴백 없이 즉시 포기(총 2회), 원 응답 유지
+    with patch("app.agents.subgraphs.dialogue.ollama_structured", new_callable=AsyncMock,
+               side_effect=[first, RuntimeError("boom")]) as llm:
+        resp, _ = asyncio.run(_run_stage1_llm(_chat_ctx(history), "Elara", {"stage": "stage1"}))
+    assert llm.await_count == 2 and resp.speech == first.speech
+    retry_log = llm.await_args_list[1].kwargs["log_extra"]
+    assert retry_log["repeat_retry"] is True and retry_log["repeat_discarded_speech"] == first.speech

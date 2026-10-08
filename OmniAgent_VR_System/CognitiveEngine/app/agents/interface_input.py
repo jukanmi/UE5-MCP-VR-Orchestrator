@@ -24,6 +24,7 @@
 import logging
 import re
 import unicodedata
+from .party_intent import detect_party_intent
 from .state import AgentState
 from ..schemas.vr_context import GesPrompt
 from ..utils.id_utils import ci_id_map, ci_get
@@ -258,6 +259,13 @@ def _format_known_pois(vr_context: GesPrompt) -> str:
     )
 
 
+# 파티 의도 사전 힌트 — SLM 은 합류/해산 어휘를 학습하지 못해 서버가 한 문장으로 알려준다(사후 보정은 dialogue).
+_PARTY_HINTS = {
+    "invite": "플레이어가 일행 합류를 청한다. 받아들이면 JoinParty, 거절이면 대사로만",
+    "dismiss": "플레이어가 일행 해산을 청한다. 일행이면 LeaveParty",
+}
+
+
 def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript: str) -> str:
     """GesPrompt + state(perceived/failed/plan) 를 LLM 자연어 컨텍스트 한 문자열로 조합 (LLM 없이).
 
@@ -285,6 +293,9 @@ def _build_natural_context(vr_context: GesPrompt, state: AgentState, transcript:
     natural_context += _format_nearby_furniture(vr_context)
     natural_context += _format_nearby_items(vr_context)
     natural_context += _format_known_pois(vr_context)
+    hint = _PARTY_HINTS.get(detect_party_intent(transcript))
+    if hint:
+        natural_context += f". Hint: {hint}"
 
     return natural_context
 
