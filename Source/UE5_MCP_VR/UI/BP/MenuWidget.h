@@ -46,7 +46,7 @@ struct FMenuPartyEntry
  *  - 지도(`MapGroup`): `MapCanvas`(고정 크기 패널) 안의 `MapImage`·`PlayerMarker`·`PlayerHeadingMarker`·`QuestMarker`, `MapBackButton`
  *  - 파티(`PartyGroup`): `PartyList`(세로 상자, 줄은 코드가 만든다)·`PartyEmptyText`, `PartyBackButton`
  *  - 퀘스트(`QuestGroup`): `QuestMainText`·`QuestSideText`, `QuestBackButton`
- *  - 설정(`SettingsGroup`): `VolumeSlider`·`VolumeValueText`·`CalibrationButton`(자리, 비활성)·`BackButton`
+ *  - 설정(`SettingsGroup`): `VolumeSlider`·`VolumeValueText`·`CalibrationButton`(+ 안의 `CalibrationButtonLabel`, 선택 `CalibrationGuideText`)·`BackButton`
  * 위젯은 상태를 소유하지 않는다: 눌림·값 변경은 델리게이트로만 알리고, 열고 닫기·저장·데이터 공급은 UVRPlayerUIComponent 가 한다.
  * 화면 전환(메인 ↔ 각 화면)만 위젯이 직접 한다 — 화면 안의 표시 상태라 게임 상태가 아니다.
  */
@@ -63,6 +63,16 @@ public:
     /** 볼륨 슬라이더를 사용자가 움직였을 때(선형 0~1). SetVolumeValue 로 넣은 값은 알리지 않는다. */
     UPROPERTY(BlueprintAssignable, Category = "Menu")
     FOnMenuVolumeChanged OnVolumeChanged;
+
+    /** 신체 측정 버튼 눌림 — 시작/취소 판단은 받는 쪽이 한다. */
+    UPROPERTY(BlueprintAssignable, Category = "Menu")
+    FOnMenuAction OnCalibrationRequested;
+
+    /** 측정 버튼 글자(짧게: 신체 측정 / 취소 / 다시 측정). 버튼 안 `CalibrationButtonLabel` 이 없으면 무시. */
+    void SetCalibrationLabel(const FText& Label);
+
+    /** 측정 안내 텍스트. 비면 숨긴다(Collapsed). 없으면 측정 버튼 바로 아래에 처음 필요할 때 만든다. */
+    void SetCalibrationGuide(const FText& Guide);
 
     /** 메인 화면을 보인다. 메뉴를 열 때마다 여기서 시작한다. */
     UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -120,9 +130,17 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     UButton* QuestBackButton = nullptr;
 
-    /** 신체 측정 진입 자리 — 측정 기능이 생길 때까지 비활성(SPEC_body_measure_prone M2). */
+    /** 신체 측정 시작/취소 버튼(SPEC_body_measure_prone M2). */
     UPROPERTY(meta = (BindWidgetOptional))
     UButton* CalibrationButton = nullptr;
+
+    /** 측정 버튼 안의 글자. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* CalibrationButtonLabel = nullptr;
+
+    /** 측정 안내 글 — WBP 에 두면 그걸 쓰고, 없으면 측정 버튼 아래에 런타임으로 만든다. */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* CalibrationGuideText = nullptr;
 
     UPROPERTY(meta = (BindWidgetOptional))
     USlider* VolumeSlider = nullptr;
@@ -183,6 +201,11 @@ private:
     void HandleSettingsClicked();
     UFUNCTION()
     void HandleBackClicked();
+    UFUNCTION()
+    void HandleCalibrationClicked();
+
+    /** 안내 글 위젯이 WBP 에 없으면 측정 버튼 바로 아래(같은 세로 상자)에 어두운 반투명 상자째 만든다. 한 번만. */
+    void EnsureGuideWidget();
 
     UFUNCTION()
     void HandleVolumeSliderChanged(float Value);
@@ -194,6 +217,12 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<UImage>> PartyMarkers;
+
+    /** 런타임으로 만든 안내 상자(글을 감싼 테두리). WBP 의 안내 글을 쓰면 null. */
+    UPROPERTY(Transient)
+    TObjectPtr<UWidget> GuideBox;
+
+    bool bGuideBuilt = false;
 
     EMenuScreen CurrentScreen = EMenuScreen::Main;
 };

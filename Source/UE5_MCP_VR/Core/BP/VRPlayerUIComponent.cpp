@@ -5,6 +5,7 @@
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
 #include "Core/BP/VRPawn.h"
+#include "Core/BP/VRBodyMeasureComponent.h"
 #include "Core/Utils/EngineShapes.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
@@ -165,6 +166,12 @@ void UVRPlayerUIComponent::Init()
         {
             MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
             MenuWidget->OnVolumeChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuVolumeChanged);
+            MenuWidget->OnCalibrationRequested.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuCalibration);
+            if (Pawn->BodyMeasure)
+            {
+                Pawn->BodyMeasure->OnTextChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnBodyMeasureText);
+                Pawn->BodyMeasure->ShowIdle();   // 저장값이 있으면 버튼 글·요약을 처음부터 보인다
+            }
         }
     }
 
@@ -267,6 +274,7 @@ void UVRPlayerUIComponent::ToggleMenu()
     CloseInventory();   // 포인터·슬롯 입력 규칙이 겹치지 않게 인벤토리는 먼저 닫는다
     bMenuOpen = true;
     MenuWidget->ShowMain();   // 항상 메인 화면에서 시작
+    if (Pawn->BodyMeasure) Pawn->BodyMeasure->ShowIdle();   // 지난 측정의 결과·실패 글을 지우고 저장값 요약으로
     MenuPanel->Open();
     SyncPointer();
 }
@@ -275,6 +283,7 @@ void UVRPlayerUIComponent::CloseMenu()
 {
     if (!bMenuOpen) return;
     bMenuOpen = false;
+    if (AVRPawn* Pawn = GetPawn(); Pawn && Pawn->BodyMeasure) Pawn->BodyMeasure->Cancel();   // 측정은 메뉴가 열린 동안만
     if (MenuPanel) MenuPanel->Close();
     SaveSettings();
     SyncPointer();
@@ -283,6 +292,21 @@ void UVRPlayerUIComponent::CloseMenu()
 void UVRPlayerUIComponent::OnMenuResume()
 {
     CloseMenu();
+}
+
+void UVRPlayerUIComponent::OnMenuCalibration()
+{
+    AVRPawn* Pawn = GetPawn();
+    if (!Pawn || !Pawn->BodyMeasure) return;
+    if (Pawn->BodyMeasure->IsMeasuring()) Pawn->BodyMeasure->Cancel();
+    else                                  Pawn->BodyMeasure->Start();
+}
+
+void UVRPlayerUIComponent::OnBodyMeasureText(const FText& Guide, const FText& ButtonLabel)
+{
+    if (!MenuWidget) return;
+    MenuWidget->SetCalibrationLabel(ButtonLabel);
+    MenuWidget->SetCalibrationGuide(Guide);
 }
 
 // ============================================================================

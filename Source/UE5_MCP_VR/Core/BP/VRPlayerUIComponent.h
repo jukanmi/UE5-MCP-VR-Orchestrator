@@ -211,6 +211,14 @@ private:
     UFUNCTION()
     void OnMenuVolumeChanged(float Volume);
 
+    /** 설정 화면의 측정 버튼 — 측정 중이면 취소, 아니면 시작. 상태는 UVRBodyMeasureComponent 가 갖는다. */
+    UFUNCTION()
+    void OnMenuCalibration();
+
+    /** 측정 상태기계의 안내·버튼 글을 메뉴 위젯에 밀어 넣는다. */
+    UFUNCTION()
+    void OnBodyMeasureText(const FText& Guide, const FText& ButtonLabel);
+
     /** 메뉴가 열려 있는 동안 현재 화면에 필요한 데이터를 위젯에 밀어 넣는다(Update 가 부른다). */
     void UpdateMenuInfo();
 

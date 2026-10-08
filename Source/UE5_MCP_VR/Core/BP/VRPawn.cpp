@@ -1,6 +1,7 @@
 #include "Core/BP/VRPawn.h"
 #include "Core/BP/VRHandComponent.h"
 #include "Core/BP/VRPlayerUIComponent.h"
+#include "Core/BP/VRBodyMeasureComponent.h"
 #include "Core/Debug/VRCheatManager.h"
 #include "Core/BP/VRMeleeComponent.h"
 #include "Core/Utils/GameplayTagUtils.h"
@@ -116,6 +117,7 @@ AVRPawn::AVRPawn()
     HandRight->GripOffset = FRotator(0.f, 0.f, -90.f);
 
     PlayerUI = CreateDefaultSubobject<UVRPlayerUIComponent>(TEXT("PlayerUI"));
+    BodyMeasure = CreateDefaultSubobject<UVRBodyMeasureComponent>(TEXT("BodyMeasure"));
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -287,6 +289,14 @@ void AVRPawn::Tick(float DeltaTime)
 // 자세 시스템 — 캘리브레이션 / 자세 판정 / 동적 캡슐
 // ============================================================================
 
+void AVRPawn::SetStandingHeight(float Height)
+{
+    GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
+    GetWorldTimerManager().ClearTimer(CalibrationFinishTimer);
+    CalibratedStandingHeight = Height;
+    bCalibrated = true;
+}
+
 void AVRPawn::StartCalibration()
 {
     // 진행 중 타이머가 있으면 정리
@@ -321,6 +331,17 @@ void AVRPawn::FinishCalibration()
 {
     GetWorldTimerManager().ClearTimer(CalibrationSampleTimer);
 
+    // 신체 측정으로 저장한 키가 있으면 평균 대신 그 값을 기준 높이로 확정한다. 확정 시점은 자동 캘리브레이션과 같다 —
+    // 대기 시간 동안은 bCalibrated=false 라 HMD 트래킹이 안정되기 전의 값으로 캡슐·자세가 흔들리지 않는다.
+    float SavedHeight = 0.f;
+    if (BodyMeasure && BodyMeasure->GetSavedHeight(SavedHeight))
+    {
+        CalibratedStandingHeight = SavedHeight;
+        bCalibrated = true;
+        UE_LOG(LogTemp, Log, TEXT("[VRPawn] 저장된 신체 측정 키 사용 = %.1f cm"), SavedHeight);
+        return;
+    }
+
     if (CalibrationSampleCount > 0)
     {
         CalibratedStandingHeight = CalibrationAccum / CalibrationSampleCount;
@@ -345,7 +366,12 @@ float AVRPawn::GetCurrentHMDHeight() const
 
     // 캡슐 발 기준 절대 높이 = 카메라 월드 Z - 액터 월드 Z + 캡슐 절반 높이.
     // 액터 피벗이 캡슐 정중앙이므로, 발은 액터Z - HalfHeight 에 있다.
-    return VRCamera->GetComponentLocation().Z - GetActorLocation().Z + InterpedCapsuleHalfHeight;
+    return HeightAboveFloor(VRCamera->GetComponentLocation().Z);
+}
+
+float AVRPawn::HeightAboveFloor(float WorldZ) const
+{
+    return WorldZ - GetActorLocation().Z + InterpedCapsuleHalfHeight;
 }
 
 // ----------------------------------------------------------------------------
@@ -512,6 +538,8 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         if (IA_Interact)      EIC->BindAction(IA_Interact,      ETriggerEvent::Started,   this, &AVRPawn::OnInteract);
         if (IA_InventoryToggle) EIC->BindAction(IA_InventoryToggle, ETriggerEvent::Started, this, &AVRPawn::OnInventoryToggle);
         if (IA_MenuToggle)      EIC->BindAction(IA_MenuToggle,      ETriggerEvent::Started, this, &AVRPawn::OnMenuToggle);
+        if (IA_BodyMeasureCapture) EIC->BindAction(IA_BodyMeasureCapture, ETriggerEvent::Started, this, &AVRPawn::OnBodyMeasureCapture);
+        else UE_LOG(LogTemp, Warning, TEXT("[VRPawn] IA_BodyMeasureCapture 가 비어 있어 신체 측정 단계가 넘어가지 않는다 — BP_VRPawn 에 지정하라"));
         if (IA_Dash)            EIC->BindAction(IA_Dash,            ETriggerEvent::Started, this, &AVRPawn::OnDash);
         if (IA_Grab)
         {
@@ -945,6 +973,12 @@ void AVRPawn::OnInventoryToggle(const FInputActionValue& /*Value*/)
 void AVRPawn::OnMenuToggle(const FInputActionValue& /*Value*/)
 {
     if (PlayerUI) PlayerUI->ToggleMenu();
+}
+
+void AVRPawn::OnBodyMeasureCapture(const FInputActionValue& /*Value*/)
+{
+    // IsUIBlockingInput 으로 막지 않는다 — 측정은 메뉴가 열려 있는 동안에만 돌고, 측정 중이 아니면 Capture 가 무시한다.
+    if (BodyMeasure) BodyMeasure->Capture();
 }
 
 bool AVRPawn::IsUIBlockingInput() const

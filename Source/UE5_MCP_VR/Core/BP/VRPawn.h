@@ -21,6 +21,7 @@ class USkeletalMeshComponent;
 class UInventoryComponent;
 class UVRPlayerUIComponent;
 class UVRMeleeComponent;
+class UVRBodyMeasureComponent;
 class USphereComponent;
 class UVRHandComponent;
 class AKineticProjectile;
@@ -140,6 +141,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     UVRPlayerUIComponent* PlayerUI;
 
+    /** 신체 측정 상태기계(설정 화면의 측정 버튼으로 시작, 왼손 X 로 단계 진행) — 저장한 키가 있으면 시작 때 자동 캘리브레이션 대신 쓴다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
+    UVRBodyMeasureComponent* BodyMeasure;
+
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
     // ============================================================================
@@ -184,6 +189,10 @@ public:
     /** 왼손 Menu 버튼 → 메뉴 열기/닫기 토글 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
     UInputAction* IA_MenuToggle;
+
+    /** 왼손 X버튼 → 신체 측정 중 지금 단계 값을 잰다. 측정 중이 아니면 무시. 메뉴 입력 차단과 무관하게 항상 받는다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    UInputAction* IA_BodyMeasureCapture;
 
     /** 오른손 B버튼 → 대쉬. 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -348,6 +357,12 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VR|Posture")
     float GetCurrentHMDHeight() const;
 
+    /** 월드 Z 를 바닥(=캡슐 발) 기준 높이(cm)로 바꾼다. GetCurrentHMDHeight 와 같은 좌표계 — 신체 측정이 컨트롤러 높이를 잴 때 쓴다. */
+    float HeightAboveFloor(float WorldZ) const;
+
+    /** 자세 판정 기준 높이를 확정한다(자동 샘플링 중단 + bCalibrated). 저장된 신체 측정값 적용·측정 직후 갱신 공통 경로. */
+    void SetStandingHeight(float Height);
+
     // ============================================================================
     // FBIK Effector — Control Rig 입력용. 모두 몸체 메시(GetMesh()) 컴포넌트 공간.
     // Control Rig가 컴포넌트 공간에서 풀므로, AnimBP는 이 값을 Target 핀에 직결만 하면 됨.
@@ -458,6 +473,7 @@ private:
     void OnChatKey();
     void OnInventoryToggle(const FInputActionValue& Value);
     void OnMenuToggle(const FInputActionValue& Value);
+    void OnBodyMeasureCapture(const FInputActionValue& Value);
 
     // --- 로코모션 ---
     /** HMD XY 투영을 캡슐 위치와 동기화 — 매 Tick 호출 */

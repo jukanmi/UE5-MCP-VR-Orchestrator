@@ -1,6 +1,7 @@
 #include "UI/BP/MenuWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -53,8 +54,12 @@ void UMenuWidget::NativeConstruct()
 
     for (UImage* Dot : { PlayerMarker, PlayerHeadingMarker, QuestMarker }) StyleMapDot(Dot);
 
-    // 신체 측정은 아직 없다 — 자리만 보이고 눌리지 않는다.
-    if (CalibrationButton) CalibrationButton->SetIsEnabled(false);
+    if (CalibrationButton)
+    {
+        CalibrationButton->SetIsEnabled(true);
+        CalibrationButton->OnClicked.AddUniqueDynamic(this, &UMenuWidget::HandleCalibrationClicked);
+    }
+    EnsureGuideWidget();
 
     ShowMain();
 }
@@ -79,6 +84,68 @@ void UMenuWidget::SetVolumeValue(float Volume)
 void UMenuWidget::RefreshVolumeText(float Volume)
 {
     if (VolumeValueText) VolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Volume * 100.f))));
+}
+
+void UMenuWidget::EnsureGuideWidget()
+{
+    if (bGuideBuilt) return;
+    bGuideBuilt = true;
+    if (CalibrationGuideText)
+    {
+        CalibrationGuideText->SetVisibility(ESlateVisibility::Collapsed);   // WBP 가 둔 것 — 비어 있는 동안 숨긴다
+        return;
+    }
+    if (!CalibrationButton || !WidgetTree) return;
+
+    // 측정 버튼을 품은 가장 가까운 세로 상자를 찾아 버튼(또는 버튼을 감싼 위젯) 바로 뒤에 끼운다.
+    UWidget* Anchor = CalibrationButton;
+    while (Anchor->GetParent() && !Cast<UVerticalBox>(Anchor->GetParent())) Anchor = Anchor->GetParent();
+    UVerticalBox* Column = Cast<UVerticalBox>(Anchor->GetParent());
+    if (!Column)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MenuWidget] 측정 버튼이 세로 상자 안에 없어 안내 글을 못 붙인다 — WBP 에 CalibrationGuideText 를 두라"));
+        return;
+    }
+
+    // 어두운 반투명 둥근 상자 + 흰 글자, 가운데 정렬·자동 줄바꿈. 평소엔 Collapsed.
+    UBorder* Box = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    FSlateBrush BoxBrush;
+    BoxBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+    BoxBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+    BoxBrush.OutlineSettings.CornerRadii = FVector4(8.f, 8.f, 8.f, 8.f);
+    Box->SetBrush(BoxBrush);
+    Box->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.65f));
+    Box->SetPadding(FMargin(12.f, 8.f));
+
+    UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    Text->SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 26));
+    Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+    Text->SetJustification(ETextJustify::Center);
+    Text->SetAutoWrapText(true);
+    Box->SetContent(Text);
+    Box->SetVisibility(ESlateVisibility::Collapsed);
+
+    if (UVerticalBoxSlot* BoxSlot = Cast<UVerticalBoxSlot>(Column->InsertChildAt(Column->GetChildIndex(Anchor) + 1, Box)))
+    {
+        BoxSlot->SetHorizontalAlignment(HAlign_Fill);
+        BoxSlot->SetPadding(FMargin(0.f, 10.f));
+    }
+    CalibrationGuideText = Text;
+    GuideBox = Box;
+}
+
+void UMenuWidget::SetCalibrationLabel(const FText& Label)
+{
+    if (CalibrationButtonLabel) CalibrationButtonLabel->SetText(Label);
+}
+
+void UMenuWidget::SetCalibrationGuide(const FText& Guide)
+{
+    EnsureGuideWidget();
+    if (!CalibrationGuideText) return;
+    CalibrationGuideText->SetText(Guide);
+    UWidget* Root = GuideBox ? GuideBox.Get() : static_cast<UWidget*>(CalibrationGuideText);
+    Root->SetVisibility(Guide.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
 }
 
 void UMenuWidget::SetQuestInfo(const FString& MainText, const FString& SideText)
@@ -173,6 +240,7 @@ void UMenuWidget::HandlePartyClicked()    { ShowScreen(EMenuScreen::Party); }
 void UMenuWidget::HandleQuestClicked()    { ShowScreen(EMenuScreen::Quest); }
 void UMenuWidget::HandleSettingsClicked() { ShowScreen(EMenuScreen::Settings); }
 void UMenuWidget::HandleBackClicked()     { ShowMain(); }
+void UMenuWidget::HandleCalibrationClicked() { OnCalibrationRequested.Broadcast(); }
 
 void UMenuWidget::HandleVolumeSliderChanged(float Value)
 {
