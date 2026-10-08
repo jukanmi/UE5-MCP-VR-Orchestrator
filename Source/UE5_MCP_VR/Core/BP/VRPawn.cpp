@@ -24,6 +24,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "NativeGameplayTags.h"
 #include "Perception/AISense_Sight.h"
+#include "AnimationRuntime.h"
+#include "Engine/SkeletalMesh.h"
 #include "Perception/AISense_Hearing.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/DamageEvents.h"
@@ -199,7 +201,25 @@ void AVRPawn::BeginPlay()
     // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
     if (PlayerUI) PlayerUI->Init();
 
-    if (GetMesh()) MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+    if (GetMesh())
+    {
+        MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+
+        // 눕힘 피벗(발) → 머리 본 높이 — 레퍼런스 포즈 기준. 몸을 눕혔을 때 머리 본이 HMD 아래 목 위치에 오도록 발을 빼는 거리 계산에 쓴다.
+        if (const USkeletalMesh* Asset = GetMesh()->GetSkeletalMeshAsset())
+        {
+            const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+            const int32 HeadIndex = Ref.FindBoneIndex(TEXT("Head"));
+            if (HeadIndex != INDEX_NONE)
+            {
+                HeadBoneHeight = FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, HeadIndex).GetLocation().Z;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 몸 메시에 Head 본이 없어 눕힘 기준 높이 %.0fcm 기본값을 쓴다"), HeadBoneHeight);
+            }
+        }
+    }
 
     if (HandLeft)  HandLeft->InitPhysics();
     if (HandRight) HandRight->InitPhysics();
@@ -489,7 +509,11 @@ void AVRPawn::UpdateBodyPlacement()
     const FTransform Eye = VRCamera->GetComponentTransform();
     const FVector Neck = Eye.GetLocation() + Eye.GetRotation().RotateVector(EyeToNeckOffset);
     const FVector Current = Body->GetComponentLocation();
-    Body->SetWorldLocation(FVector(Neck.X, Neck.Y, Current.Z));
+
+    // 눕힌 만큼 머리 본이 앞으로 나가므로 발(메시 원점)을 시선 반대로 빼 서 있을 때와 같은 수평 위치에 머리 본을 둔다.
+    const float Setback = HeadBoneHeight * Body->GetComponentScale().Z * FMath::Sin(FMath::DegreesToRadians(BodyLeanDeg));
+    const FVector Facing = FRotator(0.f, SmoothedBodyYaw, 0.f).Vector();
+    Body->SetWorldLocation(FVector(Neck.X - Facing.X * Setback, Neck.Y - Facing.Y * Setback, Current.Z));
 }
 
 float AVRPawn::GetStealthSightRange() const
@@ -859,24 +883,51 @@ void AVRPawn::UpdateBodyRotation(float DeltaTime)
 {
     if (!VRCamera || !GetMesh()) return;
 
-    // 착석 중에는 의자 방향을 유지하고 고개만 회전
-    if (SeatedFurniture.IsValid()) return;
+    // 착석 중에는 의자 방향을 유지하고 고개만 회전. 눕혀 있었다면 수직으로 되돌린다.
+    if (SeatedFurniture.IsValid())
+    {
+        if (BodyLeanDeg > KINDA_SMALL_NUMBER)
+        {
+            // 가구가 액터 yaw 를 돌려 놓았을 수 있으니 낡은 시선 yaw 가 아니라 액터 yaw 기준으로 세운다.
+            BodyLeanDeg = 0.f;
+            SmoothedBodyYaw = GetActorRotation().Yaw;
+            GetMesh()->SetWorldRotation(FRotator(0.f, SmoothedBodyYaw + BodyMeshYawOffset, 0.f));
+        }
+        return;
+    }
 
     // HMD(헤드셋)가 바라보는 수평 월드 각도
     const float CameraYaw = VRCamera->GetComponentRotation().Yaw;
-    const float DesiredYaw = CameraYaw + BodyMeshYawOffset;
 
-    if (BodyRotationInterpSpeed > 0.f && DeltaTime > KINDA_SMALL_NUMBER)
+    if (BodyRotationInterpSpeed > 0.f && DeltaTime > KINDA_SMALL_NUMBER && bBodyYawInit)
     {
-        const FRotator CurrentRot = GetMesh()->GetComponentRotation();
-        const FRotator TargetRot(0.f, DesiredYaw, 0.f);
-        const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, BodyRotationInterpSpeed);
-        GetMesh()->SetWorldRotation(FRotator(0.f, NewRot.Yaw, 0.f));
+        SmoothedBodyYaw = FMath::RInterpTo(FRotator(0.f, SmoothedBodyYaw, 0.f), FRotator(0.f, CameraYaw, 0.f),
+                                           DeltaTime, BodyRotationInterpSpeed).Yaw;
     }
     else
     {
-        GetMesh()->SetWorldRotation(FRotator(0.f, DesiredYaw, 0.f));
+        SmoothedBodyYaw = CameraYaw;
     }
+    bBodyYawInit = true;
+
+    // 눕힘 — HMD 가 키 대비 낮아진 비율에 비례해 앞으로 눕힌다(상한 BodyLeanMaxDeg).
+    // 기하(cos θ = 높이 ÷ 접힘 한계)로 풀면 머리 본이 15cm 가까이 높게 남았다: 눕히면 다리가 펴져 몸이 길어지고,
+    // 안 눕힌 구간은 FBIK 가 몸을 못 접는다. PIE 에서 비율 0.9~0.35 를 재서 머리 본 오차가 작은 기울기로 맞췄다.
+    float TargetLean = 0.f;
+    if (bCalibrated && CalibratedStandingHeight > KINDA_SMALL_NUMBER)
+    {
+        const float Ratio = GetCurrentHMDHeight() / CalibratedStandingHeight;
+        TargetLean = FMath::Clamp((1.f - Ratio) * BodyLeanDegPerRatio, 0.f, BodyLeanMaxDeg);
+    }
+    BodyLeanDeg = DeltaTime > KINDA_SMALL_NUMBER
+        ? FMath::FInterpTo(BodyLeanDeg, TargetLean, DeltaTime, HeightInterpSpeed)
+        : TargetLean;
+
+    // 회전 = 시선 yaw → 앞으로 눕힘(UE 피치 음수 = 앞으로 숙임) → 메시 정면 보정.
+    const FQuat Facing = FRotator(0.f, SmoothedBodyYaw, 0.f).Quaternion();
+    const FQuat Lean = FRotator(-BodyLeanDeg, 0.f, 0.f).Quaternion();
+    const FQuat MeshFix = FRotator(0.f, BodyMeshYawOffset, 0.f).Quaternion();
+    GetMesh()->SetWorldRotation(Facing * Lean * MeshFix);
 }
 
 void AVRPawn::SyncCapsuleToHMD()

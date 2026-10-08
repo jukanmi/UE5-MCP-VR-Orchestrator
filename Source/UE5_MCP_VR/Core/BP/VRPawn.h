@@ -447,6 +447,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0"))
     float BodyRotationInterpSpeed = 0.f;
 
+    /** 키 대비 HMD 높이가 1 줄어들 때마다 눕히는 각도(도). 0.1 낮아지면 이 값의 10% 만큼 앞으로 눕는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "200.0"))
+    float BodyLeanDegPerRatio = 110.f;
+
+    /** 몸 눕힘 상한(도). 90 이면 완전히 수평 — 엎드려도 상체를 든 모양이 되도록 그보다 작게 둔다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+    float BodyLeanMaxDeg = 68.f;
+
+    /** 현재 몸 눕힘 각도(도, 0 = 수직). 캡슐 보간과 같은 속도(HeightInterpSpeed)로 목표를 따라간다. */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "VR|Body")
+    float BodyLeanDeg = 0.f;
+
     // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
     // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
 
@@ -538,6 +550,13 @@ private:
 
     /** 아바타 몸(스켈레탈 메시)이 HMD(헤드셋) 시선 Yaw를 항상 바라보도록 정렬 — 매 Tick 호출 */
     void UpdateBodyRotation(float DeltaTime);
+
+    /** 몸 눕힘을 뺀 순수 몸 방향 yaw(= 시선 yaw 추종값). 눕힌 메시 회전에서 yaw 를 역산하면 틀어지므로 따로 들고 있다. */
+    float SmoothedBodyYaw = 0.f;
+
+    /** 메시 원점(발)에서 머리 본까지 높이(cm) — BeginPlay 에 레퍼런스 포즈에서 읽는다. */
+    float HeadBoneHeight = 130.f;
+    bool bBodyYawInit = false;
 
     /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
     float TurnAxisInput = 0.f;
