@@ -18,6 +18,10 @@ UNPCDialogueUIComponent::UNPCDialogueUIComponent()
     SetDrawAtDesiredSize(true);
     SetDrawSize(FVector2D(500.f, 500.f));
     SetRelativeLocation(FVector(0.f, 0.f, 210.f));   // 머리 위
+    // 위젯 1px = 1cm 라 스케일 1 이면 글자가 NPC 키만 해진다. 0.25 로 줄이면 한 줄이 약 10cm 다.
+    SetRelativeScale3D(FVector(0.25f));
+    // 피벗을 아래 변으로 잡아 대사가 길어져도 위로만 자라게 한다(중앙 피벗이면 아래 절반이 머리·몸을 가린다).
+    SetPivot(FVector2D(0.5f, 1.f));
     SetVisibility(false);
 }
 
