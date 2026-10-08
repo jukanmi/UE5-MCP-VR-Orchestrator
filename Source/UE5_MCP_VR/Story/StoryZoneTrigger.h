@@ -25,6 +25,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Story")
     FString ZoneName;
 
+    /** 이 구역이 가리키는 POI 의 PoiId(선택). 비면 종전 동작 그대로. 구역 이름을 POI 어휘와 맞추는 참조용이며,
+     *  송신하는 zone_enter 플래그명(ZoneName)에는 영향을 주지 않는다. 존재 확인은 첫 진입 시 1회(POI 등록 순서 무관). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Story")
+    FString PoiId;
+
     /** true 면 첫 진입 1회만 송신. false 면 진입마다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MCP|Story")
     bool bOnce = true;
@@ -38,4 +43,5 @@ protected:
                             int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
     bool bFired = false;
+    bool bPoiChecked = false;
 };

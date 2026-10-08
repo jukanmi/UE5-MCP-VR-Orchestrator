@@ -2,6 +2,7 @@
 #include "Components/BoxComponent.h"
 #include "Core/Interfaces/Entity.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "POI/POIManager.h"
 
 AStoryZoneTrigger::AStoryZoneTrigger()
 {
@@ -27,6 +28,17 @@ void AStoryZoneTrigger::HandleBeginOverlap(UPrimitiveComponent*, AActor* OtherAc
     {
         UE_LOG(LogTemp, Warning, TEXT("[StoryZone] %s: ZoneName 비어 있음 — 송신 생략"), *GetName());
         return;
+    }
+    // PoiId 는 첫 진입 때 한 번만 확인 — BeginPlay 시점엔 POI 가 아직 등록 전일 수 있다. 실패해도 송신은 그대로.
+    if (!bPoiChecked && !PoiId.IsEmpty())
+    {
+        bPoiChecked = true;
+        const UPOIManager* PoiManager = GetWorld() ? GetWorld()->GetSubsystem<UPOIManager>() : nullptr;
+        if (!PoiManager || !PoiManager->FindById(PoiId))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[StoryZone] %s: PoiId '%s' 에 해당하는 POI 가 등록돼 있지 않음 (ZoneName=%s)"),
+                   *GetName(), *PoiId, *ZoneName);
+        }
     }
     bFired = true;
     if (UNPCManager* Manager = UNPCManager::Get(this))
