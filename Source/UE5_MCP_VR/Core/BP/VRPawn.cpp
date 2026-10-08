@@ -532,7 +532,9 @@ UAISense_Sight::EVisibilityResult AVRPawn::CanBeSeenFrom(
     const bool bHit = World->LineTraceSingleByChannel(Hit, Context.ObserverLocation, TargetLoc, ECC_Visibility, Params);
     ++OutNumberOfLoSChecksPerformed;
 
-    if (!bHit || Hit.GetActor() == this)
+    // 엔진 기본 판정과 동일 — 플레이어 본인뿐 아니라 플레이어 소유 액터(들고 있는 아이템 등)에 먼저 맞아도 보인 것으로 친다.
+    const AActor* HitActor = Hit.GetActor();
+    if (!bHit || (HitActor && HitActor->IsOwnedBy(this)))
     {
         OutSeenLocation = TargetLoc;
         return UAISense_Sight::EVisibilityResult::Visible;
