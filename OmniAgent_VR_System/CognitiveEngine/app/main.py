@@ -167,6 +167,9 @@ async def health_check():
 @app.websocket("/ws/llm")
 async def websocket_llm_endpoint(websocket: WebSocket):
     await websocket.accept()
+    # 연결 직후 C++ 가 현재 멤버 전원을 join 으로 재송신하므로, 연결마다 비우고 새로 받는다.
+    # (WS 만 끊긴 동안 일어난 leave 는 C++ 가 미연결로 버려 서버에 유령 멤버가 남기 때문)
+    STATE.party_members.clear()
     STATE.active_llm_ws = websocket
     logger.info("[Main] UE5 LLM 클라이언트 연결됨")
 
@@ -258,6 +261,9 @@ async def _process_llm_message(raw_data: str) -> str:
         elif envelope.type == EEnvelopeType.JEV_QUERY:
             return _handle_jev_query(envelope)
 
+        elif envelope.type == EEnvelopeType.PARTY_UPDATE:
+            return _handle_party_update(envelope)
+
         else:
             logger.error(f"[Main] 알 수 없는 메시지 타입: {envelope.type}")
             return json.dumps({"error": f"Unknown message type: {envelope.type}"})
@@ -307,6 +313,17 @@ async def _handle_story_event(envelope: MessageEnvelope) -> str:
     if payload.event == "quest_accept":
         return _empty_batch_json(story=await _story_trigger("quest_accept", {"side_id": payload.name}))
     return _empty_batch_json(story=await _story_trigger("flag", {"name": payload.flag_name}))
+
+
+def _handle_party_update(envelope: MessageEnvelope) -> str:
+    """party_update → 서버 일행 집합 반영. join 은 멱등, 멤버가 아닌 leave 는 무시. 행동 없음(빈 배치)."""
+    payload = envelope.parse_party_update_payload()
+    if payload.change == "join":
+        STATE.party_members.add(payload.agent_id)
+    else:
+        STATE.party_members.discard(payload.agent_id)
+    logger.info(f"[Party] {payload.change}: {payload.agent_id} → 일행 {sorted(STATE.party_members)}")
+    return _empty_batch_json()
 
 
 async def _apply_hostile_affinity(agent_id: str, perceptions: list) -> None:

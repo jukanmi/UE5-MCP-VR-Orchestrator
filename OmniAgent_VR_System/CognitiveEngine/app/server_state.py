@@ -27,6 +27,10 @@ class ServerState:
     # WS 송신 직렬화 — 메시지별 동시 처리가 같은 소켓에 겹쳐 쓰는 것 방지.
     ws_send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
+    # 현재 플레이어 일행(AgentID) — C++ UPartySubsystem 이 정본이고 party_update 로 따라간다. 프로세스 재시작 시 비며
+    # 재연결 직후 C++ 가 전원 join 으로 재송신해 복구한다.
+    party_members: set[str] = field(default_factory=set)
+
     # Stage2 플래너 선제 웜업 스로틀 기준 시각(monotonic).
     last_core_prewarm: float = 0.0
 

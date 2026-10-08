@@ -32,6 +32,7 @@
 #include "Furniture/BP/FurnitureActor.h" // Sit/Sleep 가구 스냅·점유
 #include "NavigationSystem.h" // BaseMove 목적지 NavMesh 투영(벽 끼임 방지)
 #include "Furniture/Subsystems/FurnitureManager.h" // Jev daily 가구 검증
+#include "Party/PartySubsystem.h" // JoinParty/LeaveParty 멤버십 위임
 #if !UE_BUILD_SHIPPING
 #include "DrawDebugHelpers.h"
 #endif
@@ -1170,6 +1171,10 @@ void UNPCActionComponent::ExecuteInteraction(EAction ActionType, AActor* TargetA
     // 자세 해제는 가구·좌표가 필요 없어 ExecuteLifestyleAction 경로를 타지 않는다
     // (그쪽은 가구 타겟 필수 방어가 걸려 있어 무타겟이면 즉시 반환).
     case EAction::StandUp:      ExecuteStandUp(); break;
+
+    // Party — 즉시형(서브시스템 호출 후 말미의 OnActionCompleted)
+    case EAction::JoinParty:    ExecuteJoinParty(); break;
+    case EAction::LeaveParty:   ExecuteLeaveParty(); break;
 
     case EAction::Wait:
         // 즉시형으로 처리(아래 tail에서 OnActionCompleted). duration 기반 실제 대기가 필요하면
@@ -2623,6 +2628,25 @@ void UNPCActionComponent::ExecuteStandUp()
     // 완료는 BasePlayActionMedia → OnMontageActionEnded 비동기 체인.
     if (bLie) BaseLieUp();
     else      BaseSitUp();
+}
+
+void UNPCActionComponent::ExecuteJoinParty()
+{
+    // 멤버십 정본은 UPartySubsystem — 여기서는 호출만 한다. 정원 초과 거절은 서버 판정과 별개의 최종 가드.
+    // 즉시형이라 bActionAwaitingAsync=false 인 채로 돌아가면 ExecuteInteraction 말미가 완료 처리한다.
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->Join(GetOwnerAgentID()))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: JoinParty 실패 — 정원 초과이거나 파티 서브시스템 없음"), *GetOwnerAgentID());
+    }
+}
+
+void UNPCActionComponent::ExecuteLeaveParty()
+{
+    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        Party->Leave(GetOwnerAgentID());
+    }
 }
 
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)

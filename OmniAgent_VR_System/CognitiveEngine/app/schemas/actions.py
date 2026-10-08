@@ -55,6 +55,10 @@ EAction = Literal[
     "Pray",
     "Dance",
     "Sing",
+    # 파티 — C++ EAction::JoinParty/LeaveParty 와 1:1. 이 Literal 은 DialogueActionItem.type 이라 Stage1 구조화 출력
+    # grammar 에 그대로 들어간다 — 서버 호감도 게이트(M3) 전까지 LLM 이 낼 수 있고, C++ 방어는 정원 4명뿐이다.
+    "JoinParty",
+    "LeaveParty",
 ]
 
 
@@ -90,7 +94,7 @@ def fallback_batch(npc_id: str, facial: str = "Neutral", emotion: str = "Neutral
 
 class DialogueActionItem(BaseModel):
     """Stage1 구조화 출력용 액션 항목. type 이 EAction Literal 이라
-    Ollama structured output 이 34개 유효 액션만 생성 — 잘못된 Type 원천 차단.
+    Ollama structured output 이 EAction 에 속한 액션만 생성 — 잘못된 Type 원천 차단.
     직렬화 시 빈 키는 [Action:] 태그에서 생략 (interface_output 매핑 기준)."""
 
     type: EAction = Field(description="Action to perform, e.g. Attack, Block, Move, GiveItem, Follow")

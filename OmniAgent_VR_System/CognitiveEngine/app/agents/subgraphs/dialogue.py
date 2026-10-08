@@ -44,7 +44,8 @@ from ...schemas.vr_context import GesPrompt
 from ...utils import db_manager
 from ...utils.id_utils import ci_get, ci_id_map
 from ...schemas.actions import DEFAULT_NPC, DialogueResponse, PlanBatchResponse, DIALOGUE_ACTION_FIELD_MAP
-from .prompts import DIALOGUE_STRUCTURED_PROMPT, PLAN_SYSTEM_PROMPT
+from ...server_state import STATE
+from .prompts import DIALOGUE_STRUCTURED_PROMPT, PARTY_PROMPT_LINE, PLAN_SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
@@ -266,6 +267,8 @@ async def _run_stage1_llm(
     """Stage1 e4b 호출 — 구조화 해피패스 → 구조화 폴백(target enum 없음) → 기본 응답.
     전 경로가 DialogueResponse 산출(자유텍스트 파싱층 제거). 반환: (resp, plan_achieved)."""
     structured_content = DIALOGUE_STRUCTURED_PROMPT.format(**ctx.fmt_kwargs)
+    if STATE.party_members:
+        structured_content += "\n" + PARTY_PROMPT_LINE.format(members=", ".join(sorted(STATE.party_members)))
     user_content = f"Context: {ctx.natural_context}"
 
     logger.info(f"[Dialogue] Stage1 e4b: {ctx.fmt_kwargs['name']} | '{ctx.natural_context[:50]}...'")

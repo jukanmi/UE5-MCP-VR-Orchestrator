@@ -9,6 +9,8 @@
 #include "Furniture/Subsystems/FurnitureManager.h"
 #include "Furniture/BP/FurnitureActor.h"
 #include "Story/StorySubsystem.h"
+#include "Party/PartySubsystem.h"
+#include "NPC/Struct/NPCActionKeys.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/Engine.h"
@@ -33,10 +35,18 @@ void UNPCManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
+    // 파티 변경 구독이 Initialize 시점에 성립하려면 PartySubsystem 이 먼저 만들어져 있어야 한다.
+    if (UPartySubsystem* Party = Collection.InitializeDependency<UPartySubsystem>())
+    {
+        Party->OnPartyChanged.AddDynamic(this, &UNPCManager::OnPartyChanged);
+    }
+
     LLMClient = NewObject<ULLMNetworkClient>(this);
     if (LLMClient)
     {
         LLMClient->OnMessageReceived.AddDynamic(this, &UNPCManager::OnLLMMessageReceived);
+        // InitializeLLM 이 연결을 시작하므로 연결 콜백 바인딩이 먼저여야 첫 연결도 놓치지 않는다.
+        LLMClient->OnConnectionChanged.AddDynamic(this, &UNPCManager::OnLLMConnectionChanged);
         LLMClient->InitializeLLM();
     }
 
@@ -57,7 +67,16 @@ void UNPCManager::Deinitialize()
         World->GetTimerManager().ClearTimer(StateUpdateTimerHandle);
     }
 
-    if (LLMClient) LLMClient->Disconnect();
+    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        Party->OnPartyChanged.RemoveDynamic(this, &UNPCManager::OnPartyChanged);
+    }
+
+    if (LLMClient)
+    {
+        LLMClient->OnConnectionChanged.RemoveDynamic(this, &UNPCManager::OnLLMConnectionChanged);
+        LLMClient->Disconnect();
+    }
 
     ActiveNPCs.Empty();
     LLMClient = nullptr;
@@ -707,6 +726,39 @@ void UNPCManager::SendStoryEvent(const FString& Event, const FString& Name, cons
     }
     LLMClient->SendMessage(FEnvelopeBuilder::BuildStoryEvent(Payload));
     UE_LOG(LogTemp, Log, TEXT("[NPCManager] story_event 전송: %s/%s"), *Event, *Name);
+}
+
+void UNPCManager::SendPartyUpdate(const FString& AgentID, bool bJoined)
+{
+    if (!LLMClient || !LLMClient->IsConnected())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NPCManager] party_update 미전송(서버 미연결): %s %s"), *AgentID, bJoined ? TEXT("join") : TEXT("leave"));
+        return;
+    }
+    // 키는 Python PartyUpdatePayload 와 1:1 (agent_id/change).
+    TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField(NPCActionKeys::Party_AgentID, AgentID);
+    Payload->SetStringField(NPCActionKeys::Party_Change,
+        bJoined ? NPCActionKeys::Party_ChangeJoin : NPCActionKeys::Party_ChangeLeave);
+    LLMClient->SendMessage(FEnvelopeBuilder::BuildPartyUpdate(Payload));
+}
+
+void UNPCManager::OnPartyChanged(const FString& AgentID, bool bJoined)
+{
+    SendPartyUpdate(AgentID, bJoined);
+}
+
+void UNPCManager::OnLLMConnectionChanged(bool bIsConnected)
+{
+    if (!bIsConnected) return;
+
+    if (const UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        for (const FString& MemberID : Party->GetMembers())
+        {
+            SendPartyUpdate(MemberID, true);
+        }
+    }
 }
 
 void UNPCManager::HandleNPCDialogue(const FString& AgentID, const FString& DialogueText)

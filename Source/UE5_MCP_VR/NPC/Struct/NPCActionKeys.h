@@ -33,6 +33,12 @@ namespace NPCActionKeys
     inline const FString Key_Amount        = TEXT("amount");
     inline const FString Key_ItemIDs       = TEXT("item_ids");
 
+    // --- party_update Parameters 키 (C++ → Python, snake_case) ---
+    inline const FString Party_AgentID     = TEXT("agent_id");
+    inline const FString Party_Change      = TEXT("change");
+    inline const FString Party_ChangeJoin  = TEXT("join");
+    inline const FString Party_ChangeLeave = TEXT("leave");
+
     // --- ActionBatch Protocol Keys (최상위 PascalCase — MCPJsonUtils 파싱용) ---
     inline const FString Proto_Mode          = TEXT("Mode");
     inline const FString Proto_Actions       = TEXT("Actions");

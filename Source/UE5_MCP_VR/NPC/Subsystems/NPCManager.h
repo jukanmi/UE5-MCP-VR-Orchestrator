@@ -71,6 +71,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MCP|Story")
     void SendStoryEvent(const FString& Event, const FString& Name, const FString& AgentID = TEXT(""));
 
+    /** party_update Envelope 송신 — 합류·해산 한 건(증분). 서버 미연결이면 버린다(재연결 때 현재 멤버 전원을 join 으로 재송신). */
+    void SendPartyUpdate(const FString& AgentID, bool bJoined);
+
     // === 디버그: ActionBatch JSON 직접 주입(서버 없이 배치 분배 검증) ===
     UFUNCTION(BlueprintCallable, Category = "MCP|Debug")
     void OnWebSocketMessageReceived(const FString& JsonMessage);
@@ -158,6 +161,14 @@ private:
 
     UFUNCTION()
     void OnLLMMessageReceived(const FString& JsonMessage);
+
+    /** 파티 멤버 변경 → party_update 송신. */
+    UFUNCTION()
+    void OnPartyChanged(const FString& AgentID, bool bJoined);
+
+    /** 소켓 (재)연결 직후 현재 멤버 전원을 join 으로 재송신 — 증분이라 서버 재시작 뒤 상태가 어긋나는 것을 메운다. */
+    UFUNCTION()
+    void OnLLMConnectionChanged(bool bIsConnected);
 
     UFUNCTION()
     void HandleNPCDialogue(const FString& AgentID, const FString& DialogueText);

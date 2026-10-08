@@ -826,4 +826,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
     void ExecuteStandUp();
 
+    // ----------------------------------------------------------------------------
+    // [7] Party
+    // ----------------------------------------------------------------------------
+    /** 파티 합류 — UPartySubsystem::Join 위임. 정원이 차면 거절(경고 로그 후 그대로 완료, 실패 채널은 없다). */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteJoinParty();
+
+    /** 파티 해산 — UPartySubsystem::Leave 위임. 멤버가 아니면 무동작. */
+    UFUNCTION(BlueprintCallable, Category = "NPC|Action|Execute")
+    void ExecuteLeaveParty();
+
 };

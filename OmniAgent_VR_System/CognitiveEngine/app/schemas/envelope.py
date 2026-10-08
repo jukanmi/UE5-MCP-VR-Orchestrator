@@ -32,6 +32,7 @@ class EEnvelopeType(str, Enum):
     STORY_EVENT = "story_event"  # 세계 이벤트(플래그·구역 진입·아이템 획득) → 스토리 트리거
     JEV_QUERY = "jev_query"  # UE5 정규화 전투 지표 → 로컬 jevlike 전술 편향 요청
     JEV_DECISION = "jev_decision"  # Python → UE5 전술 편향 회신(stance/승수/noul). 수신 전용
+    PARTY_UPDATE = "party_update"  # UE5 파티 합류·해산 증분 통보 → 서버 일행 집합 갱신
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,6 +165,14 @@ class StoryEventPayload(BaseModel):
         return self.name if self.event == "flag" else f"{self.event}:{self.name}"
 
 
+class PartyUpdatePayload(BaseModel):
+    """party_update 타입의 payload. 합류·해산 한 건마다 증분으로 온다(C++ UPartySubsystem 이 정본).
+    재연결 직후에는 C++ 가 현재 멤버 전원을 join 으로 다시 보내므로 join 은 멱등이어야 한다."""
+
+    agent_id: str
+    change: Literal["join", "leave"]
+
+
 class JevQueryPayload(BaseModel):
     """jev_query 타입의 payload. C++ 이 사전 정규화한 전투 지표만 담는다(좌표·절대 HP 금지).
     generation 은 UE5 세대 카운터 — 응답에 그대로 echo, UE5 가 stale 폐기에 사용."""
@@ -223,6 +232,10 @@ class MessageEnvelope(BaseModel):
     def parse_story_event_payload(self) -> StoryEventPayload:
         """payload를 StoryEventPayload로 파싱. type이 story_event일 때만 호출할 것."""
         return StoryEventPayload(**self.payload)
+
+    def parse_party_update_payload(self) -> PartyUpdatePayload:
+        """payload를 PartyUpdatePayload로 파싱. type이 party_update일 때만 호출할 것."""
+        return PartyUpdatePayload(**self.payload)
 
     def parse_jev_query_payload(self) -> JevQueryPayload:
         """payload를 JevQueryPayload로 파싱. type이 jev_query일 때만 호출할 것."""

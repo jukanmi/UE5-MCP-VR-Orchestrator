@@ -51,6 +51,9 @@ Story objective (what you want from this conversation right now): {story_goal}
 Relevant context: {rag_context}
 Conversation history: {chat_history}"""
 
+# 현재 일행 한 줄 — 비어 있으면 붙이지 않는다(DIALOGUE_STRUCTURED_PROMPT 본문은 파인튜닝 분포라 고정, 끝에만 덧붙임).
+PARTY_PROMPT_LINE = "현재 일행: [{members}]"
+
 # Stage2 는 plan 산출 전용. 과거 '정제+plan 동시 출력'(REFINE_SYSTEM_PROMPT)은
 # 12B(abliterated)가 정제 지시를 무시하고 [Plan:] 라인만 출력 → _parse_plan_line 이
 # plan 을 떼면 대사가 빈 문자열로 증발하는 문제 실측(2026-07, 재현 4/4).

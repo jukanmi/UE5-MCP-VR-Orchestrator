@@ -1,6 +1,7 @@
 #include "NPC/BP/SmartNPC.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Party/PartySubsystem.h"
 #include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Struct/NPCActionKeys.h"
 #include "NPC/Components/NPCStateComponent.h"
@@ -153,6 +154,12 @@ void ASmartNPC::HandleDeath()
     {
         Manager->SendStoryEvent(TEXT("npc_died"), AgentID, AgentID);
         Manager->UnregisterNPC(AgentID);
+    }
+
+    // 일행이 죽으면 자동 해산 — party_update(leave) 는 파티 서브시스템 델리게이트가 서버로 보낸다.
+    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+    {
+        Party->Leave(AgentID);
     }
 
     // 4. AI 컨트롤러 해제 — BT 완전 중단
