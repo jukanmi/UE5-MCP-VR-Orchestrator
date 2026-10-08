@@ -69,6 +69,16 @@ void ASmartNPC::EndPlay(const EEndPlayReason::Type EndPlayReason)
         Manager->UnregisterNPC(AgentID);
     }
 
+    // 비사망 Destroy 만 해산 — PIE 종료·레벨 전환·WP 셀 언로드(RemovedFromWorld)는 NPC 가 곧 되살아나거나 월드가 끝나는 것이라
+    // 멤버십을 지키고 party_update 송신도 피한다. 이미 Leave 된 사망 경로와 겹쳐도 무동작이라 안전하다.
+    if (EndPlayReason == EEndPlayReason::Destroyed)
+    {
+        if (UPartySubsystem* Party = UPartySubsystem::Get(this))
+        {
+            Party->Leave(AgentID);
+        }
+    }
+
     Super::EndPlay(EndPlayReason);
 }
 

@@ -2,6 +2,7 @@
 #include "UI/Trade/TradeSessionActor.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "NPC/Components/NPCStateComponent.h"
+#include "NPC/Components/NPCRagdollComponent.h" // 파티 추적 재개 가드(넉다운 중 건너뜀)
 #include "NPC/Components/NPCInventoryComponent.h"
 #include "NPC/Action/SmartNPCAIController.h"
 #include "NPC/Struct/NPCActionKeys.h"
@@ -533,6 +534,7 @@ void UNPCActionComponent::DispatchActions(const TArray<FGameAction>& Actions)
         // [의도(Why)] 모든 동작 중지(Emergency Stop) 등 최우선 순위는 즉각 반영하여 불필요한 연산을 막습니다.
         if (Action.ActionType == EAction::Stop)
         {
+            ExecuteLeaveParty(); // Stop = 해산(파티원일 때만 동작) — 추적 해제 후 일상 복귀
             ExecuteIdle();
             continue;
         }
@@ -2638,15 +2640,35 @@ void UNPCActionComponent::ExecuteJoinParty()
     if (!Party || !Party->Join(GetOwnerAgentID()))
     {
         UE_LOG(LogTemp, Warning, TEXT("[NPCAction] %s: JoinParty 실패 — 정원 초과이거나 파티 서브시스템 없음"), *GetOwnerAgentID());
+        return;
     }
+    StopTracking(); // 이미 다른 대상을 추적 중이었어도 플레이어로 갈아탄다
+    ResumePartyTracking(); // 합류 즉시 플레이어 지속 추적 — 기존 Follow 와 같은 Track 경로
 }
 
 void UNPCActionComponent::ExecuteLeaveParty()
 {
-    if (UPartySubsystem* Party = UPartySubsystem::Get(this))
-    {
-        Party->Leave(GetOwnerAgentID());
-    }
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->IsMember(GetOwnerAgentID())) return; // 비멤버의 다른 Track 을 끊지 않는다
+
+    Party->Leave(GetOwnerAgentID());
+    StopTracking(); // 추적 해제 — 일상 활동은 TickJevDaily 가 멤버십을 보므로 Leave 만으로 복귀
+}
+
+void UNPCActionComponent::ResumePartyTracking()
+{
+    UPartySubsystem* Party = UPartySubsystem::Get(this);
+    if (!Party || !Party->IsMember(GetOwnerAgentID()) || IsTracking()) return;
+
+    // 반사·대화·전투·넉다운이 진행 중이면 덮어쓰지 않는다 — 끝난 뒤 TickJevDaily 의 주기 호출이 다시 잡는다.
+    if (GetBehaviorMode() == ENPCBehaviorMode::Combat || bIsBusy || HasPendingActions()) return;
+    const ACombatCharacter* OwnerChar = Cast<ACombatCharacter>(GetOwner());
+    if (!OwnerChar || OwnerChar->bIsDead) return;
+    if (OwnerChar->RagdollComponent && OwnerChar->RagdollComponent->IsKnockedDown()) return;
+
+    AActor* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+    if (!IsValid(Player) || ACombatCharacter::IsActorDead(Player)) return; // 플레이어 시체를 따라다니지 않는다
+    ExecuteTrack(Player);
 }
 
 void UNPCActionComponent::ExecuteLifestyleAction(EAction LifestyleType, AActor* TargetEntity, FVector Location, const FString& StringParam)
