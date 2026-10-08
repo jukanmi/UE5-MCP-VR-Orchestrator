@@ -18,12 +18,6 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 | [npc_lift_throw](SPEC_npc_lift_throw.md) | ⏸ M1 구현 후 코드 제거(2026-10-02) | 충돌 피해 속도 임계·계수 PIE 튜닝 | friction_grip M2(양손) 구현으로 선행 조건 충족, 헤드셋 확인 뒤 재착수. 실측·함정은 memo |
 | [npc_grip](SPEC_npc_grip.md) | ⬜ M1~M3 착수 전(인터뷰 2026-09-24) | 붙잡기 `EAction` 을 LLM 선택지에서 뺄지, 반사 룰 발동 조건, 룸스케일로 걸어서 벗어날 때 처리, 뿌리치기 속도·최대 지속 시간 | grip_pose M1(`FItemData` 형상 유형) 선행 |
 
-### VR 자세 (2026-10-08 신규)
-
-| 이름 | 진행상황 | 미결사항 | 비고 |
-|---|---|---|---|
-| [posture](SPEC_posture.md) | 🔶 M1 4자세 판정 진행 중(워크트리 `fed/posture-10081050`) → M2 이동·캡슐 → M3 은신 → M4 몸 연속 변형 | 허리 숙이기 피치·오프셋 임계, 판정 비율 구간값, 엎드리기 캡슐 형태, 은신 계수, M4 몸 변형 방식·무릎·엉덩이 측정값 사용 | 게임 판정 = 키 대비 비율 + HMD 각도(이산 4자세), 몸체 = 연속 변형. 의자·바닥 앉기·좌식 플레이 범위 밖. body_measure_prone M0·M1 대체 |
-
 ### NPC·Jevlike (Python/C++)
 
 | 이름 | 진행상황 | 미결사항 | 비고 |
@@ -38,6 +32,7 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 
 | 이름 | 진행상황 | 미결사항 | 비고 |
 |---|---|---|---|
+| [posture](done/SPEC_posture.md) | ✅ M1~M4 (2026-10-08, 헤드셋 확인 완료 DoList 2-10) | 임계·눕힘 곡선은 실사용으로 조정(`BendRatioMax` 0.88·`BodyLeanDegPerRatio` 110°·`BodyLeanMaxDeg` 68°), 은신 계수 0.8·0.6·0.35, 팀 자동 인지(`ShouldAutomaticallySeeTarget`)는 은신 거리 제한 우회 | 게임 판정 = 키 대비 비율 + HMD 각도(이산 4자세), 몸 = 메시 눕히기 + PBIK. body_measure_prone M0·M1 대체 |
 | [poi](done/SPEC_poi.md) | ✅ M1~M4 (2026-10-08, 헤드셋 없는 PIE 확인 — 헤드셋 DoList 2-9) | 노출 상한 N=8·별칭 2개 초안값 조정, `Type` 어휘, 파인튜닝 데이터에 `poi` 필드 없음(bench 4/5) | POI 11개·스토리 구역 PoiId 연결. Bridge POI 위치(다리 밑) 확인 필요 |
 | [party](done/SPEC_party.md) | ✅ M1~M3 (2026-10-08) + 서버 의도 매핑(`945c6468`) | 이탈 시 따라붙기, 스토리 영입 비트 연동, 합류 호감도 +20 초안값, v4 재학습 여부 | 대화 합류·"멈춰" 보호·해산 PIE 확인. 전투 후 추적 재개는 헤드셋(DoList 2-9) |
 | [pause_settings](done/SPEC_pause_settings.md) | ✅ M0~M3 (2026-10-05~06, 헤드셋 확인 완료 DoList 2-8) | 없음 | 브랜치 `feature/pause-settings` — Develop 머지 대기. 지도 점 테두리(`11aafbef`) |

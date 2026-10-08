@@ -1,11 +1,11 @@
 ---
 name: session-end
-description: 세션 종료 시 docs/Memo.md·docs/DoList.md 완료 항목 Done 이동·날짜, 새 함정은 pitfalls.md 에 추가
+description: 세션 종료 시 docs/Memo.md·docs/DoList.md 완료 항목 Done 이동·날짜, docs/SPEC_INDEX.md 진행 현황 동기화, 새 함정은 pitfalls.md 에 추가
 ---
 
 ## Session End
 
-세션 마무리 시 `docs/Memo.md`와 `docs/DoList.md`를 업데이트합니다.
+세션 마무리 시 `docs/Memo.md`·`docs/DoList.md`를 업데이트하고 `docs/SPEC_INDEX.md` 를 맞춥니다.
 
 ### A. `docs/Memo.md`
 
@@ -37,13 +37,24 @@ description: 세션 종료 시 docs/Memo.md·docs/DoList.md 완료 항목 Done �
 4. **MCP 로 해결된 항목** — 원래 "사람 몫"으로 올렸던 게 MCP 로 풀렸으면 그 사실을 근거(스크린샷 경로·로그)와 함께 적음.
 5. **Done 은 삭제 안 함** — DoList Done 은 기간 만료 정리 없음(Memo 와 다름). 이력으로 남김.
 
+### C. `docs/SPEC_INDEX.md`
+
+이번 세션에서 마일스톤이 바뀐 SPEC 이 있을 때만 한다(없으면 건너뜀).
+
+1. **대상 찾기** — 이번 세션에 구현·확인·결정이 있었던 `docs/SPEC_*.md`(진행 중 + `docs/done/`). `git log --stat` 로 SPEC 파일 변경과 관련 코드 커밋 확인.
+2. **줄 갱신** — "진행 중·대기" 표의 그 SPEC 줄: 진행상황(마일스톤 ✅·🔶·⬜, 날짜, 헤드셋 확인 여부와 DoList 번호), 미결사항, 비고. 원본 SPEC 본문의 상태 줄·완료 기준과 어긋나지 않게.
+3. **완료 이관** — 마지막 마일스톤까지 끝나고 **헤드셋 확인 항목(DoList)도 Done** 이면: `git mv docs/SPEC_x.md docs/done/` → 표 줄을 "완료 (`docs/done/`)" 표로 옮기고 링크를 `done/SPEC_x.md` 로. 헤드셋 확인이 남았으면 진행 중에 둔다.
+4. **날짜** — 파일 맨 위 `마지막 갱신:` 을 오늘로.
+5. **링크 점검** — 이동한 SPEC 을 가리키는 다른 문서 링크가 깨지지 않았는지 `grep -rn "SPEC_x.md" docs .agents CLAUDE.md AGENTS.md` 로 확인하고 고친다.
+
 ### 규칙
 
 - 완료 항목 **삭제 금지** — Done으로 이동만
 - pitfalls.md: 코드가 이미 설명하는 내용은 쓰지 않음. "왜"와 "제약"만
 - DoList 에 **새 항목을 추가하지 않음** — 등록은 작업 중에. 여기선 이동·정리만
 - 체크 안 된 항목을 "됐겠지" 로 옮기지 않음. 근거(사용자 확인·로그·스크린샷) 없으면 그대로 둠
+- SPEC_INDEX 도 같은 원칙 — 헤드셋 확인이 남은 SPEC 을 완료로 내리지 않음. 새 SPEC 줄 추가는 `/feature-spec` 몫이므로 여기선 기존 줄 갱신·이관만
 
 ### 완료 후
 
-Memo 잔여 Todo · pitfalls.md 에 추가한 항목 · DoList 에서 Done 으로 옮긴 항목 목록을 출력합니다.
+Memo 잔여 Todo · pitfalls.md 에 추가한 항목 · DoList 에서 Done 으로 옮긴 항목 · SPEC_INDEX 에서 갱신·이관한 SPEC 목록을 출력합니다.
