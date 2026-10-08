@@ -22,7 +22,7 @@ from .schemas.envelope import (
     EmergencyReportPayload,
     JevQueryPayload,
 )
-from .services.jev_service import get_jev_service
+from .services.jev_service import get_jev_service, warm_jev_service
 from .agents.subgraphs.dialogue import load_persona
 from .schemas.vr_context import GesPrompt
 from .schemas.actions import ModeActionRequest, NPCBehaviorMode
@@ -86,7 +86,7 @@ async def _check_ollama_model() -> None:
                     "prompt": "warmup",
                     "stream": False,
                     "raw": True,
-                    "keep_alive": "5m",
+                    "keep_alive": llm_factory.SLM_KEEP_ALIVE,
                     "options": {"num_predict": 1},
                 },
             )
@@ -103,6 +103,10 @@ async def lifespan(app: FastAPI):
     await db_manager.start_background_sync()
     await _check_ollama_model()
     get_story()  # 비트 시트 검증 — 참조 오류면 여기서 ValueError 로 기동 실패
+    try:  # Jev 워밍 — 첫 jev_query 가 0.3s 워치독을 넘지 않게. 실패해도 기동은 계속(요청 시 지연 로드/휴리스틱)
+        await asyncio.to_thread(warm_jev_service)
+    except Exception as e:
+        logger.warning(f"[Startup] Jev 워밍 실패(무해): {e}")
     yield
     # --- Shutdown ---
     await db_manager.stop_background_sync()
@@ -126,7 +130,7 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
         "prompt": prompt,
         "stream": False,
         "raw": True,
-        "keep_alive": "5m",
+        "keep_alive": llm_factory.SLM_KEEP_ALIVE,
         "options": {"temperature": 0.0, "num_predict": 10, "stop": ["\n"]},
     }
     _llm_start = time.perf_counter()
@@ -139,7 +143,10 @@ async def _ollama_raw_generate(prompt: str) -> tuple[str, float]:
 
 async def _prewarm_core_llm() -> None:
     """Stage2 플래너를 빈 프롬프트 로드콜로 메모리에 올린다. 실패는 무해(콜드 폴백).
-    throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다."""
+    throttle: keep_alive(30s) 와 동일 — 윈도 내 중복 웜업은 의미 없다.
+    Stage2 가 클라우드 기본이면 로컬 폴백 모델을 올리지 않는다(VRAM 확보가 목적, 폴백 시에만 로드)."""
+    if llm_factory.STAGE2_CLOUD_ENABLED:
+        return
     now = time.monotonic()
     if now - STATE.last_core_prewarm < _CORE_PREWARM_THROTTLE_S:
         return
@@ -157,6 +164,25 @@ async def _prewarm_core_llm() -> None:
         logger.info("[Prewarm] Stage2 플래너 로드콜 완료")
     except Exception as exc:
         logger.warning(f"[Prewarm] Stage2 웜업 실패(무해 폴백): {exc}")
+
+
+async def _ping_slm() -> None:
+    """Stage1 SLM(e4b) 빈 프롬프트 로드콜로 keep_alive 타이머 갱신. 실패는 무해(다음 주기에 재시도).
+    keep_alive 는 llm_factory 의 SLM_KEEP_ALIVE 와 같아야 squat 정책이 덮어써지지 않는다."""
+    try:
+        await llm_factory.get_ollama_client().post(
+            f"{llm_factory.OLLAMA_BASE_URL}/api/generate",
+            json={"model": llm_factory.MODELS["gemma4_slm"], "keep_alive": llm_factory.SLM_KEEP_ALIVE},
+        )
+    except Exception as exc:
+        logger.warning(f"[Ping] SLM 유지 핑 실패(무해): {exc}")
+
+
+async def _slm_keepalive_loop() -> None:
+    """WS 연결 중 주기적으로 SLM 을 깨워 유휴 뒤 첫 턴의 콜드 재로드를 막는다. 연결 종료 시 취소된다."""
+    while True:
+        await asyncio.sleep(llm_factory.SLM_PING_INTERVAL_S)
+        await _ping_slm()
 
 
 @app.get("/")
@@ -187,6 +213,8 @@ async def websocket_llm_endpoint(websocket: WebSocket):
 
     # 이 연결이 띄운 처리 태스크 — 끊기면 취소해 버려질 응답의 LLM 추론(GPU/VRAM)을 끊는다.
     session_tasks: set[asyncio.Task] = set()
+    # SLM 상주 유지 핑 — 이 연결이 살아 있는 동안만. finally 에서 취소.
+    ping_task = spawn_background(_slm_keepalive_loop(), label="slm-keepalive")
 
     try:
         while True:
@@ -198,6 +226,7 @@ async def websocket_llm_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("[Main] UE5 LLM 클라이언트 연결 종료")
     finally:
+        ping_task.cancel()
         pending = [t for t in session_tasks if not t.done()]
         for t in pending:
             t.cancel()

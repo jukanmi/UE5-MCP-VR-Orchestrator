@@ -106,14 +106,31 @@ MODELS = {
     "cloud_kimi": "kimi-k3",  # 멀티모달+추론 (pull 필요)
     "cloud_gpt_large": "gpt-oss:120b-cloud",  # 설치됨, 동작 확인
     "cloud_gpt_small": "gpt-oss:20b-cloud",  # 미테스트
-    "cloud_gemma4": "gemma4:cloud",  # 31B, 무료 티어 가능(2026-09-17 실측), Stage2 후보
+    "cloud_gemma4": "gemma4:cloud",  # 31B, 무료 티어 가능(2026-09-17 실측). 스토리 디렉터 전용
+    # Stage2 전용 31B. 로드 없음·VRAM 0, 같은 계획 프롬프트 0.77~1.24s(2026-10-08 실측,
+    # 로컬 qwen3:8b 는 keep_alive 만료 후 첫 호출 2.4s+). 스토리 디렉터 키와 분리해 서로 영향 없게 한다.
+    "cloud_gemma4_31b": "gemma4:31b-cloud",
 }
 
 # 모델 선택의 기본값 (서버 시작 시 모든 추론에서 사용)
 # Stage2 플래너·get_llm() 폴백 — 여기 한 줄만 바꾸면 Stage2+get_llm 전체 반영.
 # 2026-09-07 12B(7.4GB) → 8B(5.2GB). 플래너는 replan 때만 도는데 12B 는 로드가 느리고
 # VRAM 을 크게 물어 SDXL·PIE 와 부딪혔다. 되돌리려면 "gemma4" 로.
+# 이 값은 이제 Stage2 의 **로컬 폴백**(클라우드 실패 시에만 로드)이자 get_llm() 기본 모델이다.
 STAGE2_MODEL = "mid"
+# Stage2 기본 경로 = 클라우드(로컬 VRAM 확보 + 재로드 지연 제거). 끄려면 .env/환경변수 STAGE2_USE_CLOUD=0
+# → 로컬 STAGE2_MODEL 만 사용(오프라인·무료 티어 소진 시). 기본 켜짐.
+STAGE2_CLOUD_ENABLED = os.getenv("STAGE2_USE_CLOUD", "1").strip().lower() not in ("0", "false", "off", "no")
+STAGE2_CLOUD_MODEL = "cloud_gemma4_31b"
+# 클라우드 호출 상한(초) — 넘기면 로컬 폴백. 실측 정상 응답 0.8~1.3s 라 4s 면 일시 지연은 흡수하고 장애는 빨리 끊는다.
+# ollama_structured 의 httpx timeout 과 wait_for 에 같은 값을 쓴다(상한이 이 상수 하나).
+STAGE2_CLOUD_TIMEOUT_S = 4.0
+# 연속 실패 N회면 COOLDOWN 초 동안 클라우드를 건너뛰고 바로 로컬로 — 장애 중 매 replan 이 타임아웃을 또 내지 않게.
+# 성공 1회로 카운터 리셋. 모듈 전역(서버 단일 프로세스·단일 루프 가정).
+STAGE2_CLOUD_FAIL_LIMIT = 2
+STAGE2_CLOUD_COOLDOWN_S = 90.0
+_stage2_cloud_fails = 0
+_stage2_cloud_skip_until = 0.0  # time.monotonic() 기준, 이 시각 전까지 클라우드 생략
 # Stage1 대화·액션 결정 (hot loop) — 파인튜닝 SLM. 교체 시 여기만.
 STAGE1_MODEL = "gemma4_slm"
 # 스토리 디렉터(app/story) — 비트 전이 시만 호출. 31B 클라우드, 무료 티어 동시 1.
@@ -125,12 +142,20 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip(
 # main.py·debug.html 을 따로 고치지 않게 하려고 한 곳에 둔다.
 IMPORTANCE_MODELS = {"core": "gemma4", "high": "mid", "normal": STAGE1_MODEL}
 
+# Stage1 SLM(e4b) 상주 시간. 5m 이면 유휴 5분 뒤 첫 턴이 콜드 재로드를 맞는다 → 30m 로 늘리고,
+# main.py 가 WS 연결 중 SLM_PING_INTERVAL_S 마다 로드콜로 타이머를 갱신해 세션 내내 상주시킨다.
+SLM_KEEP_ALIVE = "30m"
+SLM_PING_INTERVAL_S = 240.0  # 4분 — 기본 5m 타이머보다 짧아 핑 1회 누락에도 안 내려간다
+
 
 def _keep_alive_for(model_name: str) -> str:
-    """플래너(Stage2)는 replan 때만 쓰는 큰 모델 → idle squat 방지로 30s (replan 버스트의 Stage2+supervisor
-    연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드). hot-loop 경량 모델은 5m(매 턴 사용, 콜드 재로드 회피).
+    """플래너 로컬 폴백(Stage2 'mid')은 폴백 때만 쓰는 큰 모델 → idle squat 방지로 30s (replan 버스트의
+    Stage2+supervisor 연속 호출은 30s 윈도로 브릿지, 이후 자동 언로드). Stage1 SLM 은 매 턴 쓰는 hot-loop
+    라 SLM_KEEP_ALIVE(30m, 콜드 재로드 회피). 그 외(12B core·e2b 요약 등)는 5m — 큰 모델을 길게 잡지 않는다.
     main.py 의 prewarm keep_alive 도 이 값과 맞춰야 squat 정책이 덮어써지지 않는다."""
-    return "30s" if model_name == STAGE2_MODEL else "5m"
+    if model_name == STAGE2_MODEL:
+        return "30s"
+    return SLM_KEEP_ALIVE if model_name == STAGE1_MODEL else "5m"
 
 
 def model_for_importance(importance: str) -> str:
@@ -269,6 +294,60 @@ async def ollama_structured(
         raise
     _log(content, parsed_obj.model_dump(), "", (time.perf_counter() - started) * 1000)
     return parsed_obj
+
+
+async def stage2_structured(
+    system: str,
+    user: str,
+    schema_model: Type[T],
+    **kwargs,
+) -> T:
+    """Stage2 구조화 호출 — 클라우드 우선, 실패 시 로컬 STAGE2_MODEL 로 같은 프롬프트 1회 폴백.
+    폴백 조건: 예외·타임아웃(STAGE2_CLOUD_TIMEOUT_S)·JSON/스키마 파싱 실패(ollama_structured 가 raise 하는 전부).
+    클라우드는 grammar 미지원이라 ollama_structured 안의 마크다운 펜스·thinking JSON 추출기를 그대로 탄다.
+    연속 STAGE2_CLOUD_FAIL_LIMIT 회 실패 시 STAGE2_CLOUD_COOLDOWN_S 동안 클라우드를 생략한다.
+    로컬 폴백 모델은 폴백 때만 로드된다(평소 VRAM 상주 없음). kwargs 는 ollama_structured 로 전달."""
+    global _stage2_cloud_fails, _stage2_cloud_skip_until
+    fell_back = False
+    if STAGE2_CLOUD_ENABLED:
+        now = time.monotonic()
+        if now < _stage2_cloud_skip_until:
+            fell_back = True  # 쿨다운 중 — 클라우드 시도 없이 바로 로컬
+        else:
+            if _stage2_cloud_skip_until:  # 쿨다운이 끝난 첫 시도
+                _stage2_cloud_skip_until = 0.0
+                logger.info("[Stage2] 클라우드 쿨다운 해제 — 재시도")
+            try:
+                result = await asyncio.wait_for(
+                    ollama_structured(
+                        system,
+                        user,
+                        schema_model,
+                        **{**kwargs, "model_name": STAGE2_CLOUD_MODEL, "timeout": STAGE2_CLOUD_TIMEOUT_S},
+                    ),
+                    timeout=STAGE2_CLOUD_TIMEOUT_S,
+                )
+                _stage2_cloud_fails = 0
+                return result
+            except Exception as e:
+                fell_back = True
+                _stage2_cloud_fails += 1
+                logger.warning(
+                    f"[Stage2] 클라우드({MODELS[STAGE2_CLOUD_MODEL]}) 실패 → 로컬 {MODELS[STAGE2_MODEL]} 폴백: "
+                    f"{type(e).__name__}: {e}"
+                )
+                if _stage2_cloud_fails >= STAGE2_CLOUD_FAIL_LIMIT:
+                    _stage2_cloud_fails = 0
+                    _stage2_cloud_skip_until = time.monotonic() + STAGE2_CLOUD_COOLDOWN_S
+                    logger.warning(
+                        f"[Stage2] 클라우드 연속 {STAGE2_CLOUD_FAIL_LIMIT}회 실패 — "
+                        f"{STAGE2_CLOUD_COOLDOWN_S:.0f}s 동안 로컬만 사용"
+                    )
+    # 로컬 호출: 클라우드용 timeout 이 새지 않게 kwargs 의 timeout 은 호출자가 준 것만 유지한다.
+    local_kwargs = {**kwargs, "model_name": STAGE2_MODEL}
+    if fell_back and kwargs.get("log_extra") is not None:
+        local_kwargs["log_extra"] = {**kwargs["log_extra"], "fallback_from_cloud": True}
+    return await ollama_structured(system, user, schema_model, **local_kwargs)
 
 
 # NOTE: 과거 call_ollama_direct(자유텍스트 단발 생성)는 유일 호출처였던 dialogue.py

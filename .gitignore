@@ -58,6 +58,8 @@ checkpoints.db
 
 #models
 **/models/*
+# 운영 Jev 체크포인트(약 0.5MB)만 추적 — 실험본(_m2/_v2c)·embeddings 는 계속 무시
+!OmniAgent_VR_System/CognitiveEngine/app/models/jevlike_tactics.pt
 
 
 # Jupyter Notebooks (if used for testing)

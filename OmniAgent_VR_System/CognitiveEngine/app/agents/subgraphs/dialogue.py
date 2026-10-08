@@ -37,7 +37,7 @@ from difflib import SequenceMatcher
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, Optional
-from ...utils.llm_factory import ollama_structured, STAGE1_MODEL, STAGE2_MODEL
+from ...utils.llm_factory import ollama_structured, stage2_structured, STAGE1_MODEL
 from ...utils.rag_utils import retrieve_context
 from ...utils.memory_manager import get_conversation_context, add_conversation
 from ...utils.async_tasks import spawn_background
@@ -548,11 +548,10 @@ async def _generate_plans(
 
     logger.info(f"[Dialogue] Stage2 plan 산출 시작 ({len(raw_responses)}개 NPC)")
     try:
-        result = await ollama_structured(
+        result = await stage2_structured(
             PLAN_SYSTEM_PROMPT,
             sections,
             PlanBatchResponse,
-            model_name=STAGE2_MODEL,
             temperature=0.3,
             # plan-only 는 NPC 당 ~100토큰 (goal 1구절 + steps 2-4개). 여유 2배.
             num_predict=220 * len(raw_responses),
