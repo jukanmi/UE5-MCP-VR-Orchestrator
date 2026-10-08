@@ -17,6 +17,19 @@ namespace
     const FLinearColor PartyMarkerColor(0.25f, 0.9f, 0.4f, 1.f);
     constexpr float PartyMarkerSize = 14.f;
 
+    // 지도 점 — 검정 테두리 둥근 점. 테두리가 없으면 지도 그림에 묻혀 배경처럼 보인다.
+    // 채움색은 위젯의 ColorAndOpacity 가 그대로 입히고, 테두리는 늘 검정.
+    void StyleMapDot(UImage* Dot)
+    {
+        if (!Dot) return;
+        FSlateBrush Brush;
+        Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+        Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::HalfHeightRadius;
+        Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Black);
+        Brush.OutlineSettings.Width = 2.f;
+        Dot->SetBrush(Brush);
+    }
+
     void SetGroupVisible(UWidget* Group, bool bVisible)
     {
         if (Group) Group->SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
@@ -37,6 +50,8 @@ void UMenuWidget::NativeConstruct()
         if (Back) Back->OnClicked.AddUniqueDynamic(this, &UMenuWidget::HandleBackClicked);
     }
     if (VolumeSlider)   VolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UMenuWidget::HandleVolumeSliderChanged);
+
+    for (UImage* Dot : { PlayerMarker, PlayerHeadingMarker, QuestMarker }) StyleMapDot(Dot);
 
     // 신체 측정은 아직 없다 — 자리만 보이고 눌리지 않는다.
     if (CalibrationButton) CalibrationButton->SetIsEnabled(false);
@@ -134,6 +149,7 @@ void UMenuWidget::SetMapMarkers(bool bPlayer, FVector2D PlayerUV, FVector2D Play
         while (PartyMarkers.Num() < PartyUVs.Num())
         {
             UImage* Dot = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+            StyleMapDot(Dot);
             Dot->SetColorAndOpacity(PartyMarkerColor);
             if (UCanvasPanelSlot* DotSlot = MapCanvas->AddChildToCanvas(Dot))
             {
