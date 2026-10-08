@@ -85,13 +85,13 @@ def test_new_connection_clears_stale_members():
 
     class _FakeWS:
         async def accept(self):
-            pass
+            pass  # 가짜 소켓 — 수락 동작은 이 테스트와 무관
 
         async def receive_text(self):
             raise WebSocketDisconnect()
 
         async def send_text(self, text):
-            pass
+            pass  # 가짜 소켓 — 송신 내용은 검증하지 않는다
 
     _send("Ghost", "join")
     asyncio.run(websocket_llm_endpoint(_FakeWS()))
