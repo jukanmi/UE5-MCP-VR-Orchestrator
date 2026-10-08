@@ -448,7 +448,12 @@ void AVRPawn::UpdatePosture()
             TransitionTo(EVRPosture::Standing, Ratio, PitchDown);
         break;
     case EVRPosture::Crouching:
-        if (Ratio > StandingRatioUp)       TransitionTo(EVRPosture::Standing, Ratio, PitchDown);
+        // 일어서다 허리 숙이기 조건이 이미 맞으면 Standing 을 거치지 않고 바로 Bending — 한 프레임 서기 깜박임·이벤트 2번 방지.
+        if (Ratio > StandingRatioUp)
+        {
+            const bool bBend = Ratio < BendRatioMax && PitchDown >= BendPitchDownDeg;
+            TransitionTo(bBend ? EVRPosture::Bending : EVRPosture::Standing, Ratio, PitchDown);
+        }
         else if (Ratio < ProneRatioDown)   TransitionTo(EVRPosture::Prone, Ratio, PitchDown);
         break;
     case EVRPosture::Prone:

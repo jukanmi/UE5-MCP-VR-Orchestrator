@@ -20,18 +20,19 @@
 - [ ] M2 양손 — 구현(2026-10-04), 헤드셋 없는 PIE 확인(한 손 0.15 로 못 드는 횃불을 두 손 0.15+0.15 로 듦·기록 손이 놓으면 기록이 다른 손으로 넘어가 안 떨어짐·마지막 손이 놓아야 떨어짐). 헤드셋 확인 대기(DoList 1-23). 결과·함정은 SPEC "M2 결과". 두 번째 손은 인벤토리 슬롯이 비어 폰의 "못 든 물건 다시 쥐기" 루프가 매 프레임 재쥐던 버그 수정.
 
 ### 포복 몸 눕히기·신체 측정 + 메뉴·설정 UI — SPEC 작성(2026-10-04, 착수 전)
-- [ ] `SPEC_body_measure_prone.md` — 헤드셋에서 Prone 이어도 몸이 직립이라 머리가 HMD 위치까지 못 감(자세 시스템은 태그·캡슐만, 몸 눕히는 코드 없음 — 헤드셋 없는 PIE 판정은 정상). M0 스파이크 → M1 눕히기 → M2 신체 측정(키·팔 벌림·다리는 컨트롤러를 다리에 대고).
-- [ ] `SPEC_pause_settings.md` — **M0·M1·M2 구현 완료(2026-10-05, 브랜치 `feature/pause-settings`, 헤드셋 없는 PIE 확인)**: 왼손 Menu 버튼 메뉴(월드 안 멈춤, 열린 동안 이동·공격·잡기 차단)·설정(마스터 볼륨 서브믹스 + `USaveGame` 저장)·UI 장면 컴포넌트를 `UVRPlayerUIComponent` 로 이전. **M3 정보 화면(지도·파티 목업·퀘스트)도 구현(2026-10-06).** M1·M2 헤드셋 확인은 사용자가 대부분 완료(DoList 2-8, 저장 유지만 남음). 남은 것 = 저장 유지 + M3 헤드셋 확인(DoList 2-8) 후 머지. 신체 측정 M2 의 선행은 충족.
+- [ ] **`feature/pause-settings` → Develop 머지** — 메뉴 M0~M3 헤드셋 확인 완료(DoList 2-8), SPEC 은 `docs/done/` 이관(2026-10-08). 이 브랜치에 파티·POI·신체 측정·LLM 개선도 쌓여 있어 PR 범위 정리 필요.
 
 ### 2026-10-05 헤드셋 테스트에서 나온 버그·점검 (미착수 — 결정·수정 대기)
-- [ ] **인벤토리에서 소비템을 꺼내면 손에 안 나옴(버그 아님, 설계 결정 필요)** — 핸드트래킹 핀치로 붕대를 꺼내면 `ActivateItem` 이 `Consumable` 을 `UseItem` 으로 바로 소비한다(로그 `Used Bandage — HP +25` ×2). 인벤토리에서 하나 줄고 HP 만 오르며 손엔 아무것도 없다. 재료·잡템은 손에 나온다(PIE `Rock` 확인). 선택지: ① 소비=사용 유지 + 사용 피드백(HUD·소리) ② 소비템도 먼저 손에 꺼내고 사용은 별도 동작(머리·입 근처에서 놓기 등) ③ 손별 분리(한 손 사용·한 손 꺼내기, "조작 기능 임의 추가 금지" 규칙과 충돌 — 별도 결정). 사용자 결정 대기.
 - [ ] **`GetMass()` 경고 "피직스 시뮬레이션 옵션이 켜져있어야 질량 구하기 가능" 반복(세션당 40건)** — 원인: 물리가 꺼진 아이템(상인 진열품·부착 중)의 질량을 `ItemMesh->GetMass()` 로 읽음. 호출처 `VRHandComponent.cpp` `CanHold`(:850)·접촉 쥐기(:653)·`GrabWithPhysics`(:877)·`HeldMassScale`(:305/309). `VRMeleeComponent.cpp:97` 은 이미 `GetMassOverride()` 로 회피. 수정안: `ADroppedItemBase::GetMassKg()` 를 두고 `UPrimitiveComponent::CalculateMass()`(오버라이드 있으면 그 값, 없으면 형상 계산, 물리 꺼져도 경고 없음)로 한 곳에 모은 뒤 4곳 교체. 진열품 판정이 0kg 으로 새는지도 같이 확인. 별도 `bugfix/` 로.
 - [ ] **가드·제임스가 서로 싸움 — 호감도 누적(2026-10-05 13:16 세션)** — `affinity.db`: `Guard→James -20`·`Guard→Moca -15`·`Moca→Guard -10`·`Guard→Elara -5` 전부 `Hostile Hit`. 서버가 danger≥0.5 지각마다 -5(`main.py::_apply_hostile_affinity`)라 아군끼리 피격(Hit)이 반복되면 -30 이하 적대로 넘어가 교전. `seed.py` 는 보스·적·플레이어만 시딩하고 아군↔아군은 초기화하지 않아 테스트 잔재가 남음(`Guard→Unknown -40` 도 이미 Hostile). ① 즉시: `seed_affinity` 에 아군↔아군 0 시딩 추가 + 서버 재시작 ② 근본: 아군이 왜 서로를 때리는지(후보: `KineticDamage` 동역학 피해·투사체/범위 공격·래그돌 충돌) — 싸움이 붙는 장면의 서버 `[Affinity] … -5` 로그와 UE `TakeDamage` 가해자 로그 필요.
-- [ ] **채팅 입력창 글자·배경 모두 흰색** — `WBP_Chat` `ChatInput` 을 어두운 배경 + 흰 글자로 고침(`bac02c79`, 브랜치 `feature/pause-settings`). 한글이 안 써지던 건 입력이 안 보여서 그렇게 느껴졌을 가능성(Roboto 폰트 + 메뉴 한글은 정상). 헤드셋/PIE 에서 실제 키 입력으로 확인 필요 — 그래도 한글이 안 써지면 IME 문제로 별도.
+- [ ] **채팅 입력창 글자·배경 모두 흰색** — `WBP_Chat` `ChatInput` 을 어두운 배경 + 흰 글자로 고침(`bac02c79`, 브랜치 `feature/pause-settings`). 한글이 안 써지던 건 입력이 안 보여서 그렇게 느껴졌을 가능성(Roboto 폰트 + 메뉴 한글은 정상). 헤드셋/PIE 에서 실제 키 입력으로 확인 필요 — 그래도 한글이 안 써지면 IME 문제로 별도. **2026-10-08 사용자 재보고("게임 내 채팅창에 한글이 안 쳐짐")**: 채팅창이 `UWidgetComponent`(World 공간, `UChatPanelUIComponent`) 위젯이라 OS IME 조합이 가상 창에 안 닿는 엔진 한계로 추정(미검증). 선택지: 뷰포트 오버레이 채팅창(데스크톱 입력용)·음성 STT. 영문 입력 여부부터 확인.
 - [ ] **TakeDamage 중복 정리(리팩토링, 사용자 문의 단계)** — 데미지 공식 `max(0, Raw−Defense)×부위배율` 이 `EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`(SmartNPC)·`AVRPawn::TakeDamage` 4곳에 복제. `AVRPawn` 은 `ACharacter + IPlayerBase` 이고 `ACombatCharacter` 아래가 아니라 상속 통합은 안 맞음. 안: ① `FCharacterAttributesBase::ApplyIncomingDamage(Raw, PartMultiplier)` 로 공식만 모음(위험 거의 없음) ② `ACharacter` 와 두 갈래 사이 얇은 중간 클래스 `ADamageableCharacter` 에 TakeDamage 뼈대 + 훅(`SmartNPC` 는 반환값이 Raw·`ReactToHit(Raw)` 라 동작 보존하려면 전체 오버라이드 필요). 순수 리팩토링(동작 동일) — 브랜치는 `refactor/` 로. 방향 미정.
 
 - [ ] **서브퀘스트 목표 마커 — 방향 결정 대기** — 월드 마커·메뉴 지도는 메인 비트의 `quest_target_tag` 하나만 가리킨다(`side/*.yaml` 에 목표 태그 없음, 마커는 월드당 1개). 서브퀘스트를 받아도 안내가 안 생긴다. 선택지: ① 활성 서브 목표로 마커 이동(서브 YAML 에 `quest_target_tag`) ② 마커 여러 개(메인 1+서브별) ③ 길 안내 경로(네비) — 별도 SPEC. 사용자 결정 대기.
-- [ ] **Follow 중 전투 뒤 추적 복구** — `Follow` 는 지속 추적(`2e236262`)이지만 적대 반사로 전투에 들어가면 `ProcessNextAction` 이 추적을 끊고 `ExitCombat` 이 복구하지 않는다. `SPEC_party` M2 가 메운다(멤버는 전투 종료 후 다시 플레이어를 따라감).
+- [ ] **POI 이동 서버 보정 여부 결정(2026-10-08 PIE)** — "광장으로 가" 에 SLM 이 `Move` 만 내고 `target_poi` 를 비워 임의 이동(0.9m). 파티 의도 매핑처럼 발화에 노출 POI 의 표시명·별칭이 있고 `Move` 에 `target_poi` 가 없으면 서버가 채우는 보정을 넣을지(SPEC_poi D4 "구제 없음 — SLM 실측 뒤 필요하면 추가" 조항의 그 시점). 권장: 넣는다(재학습 없이 즉시).
+- [ ] **v4 재학습 여부 결정** — 서버 보정(의도 매핑·Stop→Idle·게이트)으로 동작은 하지만 원시 출력은 파티 꼬리에 의존(꼬리 없으면 JoinParty 0/5), 적대 호감도에도 합류 시도. `tools/finetune_eval/stage1_bench.py --suite new --prod-tail --seed-history` 로 재측정 후 결정. 재학습 시 학습 중 Ollama·UE 종료 필요(VRAM 16GB).
+- [ ] **Bridge POI 위치** — 다리 밑 지면(z≈10, NavMesh 투영 13800,-1406,60)에 놓임. 다리 상판이어야 하면 이동.
+- [ ] **POI·파티 초안값 PIE 조정** — 합류 호감도 +20·프롬프트 POI 노출 8개·장소 설명 반경 15m(`FurnitureContextRange`)·설명 80자.
 - [ ] **`StoryDirectorSettings` LoadConfig 오류 2건(에디터 시작 시)** — `EnemyClassMap`(`zombie`→`/Game/Blueprint/Enemy/BP_Enemy_Wraith_C`)·`ItemClassMap`(`holy_sword`→`/Game/Blueprint/Item/BP_DropItem_C`) import failed. 해당 BP 가 없거나 경로가 바뀐 것으로 보임 — 스토리 이벤트의 `spawn_enemy`·`spawn_item` 경로가 안 먹을 수 있다. 원인 확인 필요.
 - [ ] **`SignalAllies` 미디어 없음 경고 44건/세션** — `ActionData` 미매핑이면 무음 즉시완료(`pitfalls.md` B). 몽타주를 매핑하거나 액션 후보에서 빼기.
 - [ ] **`Content/Maps/NewProjectTest.umap` UAT 재생성** — 지워도(`9c699528`) `sol_pi verify all` 의 UAT 가 매번 다시 만든다(untracked). `.gitignore` 에 넣거나 UAT 가 맵을 안 열게 하는 결정 필요(현재는 untracked 로 방치).
@@ -126,7 +127,6 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 - [ ] **스텁 2종 존치**: Craft 레시피 검증(레시피 데이터 설계 선행)·DetectEntities 확장. (Drop 스폰은 08-31 해소.)
 - [ ] (선택) `ItemManager` 인벤토리 JSON 직렬화를 `FJsonObjectConverter` 규격화(현행 수제 문자열).
 - [ ] **문서 부채**: CLAUDE.md `#todo` 앵커의 `src-todo` 블록이 index.html 에 없음 · `src-bt-guide` 는 구 BT 가이드(ST 마이그레이션 후 스테일).
-- [ ] (선택) POI 명명 위치 시스템 — "EastBridge" 류 장소명 이동. 현행은 FVector target_loc 만.
 - [ ] **LLM latency hiding(bark)** — LLM 왕복 동안 UE5 로컬 정형 bark·고민 애니 즉출. 애니 에셋 엮임.
 - [ ] (소형) Constrained Generation — BehaviorMode·인벤토리 기반 액션 enum grammar 사전 제약. 현행은 valid_targets enum + rules 사후검증.
 - [ ] VR 멀티플레이어 · Quest 3 스탠드얼론 APK(W22 보류 결정 재검토 시점 미정) — 스펙 미작성.
@@ -138,6 +138,19 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 ---
 
 ## Done
+
+- [x] **자세 시스템 SPEC_posture M1~M4 (2026-10-08, `7ed86d1c`~`61e632ef`)** — M1 `Bending` 판정(HMD 피치 30°+높이 비율 0.75~0.93, 복귀 20°/0.95)·태그·전이 로그 / M2 허리 숙이기 걷기 `BendSpeedRatio` 0.75, 엎드리기 캡슐은 수직 최소 높이 유지로 결정 / M3 `AVRPawn` 이 `IAISightTargetInterface` 구현해 자세별 시야 거리(0.8·0.6·0.35 × 3000cm) 한 곳에서 제한(적·NPC 공용) / M4 몸 연속 변형 = 메시를 발 피벗으로 앞으로 눕히기(`BodyLeanDegPerRatio` 110°, 상한 68°) + 발을 뒤로 빼 머리 본을 HMD 에 맞춤, PBIK 병용 — 기하식은 머리 본이 15cm 높게 남아 PIE 실측 곡선으로 대체(오차 1.5~6.4cm). `/federated` 로 워크트리에서 구현 후 메인 체리픽. 헤드셋 확인 완료(DoList 2-10) — 로그에서 찾은 두 결함 수정: 쭈그리기→서기→허리 숙이기 한 프레임 깜박임(쭈그리기에서 바로 Bending), 편하게 선 비율이 0.94~0.95 라 `BendRatioMax` 0.93 은 고개만 숙여도 걸림 → 0.88/복귀 0.91.
+
+- [x] **NPC LLM·Jev 개선 3~5 (2026-10-08, `08b97bd3`·`16c07bc5`·`ef3ee85d`)** — Stage2 를 클라우드 `gemma4:31b-cloud`(4s 타임아웃·로컬 qwen3:8b 폴백·2회 실패 90s 쿨다운, `STAGE2_USE_CLOUD=0` 으로 끔), e4b keep_alive 30m + 240s 핑. Jev 운영 체크포인트 git 추적·기동 워밍·`/api/ws/status` jev 필드(`JEV_DEVICE`). 생성기 story_goal KeyError 수리·스모크 테스트, stage1_bench `--suite/--prod-tail/--seed-history` 파티·POI 케이스(Moca 기록 백업·원복). 반복 발화 문장 단위 감지 → 1회 재생성 → 그래도 반복이면 반복 문장 제거(PIE: Guard "성문은 여전히…" 제거 확인). 남은 것: v4 재학습 여부는 bench(파티 꼬리 없으면 JoinParty 0/5) 보고 결정, Guard 기록에 기존 반복 4줄 잔존.
+- [x] **NPC 대화 파티 의도 매핑·기록 정리 (2026-10-08, `945c6468`)** — "같이 가자"·"일행이 되어줘" → JoinParty(호감도 게이트 통과), 파티원 "멈춰" → Idle(해산 방지), "헤어지자" → LeaveParty. 목적지 붙은 이동 요청·부정·명사 단독 제외. 대화 기록에서 Event 분리, 파티 지시 꼬리는 키워드·파티원일 때만. 제안서 `docs/PROPOSAL_npc_llm_jev.md`. PIE 확인 완료. "파인튜닝 SLM 이 JoinParty·target_poi 를 내지 않음" Todo 는 서버 보정으로 해소(POI target_poi 는 bench 4/5).
+
+- [x] **신체 측정 M2 (2026-10-08, `80f93d31`)** — 설정 → "신체 측정", 왼손 X 로 4단계(키·T자세 팔 벌림·오른손 컨트롤러 무릎·엉덩이) 측정, 큰 안내 텍스트(단계·결과·실패·취소), `UBodyMeasureSaveGame` 별도 슬롯, 저장값 있으면 2초 안정화 후 저장 키로 자동 보정 대체(저장·로드 모두 범위 검증). 팔·무릎·엉덩이는 저장·표시만 — 눕힌 몸 비례 연결은 `SPEC_body_measure_prone` M0·M1(미착수) 뒤. 헤드셋 확인 DoList 2-9.
+
+- [x] **파티 M1~M3 (2026-10-08, `7c9a9b15`·`ce8cfa84`·`67c261ca`, `/federated` 서브에이전트)** — `UPartySubsystem`(정원 4)·`JoinParty`/`LeaveParty`·증분 `party_update`(재연결 시 재송신, 서버는 연결마다 초기화). 합류 시 플레이어 추적·Jev 일상 억제·1초 자기 복구(반사·넉다운·리스폰 뒤)·전투 종료 후 재개, Stop=해산, Destroyed 때만 Leave. 서버 호감도 게이트(+20)·거절 대사·파티원 간 피격 무시. 전투 뒤 추적 미복구 Todo 해소. PIE(디버그 명령): 합류·추적·일상 억제·해산·서버 동기 확인. LLM 경유 합류는 위 Todo.
+- [x] **POI M1~M4 (2026-10-08, `2c8046e2`·`8371bd4e`·`0edd3e95`·`3981a61f`, 워크트리 통합·삭제)** — `APOIActor`·`UPOIManager`, jev 풀 소스 전환(`POI_`+PoiId), `target_poi` 이동(Python 어휘 검증만·UE 해석), 근처 POI 설명 프롬프트 노출, 스토리 구역 PoiId 연결. 레벨 POI 11개(Gate·Plaza·Well + 구역 8곳). PIE: 등록·patrol dest=POI_Well·"우물로 가" 도착·우물 설명 대사·zone_enter 불변 확인.
+- [x] **NPC 말풍선 기둥 현상 (2026-10-08, `7de7a6fb`)** — AutoWrap+DrawAtDesiredSize 로 55자 대사가 2.5m×6.4m 기둥. 고정 줄바꿈 640·스케일 0.25·아래 피벗. 헤드셋 확인 DoList 2-9.
+- [x] **메뉴 지도 점 검정 테두리 (2026-10-08, 미커밋)** — 점이 지도 배경처럼 보여 둥근 점 + 검정 2px 테두리(`MenuWidget::StyleMapDot`).
+- [x] **`/federated` 스킬 (2026-10-08, 미커밋)** — Gemini 대신 Master=메인 세션·Dev/리뷰=Sonnet 서브에이전트. 마일스톤 끝까지 진행 후 한 번에 cherry-pick·워크트리 삭제, 워크트리 함정(RemoteControl.ini·`.env`·U-6·에디터 떠 있으면 빌드 거부).
 
 - [x] **메뉴 M0~M3 + UI 컴포넌트 이전 (2026-10-05~06, 브랜치 `feature/pause-settings`, 헤드셋 확인 대부분 완료·M3 대기)** — M1 `47cd39df`: 왼손 Menu 버튼 메뉴(`UMenuPanelUIComponent`·`UMenuWidget`·`WBP_MenuPanel`·`IA_MenuToggle`), 열린 동안 이동·회전·공격·대시·상호작용·새로 쥐기 차단(`UVRPlayerUIComponent::BlocksGameplayInput`). 구조 `2dcec850`: UI 장면 컴포넌트 생성·튜닝값을 폰 생성자 → `UVRPlayerUIComponent` 런타임 생성으로 이전(VRPawn.cpp 1387→1329줄). M2 `bd865393`: 설정 화면(마스터 볼륨 서브믹스 `SetSubmixOutputVolume` + `USettingsSaveGame` 슬롯 저장·시작 적용). M3 `10511f20`·`96d8ad10`: 메인 목록 → 지도(`T_WorldMap` 정적 탑다운 + 앵커 마커)·파티(목업)·퀘스트, 서버 `Story` 블록에 `side_titles`. 헤드셋: 사용자가 Menu 버튼·시스템 메뉴 충돌·입력 차단·포인터·글자 대비·**소리 볼륨 실제 변화**·리팩토링 회귀 확인(DoList 2-8, 저장 유지·M3 만 남음). 함정은 `pitfalls.md` D.
 - [x] **채팅 입력창 글자·배경 흰색 수정 (2026-10-05, `bac02c79`)** — `WBP_Chat.ChatInput` 을 어두운 배경 + 흰 글자로 명시(월드 위젯은 기본 Slate 브러시가 흰색). 실제 한글 입력은 확인 대기(Todo).

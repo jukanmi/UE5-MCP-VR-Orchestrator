@@ -63,6 +63,7 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
 - **월드 위젯 앞면** — 단면(two-sided 끔) 위젯은 −X 면이 읽히는 면이라 +X 를 카메라 반대로 돌려야 보인다. 양면이면 +X 를 카메라로 돌려도 글자가 정상(2026-10-03 PIE 화면 캡처). 프로젝트 규약: 월드 UI 는 `UWorldUIComponent` 상속(양면 + +X→카메라).
 - **아이템 충돌 수 세기**: `StaticMeshEditorSubsystem.get_simple_collision_count` 는 상자·구·캡슐만 센다 — 볼록 헐은 `get_convex_collision_count` 로 따로.
 - Sprint 해제는 `IA_Move` `Completed`/`Canceled`(`OnMoveReleased`) — `Triggered` 는 입력 0 에서 안 오고 `OnMove` 가 조기 return.
+- **몸 메시 회전은 `UpdateBodyRotation` 이 매 틱 덮어쓴다** — Python 으로 `mesh.relative_rotation` 을 줘도 무효(눕힘·yaw 모두 `BodyLeanDeg`·`SmoothedBodyYaw` 에서 계산). 헤드셋 없는 PIE 자세 시험은 `VRCamera.relative_location`(Z=키×비율)·`relative_rotation`(피치)을 바꾸고, 판정·보간이 도는 시간이 필요하니 설정과 읽기를 별도 호출로 나눌 것(한 호출 안 `sleep` 은 게임 스레드를 막는다). 편하게 선 비율은 측정 키 대비 0.94~0.95 라 높이 임계를 0.93 근처에 두면 고개만 숙여도 걸린다.
 
 ### D. 통신 · DX
 - **상세 문서 `docs/index.html`**: **`docs/index.html`** (브라우저로 열기). 주요 앵커: `#ai-codebase-guide`(아키텍처) · `#tts-plan`(TTS 계획) · `#langgraph`(LangGraph) · `#integration-guide`(통합 시퀀스). 로드맵은 `docs/Memo.md` Todo 섹션·`docs/DoList.md` 가 담당(index.html 에 별도 `#todo` 없음, 2026-07-27 중복 방지로 참조 제거).
@@ -155,3 +156,4 @@ description: 코드 밖 함정·제약 — Ollama/LLM 운영, UE 에디터·MCP�
   `OmniAgent_VR_System/CognitiveEngine` 에서 메인 트리 `.venv/Scripts/python.exe -m pytest tests -q` 로 돌리면 통과(113).
 - **U-4. `sol_pi.py build` 워치독 300초** — 룰 캐시 재생성처럼 오래 걸리는 빌드는 중간에 죽고 `cl.exe` 만 taskkill 됨
   (`dotnet.exe` 호스트는 안 죽음). 워치독에 끊긴 뒤 재실행하면 이미 컴파일된 `.obj` 는 재사용되니 그냥 다시 돌리면 된다.
+- **U-12. 에디터를 `-log` 로 띄우면 콘솔 창 클릭(텍스트 선택 모드)에 게임이 멈춘다** — 창 제목이 "선택 …UnrealEditor.exe" 로 바뀌고 MCP(30010)가 무응답이 된다. MCP 로 띄울 땐 `-log` 없이 `Start-Process`, 걸렸으면 에디터를 닫고 다시 띄운다.

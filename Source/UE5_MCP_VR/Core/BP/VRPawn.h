@@ -339,11 +339,11 @@ public:
      *  서서 고개만 숙이면 비율이 거의 안 내려가 이 값 이상에 머물러 Standing 으로 남는다.
      *  StandingRatioDown < BendRatioMax < BendRatioMaxUp 이어야 함. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
-    float BendRatioMax = 0.93f;
+    float BendRatioMax = 0.88f;
 
     /** Bending → Standing 복귀 높이 비율. BendRatioMax 보다 커야 데드존이 생긴다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
-    float BendRatioMaxUp = 0.95f;
+    float BendRatioMaxUp = 0.91f;
 
     /** 허리 숙이기 걷기 속도 = WalkSpeed × 이 값. 서기(1.0)와 쭈그리기(CrouchSpeed/WalkSpeed) 사이. 전력질주 중엔 적용 안 함. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "1.0"))
