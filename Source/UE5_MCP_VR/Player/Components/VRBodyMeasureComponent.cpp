@@ -12,8 +12,6 @@
 
 namespace
 {
-    // HMD 트래킹이 안 잡힌 0 근처 값을 거르는 하한(자동 캘리브레이션과 같은 값).
-    constexpr float MinTrackedHMDHeight = 30.f;
 
     FString Cm(float V) { return FString::Printf(TEXT("%dcm"), FMath::RoundToInt(V)); }
 
@@ -209,7 +207,7 @@ bool UVRBodyMeasureComponent::SampleStep(float& OutValue, FText& OutWhy) const
     {
     case EStep::Height:
         OutValue = Pawn->GetCurrentHMDHeight();
-        if (bRequireTracking && OutValue < MinTrackedHMDHeight)
+        if (bRequireTracking && OutValue < AVRPawn::MinTrackedHMDHeight)
         {
             OutWhy = FText::FromString(TEXT("헤드셋 위치가 안 잡혀요"));
             return false;

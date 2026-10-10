@@ -406,6 +406,9 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VR|Posture")
     float GetCurrentHMDHeight() const;
 
+    /** 이 높이(cm) 이하의 HMD 값은 트래킹이 안 잡힌 것(0 근처)으로 본다 — 캘리브레이션·신체 측정이 같이 쓴다. */
+    static constexpr float MinTrackedHMDHeight = 30.f;
+
     /** 월드 Z 를 바닥(=캡슐 발) 기준 높이(cm)로 바꾼다. GetCurrentHMDHeight 와 같은 좌표계 — 신체 측정이 컨트롤러 높이를 잴 때 쓴다. */
     float HeightAboveFloor(float WorldZ) const;
 
@@ -578,6 +581,15 @@ private:
     /** 대쉬 입력(B버튼) — 쿨다운·스태미나·자세 검사 후 등속 이동 시작 */
     void OnDash(const FInputActionValue& Value);
 
+    /** 대쉬 방향 — 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면(수평). */
+    FVector CalculateDashDirection() const;
+
+    /** 대쉬 스태미나를 차감하고, 바닥나면 고갈 상태로 만든다. 회복 지연도 다시 시작한다(디버그 무료 대쉬면 아무것도 안 함). */
+    void ConsumeDashStamina();
+
+    /** HMD Yaw 기준 수평 앞·오른쪽 단위 축 — 이동과 대쉬가 같은 기준을 쓴다(컨트롤러 회전이 아닌 시선 방향). */
+    void GetMoveAxes(FVector& OutForward, FVector& OutRight) const;
+
     /** 매 Tick — 대쉬 잔여 시간 소진 시 StopDash */
     void UpdateDash(float DeltaTime);
 
@@ -708,6 +720,18 @@ private:
 
     /** 손에서 놓인 아이템의 행선지 — 상인 매입 상자(판매) → 거래 접시 → NPC 건네기 → 던지기 순으로 처리한다. */
     void RouteReleasedItem(ADroppedItemBase* Item, bool bLeft);
+
+    /** RouteReleasedItem 단계 — 상인 매입 상자 안이면 판매를 시도한다. 상자 안이었으면(판매 성사 여부와 무관) true. */
+    bool TrySellToMerchantStall(ADroppedItemBase* Item);
+
+    /** RouteReleasedItem 단계 — 열린 거래 접시에 붙었으면 true. */
+    bool TrySnapToTradeSession(ADroppedItemBase* Item);
+
+    /** RouteReleasedItem 단계 — 가까운 NPC 인벤토리에 들어갔으면 true. 무게·슬롯이 모자라면 false 로 던지기에 넘긴다. */
+    bool TryHandOverToNearbyNPC(ADroppedItemBase* Item);
+
+    /** RouteReleasedItem 단계 — 손 속도를 실어 던진다(정지 상태면 그 자리에 떨어진다). */
+    void ThrowReleasedItem(ADroppedItemBase* Item, bool bLeft);
 
     /** 그립 아날로그값(누르는 동안 매 프레임) — 손의 마찰 한계로 넘기고, 약하게 쥐어 못 든 아이템은 더 세게 쥐면 다시 쥔다. */
     void OnGrabValueRight(const FInputActionValue& Value);

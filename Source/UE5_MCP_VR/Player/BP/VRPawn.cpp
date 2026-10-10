@@ -439,10 +439,8 @@ void AVRPawn::OnMove(const FInputActionValue& Value)
     // 스틱을 끝까지 밀면 달리기 — 별도 입력 액션 없이 magnitude 로만 판정.
     SetSprinting(Input.Size() > SprintThreshold);
 
-    // HMD Yaw 기준으로 이동 방향 계산 (컨트롤러 회전이 아닌 시선 방향)
-    const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
-    const FVector Forward = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X);
-    const FVector Right   = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y);
+    FVector Forward, Right;
+    GetMoveAxes(Forward, Right);
 
     AddMovementInput(Forward, Input.Y);
     AddMovementInput(Right,   Input.X);
@@ -529,28 +527,10 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     const float Now = World->GetTimeSeconds();
     if (bDashActive || Now - LastDashTime < DashCooldownSec) return;
 
-    FGameResources& Res = CurrentStats.Resources;
-    if (!bDebugDashFreeStamina && (bStaminaExhausted || Res.Stamina < DashStaminaCost)) return;
+    if (!bDebugDashFreeStamina && (bStaminaExhausted || CurrentStats.Resources.Stamina < DashStaminaCost)) return;
 
-    // 방향 — 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면.
-    // 이동과 같은 기준(HMD Yaw)으로 풀어야 스틱을 민 쪽과 튀어나가는 쪽이 일치한다.
-    const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
-    const FVector Forward = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X);
-    const FVector Right   = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y);
-
-    FVector Dir = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal2D();
-    if (Dir.IsNearlyZero()) Dir = Forward;
-
-    if (!bDebugDashFreeStamina)
-    {
-        Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
-        if (Res.Stamina <= 0.f)
-        {
-            bStaminaExhausted = true;
-            SetSprinting(false);
-        }
-        TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
-    }
+    const FVector Dir = CalculateDashDirection();
+    ConsumeDashStamina();
 
     bDashActive = true;
     DashTimeRemaining = DashDuration;
@@ -559,6 +539,31 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
     const float DashSpeed = DashDistance / FMath::Max(KINDA_SMALL_NUMBER, DashDuration);
     MovementUtils::BeginFrictionlessLaunch(*this, Dir * DashSpeed, SavedDashFriction);
+}
+
+FVector AVRPawn::CalculateDashDirection() const
+{
+    // 방향 — 왼손 스틱을 밀고 있으면 그 방향, 중립이면 HMD 정면.
+    // 이동과 같은 기준(HMD Yaw)으로 풀어야 스틱을 민 쪽과 튀어나가는 쪽이 일치한다.
+    FVector Forward, Right;
+    GetMoveAxes(Forward, Right);
+
+    const FVector Dir = (Forward * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal2D();
+    return Dir.IsNearlyZero() ? Forward : Dir;
+}
+
+void AVRPawn::ConsumeDashStamina()
+{
+    if (bDebugDashFreeStamina) return;
+
+    FGameResources& Res = CurrentStats.Resources;
+    Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
+    if (Res.Stamina <= 0.f)
+    {
+        bStaminaExhausted = true;
+        SetSprinting(false);
+    }
+    TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 }
 
 void AVRPawn::UpdateDash(float DeltaTime)
@@ -943,13 +948,25 @@ bool AVRPawn::ReleaseHandConstraint(bool bLeft)
 
 void AVRPawn::RouteReleasedItem(ADroppedItemBase* Item, bool bLeft)
 {
-    // 상인 매입 상자 안에서 놓았으면 판매 판정. 거부품(퀘스트·BaseValue 0)은 물리가 이미 살아 있어 상자 안에 그대로 떨어진다.
-    if (AMerchantStall* Stall = AMerchantStall::FindStallContaining(this, Item->GetActorLocation()))
-    {
-        Stall->TrySell(Item, Inventory);
-        return;
-    }
+    // 처리 순서가 곧 우선순위다 — 판매 → 거래 접시 → NPC 건네기 → (그 외) 던지기.
+    if (TrySellToMerchantStall(Item)) return;
+    if (TrySnapToTradeSession(Item)) return;
+    if (TryHandOverToNearbyNPC(Item)) return;
+    ThrowReleasedItem(Item, bLeft);
+}
 
+bool AVRPawn::TrySellToMerchantStall(ADroppedItemBase* Item)
+{
+    // 상인 매입 상자 안에서 놓았으면 판매 판정. 거부품(퀘스트·BaseValue 0)은 물리가 이미 살아 있어 상자 안에 그대로 떨어진다.
+    AMerchantStall* Stall = AMerchantStall::FindStallContaining(this, Item->GetActorLocation());
+    if (!Stall) return false;
+
+    Stall->TrySell(Item, Inventory);
+    return true;
+}
+
+bool AVRPawn::TrySnapToTradeSession(ADroppedItemBase* Item)
+{
     // 거래 테이블 접시가 먼저다 — 거래 중에 접시 위에서 놓았는데 NPC 인벤토리로 바로
     // 빨려 들어가면 수락/취소를 누를 대상이 사라진다.
     // 세션은 거래 중에만, 그것도 보통 하나만 존재한다. 상시 추적 대신 놓는 순간에만 훑는다.
@@ -959,10 +976,14 @@ void AVRPawn::RouteReleasedItem(ADroppedItemBase* Item, bool bLeft)
     {
         if (ATradeSessionActor* Session = Cast<ATradeSessionActor>(Actor))
         {
-            if (Session->TrySnapItem(Item)) return;
+            if (Session->TrySnapItem(Item)) return true;
         }
     }
+    return false;
+}
 
+bool AVRPawn::TryHandOverToNearbyNPC(ADroppedItemBase* Item)
+{
     // 그다음이 건네기 — NPC 앞에서 놓았는데 아이템이 얼굴로 날아가면 곤란하다.
     const FString NpcId = PlayerInteractionUtils::FindNearestNPCId(this, HandOverRange);
     UNPCManager* Manager = NpcId.IsEmpty() ? nullptr : UNPCManager::Get(this);
@@ -972,19 +993,23 @@ void AVRPawn::RouteReleasedItem(ADroppedItemBase* Item, bool bLeft)
     UItemManager* ItemManager = UItemManager::Get(this);
 
     FItemData HandOverData;
-    if (NpcInv && ItemManager && ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, HandOverData))
+    if (!NpcInv || !ItemManager || !ItemManager->GetItemDataByID(Item->ItemData.ItemTemplateID, HandOverData)) return false;
+
+    // 무게·슬롯이 모자라면 건네지 않고 던지기로 흘려보낸다 — 여기서 액터를 없애면
+    // 아이템이 아무 데도 들어가지 않고 증발한다.
+    if (!NpcInv->AddItem(HandOverData, Item->Amount))
     {
-        // 무게·슬롯이 모자라면 건네지 않고 던지기로 흘려보낸다 — 여기서 액터를 없애면
-        // 아이템이 아무 데도 들어가지 않고 증발한다.
-        if (NpcInv->AddItem(HandOverData, Item->Amount))
-        {
-            UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건넴: %s x%d → %s"), *HandOverData.ItemID, Item->Amount, *NpcId);
-            Item->ConsumeItem();
-            return;
-        }
         UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건네기 실패(NPC 공간·무게 부족): %s"), *HandOverData.ItemID);
+        return false;
     }
 
+    UE_LOG(LogTemp, Log, TEXT("[VRPawn] 건넴: %s x%d → %s"), *HandOverData.ItemID, Item->Amount, *NpcId);
+    Item->ConsumeItem();
+    return true;
+}
+
+void AVRPawn::ThrowReleasedItem(ADroppedItemBase* Item, bool bLeft)
+{
     // 손 속도를 그대로 실어 던진다. 정지 상태로 놓으면 속도 0 = 그 자리에 떨어진다.
     if (!MeleeCombat) return;
     Item->LaunchThrown(MeleeCombat->GetHandVelocity(bLeft) * ThrowVelocityScale, this,

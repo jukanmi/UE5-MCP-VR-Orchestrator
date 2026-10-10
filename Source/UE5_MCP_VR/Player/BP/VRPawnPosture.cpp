@@ -42,12 +42,11 @@ void AVRPawn::StartCalibration()
 
 void AVRPawn::SampleCalibration()
 {
-    const float Z = GetCurrentHMDHeight();
-    if (Z > 30.f) // HMD 트래킹이 안 잡힌 0 근처 값 제외
-    {
-        CalibrationAccum += Z;
-        ++CalibrationSampleCount;
-    }
+    const float CurrentHeight = GetCurrentHMDHeight();
+    if (CurrentHeight <= MinTrackedHMDHeight) return;   // HMD 트래킹이 안 잡힌 0 근처 값 제외
+
+    CalibrationAccum += CurrentHeight;
+    ++CalibrationSampleCount;
 }
 
 void AVRPawn::FinishCalibration()
@@ -90,6 +89,13 @@ float AVRPawn::GetCurrentHMDHeight() const
     // 캡슐 발 기준 절대 높이 = 카메라 월드 Z - 액터 월드 Z + 캡슐 절반 높이.
     // 액터 피벗이 캡슐 정중앙이므로, 발은 액터Z - HalfHeight 에 있다.
     return HeightAboveFloor(VRCamera->GetComponentLocation().Z);
+}
+
+void AVRPawn::GetMoveAxes(FVector& OutForward, FVector& OutRight) const
+{
+    const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
+    OutForward = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X);
+    OutRight   = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y);
 }
 
 float AVRPawn::HeightAboveFloor(float WorldZ) const
