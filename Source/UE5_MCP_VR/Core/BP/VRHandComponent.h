@@ -238,7 +238,7 @@ private:
     float HeldMassScale() const;
 
     /** 목표에서 PassThroughDistance 넘게 밀려나면 반대 손 충돌을 끄고, 절반 안으로 돌아오면 다시 켠다 — 양손 끼임 해소. */
-    void UpdatePassThrough(float Error);
+    void UpdatePassThrough(float BodyToTargetDist);
 
     /** 손 드라이브 목표에서 손 모양이 근처 NPC 뼈 캡슐에 들어가면 목표를 표면 밖으로 옮긴 위치. 안 겹치면 그대로.
      *  OutTouched = 실제 손 위치에서 가장 깊이 들어간 NPC(없으면 nullptr). */

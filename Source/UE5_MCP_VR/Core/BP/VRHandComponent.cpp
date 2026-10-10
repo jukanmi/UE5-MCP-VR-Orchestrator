@@ -47,22 +47,22 @@ namespace
     // 회전은 SLERP 한 축으로 — 스윙/트위스트 분리 드라이브는 큰 회전에서 짐벌처럼 꺾인다.
     UPhysicsConstraintComponent* MakeDriveConstraint(AActor* Owner, const FString& Name)
     {
-        UPhysicsConstraintComponent* C = NewObject<UPhysicsConstraintComponent>(Owner, *Name);
-        C->RegisterComponent();
-        C->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-        C->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-        C->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.f);
-        C->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Free, 0.f);
-        C->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Free, 0.f);
-        C->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Free, 0.f);
-        C->SetLinearPositionDrive(true, true, true);
-        C->SetLinearVelocityDrive(true, true, true);
-        C->SetLinearVelocityTarget(FVector::ZeroVector);
-        C->SetAngularDriveMode(EAngularDriveMode::SLERP);
-        C->SetOrientationDriveSLERP(true);
-        C->SetAngularVelocityDriveSLERP(true);
-        C->SetAngularVelocityTarget(FVector::ZeroVector);
-        return C;
+        UPhysicsConstraintComponent* Constraint = NewObject<UPhysicsConstraintComponent>(Owner, *Name);
+        Constraint->RegisterComponent();
+        Constraint->SetLinearXLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+        Constraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+        Constraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Free, 0.f);
+        Constraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Free, 0.f);
+        Constraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Free, 0.f);
+        Constraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Free, 0.f);
+        Constraint->SetLinearPositionDrive(true, true, true);
+        Constraint->SetLinearVelocityDrive(true, true, true);
+        Constraint->SetLinearVelocityTarget(FVector::ZeroVector);
+        Constraint->SetAngularDriveMode(EAngularDriveMode::SLERP);
+        Constraint->SetOrientationDriveSLERP(true);
+        Constraint->SetAngularVelocityDriveSLERP(true);
+        Constraint->SetAngularVelocityTarget(FVector::ZeroVector);
+        return Constraint;
     }
 }
 
@@ -158,17 +158,17 @@ void UVRHandComponent::CreateHandShapes(AActor* Owner, const TCHAR* Side)
     // 손가락 캡슐 — 손가락마다 가운데 마디·끝마디(엄지는 첫 마디·끝마디). 첫 마디는 손바닥 상자와 겹쳐 두지 않는다.
     // 따로 움직이는 바디가 아니라 손바닥 바디에 용접된 모양이라, 어느 마디가 닿든 엔진이 손 전체를 한 덩어리로 멈춘다.
     // 핸드트래킹이 잡히기 전엔 충돌을 끄고 손바닥 안에 둔다.
-    for (int32 j = 0; j < UVRPawnAnimInstance::NumFingerShapes; ++j)
+    for (int32 ShapeIdx = 0; ShapeIdx < UVRPawnAnimInstance::NumFingerShapes; ++ShapeIdx)
     {
-        UCapsuleComponent* Body = NewObject<UCapsuleComponent>(Owner, *FString::Printf(TEXT("Finger%s%d_%d"), Side,
-                                                                                    j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger));
-        Body->InitCapsuleSize(1.f, 2.f);   // 실제 치수는 애님 인스턴스가 메시에서 뽑은 뒤 ApplyColliderSizes 가 넣는다
-        SetupHandBodyCollision(Body, bLeft);
-        Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-        Body->SetWorldLocation(Palm->GetComponentLocation());
-        Body->RegisterComponent();
-        Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
-        FingerBodies.Add(Body);
+        UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(Owner, *FString::Printf(TEXT("Finger%s%d_%d"), Side,
+                                                                                    ShapeIdx / UVRPawnAnimInstance::ShapesPerFinger, ShapeIdx % UVRPawnAnimInstance::ShapesPerFinger));
+        Capsule->InitCapsuleSize(1.f, 2.f);   // 실제 치수는 애님 인스턴스가 메시에서 뽑은 뒤 ApplyColliderSizes 가 넣는다
+        SetupHandBodyCollision(Capsule, bLeft);
+        Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Capsule->SetWorldLocation(Palm->GetComponentLocation());
+        Capsule->RegisterComponent();
+        Capsule->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
+        FingerBodies.Add(Capsule);
     }
 }
 
@@ -197,19 +197,19 @@ void UVRHandComponent::UpdateTracking(float DeltaTime)
     if (TrackState.bValid)
     {
         LastTrackInOwner = TrackState;
-        for (int32 k = 0; k < EHandKeypointCount; ++k)
+        for (int32 Key = 0; Key < EHandKeypointCount; ++Key)
         {
-            LastTrackInOwner.HandKeyLocations[k] = OwnerTM.InverseTransformPosition(TrackState.HandKeyLocations[k]);
-            LastTrackInOwner.HandKeyRotations[k] = OwnerTM.InverseTransformRotation(TrackState.HandKeyRotations[k]);
+            LastTrackInOwner.HandKeyLocations[Key] = OwnerTM.InverseTransformPosition(TrackState.HandKeyLocations[Key]);
+            LastTrackInOwner.HandKeyRotations[Key] = OwnerTM.InverseTransformRotation(TrackState.HandKeyRotations[Key]);
         }
     }
     else if (LastTrackInOwner.bValid)
     {
         TrackState = LastTrackInOwner;
-        for (int32 k = 0; k < EHandKeypointCount; ++k)
+        for (int32 Key = 0; Key < EHandKeypointCount; ++Key)
         {
-            TrackState.HandKeyLocations[k] = OwnerTM.TransformPosition(LastTrackInOwner.HandKeyLocations[k]);
-            TrackState.HandKeyRotations[k] = OwnerTM.TransformRotation(LastTrackInOwner.HandKeyRotations[k]);
+            TrackState.HandKeyLocations[Key] = OwnerTM.TransformPosition(LastTrackInOwner.HandKeyLocations[Key]);
+            TrackState.HandKeyRotations[Key] = OwnerTM.TransformRotation(LastTrackInOwner.HandKeyRotations[Key]);
         }
     }
 
@@ -230,11 +230,11 @@ void UVRHandComponent::UpdateTracking(float DeltaTime)
 
     // 쥐는 정도 평활화 — 애님의 직전 갱신 값(한 프레임 늦음)을 지수 평활.
     const UVRPawnAnimInstance* Anim = GetAnim();
-    const float Alpha = SqueezeSmoothTime > KINDA_SMALL_NUMBER ? 1.f - FMath::Exp(-DeltaTime / SqueezeSmoothTime) : 1.f;
-    for (int32 f = 0; f < 5; ++f)
+    const float SmoothAlpha = SqueezeSmoothTime > KINDA_SMALL_NUMBER ? 1.f - FMath::Exp(-DeltaTime / SqueezeSmoothTime) : 1.f;
+    for (int32 Finger = 0; Finger < 5; ++Finger)
     {
-        const float Raw = Anim && TrackState.bValid ? Anim->GetFingerSqueeze(Hand, f) : 0.f;
-        SmoothedSqueeze[f] += (Raw - SmoothedSqueeze[f]) * Alpha;
+        const float RawSqueeze = Anim && TrackState.bValid ? Anim->GetFingerSqueeze(Hand, Finger) : 0.f;
+        SmoothedSqueeze[Finger] += (RawSqueeze - SmoothedSqueeze[Finger]) * SmoothAlpha;
     }
 }
 
@@ -242,13 +242,13 @@ float UVRHandComponent::DriveBody(const FVector& Location, const FQuat& Rotation
 {
     // 잠든 바디는 드라이브 목표가 바뀌어도 깨어나지 않는다 — 손을 잠시 멈췄다 움직이면 제자리에 남는다.
     if (!Palm->IsAnyRigidBodyAwake()) Palm->WakeAllRigidBodies();
-    const float Error = FVector::Dist(Palm->GetComponentLocation(), Location);
+    const float BodyToTargetDist = FVector::Dist(Palm->GetComponentLocation(), Location);
 
     // 바디가 목표에서 이 거리(cm) 이상 떨어지면 드라이브로 못 따라온다고 보고 목표로 순간이동.
     // 대쉬(0.15초에 300cm)·리스폰·착석 스냅 때 손이 뒤에 남거나 벽 뒤에 끼는 것을 막는다.
     // ponytail: 벽 너머로 이 거리 이상 손을 밀어 넣으면 바디가 벽을 통과한다 — 막아야 하면 순간이동 전 스윕 검사 추가.
     static constexpr float SnapDistance = 60.f;
-    if (Error > SnapDistance)
+    if (BodyToTargetDist > SnapDistance)
     {
         // ResetPhysics — 위치와 함께 잔류 속도도 비워 순간이동 직후 튕겨 나가지 않게 한다.
         Palm->SetWorldLocationAndRotation(Location, Rotation, false, nullptr, ETeleportType::ResetPhysics);
@@ -277,29 +277,29 @@ float UVRHandComponent::DriveBody(const FVector& Location, const FQuat& Rotation
     // ponytail: 회전은 스프링 그대로, 쥐면 같은 배율 — 긴 물건(관성 m·r²)은 실제보다 덜 무겁게 돈다. 필요하면 관성비로 따로.
     PalmConstraint->SetAngularDriveParams(AngularStiffness * MassScale, AngularDamping * MassScale, 0.f);
     PalmConstraint->SetAngularOrientationTarget(Rotation.Rotator());
-    return Error;
+    return BodyToTargetDist;
 }
 
 float UVRHandComponent::HeldMassScale() const
 {
-    const ADroppedItemBase* Held = Grab.Item.Get();
-    if (!IsValid(Held) || !IsValid(Held->ItemMesh) || !IsValid(Palm)) return 1.f;
+    const ADroppedItemBase* HeldItem = Grab.Item.Get();
+    if (!IsValid(HeldItem) || !IsValid(HeldItem->ItemMesh) || !IsValid(Palm)) return 1.f;
     const float PalmMass = FMath::Max(Palm->GetMass(), KINDA_SMALL_NUMBER);
     // 양손으로 쥔 물건은 무게를 두 손이 나눠 받는다.
     const UVRHandComponent* Other = GetOtherHand();
-    const float Share = Other && Other->Grab.Item.Get() == Held ? 0.5f : 1.f;
-    return (PalmMass + FMath::Min(Held->ItemMesh->CalculateMass(), MaxCarryMass) * Share) / PalmMass;
+    const float MassShare = Other && Other->Grab.Item.Get() == HeldItem ? 0.5f : 1.f;
+    return (PalmMass + FMath::Min(HeldItem->ItemMesh->CalculateMass(), MaxCarryMass) * MassShare) / PalmMass;
 }
 
-void UVRHandComponent::UpdatePassThrough(float Error)
+void UVRHandComponent::UpdatePassThrough(float BodyToTargetDist)
 {
     // 실제 손은 트래킹상 서로 통과할 수 있지만 물리 손은 못 지나가, 양손이 반대편에 끼면 서로 밀며 멈춘다.
     // 목표에서 많이 밀려난 바디만 반대 손 충돌을 잠시 끄고, 절반 안으로 돌아오면 다시 켠다(벽 충돌은 유지).
     // 한쪽만 무시해도 충돌 응답은 둘 중 약한 쪽을 따르므로 끼임이 풀린다.
-    const ECollisionChannel Other = IsLeft() ? ECC_HandRight : ECC_HandLeft;
-    const bool bBlocking = Palm->GetCollisionResponseToChannel(Other) == ECR_Block;
-    if (bBlocking && Error > PassThroughDistance)                Palm->SetCollisionResponseToChannel(Other, ECR_Ignore);
-    else if (!bBlocking && Error < PassThroughDistance * 0.5f)  Palm->SetCollisionResponseToChannel(Other, ECR_Block);
+    const ECollisionChannel OtherHandChannel = IsLeft() ? ECC_HandRight : ECC_HandLeft;
+    const bool bBlocking = Palm->GetCollisionResponseToChannel(OtherHandChannel) == ECR_Block;
+    if (bBlocking && BodyToTargetDist > PassThroughDistance)                Palm->SetCollisionResponseToChannel(OtherHandChannel, ECR_Ignore);
+    else if (!bBlocking && BodyToTargetDist < PassThroughDistance * 0.5f)  Palm->SetCollisionResponseToChannel(OtherHandChannel, ECR_Block);
 }
 
 void UVRHandComponent::ApplyColliderSizes()
@@ -310,9 +310,9 @@ void UVRHandComponent::ApplyColliderSizes()
     if (!Anim || !Anim->HasHandShapes() || AppliedColliderScale == ColliderRadiusScale) return;
     AppliedColliderScale = ColliderRadiusScale;
 
-    for (UCapsuleComponent* Body : FingerBodies)
+    for (UCapsuleComponent* Capsule : FingerBodies)
     {
-        if (Body) Body->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        if (Capsule) Capsule->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
     }
     for (UBoxComponent* Shape : PalmShapes)
     {
@@ -332,16 +332,16 @@ void UVRHandComponent::ApplyColliderSizes()
         Shape->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
     }
 
-    for (int32 f = 0; f < 5; ++f)
+    for (int32 Finger = 0; Finger < 5; ++Finger)
     {
-        for (int32 s = 0; s < UVRPawnAnimInstance::ShapesPerFinger; ++s)
+        for (int32 SegmentIdx = 0; SegmentIdx < UVRPawnAnimInstance::ShapesPerFinger; ++SegmentIdx)
         {
-            const int32 i = UVRPawnAnimInstance::ShapeIndex(f, s);
-            UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
-            if (!Body) continue;
-            const float Radius = Anim->GetShapeRadius(Hand, f, s) * ColliderRadiusScale;
-            Body->SetCapsuleSize(Radius, FMath::Max(Anim->GetShapeHalfHeight(Hand, f, s), Radius));
-            Body->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
+            const int32 ShapeIdx = UVRPawnAnimInstance::ShapeIndex(Finger, SegmentIdx);
+            UCapsuleComponent* Capsule = FingerBodies.IsValidIndex(ShapeIdx) ? FingerBodies[ShapeIdx].Get() : nullptr;
+            if (!Capsule) continue;
+            const float Radius = Anim->GetShapeRadius(Hand, Finger, SegmentIdx) * ColliderRadiusScale;
+            Capsule->SetCapsuleSize(Radius, FMath::Max(Anim->GetShapeHalfHeight(Hand, Finger, SegmentIdx), Radius));
+            Capsule->AttachToComponent(Palm, FAttachmentTransformRules(EAttachmentRule::KeepWorld, true));
         }
     }
 }
@@ -375,41 +375,41 @@ void UVRHandComponent::UpdateFingertipShapes()
     // ponytail: 컨트롤러일 땐 관절이 없어 손끝 모양의 충돌을 끄고 손바닥 안에 둔다 — 컨트롤러 손가락도 막아야 하면 애니 포즈 손끝을 목표로.
     // 손바닥 모양 — 입력 소스가 바뀌거나(손바닥 축이 달라짐) 손목 오프셋이 변하면 다시 놓는다.
     // 양손 끼임 해소(UpdatePassThrough)는 손바닥에 걸리므로, 용접된 모양도 반대 손 응답을 손바닥과 맞춘다.
-    const ECollisionChannel OtherHand = bLeft ? ECC_HandRight : ECC_HandLeft;
-    const ECollisionResponse OtherResponse = Palm->GetCollisionResponseToChannel(OtherHand);
+    const ECollisionChannel OtherHandChannel = bLeft ? ECC_HandRight : ECC_HandLeft;
+    const ECollisionResponse OtherResponse = Palm->GetCollisionResponseToChannel(OtherHandChannel);
     for (int32 Part = 0; Part < PalmShapes.Num(); ++Part)
     {
         UBoxComponent* Shape = PalmShapes[Part];
         if (!Shape) continue;
-        const FTransform Rel = ComputePalmShapeRelative(Part);
-        if (FVector::DistSquared(Shape->GetRelativeLocation(), Rel.GetLocation()) > FMath::Square(0.2f)
-            || Shape->GetRelativeRotation().Quaternion().AngularDistance(Rel.GetRotation()) > FMath::DegreesToRadians(2.f))
+        const FTransform ShapeRel = ComputePalmShapeRelative(Part);
+        if (FVector::DistSquared(Shape->GetRelativeLocation(), ShapeRel.GetLocation()) > FMath::Square(0.2f)
+            || Shape->GetRelativeRotation().Quaternion().AngularDistance(ShapeRel.GetRotation()) > FMath::DegreesToRadians(2.f))
         {
-            Shape->SetRelativeTransform(Rel);
+            Shape->SetRelativeTransform(ShapeRel);
         }
-        if (Shape->GetCollisionResponseToChannel(OtherHand) != OtherResponse) Shape->SetCollisionResponseToChannel(OtherHand, OtherResponse);
+        if (Shape->GetCollisionResponseToChannel(OtherHandChannel) != OtherResponse) Shape->SetCollisionResponseToChannel(OtherHandChannel, OtherResponse);
     }
 
     const bool bTracked = TrackState.bValid;
     if (bTracked != bFingertipsActive)
     {
         bFingertipsActive = bTracked;
-        for (UCapsuleComponent* Body : FingerBodies)
+        for (UCapsuleComponent* Capsule : FingerBodies)
         {
-            if (!Body) continue;
-            if (bTracked) SetupHandBodyCollision(Body, bLeft);
+            if (!Capsule) continue;
+            if (bTracked) SetupHandBodyCollision(Capsule, bLeft);
             else
             {
-                Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-                Body->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
+                Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+                Capsule->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
             }
         }
     }
     if (!bTracked) return;
 
-    for (UCapsuleComponent* Body : FingerBodies)
+    for (UCapsuleComponent* Capsule : FingerBodies)
     {
-        if (Body && Body->GetCollisionResponseToChannel(OtherHand) != OtherResponse) Body->SetCollisionResponseToChannel(OtherHand, OtherResponse);
+        if (Capsule && Capsule->GetCollisionResponseToChannel(OtherHandChannel) != OtherResponse) Capsule->SetCollisionResponseToChannel(OtherHandChannel, OtherResponse);
     }
 
     // 손가락 캡슐 = 보이는 메시 손가락의 가운데·끝마디 구간(애님 인스턴스가 트래킹 관절 + 본 길이로 손바닥 기준 FK).
@@ -417,17 +417,17 @@ void UVRHandComponent::UpdateFingertipShapes()
     // 손가락을 표면 안으로 굽히면 모양이 표면에 박히고, 엔진이 손 전체를 밀어내 손이 들린다.
     const UVRPawnAnimInstance* Anim = GetAnim();
     if (!Anim) return;
-    for (int32 j = 0; j < FingerBodies.Num(); ++j)
+    for (int32 ShapeIdx = 0; ShapeIdx < FingerBodies.Num(); ++ShapeIdx)
     {
-        UCapsuleComponent* Tip = FingerBodies[j];
+        UCapsuleComponent* Capsule = FingerBodies[ShapeIdx];
         FVector Center;
         FQuat Rotation;
-        if (!Tip || !Anim->GetFingerShapeTarget(Hand, j / UVRPawnAnimInstance::ShapesPerFinger, j % UVRPawnAnimInstance::ShapesPerFinger, Center, Rotation)) continue;
+        if (!Capsule || !Anim->GetFingerShapeTarget(Hand, ShapeIdx / UVRPawnAnimInstance::ShapesPerFinger, ShapeIdx % UVRPawnAnimInstance::ShapesPerFinger, Center, Rotation)) continue;
         // 목표는 손바닥 기준 상대값 — 손이 밀려도 변하지 않고 손가락이 실제로 움직일 때만 바뀐다.
         // 트래킹 미세 떨림(수 mm)마다 다시 붙이지 않도록 0.2cm·2° 미만 변화는 무시.
-        if (FVector::DistSquared(Tip->GetRelativeLocation(), Center) < FMath::Square(0.2f)
-            && Tip->GetRelativeRotation().Quaternion().AngularDistance(Rotation) < FMath::DegreesToRadians(2.f)) continue;
-        Tip->SetRelativeLocationAndRotation(Center, Rotation);
+        if (FVector::DistSquared(Capsule->GetRelativeLocation(), Center) < FMath::Square(0.2f)
+            && Capsule->GetRelativeRotation().Quaternion().AngularDistance(Rotation) < FMath::DegreesToRadians(2.f)) continue;
+        Capsule->SetRelativeLocationAndRotation(Center, Rotation);
     }
 }
 
@@ -436,29 +436,29 @@ FTransform UVRHandComponent::GetEffectorCS(const USkeletalMeshComponent* BodyMes
     // 손 위치·회전 모두 물리 손바닥(벽에 막힌 실제 자세). 손바닥 상자 회전에서 모양 보정을 빼면 "막힌 앵커" 회전이 된다.
     // 시뮬레이션 전(에디터·BeginPlay 이전)엔 앵커 그대로.
     if (!BodyMesh) return FTransform::Identity;
-    FTransform W = GetComponentTransform();
+    FTransform HandWorld = GetComponentTransform();
     if (IsPhysicsActive())
     {
-        W.SetLocation(Palm->GetComponentLocation());
-        W.SetRotation(Palm->GetComponentQuat() * PalmShapeOffset(TrackState.bValid).Inverse());
+        HandWorld.SetLocation(Palm->GetComponentLocation());
+        HandWorld.SetRotation(Palm->GetComponentQuat() * PalmShapeOffset(TrackState.bValid).Inverse());
     }
 
     // 핸드트래킹 중엔 앵커가 손바닥 중심 관절에 있는데 손 본 피벗은 손목이다 — 손목 관절까지의 차이만큼 당긴다.
     // 차이는 앵커 로컬로 옮겨 물리 손바닥 회전으로 다시 돌린다(벽에 막혀 손이 덜 돌았으면 손목도 그만큼).
     // 회전 보정도 컨트롤러 그립용이 아니라 손바닥 관절 프레임용(애님 인스턴스가 레퍼런스 포즈에서 계산)을 쓴다.
-    FQuat Offset = GripOffset.Quaternion();
+    FQuat AxisFix = GripOffset.Quaternion();
     const UVRPawnAnimInstance* Anim = Cast<UVRPawnAnimInstance>(BodyMesh->GetAnimInstance());
     // 애님의 프레임 내부 상태(이번 프레임 관절 복사 여부)에 기대면 호출 시점에 따라 손목 오프셋이 빠진다 — 트래킹 유효 여부만 본다.
     if (TrackState.bValid && Anim && Anim->HasHandShapes())
     {
         const FVector PalmToWrist = TrackState.HandKeyLocations[static_cast<int32>(EHandKeypoint::Wrist)]
                                   - TrackState.HandKeyLocations[static_cast<int32>(EHandKeypoint::Palm)];
-        W.AddToTranslation(W.GetRotation() * (GetComponentQuat().Inverse() * PalmToWrist));
-        Offset = Anim->GetPalmToHandBone(Hand);
+        HandWorld.AddToTranslation(HandWorld.GetRotation() * (GetComponentQuat().Inverse() * PalmToWrist));
+        AxisFix = Anim->GetPalmToHandBone(Hand);
     }
 
-    FTransform T = W.GetRelativeTransform(BodyMesh->GetComponentTransform());
+    FTransform HandInMesh = HandWorld.GetRelativeTransform(BodyMesh->GetComponentTransform());
     // 축 보정을 손 로컬 공간에 적용(우측 곱) — 손이 회전해도 보정이 따라감.
-    T.SetRotation(T.GetRotation() * Offset);
-    return T;
+    HandInMesh.SetRotation(HandInMesh.GetRotation() * AxisFix);
+    return HandInMesh;
 }

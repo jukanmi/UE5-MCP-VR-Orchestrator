@@ -29,29 +29,29 @@ namespace
 bool UVRHandComponent::UpdateGesture()
 {
     // 슈미트 트리거 — 잡은 뒤엔 임계 + 여유를 넘어야 놓는다. 트래킹이 끊기면 제스처는 풀린다(그립이 없으면 놓는다).
-    bool bNow = false;
+    bool bGestureDetected = false;
     if (TrackState.bValid)
     {
-        auto Dist = [this](EHandKeypoint A, EHandKeypoint B)
+        auto KeyDistance = [this](EHandKeypoint A, EHandKeypoint B)
         {
             return FVector::Dist(TrackState.HandKeyLocations[static_cast<int32>(A)], TrackState.HandKeyLocations[static_cast<int32>(B)]);
         };
-        const float Slack = bGesture ? PinchHysteresis : 0.f;
-        const bool bPinch = Dist(EHandKeypoint::ThumbTip, EHandKeypoint::IndexTip) < PinchDistanceThreshold + Slack;
+        const float ReleaseSlack = bGesture ? PinchHysteresis : 0.f;
+        const bool bPinch = KeyDistance(EHandKeypoint::ThumbTip, EHandKeypoint::IndexTip) < PinchDistanceThreshold + ReleaseSlack;
         // 주먹은 엄지·검지 위치가 사람마다 달라 중지·약지·새끼 끝이 모두 손바닥에 붙었는지만 본다.
-        const float FistDist = FMath::Max3(Dist(EHandKeypoint::MiddleTip, EHandKeypoint::Palm),
-                                           Dist(EHandKeypoint::RingTip,   EHandKeypoint::Palm),
-                                           Dist(EHandKeypoint::LittleTip, EHandKeypoint::Palm));
-        bNow = bPinch || FistDist < FistDistanceThreshold + Slack;
+        const float FarthestTipToPalm = FMath::Max3(KeyDistance(EHandKeypoint::MiddleTip, EHandKeypoint::Palm),
+                                           KeyDistance(EHandKeypoint::RingTip,   EHandKeypoint::Palm),
+                                           KeyDistance(EHandKeypoint::LittleTip, EHandKeypoint::Palm));
+        bGestureDetected = bPinch || FarthestTipToPalm < FistDistanceThreshold + ReleaseSlack;
     }
-    if (bNow == bGesture) return false;
-    bGesture = bNow;
+    if (bGestureDetected == bGesture) return false;
+    bGesture = bGestureDetected;
     return true;
 }
 
 bool UVRHandComponent::UpdateContactGrab(bool bAllowNewGrab)
 {
-    bool bHeld = false;
+    bool bHolding = false;
     if (bFingertipsActive && TrackState.bValid)
     {
         if (Contact.bHeld)
@@ -60,14 +60,14 @@ bool UVRHandComponent::UpdateContactGrab(bool bAllowNewGrab)
             // 핀치 = 엄지와 짝 손가락 둘 다, 주먹 = 손바닥과 손가락 하나 이상이 닿아 있어야 유지.
             const ADroppedItemBase* Item = Contact.Item.Get();
             const UPrimitiveComponent* HeldMesh = IsValid(Item) ? Item->ItemMesh : nullptr;
-            const FFingerTouches Touch = TouchingFingers(HeldMesh, ContactReleaseMargin);
+            const FFingerTouches Touched = TouchingFingers(HeldMesh, ContactReleaseMargin);
             if (Contact.Partner == PalmGripPartner)
             {
-                bHeld = IsPalmTouching(HeldMesh, ContactReleaseMargin) && (Touch[1] || Touch[2] || Touch[3] || Touch[4]);
+                bHolding = IsPalmTouching(HeldMesh, ContactReleaseMargin) && (Touched[1] || Touched[2] || Touched[3] || Touched[4]);
             }
             else
             {
-                bHeld = Touch[0] && Touch[Contact.Partner];
+                bHolding = Touched[0] && Touched[Contact.Partner];
             }
         }
         else if (bAllowNewGrab)
@@ -83,34 +83,34 @@ bool UVRHandComponent::UpdateContactGrab(bool bAllowNewGrab)
             {
                 Contact.Item = Item;
                 Contact.Partner = Partner;
-                bHeld = true;
+                bHolding = true;
             }
         }
     }
-    if (bHeld == Contact.bHeld) return false;
-    Contact.bHeld = bHeld;
-    if (!bHeld) Contact = FContactGrab();
+    if (bHolding == Contact.bHeld) return false;
+    Contact.bHeld = bHolding;
+    if (!bHolding) Contact = FContactGrab();
     return true;
 }
 
 UVRHandComponent::FFingerTouches UVRHandComponent::TouchingFingers(const UPrimitiveComponent* Item, float Margin) const
 {
-    FFingerTouches Out(InPlace, nullptr);
-    if (!IsValid(Item)) return Out;
+    FFingerTouches Touched(InPlace, nullptr);
+    if (!IsValid(Item)) return Touched;
     for (int32 Finger = 0; Finger < 5; ++Finger)
     {
-        for (int32 Shape = UVRPawnAnimInstance::ShapesPerFinger - 1; Shape >= 0 && !Out[Finger]; --Shape)   // 끝마디 먼저
+        for (int32 Shape = UVRPawnAnimInstance::ShapesPerFinger - 1; Shape >= 0 && !Touched[Finger]; --Shape)   // 끝마디 먼저
         {
-            const int32 i = UVRPawnAnimInstance::ShapeIndex(Finger, Shape);
-            const UCapsuleComponent* Body = FingerBodies.IsValidIndex(i) ? FingerBodies[i].Get() : nullptr;
-            if (Body && Item->OverlapComponent(Body->GetComponentLocation(), Body->GetComponentQuat(),
-                                               FCollisionShape::MakeCapsule(Body->GetScaledCapsuleRadius() + Margin, Body->GetScaledCapsuleHalfHeight() + Margin)))
+            const int32 ShapeIdx = UVRPawnAnimInstance::ShapeIndex(Finger, Shape);
+            const UCapsuleComponent* Capsule = FingerBodies.IsValidIndex(ShapeIdx) ? FingerBodies[ShapeIdx].Get() : nullptr;
+            if (Capsule && Item->OverlapComponent(Capsule->GetComponentLocation(), Capsule->GetComponentQuat(),
+                                               FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius() + Margin, Capsule->GetScaledCapsuleHalfHeight() + Margin)))
             {
-                Out[Finger] = Body;
+                Touched[Finger] = Capsule;
             }
         }
     }
-    return Out;
+    return Touched;
 }
 
 bool UVRHandComponent::IsPalmTouching(const UPrimitiveComponent* Item, float Margin) const
@@ -158,29 +158,29 @@ ADroppedItemBase* UVRHandComponent::FindGraspedItem(int32& OutPartner) const
         ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
         if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
         if (Grab.Item.Get() == Item) continue;   // 다른 손이 쥔 물건은 후보다(양손 쥐기)
-        auto Between = [&](const FVector& A, const FVector& B)
+        auto LineCrossesItem = [&](const FVector& A, const FVector& B)
         {
             FHitResult Hit;
             return Item->ItemMesh->LineTraceComponent(Hit, A, B, TraceParams);
         };
 
         // 손가락 오버랩은 물건마다 한 번 — 핀치·주먹 판정이 같은 결과를 나눠 쓴다.
-        const FFingerTouches Touch = TouchingFingers(Item->ItemMesh, ContactGrabMargin);
-        for (int32 f = 1; f < 5 && Touch[0]; ++f)
+        const FFingerTouches Touched = TouchingFingers(Item->ItemMesh, ContactGrabMargin);
+        for (int32 Finger = 1; Finger < 5 && Touched[0]; ++Finger)
         {
-            if (Touch[f] && Between(Touch[0]->GetComponentLocation(), Touch[f]->GetComponentLocation()))
+            if (Touched[Finger] && LineCrossesItem(Touched[0]->GetComponentLocation(), Touched[Finger]->GetComponentLocation()))
             {
-                OutPartner = f;
+                OutPartner = Finger;
                 return Item;
             }
         }
         if (!IsPalmTouching(Item->ItemMesh, ContactGrabMargin)) continue;
-        int32 Wrapped = 0;
-        for (int32 f = 1; f < 5; ++f)
+        int32 WrappingFingers = 0;
+        for (int32 Finger = 1; Finger < 5; ++Finger)
         {
-            if (Touch[f] && Between(PalmCenter, Touch[f]->GetComponentLocation())) ++Wrapped;
+            if (Touched[Finger] && LineCrossesItem(PalmCenter, Touched[Finger]->GetComponentLocation())) ++WrappingFingers;
         }
-        if (Wrapped >= 2)
+        if (WrappingFingers >= 2)
         {
             OutPartner = PalmGripPartner;
             return Item;
@@ -214,18 +214,18 @@ void UVRHandComponent::ComputeGrip(const ADroppedItemBase* Item, bool bContact, 
     if (!IsValid(Item) || !IsValid(Item->ItemMesh)) return;
 
     // μ = 아이템 물리 머티리얼 마찰. 머티리얼을 안 정한 아이템은 엔진 기본(0.7).
-    const FBodyInstance* Body = Item->ItemMesh->GetBodyInstance();
-    const UPhysicalMaterial* Material = Body ? Body->GetSimplePhysicalMaterial() : nullptr;
-    const float Mu = Material ? Material->Friction : 0.7f;
+    const FBodyInstance* ItemBody = Item->ItemMesh->GetBodyInstance();
+    const UPhysicalMaterial* Material = ItemBody ? ItemBody->GetSimplePhysicalMaterial() : nullptr;
+    const float Friction = Material ? Material->Friction : 0.7f;
 
     if (!bContact)
     {
         // 컨트롤러 — 손가락 접촉이 없으니 손바닥 중심에서 주먹으로 감싸 쥔 것으로 본다.
         FVector PalmCenter;
         if (GetPalmShapeCenter(PalmCenter)) OutCenter = PalmCenter;
-        const float SumN = ControllerGripForce * GripValue;
-        OutForce = Mu * SumN;
-        OutTorque = Mu * SumN * ControllerGripRadius;
+        const float NormalSum = ControllerGripForce * GripValue;
+        OutForce = Friction * NormalSum;
+        OutTorque = Friction * NormalSum * ControllerGripRadius;
         return;
     }
 
@@ -233,43 +233,43 @@ void UVRHandComponent::ComputeGrip(const ADroppedItemBase* Item, bool bContact, 
     // 주먹(손바닥 짝)이면 손바닥이 손가락들의 반작용(엄지 뺀 ΣN)을 받는다.
     // 쥔 중심 = 접촉점들의 가운데(힘 가중 아님 — 닿은 순간엔 N 이 0 이라 정할 수 없다). 핀치면 두 손끝 사이라 그 점을 축으로 돈다.
     // 회전 팔 rᵢ = 중심 ↔ 접촉점, 최소 FingerPadRadius — 접촉 분포가 넓을수록(주먹) 덜 돈다. 쿨롱 마찰이라 면적은 힘 크기엔 안 들어간다.
-    const UPrimitiveComponent* Mesh = Item->ItemMesh;
-    TArray<TPair<FVector, float>, TInlineAllocator<6>> Contacts;
-    float FingerN = 0.f;
-    const FFingerTouches Touch = TouchingFingers(Mesh, ContactReleaseMargin);
-    for (int32 f = 0; f < 5; ++f)
+    const UPrimitiveComponent* ItemMesh = Item->ItemMesh;
+    TArray<TPair<FVector, float>, TInlineAllocator<6>> ContactPoints;
+    float FingerNormalSum = 0.f;
+    const FFingerTouches Touched = TouchingFingers(ItemMesh, ContactReleaseMargin);
+    for (int32 Finger = 0; Finger < 5; ++Finger)
     {
-        if (!Touch[f]) continue;
-        const float N = SqueezeStiffness * SmoothedSqueeze[f];
-        Contacts.Add({ Touch[f]->GetComponentLocation(), N });
-        if (f > 0) FingerN += N;
+        if (!Touched[Finger]) continue;
+        const float PressForce = SqueezeStiffness * SmoothedSqueeze[Finger];
+        ContactPoints.Add({ Touched[Finger]->GetComponentLocation(), PressForce });
+        if (Finger > 0) FingerNormalSum += PressForce;
     }
     FVector PalmCenter;
-    if (Partner == PalmGripPartner && GetPalmShapeCenter(PalmCenter) && IsPalmTouching(Mesh, ContactReleaseMargin))
+    if (Partner == PalmGripPartner && GetPalmShapeCenter(PalmCenter) && IsPalmTouching(ItemMesh, ContactReleaseMargin))
     {
-        Contacts.Add({ PalmCenter, FingerN });
+        ContactPoints.Add({ PalmCenter, FingerNormalSum });
     }
-    if (Contacts.IsEmpty()) return;
+    if (ContactPoints.IsEmpty()) return;
 
     OutCenter = FVector::ZeroVector;
-    for (const TPair<FVector, float>& C : Contacts) OutCenter += C.Key / Contacts.Num();
-    float SumN = 0.f, SumNR = 0.f;
-    for (const TPair<FVector, float>& C : Contacts)
+    for (const TPair<FVector, float>& Point : ContactPoints) OutCenter += Point.Key / ContactPoints.Num();
+    float NormalSum = 0.f, TorqueArmSum = 0.f;
+    for (const TPair<FVector, float>& Point : ContactPoints)
     {
-        SumN += C.Value;
-        SumNR += C.Value * FMath::Max(FVector::Dist(C.Key, OutCenter), FingerPadRadius);
+        NormalSum += Point.Value;
+        TorqueArmSum += Point.Value * FMath::Max(FVector::Dist(Point.Key, OutCenter), FingerPadRadius);
     }
-    OutForce = Mu * SumN;
-    OutTorque = Mu * SumNR;
+    OutForce = Friction * NormalSum;
+    OutTorque = Friction * TorqueArmSum;
 }
 
 bool UVRHandComponent::CanHold(const ADroppedItemBase* Item) const
 {
     if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !GetWorld()) return false;
-    const bool bContact = Contact.bHeld && Contact.Item.Get() == Item;
+    const bool bFingerGrip = Contact.bHeld && Contact.Item.Get() == Item;
     float Force = 0.f, Torque = 0.f;
     FVector Center;
-    ComputeGrip(Item, bContact, Contact.Partner, Force, Torque, Center);
+    ComputeGrip(Item, bFingerGrip, Contact.Partner, Force, Torque, Center);
     return Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->CalculateMass() * FMath::Abs(GetWorld()->GetGravityZ());
 }
 
@@ -311,12 +311,12 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
     GrabConstraint->SetAngularDriveParams(Grab.AngStiffness, Grab.AngDamping, FMath::Max(Torque, 1.f));
     GrabConstraint->SetLinearPositionTarget(FVector::ZeroVector);
     GrabConstraint->SetAngularOrientationTarget(FRotator::ZeroRotator);
-    const FTransform Frame(Palm->GetComponentQuat(), Center);
-    GrabConstraint->SetWorldLocationAndRotation(Frame.GetLocation(), Frame.GetRotation());
+    const FTransform GripFrame(Palm->GetComponentQuat(), Center);
+    GrabConstraint->SetWorldLocationAndRotation(GripFrame.GetLocation(), GripFrame.GetRotation());
     GrabConstraint->SetDisableCollision(!bKeepCollision);
     GrabConstraint->SetConstrainedComponents(Palm, NAME_None, Item->ItemMesh, NAME_None);
-    Grab.FrameInPalm = Frame.GetRelativeTransform(Palm->GetComponentTransform());
-    Grab.FrameInItem = Frame.GetRelativeTransform(Item->ItemMesh->GetComponentTransform());
+    Grab.FrameInPalm = GripFrame.GetRelativeTransform(Palm->GetComponentTransform());
+    Grab.FrameInItem = GripFrame.GetRelativeTransform(Item->ItemMesh->GetComponentTransform());
 
     // 튜닝용 — 쥘 때 물리 손이 실제 손에서 밀려난 거리, 질량, 쥔 점~무게중심 거리(토크 팔), 마찰 한계 대 무게.
     UE_LOG(LogTemp, Log, TEXT("[VRHand] 쥠 상세: %s %s 손 어긋남 %.1fcm, 질량 %.2fkg, 무게중심 거리 %.1fcm, 힘 한계 %.0f(무게 %.0f), 토크 한계 %.0f, 충돌 %s"),
@@ -344,11 +344,11 @@ void UVRHandComponent::SyncGrab()
     if (Inventory && Grab.Item.IsValid())
     {
         // 기록 손은 자기 슬롯이, 두 번째 손은 어느 슬롯이든 그 물건을 쥐고 있어야 한다. 아니면(수납·소모·기록 손이 놓음) 푼다.
-        const ADroppedItemBase* Held = Grab.Item.Get();
-        const bool bRecorded = Grab.bSecondary
-            ? (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == Held || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == Held)
-            : Inventory->GetHeldItem(GetHandSlot()) == Held;
-        if (!bRecorded) ReleaseGrab();
+        const ADroppedItemBase* HeldItem = Grab.Item.Get();
+        const bool bStillInHand = Grab.bSecondary
+            ? (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == HeldItem || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == HeldItem)
+            : Inventory->GetHeldItem(GetHandSlot()) == HeldItem;
+        if (!bStillInHand) ReleaseGrab();
     }
     const ADroppedItemBase* Item = Grab.Item.Get();
     if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !IsPhysicsActive()) return;
@@ -372,26 +372,26 @@ void UVRHandComponent::SyncGrab()
     // 드라이브가 운동 방향과 무관하게 한쪽으로만 상한만큼 밀어, 평형각 둘레로 감쇠 없이 출렁인다(PIE: 횃불 끝 쥐기 0°↔50°).
     const FTransform PalmFrame = Grab.FrameInPalm * Palm->GetComponentTransform();
     const FTransform ItemFrame = Grab.FrameInItem * Item->ItemMesh->GetComponentTransform();
-    const FTransform Rel = PalmFrame.GetRelativeTransform(ItemFrame);
+    const FTransform PalmInItem = PalmFrame.GetRelativeTransform(ItemFrame);
 
-    const FVector Stretch = Grab.LinTarget - Rel.GetLocation();
+    const FVector Stretch = Grab.LinTarget - PalmInItem.GetLocation();
     const float MaxStretch = Force / FMath::Max(Grab.LinStiffness, KINDA_SMALL_NUMBER);
     if (Stretch.Size() > MaxStretch)
     {
-        Grab.LinTarget = Rel.GetLocation() + Stretch.GetSafeNormal() * MaxStretch;
+        Grab.LinTarget = PalmInItem.GetLocation() + Stretch.GetSafeNormal() * MaxStretch;
         GrabConstraint->SetLinearPositionTarget(Grab.LinTarget);
     }
-    const float Twist = Rel.GetRotation().AngularDistance(Grab.AngTarget);
+    const float Twist = PalmInItem.GetRotation().AngularDistance(Grab.AngTarget);
     const float MaxTwist = Torque / FMath::Max(Grab.AngStiffness * AngularDriveStiffnessScale(), KINDA_SMALL_NUMBER);
     if (Twist > MaxTwist)
     {
-        Grab.AngTarget = FQuat::Slerp(Rel.GetRotation(), Grab.AngTarget, MaxTwist / Twist).GetNormalized();
+        Grab.AngTarget = FQuat::Slerp(PalmInItem.GetRotation(), Grab.AngTarget, MaxTwist / Twist).GetNormalized();
         GrabConstraint->SetAngularOrientationTarget(Grab.AngTarget.Rotator());
     }
 
     // 쥔 점이 손에서 너무 멀리 미끄러졌으면 놓쳤다(제약은 상한만 있어 스스로 끊기지 않는다).
     // 두 번째 손이 놓친 건 그 손만 놓으면 된다(물건은 기록 손이 들고 있다).
-    if (Rel.GetLocation().Size() > GripSlipReleaseDistance)
+    if (PalmInItem.GetLocation().Size() > GripSlipReleaseDistance)
     {
         if (Grab.bSecondary) ReleaseGrab();
         else DropSlipped();
@@ -402,9 +402,9 @@ UVRHandComponent* UVRHandComponent::GetOtherHand() const
 {
     TArray<UVRHandComponent*> Hands;
     if (GetOwner()) GetOwner()->GetComponents<UVRHandComponent>(Hands);
-    for (UVRHandComponent* H : Hands)
+    for (UVRHandComponent* Candidate : Hands)
     {
-        if (H && H != this) return H;
+        if (Candidate && Candidate != this) return Candidate;
     }
     return nullptr;
 }

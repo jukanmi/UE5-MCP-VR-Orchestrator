@@ -37,42 +37,42 @@ FVector UVRHandComponent::ProjectOutOfNPCs(const FVector& Location, const FQuat&
     // 뼈 캡슐 치수가 없는 NPC 는 GetWorldCapsules 가 거절하고, 그 NPC 는 몸 캡슐이 손을 막는다.
     static constexpr float HandReach = 30.f;   // 손바닥 바디 중심 → 손 모양 끝(손끝)까지 여유(cm)
     OutTouched = nullptr;
-    TArray<FNPCWorldCapsule> Bones, Caps;
+    TArray<FNPCWorldCapsule> Bones, NPCCapsules;
     TArray<ACombatCharacter*> BoneOwners;   // Bones 와 같은 순서
     for (TActorIterator<ACombatCharacter> It(GetWorld()); It; ++It)
     {
         const USkeletalMeshComponent* NPCMesh = It->GetMesh();
         if (!It->BoneCapsules || !NPCMesh) continue;
         if (FVector::DistSquared(NPCMesh->Bounds.Origin, Location) > FMath::Square(NPCMesh->Bounds.SphereRadius + HandReach)) continue;
-        if (!It->BoneCapsules->GetWorldCapsules(NPCMesh, Caps)) continue;
-        Bones.Append(Caps);
+        if (!It->BoneCapsules->GetWorldCapsules(NPCMesh, NPCCapsules)) continue;
+        Bones.Append(NPCCapsules);
         while (BoneOwners.Num() < Bones.Num()) BoneOwners.Add(*It);
     }
     if (Bones.IsEmpty()) return Location;
 
     // 손 모양 = 손바닥 바디 기준 선분 + 반지름. 손바닥 상자마다 긴 축을 따라 짧은 축 양 끝에 캡슐 두 줄(반지름 = 두께 절반),
     // 손가락은 켜져 있을 때(핸드트래킹)만 캡슐 그대로.
-    struct FHandSegment { FVector A, B; float Radius; };
+    struct FHandSegment { FVector Start, End; float Radius; };
     TArray<FHandSegment, TInlineAllocator<2 * UVRPawnAnimInstance::NumPalmShapes + UVRPawnAnimInstance::NumFingerShapes>> Segments;
     for (const UBoxComponent* Shape : PalmShapes)
     {
         if (!Shape) continue;
-        const FTransform Rel = Shape->GetRelativeTransform();
-        const FVector E = Shape->GetUnscaledBoxExtent();
-        const float R = E.Z;
-        const FVector Long = E.X >= E.Y ? FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f) : FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f);
-        const FVector Side = E.X >= E.Y ? FVector(0.f, FMath::Max(E.Y - R, 0.f), 0.f) : FVector(FMath::Max(E.X - R, 0.f), 0.f, 0.f);
-        Segments.Add({ Rel.TransformPosition(Side - Long), Rel.TransformPosition(Side + Long), R });
-        Segments.Add({ Rel.TransformPosition(-Side - Long), Rel.TransformPosition(-Side + Long), R });
+        const FTransform ShapeRel = Shape->GetRelativeTransform();
+        const FVector Extent = Shape->GetUnscaledBoxExtent();
+        const float HalfThickness = Extent.Z;
+        const FVector LongAxis = Extent.X >= Extent.Y ? FVector(FMath::Max(Extent.X - HalfThickness, 0.f), 0.f, 0.f) : FVector(0.f, FMath::Max(Extent.Y - HalfThickness, 0.f), 0.f);
+        const FVector ShortAxis = Extent.X >= Extent.Y ? FVector(0.f, FMath::Max(Extent.Y - HalfThickness, 0.f), 0.f) : FVector(FMath::Max(Extent.X - HalfThickness, 0.f), 0.f, 0.f);
+        Segments.Add({ ShapeRel.TransformPosition(ShortAxis - LongAxis), ShapeRel.TransformPosition(ShortAxis + LongAxis), HalfThickness });
+        Segments.Add({ ShapeRel.TransformPosition(-ShortAxis - LongAxis), ShapeRel.TransformPosition(-ShortAxis + LongAxis), HalfThickness });
     }
     if (bFingertipsActive)
     {
         for (const UCapsuleComponent* Finger : FingerBodies)
         {
             if (!Finger) continue;
-            const FTransform Rel = Finger->GetRelativeTransform();
-            const FVector Half(0.f, 0.f, Finger->GetUnscaledCapsuleHalfHeight_WithoutHemisphere());
-            Segments.Add({ Rel.TransformPosition(-Half), Rel.TransformPosition(Half), Finger->GetUnscaledCapsuleRadius() });
+            const FTransform ShapeRel = Finger->GetRelativeTransform();
+            const FVector HalfAxis(0.f, 0.f, Finger->GetUnscaledCapsuleHalfHeight_WithoutHemisphere());
+            Segments.Add({ ShapeRel.TransformPosition(-HalfAxis), ShapeRel.TransformPosition(HalfAxis), Finger->GetUnscaledCapsuleRadius() });
         }
     }
 
@@ -81,43 +81,43 @@ FVector UVRHandComponent::ProjectOutOfNPCs(const FVector& Location, const FQuat&
     // 축을 넘은 실제 손은 축 기준으로 들어온 쪽에 비춰서 본다. 그대로 두면 목표가 표면을 따라 축 너머 쪽으로 계속 끌려
     // 손이 몸을 돌아 뒤로 미끄러진다(헤드셋 없는 PIE 실측: 몸통 축 10cm 너머에서 손이 앞 → 뒤 표면으로 돌아감).
     // 실제 손이 반대편 표면 밖까지 나가면 더 겹치지 않아 물리 손이 몸을 지나간다.
-    const FTransform BodyTM = Palm->GetComponentTransform();
+    const FTransform PalmTM = Palm->GetComponentTransform();
     FVector Target = Location;
     for (int32 Iter = 0; Iter < 4; ++Iter)
     {
         const FTransform TargetTM(Rotation, Target);
-        float Depth = 0.f;
-        FVector Push = FVector::ZeroVector;
-        for (const FHandSegment& S : Segments)
+        float MaxOverlap = 0.f;
+        FVector PushOut = FVector::ZeroVector;
+        for (const FHandSegment& Seg : Segments)
         {
-            const FVector A = TargetTM.TransformPosition(S.A);
-            const FVector B = TargetTM.TransformPosition(S.B);
-            for (int32 b = 0; b < Bones.Num(); ++b)
+            const FVector SegStart = TargetTM.TransformPosition(Seg.Start);
+            const FVector SegEnd = TargetTM.TransformPosition(Seg.End);
+            for (int32 BoneIdx = 0; BoneIdx < Bones.Num(); ++BoneIdx)
             {
-                const FNPCWorldCapsule& C = Bones[b];
-                FVector P, Q;
-                FMath::SegmentDistToSegmentSafe(A, B, C.A, C.B, P, Q);
-                const float Reach = S.Radius + C.Radius;
-                if (FVector::DistSquared(P, Q) >= FMath::Square(Reach)) continue;
+                const FNPCWorldCapsule& Bone = Bones[BoneIdx];
+                FVector OnHand, OnBone;
+                FMath::SegmentDistToSegmentSafe(SegStart, SegEnd, Bone.A, Bone.B, OnHand, OnBone);
+                const float TouchDist = Seg.Radius + Bone.Radius;
+                if (FVector::DistSquared(OnHand, OnBone) >= FMath::Square(TouchDist)) continue;
 
-                FVector BodyP, BodyQ;
-                FMath::SegmentDistToSegmentSafe(BodyTM.TransformPosition(S.A), BodyTM.TransformPosition(S.B), C.A, C.B, BodyP, BodyQ);
-                FVector N = (BodyP - BodyQ).GetSafeNormal();
-                if (N.IsZero()) N = (P - Q).GetSafeNormal();
-                if (N.IsZero()) continue;   // 물리 손·목표 둘 다 뼈 축 위 — 방향을 모른다
-                const FVector Gap = P - Q;
-                const bool bCrossed = FVector::DotProduct(Gap, N) < 0.f;
-                const float D = Reach - FMath::Abs(FVector::DotProduct(Gap, N));
-                if (D > Depth)
+                FVector PalmOnHand, PalmOnBone;
+                FMath::SegmentDistToSegmentSafe(PalmTM.TransformPosition(Seg.Start), PalmTM.TransformPosition(Seg.End), Bone.A, Bone.B, PalmOnHand, PalmOnBone);
+                FVector PushDir = (PalmOnHand - PalmOnBone).GetSafeNormal();
+                if (PushDir.IsZero()) PushDir = (OnHand - OnBone).GetSafeNormal();
+                if (PushDir.IsZero()) continue;   // 물리 손·목표 둘 다 뼈 축 위 — 방향을 모른다
+                const FVector BoneToHand = OnHand - OnBone;
+                const bool bCrossed = FVector::DotProduct(BoneToHand, PushDir) < 0.f;
+                const float Overlap = TouchDist - FMath::Abs(FVector::DotProduct(BoneToHand, PushDir));
+                if (Overlap > MaxOverlap)
                 {
-                    Depth = D;
-                    Push = (bCrossed ? -2.f * Gap : FVector::ZeroVector) + N * D;
-                    if (Iter == 0) OutTouched = BoneOwners[b];   // 실제 손 위치에서 가장 깊이 들어간 NPC
+                    MaxOverlap = Overlap;
+                    PushOut = (bCrossed ? -2.f * BoneToHand : FVector::ZeroVector) + PushDir * Overlap;
+                    if (Iter == 0) OutTouched = BoneOwners[BoneIdx];   // 실제 손 위치에서 가장 깊이 들어간 NPC
                 }
             }
         }
-        if (Depth <= KINDA_SMALL_NUMBER) break;
-        Target += Push;
+        if (MaxOverlap <= KINDA_SMALL_NUMBER) break;
+        Target += PushOut;
     }
     return Target;
 }
