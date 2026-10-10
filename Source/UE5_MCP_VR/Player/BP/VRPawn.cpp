@@ -48,6 +48,7 @@
 #include "Player/Components/VRHandComponent.h"
 #include "Player/Components/VRMeleeComponent.h"
 #include "Player/Components/VRPlayerUIComponent.h"
+#include "Player/Components/VRPostureComponent.h"
 #include "UI/Trade/TradeSessionActor.h"
 #include "Utils/DiceSystem.h"
 #include "Villager/MerchantStall.h"
@@ -116,6 +117,7 @@ AVRPawn::AVRPawn()
 
     PlayerUI = CreateDefaultSubobject<UVRPlayerUIComponent>(TEXT("PlayerUI"));
     BodyMeasure = CreateDefaultSubobject<UVRBodyMeasureComponent>(TEXT("BodyMeasure"));
+    Posture = CreateDefaultSubobject<UVRPostureComponent>(TEXT("Posture"));
 
     // AI 퍼셉션 소스 등록
     StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
@@ -132,8 +134,7 @@ AVRPawn::AVRPawn()
     // 동적 캡슐 리사이즈의 상한·역보정 기준이 될 기본 절반 높이 캐싱
     if (UCapsuleComponent* Cap = GetCapsuleComponent())
     {
-        BaseCapsuleHalfHeight = Cap->GetUnscaledCapsuleHalfHeight();
-        InterpedCapsuleHalfHeight = BaseCapsuleHalfHeight;
+        Posture->InitCapsuleHeight(Cap->GetUnscaledCapsuleHalfHeight());
     }
 }
 
@@ -156,12 +157,12 @@ void AVRPawn::BeginPlay()
     AddStateTag(TAG_State_Posture_Standing);
 
     // 사용자 키 캘리브레이션 시작 — HMD 트래킹이 안정화되는 시간을 잠시 두고
-    StartCalibration();
+    Posture->StartCalibration();
 
     // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
     if (PlayerUI) PlayerUI->Init();
 
-    InitBodyMeshReference();
+    Posture->InitBodyMeshReference();
     InitHandPhysics();
 
 #if !UE_BUILD_SHIPPING
@@ -214,27 +215,6 @@ void AVRPawn::RegisterInputAndCheats()
         PC->CheatManager->InitCheatManager();
     }
 #endif
-}
-
-void AVRPawn::InitBodyMeshReference()
-{
-    if (!GetMesh()) return;
-    MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
-
-    // 눕힘 피벗(발) → 머리 본 높이 — 레퍼런스 포즈 기준. 몸을 눕혔을 때 머리 본이 HMD 아래 목 위치에 오도록 발을 빼는 거리 계산에 쓴다.
-    const USkeletalMesh* Asset = GetMesh()->GetSkeletalMeshAsset();
-    if (!Asset) return;
-
-    const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
-    const int32 HeadIndex = Ref.FindBoneIndex(TEXT("Head"));
-    if (HeadIndex != INDEX_NONE)
-    {
-        HeadBoneHeight = FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, HeadIndex).GetLocation().Z;
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 몸 메시에 Head 본이 없어 눕힘 기준 높이 %.0fcm 기본값을 쓴다"), HeadBoneHeight);
-    }
 }
 
 void AVRPawn::InitHandPhysics()
@@ -302,10 +282,7 @@ void AVRPawn::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
     SyncCapsuleToHMD();
     UpdateSmoothTurn(DeltaTime);
-    UpdateBodyRotation(DeltaTime);
-    UpdatePosture();
-    UpdateDynamicCapsule(DeltaTime);
-    UpdateBodyPlacement();
+    Posture->Update(DeltaTime);
     if (PlayerUI) PlayerUI->Update(DeltaTime);
     UpdateStamina(DeltaTime);
     UpdateDash(DeltaTime);
@@ -341,6 +318,85 @@ FTransform AVRPawn::GetLeftHandEffectorCS() const
 FTransform AVRPawn::GetRightHandEffectorCS() const
 {
     return HandRight ? HandRight->GetEffectorCS(GetMesh()) : FTransform::Identity;
+}
+
+// ============================================================================
+// 시야 판정 · HMD 추종
+// ============================================================================
+
+bool AVRPawn::IsSeated() const
+{
+    return SeatedFurniture.IsValid();
+}
+
+UAISense_Sight::EVisibilityResult AVRPawn::CanBeSeenFrom(
+    const FCanBeSeenFromContext& Context, FVector& OutSeenLocation,
+    int32& OutNumberOfLoSChecksPerformed, int32& OutNumberOfAsyncLosCheckRequested,
+    float& OutSightStrength, int32* /*UserData*/,
+    const FOnPendingVisibilityQueryProcessedDelegate* /*Delegate*/)
+{
+    OutNumberOfAsyncLosCheckRequested = 0;
+    OutSightStrength = 1.f;
+
+    const FVector TargetLoc = GetActorLocation();
+
+    // 자세별 시야 거리 제한 — 서기(0)는 제한 없이 관찰자 SightRadius 에 맡긴다.
+    const float Range = Posture->GetStealthSightRange();
+    if (Range > 0.f && FVector::DistSquared(Context.ObserverLocation, TargetLoc) > FMath::Square(Range))
+    {
+        return UAISense_Sight::EVisibilityResult::NotVisible;
+    }
+
+    // 기본 AI 시선 검사와 동일 — 관찰자 시점에서 플레이어까지 가시성 채널 직선이 막히지 않아야 보인다.
+    UWorld* World = GetWorld();
+    if (!World) return UAISense_Sight::EVisibilityResult::NotVisible;
+
+    FHitResult Hit;
+    const FCollisionQueryParams Params(SCENE_QUERY_STAT(AILineOfSight), true, Context.IgnoreActor);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, Context.ObserverLocation, TargetLoc, ECC_Visibility, Params);
+    ++OutNumberOfLoSChecksPerformed;
+
+    // 엔진 기본 판정과 동일 — 플레이어 본인뿐 아니라 플레이어 소유 액터(들고 있는 아이템 등)에 먼저 맞아도 보인 것으로 친다.
+    const AActor* HitActor = Hit.GetActor();
+    if (!bHit || (HitActor && HitActor->IsOwnedBy(this)))
+    {
+        OutSeenLocation = TargetLoc;
+        return UAISense_Sight::EVisibilityResult::Visible;
+    }
+    return UAISense_Sight::EVisibilityResult::NotVisible;
+}
+
+void AVRPawn::SyncCapsuleToHMD()
+{
+    // 표준 VR 패턴: 캡슐(액터)을 HMD의 월드 XY 위치 아래로 따라가게 하되,
+    // 같은 양을 VROrigin에서 빼서 HMD의 월드 위치는 그대로 유지한다.
+    //
+    // WHY 월드 위치 차이 기반: 카메라·캡슐의 실제 월드 좌표 차이만큼만 이동시키면
+    // 그 차이가 매 프레임 0으로 수렴한다. 과거 구현은 HMD의 절대 트래킹 좌표
+    // (VRCamera 상대 위치)를 매 프레임 VROrigin에 누적시켜, VROrigin이 액터
+    // 피벗에서 점점 표류 → 스냅턴 회전 시 그 누적 오프셋이 큰 호를 그리며
+    // 텔레포트되는 버그가 있었다.
+    if (!VRCamera || !VROrigin) return;
+
+    const FVector CapsuleWorld = GetActorLocation();
+    const FVector CameraWorld  = VRCamera->GetComponentLocation();
+    const FVector OffsetXY(CameraWorld.X - CapsuleWorld.X,
+                           CameraWorld.Y - CapsuleWorld.Y, 0.f);
+    if (OffsetXY.IsNearlyZero()) return;
+
+    // 캡슐을 HMD 아래로 이동 (sweep: 벽 통과 방지). 실제 이동량만큼만 VROrigin을
+    // 역보정해 — 벽에 막혀 캡슐이 덜 움직였으면 카메라도 그만큼만 따라간다.
+    const FVector Before = GetActorLocation();
+    AddActorWorldOffset(OffsetXY, true);
+    const FVector Applied = GetActorLocation() - Before;
+    VROrigin->AddWorldOffset(-Applied);
+}
+
+void AVRPawn::GetMoveAxes(FVector& OutForward, FVector& OutRight) const
+{
+    const FRotator CameraYaw(0.f, VRCamera->GetComponentRotation().Yaw, 0.f);
+    OutForward = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X);
+    OutRight   = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y);
 }
 
 // ============================================================================
@@ -468,7 +524,7 @@ void AVRPawn::SetSprinting(bool bNewSprinting)
 {
     // 스태미나 고갈 중에는 진입 요청을 무시한다. 해제는 회복이 SprintUnlockStaminaRatio 를
     // 넘을 때(UpdateStamina) 이뤄지므로, 그 전까지 스틱을 끝까지 밀어도 Walk 로 남는다.
-    if (bNewSprinting && bStaminaExhausted) return;
+    if (bNewSprinting && StaminaState.bExhausted) return;
 
     if (bIsSprinting == bNewSprinting) return;
 
@@ -485,31 +541,30 @@ void AVRPawn::UpdateStamina(float DeltaTime)
     //  · 자세: Crouching/Prone 은 ApplyMovementSpeed 가 Sprint 속도를 안 쓰므로 소모도 없어야 한다.
     //  · 실제 이동: 벽에 막혀 제자리인데 스틱만 최대로 밀고 있을 때 스태미나가 마르는 건 부자연스럽다.
     const bool bConsuming = bIsSprinting
-        && (CurrentPosture == EVRPosture::Standing || CurrentPosture == EVRPosture::Bending)
+        && (Posture->CurrentPosture == EVRPosture::Standing || Posture->CurrentPosture == EVRPosture::Bending)
         && GetVelocity().SizeSquared2D() > KINDA_SMALL_NUMBER;
 
     if (bConsuming)
     {
-        TimeSinceSprintStopped = 0.f;
+        StaminaState.OnDrained();
         Res.Stamina = FMath::Max(0.f, Res.Stamina - SprintStaminaCostPerSec * DeltaTime);
 
         if (Res.Stamina <= 0.f)
         {
-            bStaminaExhausted = true;
+            StaminaState.bExhausted = true;
             SetSprinting(false);   // ApplyMovementSpeed() 가 Walk 로 되돌린다
         }
         return;
     }
 
     // 회복 — 중단 직후 즉시 차오르면 끊어 달리기로 무한 Sprint 가 되므로 지연을 둔다.
-    TimeSinceSprintStopped += DeltaTime;
-    if (TimeSinceSprintStopped < StaminaRegenDelaySec) return;
+    if (!StaminaState.TickRecoveryDelay(DeltaTime, StaminaRegenDelaySec)) return;
 
     Res.Stamina = FMath::Min(Res.MaxStamina, Res.Stamina + Res.StaminaRegen * DeltaTime);
 
-    if (bStaminaExhausted && Res.Stamina >= Res.MaxStamina * SprintUnlockStaminaRatio)
+    if (StaminaState.bExhausted && Res.Stamina >= Res.MaxStamina * SprintUnlockStaminaRatio)
     {
-        bStaminaExhausted = false;
+        StaminaState.bExhausted = false;
     }
 }
 
@@ -518,27 +573,25 @@ void AVRPawn::OnDash(const FInputActionValue& /*Value*/)
     if (SeatedFurniture.IsValid() || IsUIBlockingInput()) return;
 
     // 자세 제한은 Sprint 와 동일 기준 — 웅크리거나 엎드린 채로 튀어 나가지 않는다.
-    if (CurrentPosture != EVRPosture::Standing && CurrentPosture != EVRPosture::Bending) return;
+    if (Posture->CurrentPosture != EVRPosture::Standing && Posture->CurrentPosture != EVRPosture::Bending) return;
 
     UWorld* World = GetWorld();
     UCharacterMovementComponent* MC = GetCharacterMovement();
     if (!World || !MC || !VRCamera) return;
 
     const float Now = World->GetTimeSeconds();
-    if (bDashActive || Now - LastDashTime < DashCooldownSec) return;
+    if (!DashState.IsReady(Now, DashCooldownSec)) return;
 
-    if (!bDebugDashFreeStamina && (bStaminaExhausted || CurrentStats.Resources.Stamina < DashStaminaCost)) return;
+    if (!bDebugDashFreeStamina && (StaminaState.bExhausted || CurrentStats.Resources.Stamina < DashStaminaCost)) return;
 
     const FVector Dir = CalculateDashDirection();
     ConsumeDashStamina();
 
-    bDashActive = true;
-    DashTimeRemaining = DashDuration;
-    LastDashTime = Now;
+    DashState.Begin(Now, DashDuration);
 
     // 액터 회전은 건드리지 않는다 — VR 에서 시야를 강제로 돌리면 즉시 멀미로 이어진다.
     const float DashSpeed = DashDistance / FMath::Max(KINDA_SMALL_NUMBER, DashDuration);
-    MovementUtils::BeginFrictionlessLaunch(*this, Dir * DashSpeed, SavedDashFriction);
+    MovementUtils::BeginFrictionlessLaunch(*this, Dir * DashSpeed, DashState.SavedFriction);
 }
 
 FVector AVRPawn::CalculateDashDirection() const
@@ -560,18 +613,15 @@ void AVRPawn::ConsumeDashStamina()
     Res.Stamina = FMath::Max(0.f, Res.Stamina - DashStaminaCost);
     if (Res.Stamina <= 0.f)
     {
-        bStaminaExhausted = true;
+        StaminaState.bExhausted = true;
         SetSprinting(false);
     }
-    TimeSinceSprintStopped = 0.f;   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
+    StaminaState.OnDrained();   // 대쉬 직후 곧바로 회복이 시작되지 않도록 지연을 재시작
 }
 
 void AVRPawn::UpdateDash(float DeltaTime)
 {
-    if (!bDashActive) return;
-
-    DashTimeRemaining -= DeltaTime;
-    if (DashTimeRemaining <= 0.f)
+    if (DashState.Tick(DeltaTime))
     {
         StopDash();
     }
@@ -579,13 +629,12 @@ void AVRPawn::UpdateDash(float DeltaTime)
 
 void AVRPawn::StopDash()
 {
-    if (!bDashActive) return;
-    bDashActive = false;
-    DashTimeRemaining = 0.f;
+    if (!DashState.bActive) return;
+    DashState.End();
 
     if (UCharacterMovementComponent* MC = GetCharacterMovement())
     {
-        MovementUtils::EndFrictionlessLaunch(*MC, SavedDashFriction);
+        MovementUtils::EndFrictionlessLaunch(*MC, DashState.SavedFriction);
     }
 }
 
@@ -1088,8 +1137,8 @@ void AVRPawn::ApplyMovementSpeed()
 
     const float Base = CurrentStats.Movement.WalkSpeed;
 
-    // 자세별 속도 클램프 — Standing 100% / Bending = BendSpeedRatio / Crouching = CrouchSpeed / Prone = 20%
-    switch (CurrentPosture)
+    // 자세별 속도 클램프 — Standing 100% / Bending = Posture->BendSpeedRatio / Crouching = CrouchSpeed / Prone = 20%
+    switch (Posture->CurrentPosture)
     {
     case EVRPosture::Standing:
         // Sprint 는 선 자세에서만 — 웅크림/포복은 아래 분기가 각자 속도를 덮어써 자동 억제.
@@ -1097,7 +1146,7 @@ void AVRPawn::ApplyMovementSpeed()
         break;
     case EVRPosture::Bending:
         // 전력질주 중 상체가 숙여져도 질주는 유지(스태미나·대시 규칙과 동일), 걷기만 감속.
-        MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base * BendSpeedRatio;
+        MC->MaxWalkSpeed = bIsSprinting ? CurrentStats.Movement.SprintSpeed : Base * Posture->BendSpeedRatio;
         break;
     case EVRPosture::Crouching:
         MC->MaxWalkSpeed = CurrentStats.Movement.CrouchSpeed;

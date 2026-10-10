@@ -23,6 +23,7 @@ class UInventoryComponent;
 class UVRPlayerUIComponent;
 class UVRMeleeComponent;
 class UVRBodyMeasureComponent;
+class UVRPostureComponent;
 class USphereComponent;
 class UVRHandComponent;
 class AKineticProjectile;
@@ -31,19 +32,68 @@ class UStaticMeshComponent;
 class ADroppedItemBase;
 struct FItemData;
 
-/** VR 자세 — HMD 높이 비율(서기·쭈그리기·엎드리기) + HMD 피치와 높이 구간(허리 숙이기)으로 판정.
- *  AnimBP/FBIK가 이 값으로 스테이트·이동속도를 결정. 기존 값 번호 유지를 위해 Bending 은 끝에 추가. */
-UENUM(BlueprintType)
-enum class EVRPosture : uint8
+/** 스프린트·대쉬가 함께 쓰는 스태미나 상태 — 고갈로 Sprint 가 막혔는지와 마지막 소모 뒤 흐른 시간.
+ *  소모량·회복 속도는 폰의 스탯과 튜닝값을 읽으므로 규칙 자체는 AVRPawn::UpdateStamina 에 있다. */
+USTRUCT(BlueprintType)
+struct FStaminaState
 {
-    Standing  UMETA(DisplayName = "Standing"),
-    Crouching UMETA(DisplayName = "Crouching"),
-    Prone     UMETA(DisplayName = "Prone"),
-    Bending   UMETA(DisplayName = "Bending")
+    GENERATED_BODY()
+
+    /** 고갈로 강제 해제된 상태. 회복이 SprintUnlockStaminaRatio 를 넘을 때까지 Sprint 재진입 차단.
+     *  이게 없으면 고갈→해제→즉시재시도 가 매 틱 반복되며 덜덜 떨린다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Stamina")
+    bool bExhausted = false;
+
+    /** 마지막으로 스태미나를 소모한 뒤 흐른 시간(초). 회복 지연 비교용. */
+    float TimeSinceDrain = 0.f;
+
+    /** 스태미나를 소모했다 — 회복 지연을 처음부터 다시 센다. */
+    void OnDrained() { TimeSinceDrain = 0.f; }
+
+    /** 시간을 흘려 보내고, 회복 지연이 지났으면 true. */
+    bool TickRecoveryDelay(float DeltaTime, float DelaySec)
+    {
+        TimeSinceDrain += DeltaTime;
+        return TimeSinceDrain >= DelaySec;
+    }
 };
 
-/** 자세 전이 알림용 델리게이트 — AnimBP·UI 등이 폴링 대신 이 이벤트로 반응. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVRPostureChanged, EVRPosture, NewPosture);
+/** 대쉬 진행 상태 — 진행 중 여부·잔여 시간·마지막 시각·중 0 으로 덮은 마찰 원본. 튜닝값(거리·시간·쿨다운)은 폰에 있다. */
+struct FDashState
+{
+    bool bActive = false;
+    float TimeRemaining = 0.f;
+
+    /** 마지막 대쉬 시각(초). 쿨다운 비교용. 첫 대쉬가 막히지 않게 충분히 과거로 초기화. */
+    float LastTime = -1000.f;
+
+    /** 대쉬 중 0 으로 덮어쓰는 이동 파라미터 원본 — 끝날 때 되돌린다. */
+    FSavedFriction SavedFriction;
+
+    /** 진행 중이 아니고 쿨다운이 지났으면 새 대쉬를 시작할 수 있다. */
+    bool IsReady(float Now, float CooldownSec) const { return !bActive && Now - LastTime >= CooldownSec; }
+
+    void Begin(float Now, float DurationSec)
+    {
+        bActive = true;
+        TimeRemaining = DurationSec;
+        LastTime = Now;
+    }
+
+    /** 잔여 시간을 줄인다. 진행 중이었고 시간이 다 됐으면 true. */
+    bool Tick(float DeltaTime)
+    {
+        if (!bActive) return false;
+        TimeRemaining -= DeltaTime;
+        return TimeRemaining <= 0.f;
+    }
+
+    void End()
+    {
+        bActive = false;
+        TimeRemaining = 0.f;
+    }
+};
 
 class AFurnitureActor;
 class UCapsuleComponent;
@@ -143,6 +193,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
     UVRBodyMeasureComponent* BodyMeasure;
 
+    /** 자세 시스템 — 키 캘리브레이션·자세 판정·동적 캡슐·몸 메시 회전/배치·자세별 시야 계수. 매 틱 폰이 Update 를 부른다. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
+    UVRPostureComponent* Posture;
+
     // ============================================================================
     // AI 퍼셉션 (NPC가 플레이어를 감지하기 위해 필요)
     // ============================================================================
@@ -241,13 +295,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stamina", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SprintUnlockStaminaRatio = 0.25f;
 
-    /** 고갈로 강제 해제된 상태. 회복이 SprintUnlockStaminaRatio 를 넘을 때까지 Sprint 재진입 차단.
-     *  이게 없으면 고갈→해제→즉시재시도 가 매 틱 반복되며 덜덜 떨린다. */
+    /** 스프린트·대쉬 스태미나 상태(고갈 여부, 회복 지연 타이머). 소모·회복 규칙은 UpdateStamina. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Stamina")
-    bool bStaminaExhausted = false;
-
-    /** 마지막으로 스태미나를 소모한 뒤 흐른 시간(초). StaminaRegenDelaySec 비교용. */
-    float TimeSinceSprintStopped = 0.f;
+    FStaminaState StaminaState;
 
     // ============================================================================
     // 대쉬 — 짧은 등속 회피 이동
@@ -291,105 +341,8 @@ public:
     TSubclassOf<AKineticProjectile> ProjectileClass;
 
     // ============================================================================
-    // 자세 시스템 (HMD Z 높이 기반)
+    // 자세 시스템 — 상태·튜닝·캘리브레이션은 UVRPostureComponent. 폰은 시야 판정 진입점만 가진다.
     // ============================================================================
-
-    /** 현재 자세. AnimBP가 Property Access로 워커 스레드에서 읽음. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
-    EVRPosture CurrentPosture = EVRPosture::Standing;
-
-    /** 캘리브레이션된 사용자 정자세 HMD 높이(cm). 0이면 미보정 상태. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
-    float CalibratedStandingHeight = 0.f;
-
-    /** 캘리브레이션 완료 여부. UpdatePosture()는 이 플래그가 true여야 작동. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Posture")
-    bool bCalibrated = false;
-
-    /** Stand → Crouch 진입 비율 (H_max 대비). 기본 0.75 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "0.95"))
-    float StandingRatioDown = 0.75f;
-
-    /** Crouch → Stand 복귀 비율. StandingRatioDown 보다 커야 데드존이 생긴다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "0.95"))
-    float StandingRatioUp = 0.80f;
-
-    /** Crouch → Prone 진입 비율. 기본 0.40 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "0.6"))
-    float ProneRatioDown = 0.40f;
-
-    /** Prone → Crouch 복귀 비율. ProneRatioDown 보다 커야 데드존이 생긴다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "0.6"))
-    float ProneRatioUp = 0.45f;
-
-    /** Standing → Bending 진입 HMD 피치 하향 각도(도). 이 각도 이상 숙이고 높이도 허리 숙이기 구간이어야 진입. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "80.0"))
-    float BendPitchDownDeg = 30.f;
-
-    /** Bending → Standing 복귀 피치 하향 각도(도). BendPitchDownDeg 보다 작아야 데드존이 생긴다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "5.0", ClampMax = "70.0"))
-    float BendPitchUpDeg = 20.f;
-
-    /** Standing → Bending 진입 높이 비율 상한. 쭈그리기 진입(StandingRatioDown) 이상 ~ 이 값 미만에서만 허리 숙이기.
-     *  서서 고개만 숙이면 비율이 거의 안 내려가 이 값 이상에 머물러 Standing 으로 남는다.
-     *  StandingRatioDown < BendRatioMax < BendRatioMaxUp 이어야 함. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
-    float BendRatioMax = 0.88f;
-
-    /** Bending → Standing 복귀 높이 비율. BendRatioMax 보다 커야 데드존이 생긴다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.8", ClampMax = "1.0"))
-    float BendRatioMaxUp = 0.91f;
-
-    /** 허리 숙이기 걷기 속도 = WalkSpeed × 이 값. 서기(1.0)와 쭈그리기(CrouchSpeed/WalkSpeed) 사이. 전력질주 중엔 적용 안 함. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.2", ClampMax = "1.0"))
-    float BendSpeedRatio = 0.75f;
-
-    /** 캡슐 절반 높이 최소값(cm) — 포복 시 적용. 엎드리기 캡슐은 눕히지 않고 이 높이의 수직 캡슐로 둔다
-     *  (캡슐이 HMD 높이를 따라 연속으로 줄어들어 바닥·천장 스윕으로 침투를 막는다). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "10.0", ClampMax = "60.0"))
-    float MinCapsuleHalfHeight = 22.f;
-
-    /** 캡슐·VR Origin Z 보간 속도. 높을수록 빠르게 따라감. 권장값 8 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "1.0", ClampMax = "20.0"))
-    float HeightInterpSpeed = 8.f;
-
-    /** 캘리브레이션 샘플링 지속시간(초). BeginPlay 직후 이 시간동안 HMD Z 평균. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "0.5", ClampMax = "5.0"))
-    float CalibrationDuration = 2.f;
-
-    /** 시야 높이 미세 오프셋(cm). VROrigin Z에 더함. **기본 0 — 비워둘 것.**
-     *  ⚠️ 0이 아니면 카메라 월드Z가 시프트되고, GetCurrentHMDHeight()가 그 카메라Z를
-     *  역산하므로 보고 높이가 오염→캡슐(아바타 몸)이 오프셋만큼 짧아짐→카메라가 짧은 몸
-     *  위로 떠 '시야 너무 높음'. 과거 -30 이 정확히 이 버그를 유발(아바타 머리 뜸을
-     *  카메라 침몰로 가리려다 역효과). 머리 본이 뜨면 여기 말고 HeadEffectorOffset/
-     *  FBIK head effector 에서 교정할 것. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Posture", meta = (ClampMin = "-20.0", ClampMax = "20.0"))
-    float CameraHeightOffset = 0.f;
-
-    /** 자세 전이 시 브로드캐스트. AnimBP / UI 가 바인딩. */
-    UPROPERTY(BlueprintAssignable, Category = "VR|Posture")
-    FOnVRPostureChanged OnPostureChanged;
-
-    /** 은신 기준 시야 거리(cm) — 자세 계수를 곱해 적·NPC 가 이 자세의 플레이어를 보는 최대 거리를 정한다.
-     *  서 있을 땐 제한 없음(관찰자 자신의 SightRadius 만 적용). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "100.0"))
-    float StealthReferenceRange = 3000.f;
-
-    /** 허리 숙이기 시야 거리 계수. 서기(제한 없음) > 허리 숙이기 > 쭈그리기 > 엎드리기 순이어야 한다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-    float StealthFactorBending = 0.8f;
-
-    /** 쭈그리기 시야 거리 계수. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-    float StealthFactorCrouching = 0.6f;
-
-    /** 엎드리기 시야 거리 계수. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Stealth", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-    float StealthFactorProne = 0.35f;
-
-    /** 현재 자세에서 적·NPC 가 플레이어를 볼 수 있는 최대 거리(cm). 0 이하면 제한 없음(서기). */
-    UFUNCTION(BlueprintPure, Category = "VR|Stealth")
-    float GetStealthSightRange() const;
 
     /** 시야 판정 단일 진입점 — AI 퍼셉션(적·NPC 공용)이 플레이어를 볼 때 호출. 자세별 거리 제한 후 시선 차단 검사. */
     virtual UAISense_Sight::EVisibilityResult CanBeSeenFrom(
@@ -398,22 +351,8 @@ public:
         float& OutSightStrength, int32* UserData = nullptr,
         const FOnPendingVisibilityQueryProcessedDelegate* Delegate = nullptr) override;
 
-    /** 외부 트리거(예: 양손 그립 동시 입력)로 캘리브레이션 재시작. */
-    UFUNCTION(BlueprintCallable, Category = "VR|Posture")
-    void StartCalibration();
-
-    /** 현재 HMD가 바닥(=캡슐 발) 기준으로 얼마나 높이 있는지(cm). */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VR|Posture")
-    float GetCurrentHMDHeight() const;
-
-    /** 이 높이(cm) 이하의 HMD 값은 트래킹이 안 잡힌 것(0 근처)으로 본다 — 캘리브레이션·신체 측정이 같이 쓴다. */
-    static constexpr float MinTrackedHMDHeight = 30.f;
-
-    /** 월드 Z 를 바닥(=캡슐 발) 기준 높이(cm)로 바꾼다. GetCurrentHMDHeight 와 같은 좌표계 — 신체 측정이 컨트롤러 높이를 잴 때 쓴다. */
-    float HeightAboveFloor(float WorldZ) const;
-
-    /** 자세 판정 기준 높이를 확정한다(자동 샘플링 중단 + bCalibrated). 저장된 신체 측정값 적용·측정 직후 갱신 공통 경로. */
-    void SetStandingHeight(float Height);
+    /** 착석 중인가 — 자세 컴포넌트가 몸 회전·배치를 의자에 맡길 때 읽는다. */
+    bool IsSeated() const;
 
     // ============================================================================
     // FBIK Effector — Control Rig 입력용. 모두 몸체 메시(GetMesh()) 컴포넌트 공간.
@@ -431,31 +370,6 @@ public:
      *  머리 본은 눈보다 뒤·아래(목 위)에 있다 — 눈 위치를 그대로 넘기면 FBIK 가 척추를 앞으로 당긴다. PIE 중 즉시 반영. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|IK")
     FVector EyeToHeadOffset = FVector(-9.f, 0.f, -10.f);
-
-    /** 눈(HMD) → 목 위치 오프셋(HMD 로컬, cm). 몸 메시를 눈이 아니라 이 목 위치 아래에 놓는다 —
-     *  고개를 숙이거나 돌리면 눈은 앞으로 나가지만 몸통은 제자리라, 눈 아래에 두면 몸 전체가 끌려간다. PIE 중 즉시 반영. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
-    FVector EyeToNeckOffset = FVector(-10.f, 0.f, -20.f);
-
-    /** 메시 정면 보정 오프셋 (Mixamo X_Bot 등 표준 스켈레탈 메시는 -90도 회전 시 캐릭터 전방 정렬). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body")
-    float BodyMeshYawOffset = -90.f;
-
-    /** 몸(메시) 회전 추종 보간 속도 (0이면 HMD 시선과 즉시 1:1 동기화, >0이면 부드럽게 추종). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0"))
-    float BodyRotationInterpSpeed = 0.f;
-
-    /** 키 대비 HMD 높이가 1 줄어들 때마다 눕히는 각도(도). 0.1 낮아지면 이 값의 10% 만큼 앞으로 눕는다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "200.0"))
-    float BodyLeanDegPerRatio = 110.f;
-
-    /** 몸 눕힘 상한(도). 90 이면 완전히 수평 — 엎드려도 상체를 든 모양이 되도록 그보다 작게 둔다. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Body", meta = (ClampMin = "0.0", ClampMax = "90.0"))
-    float BodyLeanMaxDeg = 68.f;
-
-    /** 현재 몸 눕힘 각도(도, 0 = 수직). 캡슐 보간과 같은 속도(HeightInterpSpeed)로 목표를 따라간다. */
-    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "VR|Body")
-    float BodyLeanDeg = 0.f;
 
     // 아바타 키 스케일 기능 제거 — 항상 네이티브 1:1(머리=HMD·손=컨트롤러 실위치).
     // 스케일은 짧게 적용 시 FBIK 가 머리를 HMD 까지 못 늘려 '머리 낮음' 버그만 유발했음.
@@ -499,6 +413,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Stats")
     void RefreshStats();
 
+    /** 게임플레이 상태 태그 부여·회수 — 자세 컴포넌트가 자세 태그를 갱신할 때도 쓴다. */
+    void AddStateTag(FGameplayTag Tag);
+    void RemoveStateTag(FGameplayTag Tag);
+
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
                              AController* EventInstigator, AActor* DamageCauser) override;
 
@@ -522,9 +440,6 @@ private:
 
     /** Enhanced Input 매핑 컨텍스트를 등록하고(개발 빌드) 치트 매니저를 우리 클래스로 바꿔 끼운다. */
     void RegisterInputAndCheats();
-
-    /** 몸 메시의 기준 위치와 머리 본 높이를 레퍼런스 포즈에서 읽는다. */
-    void InitBodyMeshReference();
 
     /** 양손 물리를 만들고 몸 메시 애님을 물리 뒤로 미루며, 내 캡슐·몸이 손 채널을 무시하게 한다. */
     void InitHandPhysics();
@@ -559,16 +474,6 @@ private:
     /** 오른 조이스틱 X 입력만큼 액터를 매 프레임 연속 회전 — 매 Tick 호출 */
     void UpdateSmoothTurn(float DeltaTime);
 
-    /** 아바타 몸(스켈레탈 메시)이 HMD(헤드셋) 시선 Yaw를 항상 바라보도록 정렬 — 매 Tick 호출 */
-    void UpdateBodyRotation(float DeltaTime);
-
-    /** 몸 눕힘을 뺀 순수 몸 방향 yaw(= 시선 yaw 추종값). 눕힌 메시 회전에서 yaw 를 역산하면 틀어지므로 따로 들고 있다. */
-    float SmoothedBodyYaw = 0.f;
-
-    /** 메시 원점(발)에서 머리 본까지 높이(cm) — BeginPlay 에 레퍼런스 포즈에서 읽는다. */
-    float HeadBoneHeight = 130.f;
-    bool bBodyYawInit = false;
-
     /** 현재 회전 조이스틱 X 입력값(-1~1). 입력 핸들러가 갱신, Tick이 소비. */
     float TurnAxisInput = 0.f;
 
@@ -600,52 +505,11 @@ private:
     /** 마찰·제동 원복 + 수평 잔류 속도 제거. 정상 종료·중단 공통 경로. */
     void StopDash();
 
-    bool bDashActive = false;
-    float DashTimeRemaining = 0.f;
-
-    /** 마지막 대쉬 시각(초). 쿨다운 비교용. 첫 대쉬가 막히지 않게 충분히 과거로 초기화. */
-    float LastDashTime = -1000.f;
-
-    /** 대쉬 중 0 으로 덮어쓰는 이동 파라미터 원본 — StopDash 가 되돌린다. */
-    FSavedFriction SavedDashFriction;
+    /** 대쉬 진행 상태(진행 중·잔여 시간·마지막 시각·원복용 마찰). */
+    FDashState DashState;
 
     /** 직전 왼손 스틱 입력. 대쉬 방향 산출용 — 입력 핸들러가 갱신한다. */
     FVector2D LastMoveInput = FVector2D::ZeroVector;
-
-    // --- 자세 시스템 내부 상태 ---
-
-    /** 생성자에서 캐싱한 기본 캡슐 절반 높이. 동적 리사이즈의 상한·역보정 기준. */
-    float BaseCapsuleHalfHeight = 88.f;
-
-    /** 현재 보간된 캡슐 절반 높이 — Tick에서 타겟값으로 InterpTo */
-    float InterpedCapsuleHalfHeight = 88.f;
-
-    /** 캘리브레이션 샘플링 누적값·횟수 */
-    float CalibrationAccum = 0.f;
-    int32 CalibrationSampleCount = 0;
-    FTimerHandle CalibrationSampleTimer;
-    FTimerHandle CalibrationFinishTimer;
-
-    /** 캘리브레이션 샘플 1회 (타이머에서 호출) */
-    void SampleCalibration();
-
-    /** 캘리브레이션 종료 — 평균값 확정 + bCalibrated=true */
-    void FinishCalibration();
-
-    /** 매 Tick — HMD Z 비율로 자세 전이 판정 (히스테리시스) */
-    void UpdatePosture();
-
-    /** 자세 전이 — Enum/태그 갱신 + 이동속도 적용 + OnPostureChanged 브로드캐스트 */
-    void TransitionTo(EVRPosture NewPosture, float Ratio, float PitchDownDeg);
-
-    /** 매 Tick — 동적 캡슐 리사이즈 + Rising Floor 역보정 (VInterp 스무딩) */
-    void UpdateDynamicCapsule(float DeltaTime);
-
-    /** 매 Tick — 몸 메시를 발은 바닥에, 수평은 목 아래에 둔다. 캡슐이 줄어도 메시가 바닥 아래로 가라앉지 않게. */
-    void UpdateBodyPlacement();
-
-    /** BeginPlay 시점 메시 상대 위치(기본 캡슐 높이 기준). 캡슐 높이 변화만큼 Z 를 보정한다. */
-    FVector MeshBaseRelativeLocation = FVector::ZeroVector;
 
     // --- NPC 상호작용 ---
     void DetectNearbyNPC();
@@ -783,6 +647,4 @@ private:
     UPROPERTY(VisibleAnywhere, Category = "Tags")
     FGameplayTagContainer GameplayTags;
 
-    void AddStateTag(FGameplayTag Tag);
-    void RemoveStateTag(FGameplayTag Tag);
 };

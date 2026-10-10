@@ -9,6 +9,7 @@
 #include "Core/Save/BodyMeasureSaveGame.h"
 #include "Player/BP/VRPawn.h"
 #include "Player/Components/VRHandComponent.h"
+#include "Player/Components/VRPostureComponent.h"
 
 namespace
 {
@@ -206,8 +207,8 @@ bool UVRBodyMeasureComponent::SampleStep(float& OutValue, FText& OutWhy) const
     switch (Step)
     {
     case EStep::Height:
-        OutValue = Pawn->GetCurrentHMDHeight();
-        if (bRequireTracking && OutValue < AVRPawn::MinTrackedHMDHeight)
+        OutValue = Pawn->Posture->GetCurrentHMDHeight();
+        if (bRequireTracking && OutValue < UVRPostureComponent::MinTrackedHMDHeight)
         {
             OutWhy = FText::FromString(TEXT("헤드셋 위치가 안 잡혀요"));
             return false;
@@ -226,7 +227,7 @@ bool UVRBodyMeasureComponent::SampleStep(float& OutValue, FText& OutWhy) const
             OutWhy = FText::FromString(TEXT("오른손이 안 보여요"));
             return false;
         }
-        OutValue = Pawn->HeightAboveFloor(P.Z);
+        OutValue = Pawn->Posture->HeightAboveFloor(P.Z);
         return true;
     }
     default:
@@ -294,7 +295,7 @@ void UVRBodyMeasureComponent::Finish()
     Step = EStep::Idle;
 
     // 측정 직후 자세 판정 기준을 바로 갱신한다(다음 실행을 기다리지 않는다).
-    if (AVRPawn* Pawn = GetPawn()) Pawn->SetStandingHeight(Data->Height);
+    if (AVRPawn* Pawn = GetPawn()) Pawn->Posture->SetStandingHeight(Data->Height);
 
     UE_LOG(LogTemp, Log, TEXT("[BodyMeasure] 저장: %s"), *Summary(*Data));
     SetTexts(FString::Printf(TEXT("측정 완료 — %s. 저장했습니다. 버튼을 누르면 다시 잽니다."), *Summary(*Data)), IdleButton());
