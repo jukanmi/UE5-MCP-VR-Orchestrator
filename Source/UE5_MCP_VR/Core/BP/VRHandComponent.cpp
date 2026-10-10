@@ -306,7 +306,7 @@ float UVRHandComponent::HeldMassScale() const
     // 양손으로 쥔 물건은 무게를 두 손이 나눠 받는다.
     const UVRHandComponent* Other = GetOtherHand();
     const float Share = Other && Other->GrabbedItem.Get() == Held ? 0.5f : 1.f;
-    return (PalmMass + FMath::Min(Held->ItemMesh->GetMass(), MaxCarryMass) * Share) / PalmMass;
+    return (PalmMass + FMath::Min(Held->ItemMesh->CalculateMass(), MaxCarryMass) * Share) / PalmMass;
 }
 
 void UVRHandComponent::UpdatePassThrough(float Error)
@@ -650,7 +650,7 @@ bool UVRHandComponent::UpdateContactGrab(bool bAllowNewGrab)
             float Force = 0.f, Torque = 0.f;
             FVector Center;
             if (Item) ComputeGrip(Item, /*bContact=*/true, Partner, Force, Torque, Center);
-            if (Item && Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ()))
+            if (Item && Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->CalculateMass() * FMath::Abs(GetWorld()->GetGravityZ()))
             {
                 ContactItem = Item;
                 ContactPartner = Partner;
@@ -847,7 +847,7 @@ bool UVRHandComponent::CanHold(const ADroppedItemBase* Item) const
     float Force = 0.f, Torque = 0.f;
     FVector Center;
     ComputeGrip(Item, bContact, ContactPartner, Force, Torque, Center);
-    return Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->GetMass() * FMath::Abs(GetWorld()->GetGravityZ());
+    return Force + GetOtherHandGripForce(Item) >= Item->ItemMesh->CalculateMass() * FMath::Abs(GetWorld()->GetGravityZ());
 }
 
 bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollision)
@@ -874,7 +874,7 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
 
     // 드라이브 강성·감쇠 — 질량(회전은 쥔 점 기준 관성 = 무게중심 관성 최대축 + m·d²) × ω², 임계감쇠 2·질량·ω.
     // ponytail: 관성은 최대축 하나로 — 길쭉한 물건의 긴 축 회전은 실제보다 단단하다. 축별로 달라야 하면 관성 텐서를 제약 축으로 돌려 쓸 것.
-    const float Mass = Item->ItemMesh->GetMass();
+    const float Mass = Item->ItemMesh->CalculateMass();
     const float Inertia = Item->ItemMesh->GetInertiaTensor().GetMax() + Mass * FVector::DistSquared(Center, Item->ItemMesh->GetCenterOfMass());
     GrabLinStiffness = Mass * FMath::Square(GripLinearFrequency);
     GrabLinDamping = 2.f * Mass * GripLinearFrequency;

@@ -267,7 +267,7 @@ void ADroppedItemBase::OnMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActo
     ASmartNPC* NPC = Cast<ASmartNPC>(OtherActor);
     if (!NPC || !ItemMesh) return;
 
-    const float MassKg = FMath::Max(ItemMesh->GetMass(), 0.01f);
+    const float MassKg = FMath::Max(ItemMesh->CalculateMass(), 0.01f);
 
     // 충격량 J = m·Δv 에서 충돌 속도를 역산한다. 히트 콜백 시점의 GetPhysicsLinearVelocity 는
     // 이미 충돌 반영 후 값이라 실제 접근 속도보다 작게 나온다.
