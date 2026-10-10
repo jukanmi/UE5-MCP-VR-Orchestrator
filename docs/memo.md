@@ -137,6 +137,7 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 
 ## Done
 
+- [x] **왼손 Aim 모션컨트롤러 제거 (2026-10-10, Develop)** — `MotionControllerLeftAim` 은 사용처가 없었고(오른손 Aim 만 발사·UI 포인터에 사용) 포인터를 두 개 둘 이유가 없어 `VRPawn` 에서 삭제. `BP_VRPawn` 이 참조하고 있어 에디터에서 컴포넌트 트리를 먼저 확인(그 아래 자식 없음) → 빌드 후 BP 컴파일·재저장(`LeftAim` 노드 제거, 42544→42281 B). `verify all` 통과.
 - [x] **손 컴포넌트 구조 정리 (2026-10-10, Develop)** — 손가락 접촉 판정 함수화. `VRHandComponent::FingerTouching(손가락 하나)` 를 4곳에서 손가락 루프로 부르던 것을 `TouchingFingers(Item, Margin)` → 5칸 배열 한 번 계산으로 교체(접촉 쥐기 유지·`FindGraspedItem`·`ComputeGrip`). `FindGraspedItem` 은 핀치·주먹 판정이 검지~새끼를 각각 다시 오버랩하던 것(최대 9회)이 5회로. 판정 규칙 동일, `verify all` 통과. 헤드셋에서 핀치·주먹 접촉 쥐기 회귀 확인 필요.
   이어서 가독성 정리: `InitPhysics` 100줄 → `CreatePalm`·`CreateHandShapes`·`MakeDriveConstraint`(손바닥·쥐기 제약 공용 6축 Free + 드라이브 설정) 로 쪼갬, 첫 틱 `DriveBody` 가 덮어쓰던 손바닥 드라이브 초기값 제거. 쥐기 멤버 13개 → `FGrabState Grab`(ReleaseGrab = `Grab = FGrabState()`), 접촉 쥐기 3개 → `FContactGrab Contact`. cpp 1008줄을 책임별 3파일로 분할(클래스는 그대로): `VRHandComponent.cpp`(생성·트래킹·드라이브·손 모양, 465줄) / `VRHandGrab.cpp`(제스처·접촉 쥐기·마찰 쥐기, 443줄) / `VRHandNPC.cpp`(NPC 투영·밀기, 123줄). 익명 namespace 헬퍼는 쓰는 파일로 이동(유니티 빌드 이름 충돌 없음).
   이어서 지역 변수 이름 정리(`bNow`→`bGestureDetected`, `Mu`→`Friction`, `S/A/B`→`Seg/SegStart/SegEnd` 등) — 함수 단위로 바꿔 엔진 이름·주석은 보존, 헤더 공개 멤버·UPROPERTY 는 BP 노출이라 유지.

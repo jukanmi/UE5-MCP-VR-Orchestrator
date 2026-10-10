@@ -72,12 +72,6 @@ AVRPawn::AVRPawn()
     MotionControllerLeft->SetupAttachment(VROrigin);
     MotionControllerLeft->MotionSource = IMotionController::LeftHandSourceId;
 
-    // 왼손 Aim 포즈 — 조준·포인터·UI 인터랙션용. 현재 사용처는 없지만 미리
-    // 책정해두어 후속 기능에서 바로 쓸 수 있게 한다.
-    MotionControllerLeftAim = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerLeftAim"));
-    MotionControllerLeftAim->SetupAttachment(VROrigin);
-    MotionControllerLeftAim->MotionSource = FName("LeftAim");
-
     // 오른손 모션컨트롤러 — Grip 포즈 (손 메시 부착용)
     MotionControllerRight = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("MotionControllerRight"));
     MotionControllerRight->SetupAttachment(VROrigin);

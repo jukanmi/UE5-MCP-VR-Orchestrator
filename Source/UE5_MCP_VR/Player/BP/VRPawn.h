@@ -92,11 +92,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
     UMotionControllerComponent* MotionControllerLeft;
 
-    /** 왼손 Aim 포즈 — 조준·포인터용. Grip 포즈는 손 메시 부착용이라 축이
-     *  자연 조준 방향에서 ~30° 기울어져 있어 트레이스에 그대로 못 쓴다. */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
-    UMotionControllerComponent* MotionControllerLeftAim;
-
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR")
     UMotionControllerComponent* MotionControllerRight;
 
