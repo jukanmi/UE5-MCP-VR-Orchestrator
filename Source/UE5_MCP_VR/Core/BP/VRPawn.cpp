@@ -1422,8 +1422,7 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
     }
 
     const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-    // EnemyCharacter 와 같은 공식: 원시 − 방어력 (최소 0).
-    float Actual = FMath::Max(0.f, Raw - CurrentStats.Combat.Defense);
+    float Actual = CurrentStats.Combat.Mitigate(Raw);
 
     // 아이템을 쥔 손이 공격자 쪽이면 막기(경감)·패링(무효).
     if (MeleeCombat) Actual = MeleeCombat->ApplyBlock(Actual, DamageCauser);

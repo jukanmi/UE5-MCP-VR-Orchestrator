@@ -242,7 +242,7 @@ float AVillagerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
     // 부위 배율 + 래그돌 임펄스 방향.
     const float Multiplier = NoteHit(DamageEvent, DamageCauser);
 
-    const float Effective = FMath::Max(0.f, Raw - Attributes.Combat.Defense) * Multiplier;
+    const float Effective = Attributes.Combat.Mitigate(Raw, Multiplier);
     Attributes.Resources.Health -= Effective;
     UE_LOG(LogTemp, Log, TEXT("[Villager] %s 피격 %.1f (raw %.1f, def %.1f, x%.2f) HP %.0f/%.0f"),
         *VillagerID, Effective, Raw, Attributes.Combat.Defense, Multiplier,

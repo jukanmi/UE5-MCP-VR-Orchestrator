@@ -110,8 +110,7 @@ float AEnemyCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const&
     // 부위 배율 + 래그돌 임펄스 방향.
     const float Multiplier = NoteHit(DamageEvent, DamageCauser);
 
-    // NPCStateComponent::ApplyDamage 와 같은 공식: (원시 − 방어력) × 부위 배율.
-    const float Effective = FMath::Max(0.f, Raw - Attributes.Combat.Defense) * Multiplier;
+    const float Effective = Attributes.Combat.Mitigate(Raw, Multiplier);
     Attributes.Resources.Health -= Effective;
     UE_LOG(LogTemp, Log, TEXT("[Enemy] %s 피격 %.1f (raw %.1f, def %.1f, x%.2f) HP %.0f/%.0f"),
         *EnemyID, Effective, Raw, Attributes.Combat.Defense, Multiplier,

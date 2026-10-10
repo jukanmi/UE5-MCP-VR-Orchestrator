@@ -102,7 +102,7 @@ void UNPCStateComponent::SetCurrentPlan(const FNPCPlan& NewPlan)
 float UNPCStateComponent::ApplyDamage(float DamageAmount, float Multiplier)
 {
     FNPCAttributes& Attrs = GetMutableAttributes();
-    float EffectiveDamage = FMath::Max(0.0f, DamageAmount - Attrs.Combat.Defense) * Multiplier;
+    const float EffectiveDamage = Attrs.Combat.Mitigate(DamageAmount, Multiplier);
     const float HpPctBefore = Attrs.Resources.GetHealthPercent();
     Attrs.Resources.Health -= EffectiveDamage;
 

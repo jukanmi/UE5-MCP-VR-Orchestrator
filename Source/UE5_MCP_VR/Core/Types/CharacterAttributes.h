@@ -150,6 +150,12 @@ struct FCombatStats
     float Range = 200.0f;  // 기본 공격 사거리 (UU)
 
     FCombatStats() {}
+
+    /** 받는 피해 공통 공식: (원시 − 방어력, 최소 0) × 부위 배율. 플레이어·적·주민·SmartNPC 가 모두 이 식을 쓴다. */
+    float Mitigate(float Raw, float Multiplier = 1.f) const
+    {
+        return FMath::Max(0.f, Raw - Defense) * Multiplier;
+    }
 };
 
 

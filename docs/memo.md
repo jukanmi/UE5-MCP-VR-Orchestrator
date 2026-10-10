@@ -25,7 +25,6 @@
 ### 2026-10-05 헤드셋 테스트에서 나온 버그·점검 (미착수 — 결정·수정 대기)
 - [ ] **가드·제임스가 서로 싸움 — 호감도 누적(2026-10-05 13:16 세션)** — `affinity.db`: `Guard→James -20`·`Guard→Moca -15`·`Moca→Guard -10`·`Guard→Elara -5` 전부 `Hostile Hit`. 서버가 danger≥0.5 지각마다 -5(`main.py::_apply_hostile_affinity`)라 아군끼리 피격(Hit)이 반복되면 -30 이하 적대로 넘어가 교전. `seed.py` 는 보스·적·플레이어만 시딩하고 아군↔아군은 초기화하지 않아 테스트 잔재가 남음(`Guard→Unknown -40` 도 이미 Hostile). ① 즉시: `seed_affinity` 에 아군↔아군 0 시딩 추가 + 서버 재시작 ② 근본: 아군이 왜 서로를 때리는지(후보: `KineticDamage` 동역학 피해·투사체/범위 공격·래그돌 충돌) — 싸움이 붙는 장면의 서버 `[Affinity] … -5` 로그와 UE `TakeDamage` 가해자 로그 필요.
 - [ ] **채팅 입력창 글자·배경 모두 흰색** — `WBP_Chat` `ChatInput` 을 어두운 배경 + 흰 글자로 고침(`bac02c79`, 브랜치 `feature/pause-settings`). 한글이 안 써지던 건 입력이 안 보여서 그렇게 느껴졌을 가능성(Roboto 폰트 + 메뉴 한글은 정상). 헤드셋/PIE 에서 실제 키 입력으로 확인 필요 — 그래도 한글이 안 써지면 IME 문제로 별도. **2026-10-08 사용자 재보고("게임 내 채팅창에 한글이 안 쳐짐")**: 채팅창이 `UWidgetComponent`(World 공간, `UChatPanelUIComponent`) 위젯이라 OS IME 조합이 가상 창에 안 닿는 엔진 한계로 추정(미검증). 선택지: 뷰포트 오버레이 채팅창(데스크톱 입력용)·음성 STT. 영문 입력 여부부터 확인.
-- [ ] **TakeDamage 중복 정리(리팩토링, 사용자 문의 단계)** — 데미지 공식 `max(0, Raw−Defense)×부위배율` 이 `EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`(SmartNPC)·`AVRPawn::TakeDamage` 4곳에 복제. `AVRPawn` 은 `ACharacter + IPlayerBase` 이고 `ACombatCharacter` 아래가 아니라 상속 통합은 안 맞음. 안: ① `FCharacterAttributesBase::ApplyIncomingDamage(Raw, PartMultiplier)` 로 공식만 모음(위험 거의 없음) ② `ACharacter` 와 두 갈래 사이 얇은 중간 클래스 `ADamageableCharacter` 에 TakeDamage 뼈대 + 훅(`SmartNPC` 는 반환값이 Raw·`ReactToHit(Raw)` 라 동작 보존하려면 전체 오버라이드 필요). 순수 리팩토링(동작 동일) — 브랜치는 `refactor/` 로. 방향 미정.
 
 - [ ] **서브퀘스트 목표 마커 — 방향 결정 대기** — 월드 마커·메뉴 지도는 메인 비트의 `quest_target_tag` 하나만 가리킨다(`side/*.yaml` 에 목표 태그 없음, 마커는 월드당 1개). 서브퀘스트를 받아도 안내가 안 생긴다. 선택지: ① 활성 서브 목표로 마커 이동(서브 YAML 에 `quest_target_tag`) ② 마커 여러 개(메인 1+서브별) ③ 길 안내 경로(네비) — 별도 SPEC. 사용자 결정 대기.
 - [ ] **POI 이동 서버 보정 여부 결정(2026-10-08 PIE)** — "광장으로 가" 에 SLM 이 `Move` 만 내고 `target_poi` 를 비워 임의 이동(0.9m). 파티 의도 매핑처럼 발화에 노출 POI 의 표시명·별칭이 있고 `Move` 에 `target_poi` 가 없으면 서버가 채우는 보정을 넣을지(SPEC_poi D4 "구제 없음 — SLM 실측 뒤 필요하면 추가" 조항의 그 시점). 권장: 넣는다(재학습 없이 즉시).
@@ -137,6 +136,8 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 ---
 
 ## Done
+
+- [x] **TakeDamage 공식 중복 정리 (2026-10-10, Develop)** — 4곳(`EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`·`AVRPawn`)의 `max(0, Raw−Defense)×배율` 을 `FCombatStats::Mitigate(Raw, Multiplier=1)` 로 모음. 동작 동일. 중간 클래스안(②)은 기각 — 공유되는 건 공식 한 줄뿐이고 나머지 반응(반격·도망·인지·막기)은 클래스마다 달라 훅만 늘어남. `verify all` 통과.
 
 - [x] **`GetMass()` 경고 반복 수정 (2026-10-10, Develop)** — 물리 꺼진 아이템(진열품·부착 중) 질량을 `GetMass()` 로 읽어 세션당 40건 경고. `ItemMesh->GetMass()` 5곳(`VRHandComponent.cpp` `HeldMassScale`·접촉 쥐기·`CanHold`·`GrabWithPhysics`, `DroppedItemBase.cpp` `OnMeshHit`)을 `CalculateMass()` 로 교체 — 헬퍼 없이 한 줄씩. 엔진 소스 확인: 오버라이드 있으면 그 값, 없으면 형상 계산, 시뮬레이션 여부 무관 → 진열품도 레지스트리 무게(0kg 아님). `Palm->GetMass()` 는 손바닥이 항상 시뮬레이션이라 유지. `verify all` 통과(빌드·pytest 212·UAT). 경고 0건은 다음 헤드셋 세션 로그로 확인.
 
