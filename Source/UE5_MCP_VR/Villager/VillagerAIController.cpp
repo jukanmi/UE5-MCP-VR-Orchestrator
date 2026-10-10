@@ -7,6 +7,7 @@
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Perception/AISense_Sight.h"
+#include "Core/Utils/SightPerception.h"
 
 AVillagerAIController::AVillagerAIController()
 {
@@ -17,16 +18,7 @@ AVillagerAIController::AVillagerAIController()
     SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
     if (PerceptionComp && SightConfig)
     {
-        SightConfig->SightRadius = SightRadius;
-        SightConfig->LoseSightRadius = LoseSightRadius;
-        SightConfig->PeripheralVisionAngleDegrees = SightAngle;
-        SightConfig->SetMaxAge(3.0f);
-        // 팀 개념 없음(기본 Attitude=Neutral) → 중립 감지 필수.
-        SightConfig->DetectionByAffiliation.bDetectEnemies = true;
-        SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
-        SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
-        PerceptionComp->ConfigureSense(*SightConfig);
-        PerceptionComp->SetDominantSense(SightConfig->GetSenseImplementation());
+        SightPerception::Configure(PerceptionComp, SightConfig, SightRadius, LoseSightRadius, SightAngle, /*bDefaults=*/true);
         PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(this, &AVillagerAIController::OnTargetPerceptionUpdated);
     }
 }
@@ -39,14 +31,7 @@ void AVillagerAIController::OnPossess(APawn* InPawn)
     bThreatVisible = false;
     StartIdle(GetWorld()->GetTimeSeconds());
 
-    // BP 에서 바꾼 시야값 반영(생성자 값은 CDO 기본).
-    if (PerceptionComp && SightConfig)
-    {
-        SightConfig->SightRadius = SightRadius;
-        SightConfig->LoseSightRadius = LoseSightRadius;
-        SightConfig->PeripheralVisionAngleDegrees = SightAngle;
-        PerceptionComp->ConfigureSense(*SightConfig);
-    }
+    SightPerception::Configure(PerceptionComp, SightConfig, SightRadius, LoseSightRadius, SightAngle, /*bDefaults=*/false);
     SetRunning(false);
 }
 

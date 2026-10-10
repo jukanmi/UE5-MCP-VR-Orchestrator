@@ -24,6 +24,50 @@ namespace
         }
         return false;
     }
+
+    // 스폰 이벤트 공통 준비: 이벤트에서 IdField·loc 을 읽고, 설정 맵에서 클래스를 찾아 로드하고, loc 태그 액터 위치를 구한다.
+    // 하나라도 실패하면 이유를 경고로 남기고 nullptr.
+    template <typename T>
+    UClass* ResolveSpawn(UWorld* World, const FJsonObject& EventObj, const TCHAR* Cmd, const TCHAR* IdField,
+                         const TMap<FString, TSoftClassPtr<T>>& ClassMap, FString& OutId, FVector& OutLocation)
+    {
+        if (!World) return nullptr;
+
+        FString LocTag;
+        if (!EventObj.TryGetStringField(IdField, OutId) || !EventObj.TryGetStringField(TEXT("loc"), LocTag))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] %s 이벤트 인자 누락 (%s 또는 loc)"), Cmd, IdField);
+            return nullptr;
+        }
+
+        const TSoftClassPtr<T>* ClassPtr = ClassMap.Find(OutId);
+        if (!ClassPtr || ClassPtr->IsNull())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] %s 실패: '%s' 에 해당하는 클래스가 StoryDirectorSettings 에 없음."), Cmd, *OutId);
+            return nullptr;
+        }
+
+        UClass* LoadedClass = ClassPtr->LoadSynchronous();
+        if (!LoadedClass)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] %s 실패: '%s' 클래스 로드 실패."), Cmd, *OutId);
+            return nullptr;
+        }
+
+        if (!FindTaggedActorLocation(World, LocTag, OutLocation))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Story] %s 실패: '%s' 태그를 가진 액터를 찾을 수 없음."), Cmd, *LocTag);
+            return nullptr;
+        }
+        return LoadedClass;
+    }
+
+    AActor* SpawnAt(UWorld* World, UClass* Class, const FVector& Location)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+        return World->SpawnActor<AActor>(Class, Location, FRotator::ZeroRotator, SpawnParams);
+    }
 }
 
 UStorySubsystem* UStorySubsystem::Get(const UObject* WorldContext)
@@ -153,47 +197,19 @@ void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)
         return; // cmd(또는 type) 필드 없음
     }
 
+    const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
+    UWorld* World = GetWorld();
+
     if (Cmd == TEXT("spawn_enemy"))
     {
-        FString EnemyId, LocTag;
+        FString EnemyId;
+        FVector BaseLocation;
+        UClass* LoadedClass = ResolveSpawn(World, *EventObj, *Cmd, TEXT("enemy_id"), Settings->EnemyClassMap, EnemyId, BaseLocation);
+        if (!LoadedClass) return;
         int32 Count = 1;
-
-        if (!EventObj->TryGetStringField(TEXT("enemy_id"), EnemyId) || !EventObj->TryGetStringField(TEXT("loc"), LocTag))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_enemy 이벤트 인자 누락 (enemy_id 또는 loc)"));
-            return;
-        }
         EventObj->TryGetNumberField(TEXT("count"), Count);
 
-        const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
-        if (!Settings) return;
-
-        const TSoftClassPtr<AEnemyCharacter>* ClassPtr = Settings->EnemyClassMap.Find(EnemyId);
-        if (!ClassPtr || ClassPtr->IsNull())
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_enemy 실패: '%s' 에 해당하는 EnemyClass 가 Settings 에 없음."), *EnemyId);
-            return;
-        }
-
-        UClass* LoadedClass = ClassPtr->LoadSynchronous();
-        if (!LoadedClass) return;
-
-        UWorld* World = GetWorld();
-        if (!World) return;
-
-        FVector BaseLocation;
-        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
-
-        if (!bFoundLoc)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_enemy 실패: '%s' 태그를 가진 액터를 찾을 수 없음."), *LocTag);
-            return;
-        }
-
         UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
         for (int32 i = 0; i < Count; ++i)
         {
             FVector SpawnLoc = BaseLocation;
@@ -206,79 +222,33 @@ void UStorySubsystem::ExecuteEvent(const TSharedPtr<FJsonObject>& EventObj)
                 }
             }
 
-            World->SpawnActor<AActor>(LoadedClass, SpawnLoc, FRotator::ZeroRotator, SpawnParams);
+            SpawnAt(World, LoadedClass, SpawnLoc);
             UE_LOG(LogTemp, Log, TEXT("[Story] spawn_enemy: %s %d기 스폰 완료 (위치: %s)"), *EnemyId, Count, *SpawnLoc.ToString());
         }
     }
     else if (Cmd == TEXT("spawn_item"))
     {
-        FString ItemId, LocTag;
+        FString ItemId;
+        FVector BaseLocation;
+        UClass* LoadedClass = ResolveSpawn(World, *EventObj, *Cmd, TEXT("item_id"), Settings->ItemClassMap, ItemId, BaseLocation);
+        if (!LoadedClass) return;
         int32 Count = 1;
-
-        if (!EventObj->TryGetStringField(TEXT("item_id"), ItemId) || !EventObj->TryGetStringField(TEXT("loc"), LocTag))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_item parameter missing"));
-            return;
-        }
         EventObj->TryGetNumberField(TEXT("count"), Count);
 
-        const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
-        if (!Settings) return;
-
-        const TSoftClassPtr<ADroppedItemBase>* ClassPtr = Settings->ItemClassMap.Find(ItemId);
-        if (!ClassPtr || ClassPtr->IsNull())
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[Story] spawn_item fail: no ItemClassMap for %s"), *ItemId);
-            return;
-        }
-
-        UClass* LoadedClass = ClassPtr->LoadSynchronous();
-        if (!LoadedClass) return;
-
-        UWorld* World = GetWorld();
-        if (!World) return;
-
-        FVector BaseLocation;
-        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
-
-        if (!bFoundLoc) return;
-
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
         for (int32 i = 0; i < Count; ++i)
         {
-            World->SpawnActor<AActor>(LoadedClass, BaseLocation, FRotator::ZeroRotator, SpawnParams);
+            SpawnAt(World, LoadedClass, BaseLocation);
             UE_LOG(LogTemp, Log, TEXT("[Story] spawn_item: %s"), *ItemId);
         }
     }
     else if (Cmd == TEXT("spawn_npc"))
     {
-        FString NpcId, LocTag;
-        if (!EventObj->TryGetStringField(TEXT("npc_id"), NpcId) || !EventObj->TryGetStringField(TEXT("loc"), LocTag))
-        {
-            return;
-        }
-
-        const UStoryDirectorSettings* Settings = GetDefault<UStoryDirectorSettings>();
-        if (!Settings) return;
-
-        const TSoftClassPtr<ASmartNPC>* ClassPtr = Settings->NPCClassMap.Find(NpcId);
-        if (!ClassPtr || ClassPtr->IsNull()) return;
-
-        UClass* LoadedClass = ClassPtr->LoadSynchronous();
+        FString NpcId;
+        FVector BaseLocation;
+        UClass* LoadedClass = ResolveSpawn(World, *EventObj, *Cmd, TEXT("npc_id"), Settings->NPCClassMap, NpcId, BaseLocation);
         if (!LoadedClass) return;
 
-        UWorld* World = GetWorld();
-        if (!World) return;
-
-        FVector BaseLocation;
-        const bool bFoundLoc = FindTaggedActorLocation(World, LocTag, BaseLocation);
-
-        if (!bFoundLoc) return;
-
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-        World->SpawnActor<AActor>(LoadedClass, BaseLocation, FRotator::ZeroRotator, SpawnParams);
+        SpawnAt(World, LoadedClass, BaseLocation);
         UE_LOG(LogTemp, Log, TEXT("[Story] spawn_npc: %s"), *NpcId);
     }
     else

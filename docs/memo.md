@@ -137,6 +137,8 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 
 ## Done
 
+- [x] **C++ 중복 코드 정리 2건 (2026-10-10, Develop)** — jscpd(6줄·40토큰 이상)로 13건 탐지 → 2건 정리, 13→8건(1.14→0.6%). ① 적·주민 AI 컨트롤러 시야 감지 설정(생성자·OnPossess 4곳) → `Core/Utils/SightPerception.h` `Configure(..., bDefaults)` ② `StorySubsystem::ExecuteEvent` 의 `spawn_enemy/item/npc` 세 갈래 → `ResolveSpawn<T>`·`SpawnAt`. ②는 실패 경고가 세 갈래 모두 같은 형식으로 나오게 됨(전엔 npc 는 무음, item 은 영문). 남긴 것: Enemy/Villager 로코모션·TakeDamage 뒷부분(순서·조건 다름, 올리려면 UPROPERTY 이전 필요), 투사체 2종, 위젯 가드, POI 필터 루프. `verify all` 통과.
+
 - [x] **TakeDamage 공식 중복 정리 (2026-10-10, Develop)** — 4곳(`EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`·`AVRPawn`)의 `max(0, Raw−Defense)×배율` 을 `FCombatStats::Mitigate(Raw, Multiplier=1)` 로 모음. 동작 동일. 중간 클래스안(②)은 기각 — 공유되는 건 공식 한 줄뿐이고 나머지 반응(반격·도망·인지·막기)은 클래스마다 달라 훅만 늘어남. `verify all` 통과.
 
 - [x] **`GetMass()` 경고 반복 수정 (2026-10-10, Develop)** — 물리 꺼진 아이템(진열품·부착 중) 질량을 `GetMass()` 로 읽어 세션당 40건 경고. `ItemMesh->GetMass()` 5곳(`VRHandComponent.cpp` `HeldMassScale`·접촉 쥐기·`CanHold`·`GrabWithPhysics`, `DroppedItemBase.cpp` `OnMeshHit`)을 `CalculateMass()` 로 교체 — 헬퍼 없이 한 줄씩. 엔진 소스 확인: 오버라이드 있으면 그 값, 없으면 형상 계산, 시뮬레이션 여부 무관 → 진열품도 레지스트리 무게(0kg 아님). `Palm->GetMass()` 는 손바닥이 항상 시뮬레이션이라 유지. `verify all` 통과(빌드·pytest 212·UAT). 경고 0건은 다음 헤드셋 세션 로그로 확인.
