@@ -1,55 +1,57 @@
 #include "Player/BP/VRPawn.h"
-#include "Player/Components/VRHandComponent.h"
-#include "Player/Components/VRPlayerUIComponent.h"
-#include "Player/Components/VRBodyMeasureComponent.h"
-#include "Core/Debug/VRCheatManager.h"
-#include "Player/Components/VRMeleeComponent.h"
-#include "Core/Utils/GameplayTagUtils.h"
+
+#include "AnimationRuntime.h"
+#include "Blueprint/UserWidget.h"
 #include "Camera/CameraComponent.h"
-#include "MotionControllerComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/SphereComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
-#include "Core/BP/KineticProjectile.h"
-#include "Core/Physics/KineticDamage.h"
-#include "Core/Types/CollisionChannels.h"
+#include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
-#include "Core/Utils/PlayerInteractionUtils.h"
-#include "Core/Utils/PawnDeathUtils.h"
-#include "Furniture/Subsystems/FurnitureManager.h"
-#include "Furniture/BP/FurnitureActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
-#include "Kismet/GameplayStatics.h"
-#include "NativeGameplayTags.h"
-#include "Perception/AISense_Sight.h"
-#include "AnimationRuntime.h"
-#include "Engine/SkeletalMesh.h"
-#include "Perception/AISense_Hearing.h"
-#include "Engine/OverlapResult.h"
-#include "Engine/DamageEvents.h"
 #include "HeadMountedDisplayFunctionLibrary.h"
 #include "IMotionController.h"
 #include "IXRTrackingSystem.h"
-#include "NPC/BP/SmartNPC.h"
-#include "NPC/Subsystems/NPCManager.h"
-#include "Utils/DiceSystem.h"
-#include "Villager/VillagerCharacter.h"
-#include "Engine/GameInstance.h"
-#include "Engine/GameViewportClient.h"
-#include "Engine/Engine.h"
-#include "NPC/Struct/NPCActionKeys.h"
-#include "Inventory/Components/InventoryComponent.h"
-#include "Inventory/BP/DroppedItemBase.h"
-#include "Inventory/Subsystems/ItemManager.h"
-#include "UI/Trade/TradeSessionActor.h"
-#include "Villager/MerchantStall.h"
-#include "Blueprint/UserWidget.h"
-#include "Components/WidgetComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "MotionControllerComponent.h"
+#include "NativeGameplayTags.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Hearing.h"
+#include "Perception/AISense_Sight.h"
+
+#include "Core/BP/KineticProjectile.h"
+#include "Core/Debug/VRCheatManager.h"
+#include "Core/Physics/KineticDamage.h"
+#include "Core/Types/CollisionChannels.h"
+#include "Core/Utils/GameplayTagUtils.h"
+#include "Core/Utils/PawnDeathUtils.h"
+#include "Core/Utils/PlayerInteractionUtils.h"
+#include "Furniture/BP/FurnitureActor.h"
+#include "Furniture/Subsystems/FurnitureManager.h"
+#include "Inventory/BP/DroppedItemBase.h"
+#include "Inventory/Components/InventoryComponent.h"
+#include "Inventory/Subsystems/ItemManager.h"
+#include "NPC/BP/SmartNPC.h"
+#include "NPC/Struct/NPCActionKeys.h"
+#include "NPC/Subsystems/NPCManager.h"
+#include "Player/Components/VRBodyMeasureComponent.h"
+#include "Player/Components/VRHandComponent.h"
+#include "Player/Components/VRMeleeComponent.h"
+#include "Player/Components/VRPlayerUIComponent.h"
+#include "UI/Trade/TradeSessionActor.h"
+#include "Utils/DiceSystem.h"
+#include "Villager/MerchantStall.h"
+#include "Villager/VillagerCharacter.h"
 
 // ============================================================================
 // 생성자
@@ -123,11 +125,9 @@ AVRPawn::AVRPawn()
     // 인벤토리 컴포넌트 (시작 골드는 컴포넌트 기본값 150 — BP_VRPawn 에서 덮어쓸 수 있다)
     Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
 
-    // VR에서는 컨트롤러 회전이 캐릭터 회전에 직접 반영되지 않도록 설정
-    bUseControllerRotationYaw  = false;
-    bUseControllerRotationPitch = false;
-    bUseControllerRotationRoll  = false;
-    GetCharacterMovement()->bOrientRotationToMovement = false;
+    // 컨트롤러(HMD) 회전이 액터 yaw 를 직접 돌리지 않게 한다 — 회전은 스무스 턴·몸 회전이 맡는다.
+    // ACharacter 기본값이 true 라 이 줄은 필요하다(Pitch·Roll·이동 방향 회전은 기본값이 이미 false).
+    bUseControllerRotationYaw = false;
 
     // 동적 캡슐 리사이즈의 상한·역보정 기준이 될 기본 절반 높이 캐싱
     if (UCapsuleComponent* Cap = GetCapsuleComponent())
@@ -145,42 +145,8 @@ void AVRPawn::BeginPlay()
 {
     Super::BeginPlay();
 
-    // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
-    // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
-    UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Stage);
-
-    // VROrigin은 캡슐 루트(= 바닥 +절반높이)에 붙어 있다. Stage 트래킹은 HMD
-    // 높이를 "바닥" 기준으로 보고하므로, VROrigin을 캡슐 절반 높이만큼 내려
-    // 트래킹 공간 원점을 실제 바닥에 맞춘다. 이를 빼지 않으면 카메라가
-    // 캡슐 절반 높이(기본 88cm)만큼 떠 보인다.
-    if (VROrigin && GetCapsuleComponent())
-    {
-        const float HalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
-        VROrigin->SetRelativeLocation(FVector(0.f, 0.f, -HalfHeight));
-    }
-
-    // Enhanced Input IMC 등록
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        if (UEnhancedInputLocalPlayerSubsystem* Sub =
-            ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-        {
-            if (VRMappingContext)
-                Sub->AddMappingContext(VRMappingContext, 0);
-        }
-
-#if !UE_BUILD_SHIPPING
-        // 디버그·튜닝 콘솔 명령(TuneGrab·DumpInventoryHUD·ToggleInventory·Cheat_Unequip)은 치트 매니저에 있다.
-        // 프로젝트에 게임모드·컨트롤러 BP 가 없어 에셋으로 CheatClass 를 못 지정하므로 여기서 지정한다.
-        // 에디터는 기본 치트 매니저를 이미 만들어 두므로(AddCheats 는 있으면 건너뛴다) 우리 클래스가 아니면 바꿔 끼운다.
-        PC->CheatClass = UVRCheatManager::StaticClass();
-        if (!PC->CheatManager || !PC->CheatManager->IsA<UVRCheatManager>())
-        {
-            PC->CheatManager = NewObject<UCheatManager>(PC, PC->CheatClass);
-            PC->CheatManager->InitCheatManager();
-        }
-#endif
-    }
+    InitTrackingOrigin();
+    RegisterInputAndCheats();
 
     RefreshStats();
     AddStateTag(TAG_State_Idle);
@@ -195,26 +161,84 @@ void AVRPawn::BeginPlay()
     // UI — 포인터 비주얼, HUD·채팅 위젯 생성, 인벤토리 닫힌 상태로 시작.
     if (PlayerUI) PlayerUI->Init();
 
-    if (GetMesh())
-    {
-        MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+    InitBodyMeshReference();
+    InitHandPhysics();
 
-        // 눕힘 피벗(발) → 머리 본 높이 — 레퍼런스 포즈 기준. 몸을 눕혔을 때 머리 본이 HMD 아래 목 위치에 오도록 발을 빼는 거리 계산에 쓴다.
-        if (const USkeletalMesh* Asset = GetMesh()->GetSkeletalMeshAsset())
-        {
-            const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
-            const int32 HeadIndex = Ref.FindBoneIndex(TEXT("Head"));
-            if (HeadIndex != INDEX_NONE)
-            {
-                HeadBoneHeight = FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, HeadIndex).GetLocation().Z;
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 몸 메시에 Head 본이 없어 눕힘 기준 높이 %.0fcm 기본값을 쓴다"), HeadBoneHeight);
-            }
-        }
+#if !UE_BUILD_SHIPPING
+    // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
+    if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
+    {
+        GetWorld()->GetGameViewport()->ConsoleCommand(TEXT("show collision"));
+    }
+#endif
+}
+
+void AVRPawn::InitTrackingOrigin()
+{
+    // HMD 트래킹 원점을 바닥(Floor)으로 설정 — Quest 룸스케일 기준
+    // Stage = 바닥 기준 룸스케일 트래킹 (UE5.5에서 Floor 대체)
+    UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Stage);
+
+    // VROrigin은 캡슐 루트(= 바닥 +절반높이)에 붙어 있다. Stage 트래킹은 HMD
+    // 높이를 "바닥" 기준으로 보고하므로, VROrigin을 캡슐 절반 높이만큼 내려
+    // 트래킹 공간 원점을 실제 바닥에 맞춘다. 이를 빼지 않으면 카메라가
+    // 캡슐 절반 높이(기본 88cm)만큼 떠 보인다.
+    if (VROrigin && GetCapsuleComponent())
+    {
+        const float HalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+        VROrigin->SetRelativeLocation(FVector(0.f, 0.f, -HalfHeight));
+    }
+}
+
+void AVRPawn::RegisterInputAndCheats()
+{
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    // Enhanced Input IMC 등록
+    if (UEnhancedInputLocalPlayerSubsystem* Sub =
+        ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+    {
+        if (VRMappingContext)
+            Sub->AddMappingContext(VRMappingContext, 0);
     }
 
+#if !UE_BUILD_SHIPPING
+    // 디버그·튜닝 콘솔 명령(TuneGrab·DumpInventoryHUD·ToggleInventory·Cheat_Unequip)은 치트 매니저에 있다.
+    // 프로젝트에 게임모드·컨트롤러 BP 가 없어 에셋으로 CheatClass 를 못 지정하므로 여기서 지정한다.
+    // 에디터는 기본 치트 매니저를 이미 만들어 두므로(AddCheats 는 있으면 건너뛴다) 우리 클래스가 아니면 바꿔 끼운다.
+    PC->CheatClass = UVRCheatManager::StaticClass();
+    if (!PC->CheatManager || !PC->CheatManager->IsA<UVRCheatManager>())
+    {
+        PC->CheatManager = NewObject<UCheatManager>(PC, PC->CheatClass);
+        PC->CheatManager->InitCheatManager();
+    }
+#endif
+}
+
+void AVRPawn::InitBodyMeshReference()
+{
+    if (!GetMesh()) return;
+    MeshBaseRelativeLocation = GetMesh()->GetRelativeLocation();
+
+    // 눕힘 피벗(발) → 머리 본 높이 — 레퍼런스 포즈 기준. 몸을 눕혔을 때 머리 본이 HMD 아래 목 위치에 오도록 발을 빼는 거리 계산에 쓴다.
+    const USkeletalMesh* Asset = GetMesh()->GetSkeletalMeshAsset();
+    if (!Asset) return;
+
+    const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+    const int32 HeadIndex = Ref.FindBoneIndex(TEXT("Head"));
+    if (HeadIndex != INDEX_NONE)
+    {
+        HeadBoneHeight = FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, HeadIndex).GetLocation().Z;
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[VRPawn] 몸 메시에 Head 본이 없어 눕힘 기준 높이 %.0fcm 기본값을 쓴다"), HeadBoneHeight);
+    }
+}
+
+void AVRPawn::InitHandPhysics()
+{
     if (HandLeft)  HandLeft->InitPhysics();
     if (HandRight) HandRight->InitPhysics();
 
@@ -231,14 +255,6 @@ void AVRPawn::BeginPlay()
         Own->SetCollisionResponseToChannel(ECC_HandLeft, ECR_Ignore);
         Own->SetCollisionResponseToChannel(ECC_HandRight, ECR_Ignore);
     }
-
-#if !UE_BUILD_SHIPPING
-    // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
-    if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
-    {
-        GetWorld()->GetGameViewport()->ConsoleCommand(TEXT("show collision"));
-    }
-#endif
 }
 
 // ============================================================================
@@ -817,9 +833,9 @@ void AVRPawn::HandleGripValue(bool bLeft, float Value)
 
     // 그립을 누른 채 손에 든 게 없으면(약하게 쥐어 못 들었음) 매 프레임 다시 쥐어 본다 — 더 세게 쥐면 들린다.
     // 인벤토리가 열렸으면 그립은 슬롯 발동이라 되풀이하지 않는다.
-    const int32 h = bLeft ? 0 : 1;
+    const int32 HandIdx = bLeft ? 0 : 1;
     // 두 번째 손(양손 쥐기)은 인벤토리 슬롯이 비어 있으니 이미 제약으로 쥐고 있는지도 본다 — 안 보면 매 프레임 다시 쥔다.
-    if (bGripHeld[h] && bGrabInputActive[h] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()) && !Hand->GetGrabbedItem())
+    if (bGripHeld[HandIdx] && bGrabInputActive[HandIdx] && !IsInventoryOpen() && Inventory && !Inventory->GetHeldItem(Hand->GetHandSlot()) && !Hand->GetGrabbedItem())
     {
         HandleGrabStart(bLeft);
     }
@@ -827,14 +843,14 @@ void AVRPawn::HandleGripValue(bool bLeft, float Value)
 
 void AVRPawn::UpdateGrabInput(bool bLeft, ADroppedItemBase* Target)
 {
-    const int32 h = bLeft ? 0 : 1;
+    const int32 HandIdx = bLeft ? 0 : 1;
     // 핸드트래킹 핀치·주먹은 인벤토리가 열렸을 때 슬롯 발동에만 쓴다 — 월드 아이템은 접촉 쥐기(UpdateContactGrab)가 맡는다.
     // 제스처는 손가락이 이미 물건 속에 들어간 뒤에야 성립해, 그때 쥐면 밀려난 손이 튀며 제약이 끊겼다.
     const UVRHandComponent* Hand = GetHand(bLeft);
     const bool bGesture = IsInventoryOpen() && Hand && Hand->IsGesturing();
-    const bool bHeld = bGripHeld[h] || (Hand && Hand->IsContactHeld()) || bGesture;
-    if (bHeld == bGrabInputActive[h]) return;
-    bGrabInputActive[h] = bHeld;
+    const bool bHeld = bGripHeld[HandIdx] || (Hand && Hand->IsContactHeld()) || bGesture;
+    if (bHeld == bGrabInputActive[HandIdx]) return;
+    bGrabInputActive[HandIdx] = bHeld;
     if (bHeld) HandleGrabStart(bLeft, Target);
     else       HandleGrabRelease(bLeft);
 }
@@ -889,19 +905,9 @@ ADroppedItemBase* AVRPawn::FindNearestItemNearHand(float Radius, bool bLeft) con
 
 void AVRPawn::HandleGrabRelease(bool bLeft)
 {
+    if (ReleaseHandConstraint(bLeft)) return;
+
     const EEquipmentSlot HandSlot = bLeft ? EEquipmentSlot::OffHand : EEquipmentSlot::MainHand;
-    if (UVRHandComponent* Hand = GetHand(bLeft))
-    {
-        // 양손으로 쥔 물건 — 두 번째 손이 놓으면 제약만 푼다. 기록 손이 놓을 때 다른 손이 같이 쥐고 있으면 기록만 넘긴다.
-        // 마지막 손이 놓을 때만 아래의 수납·판매·건네기·던지기가 일어난다.
-        if (Hand->IsSecondaryGrab())
-        {
-            Hand->ReleaseGrab();
-            return;
-        }
-        if (Hand->HandOverToOtherHand()) return;
-        Hand->ReleaseGrab();
-    }
     if (!Inventory || !Inventory->GetHeldItem(HandSlot)) return;
 
     // 그립은 홀드다 — 누르고 있는 동안만 손에 있고, 떼는 순간 어디로 갈지가 여기서 갈린다.
@@ -912,9 +918,31 @@ void AVRPawn::HandleGrabRelease(bool bLeft)
         return;
     }
 
-    ADroppedItemBase* Item = Inventory->ReleaseHeldItem(HandSlot);
-    if (!Item) return;
+    if (ADroppedItemBase* Item = Inventory->ReleaseHeldItem(HandSlot))
+    {
+        RouteReleasedItem(Item, bLeft);
+    }
+}
 
+bool AVRPawn::ReleaseHandConstraint(bool bLeft)
+{
+    UVRHandComponent* Hand = GetHand(bLeft);
+    if (!Hand) return false;
+
+    // 양손으로 쥔 물건 — 두 번째 손이 놓으면 제약만 푼다. 기록 손이 놓을 때 다른 손이 같이 쥐고 있으면 기록만 넘긴다.
+    // 마지막 손이 놓을 때만 이후의 수납·판매·건네기·던지기가 일어난다.
+    if (Hand->IsSecondaryGrab())
+    {
+        Hand->ReleaseGrab();
+        return true;
+    }
+    if (Hand->HandOverToOtherHand()) return true;
+    Hand->ReleaseGrab();
+    return false;
+}
+
+void AVRPawn::RouteReleasedItem(ADroppedItemBase* Item, bool bLeft)
+{
     // 상인 매입 상자 안에서 놓았으면 판매 판정. 거부품(퀘스트·BaseValue 0)은 물리가 이미 살아 있어 상자 안에 그대로 떨어진다.
     if (AMerchantStall* Stall = AMerchantStall::FindStallContaining(this, Item->GetActorLocation()))
     {

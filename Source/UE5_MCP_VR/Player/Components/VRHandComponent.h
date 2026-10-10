@@ -5,7 +5,9 @@
 #include "Containers/StaticArray.h"
 #include "HeadMountedDisplayTypes.h"
 #include "InputCoreTypes.h"
+
 #include "Inventory/BP/ItemDataAsset.h"   // EEquipmentSlot
+
 #include "VRHandComponent.generated.h"
 
 class UBoxComponent;
@@ -234,6 +236,12 @@ private:
      *  @return 갱신 전 바디↔목표 거리(cm) */
     float DriveBody(const FVector& Location, const FQuat& Rotation, float DeltaTime, float MassScale);
 
+    /** 이번 틱 핸드트래킹 관절 상태를 읽는다. 끊겼으면 마지막으로 잡힌 자세(폰 기준)를 월드로 되돌려 쓴다. */
+    void ReadTrackState();
+
+    /** 손가락별 쥐는 정도(애님 값)를 지수 평활한다 — 트래킹 떨림에 마찰 한계가 출렁이지 않게. */
+    void SmoothSqueeze(float DeltaTime);
+
     /** 쥔 물건 몫까지 드라이브를 키우는 배율 = (손바닥 + min(쥔 물건, MaxCarryMass)) / 손바닥. 빈손이면 1. */
     float HeldMassScale() const;
 
@@ -262,6 +270,9 @@ private:
     /** 핀치 또는 주먹으로 사이에 낀 아이템. OutPartner = 핀치면 엄지의 짝 손가락(1~4), 주먹이면 손바닥(5). */
     ADroppedItemBase* FindGraspedItem(int32& OutPartner) const;
 
+    /** 이 아이템을 핀치 또는 주먹으로 쥔 것으로 볼 수 있나. 맞으면 OutPartner 를 채운다(FindGraspedItem 규약). */
+    bool IsItemGrasped(const ADroppedItemBase& Item, const FVector& PalmCenter, int32& OutPartner) const;
+
     /** 손가락별(0 = 엄지) 물건 표면에서 Margin(cm) 안에 닿은 캡슐(끝마디 먼저, 가운데 마디). 안 닿은 손가락은 null. */
     using FFingerTouches = TStaticArray<const UCapsuleComponent*, 5>;
     FFingerTouches TouchingFingers(const UPrimitiveComponent* Item, float Margin) const;
@@ -272,6 +283,18 @@ private:
     /** 마찰 한계 — 이동 최대 힘 μ·ΣN, 회전 최대 토크 μ·Σ(Nᵢ·rᵢ), 쥔 중심(접촉점 가운데).
      *  bContact = 손가락 접촉(핸드트래킹, Partner 는 Contact.Partner 규약), 아니면 컨트롤러 그립값으로 손바닥 중심에서 감싸 쥔 것으로 본다. */
     void ComputeGrip(const ADroppedItemBase* Item, bool bContact, int32 Partner, float& OutForce, float& OutTorque, FVector& OutCenter) const;
+
+    /** ComputeGrip 의 핸드트래킹 몫 — 닿은 손가락(주먹이면 손바닥 포함)마다 수직력을 모아 힘·토크 한계와 쥔 중심을 구한다. 닿은 게 없으면 출력은 그대로. */
+    void ComputeContactGrip(const UPrimitiveComponent& ItemMesh, int32 Partner, float Friction, float& OutForce, float& OutTorque, FVector& OutCenter) const;
+
+    /** 쥐기 제약을 쥔 중심에 세운다 — 질량·관성으로 강성·감쇠를 정하고, 힘·토크 상한을 마찰 한계로 둔다. */
+    void AttachGrabConstraint(ADroppedItemBase& Item, const FVector& Center, float Force, float Torque, bool bKeepCollision);
+
+    /** 쥔 아이템이 다른 경로(수납·소모·기록 손이 놓음)로 이 손을 떠났으면 제약을 푼다. */
+    void ReleaseIfNoLongerHeld();
+
+    /** 마찰 한계를 갱신하고 한계에 걸려 밀린 만큼 드라이브 목표를 옮긴다(재고착). 아이템 기준 손바닥 자세를 돌려준다. */
+    FTransform UpdateGripLimits(const ADroppedItemBase& Item);
 
     /** 미끄러져 놓쳤다 — 던지지 않고 그 자리에 떨어뜨린다. 다른 손이 같이 쥐고 있으면 그 손에 넘기고 이 손만 놓는다. */
     void DropSlipped();

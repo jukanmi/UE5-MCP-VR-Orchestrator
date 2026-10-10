@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+
 #include "VRMeleeComponent.generated.h"
 
+class ACombatCharacter;
 class AVRPawn;
 
 /**
@@ -90,6 +92,9 @@ private:
 
     /** 손(또는 쥔 무기) 위치에서 능동 오버랩 — 밀치기 임계 이상이면 밀고, 타격 임계 이상이면 데미지. */
     void TryMeleeHits(const FVector& HandLoc, const FVector& Vel, bool bRightHand);
+
+    /** 겹친 NPC 하나에 대한 반응 — 강타면 패링 판정 뒤 데미지, 그 위에 밀치기(가벼운 접촉도 민다). */
+    void ApplyMeleeHit(ACombatCharacter& NPC, AVRPawn& Pawn, const FVector& HandLoc, const FVector& Vel, bool bStrike, float Damage);
 
     // 손 속도 추적 — 실제 손 위치 델타/dt. cm/s. 왼손 0·오른손 1.
     FVector PrevHandLoc[2] = { FVector::ZeroVector, FVector::ZeroVector };

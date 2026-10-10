@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+
 #include "VRBodyMeasureComponent.generated.h"
 
 class AVRPawn;
@@ -75,6 +76,9 @@ private:
 
     /** 지금 단계의 값을 잰다. 못 재면 false 와 사유(한 줄). */
     bool SampleStep(float& OutValue, FText& OutWhy) const;
+
+    /** 팔 벌림 단계 표본 — 양손이 보이면 손 앵커 사이 수평 거리. */
+    bool SampleArmSpan(const AVRPawn& Pawn, float& OutValue, FText& OutWhy) const;
 
     /** 오른손 컨트롤러 월드 위치. 컨트롤러가 안 잡히면 추적 중인 손으로 대신하고, 둘 다 없으면 false. */
     bool GetRightHandPoint(FVector& OutLocation) const;

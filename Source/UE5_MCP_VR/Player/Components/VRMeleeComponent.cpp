@@ -1,17 +1,18 @@
 #include "Player/Components/VRMeleeComponent.h"
 
-#include "Core/BP/CombatCharacter.h"
-#include "Player/Components/VRHandComponent.h"
-#include "Player/BP/VRPawn.h"
-#include "Core/Physics/KineticDamage.h"
-#include "Core/Types/GameStateData.h"
 #include "Engine/Engine.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
+#include "Kismet/GameplayStatics.h"
+
+#include "Core/BP/CombatCharacter.h"
+#include "Core/Physics/KineticDamage.h"
+#include "Core/Types/GameStateData.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
-#include "Kismet/GameplayStatics.h"
 #include "NPC/BP/SmartNPC.h"
+#include "Player/BP/VRPawn.h"
+#include "Player/Components/VRHandComponent.h"
 #include "Utils/DiceSystem.h"
 
 UVRMeleeComponent::UVRMeleeComponent()
@@ -35,12 +36,12 @@ void UVRMeleeComponent::Update(float DeltaTime)
     const FVector Cur[2] = { Pawn->HandLeft->GetComponentLocation(), Pawn->HandRight->GetComponentLocation() };
     if (bHandVelInit)
     {
-        for (int32 h = 0; h < 2; ++h)
+        for (int32 HandIdx = 0; HandIdx < 2; ++HandIdx)
         {
             // 텔레포트·트래킹 튐 방지 — 속도 >9000cm/s(90m/s, 인간 스윙 ~10m/s 불가)는 글리치로 보고
             // 0 처리. ½mv² 데미지 폭주·물리 폭발 차단. 속도(cm/s) 기준이라 프레임레이트 독립(저FPS 정상스윙 오판 X).
-            const FVector Vel = (Cur[h] - PrevHandLoc[h]) / DeltaTime;
-            HandVel[h] = FMath::Lerp(HandVel[h], Vel.Size() > 9000.f ? FVector::ZeroVector : Vel, HandVelSmoothing);
+            const FVector Vel = (Cur[HandIdx] - PrevHandLoc[HandIdx]) / DeltaTime;
+            HandVel[HandIdx] = FMath::Lerp(HandVel[HandIdx], Vel.Size() > 9000.f ? FVector::ZeroVector : Vel, HandVelSmoothing);
         }
         // 근접 타격 — 실제 손 위치에서 능동 스피어 오버랩(본 부착 패시브 overlap 회피). 오른손 먼저.
         TryMeleeHits(Cur[1], HandVel[1], /*bRightHand=*/true);
@@ -58,6 +59,50 @@ void UVRMeleeComponent::ResetHandVelocity()
     HandVel[0] = HandVel[1] = FVector::ZeroVector;
 }
 
+namespace
+{
+    // 맞는 형상 — 맨손은 손 주변 구, 무기를 쥐면 그 무기의 회전된 상자. 충격 질량도 같이 정한다.
+    struct FMeleeQuery
+    {
+        FVector Location = FVector::ZeroVector;
+        FQuat Rotation = FQuat::Identity;
+        FCollisionShape Shape;
+        float ImpactMass = 0.f;
+    };
+
+    FMeleeQuery MakeMeleeQuery(const AVRPawn& Pawn, bool bRightHand, const FVector& HandLoc, float SphereRadius, float DefaultMass)
+    {
+        // 무기를 쥐고 있으면 판정 형상을 그 무기로 바꾼다. 손 주변 구만 보면 검을 휘둘러도
+        // 칼날이 닿는 거리에서는 아무 일도 일어나지 않아 맨손과 사거리가 같아진다.
+        const EEquipmentSlot HandSlot = bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
+        const ADroppedItemBase* Held = Pawn.Inventory ? Pawn.Inventory->GetHeldItem(HandSlot) : nullptr;
+        const UStaticMeshComponent* HeldMesh = (Held && Held->ItemMesh) ? Held->ItemMesh : nullptr;
+
+        FMeleeQuery Query;
+        Query.Location = HandLoc;
+        Query.Shape = FCollisionShape::MakeSphere(SphereRadius);
+        Query.ImpactMass = DefaultMass;
+        if (!HeldMesh || !HeldMesh->GetStaticMesh()) return Query;
+
+        // 회전은 컴포넌트에서 받고 크기는 로컬 바운즈에서 받는다. 월드 바운즈의 Extent 는
+        // 축 정렬이라 기울어진 검일수록 실제보다 큰 상자가 된다.
+        const FVector LocalExtent = HeldMesh->GetStaticMesh()->GetBounds().BoxExtent * HeldMesh->GetComponentScale();
+
+        Query.Location = HeldMesh->GetComponentTransform().TransformPosition(HeldMesh->GetStaticMesh()->GetBounds().Origin);
+        Query.Rotation = HeldMesh->GetComponentQuat();
+        Query.Shape = FCollisionShape::MakeBox(LocalExtent);
+
+        // 질량도 쥔 물건 것으로 — DroppedItemBase::BeginPlay 가 테이블 Weight 를 질량 오버라이드로 박아 뒀다.
+        // GetMass() 는 쓰면 안 된다: 쥔 동안 물리가 꺼져 있어 매 프레임 경고를 찍고 0 을 돌려주므로
+        // 근접 피해가 0.01kg 기준으로 뭉개진다. 오버라이드 없는 메시는 기본 WeaponMass.
+        if (const FBodyInstance* Body = HeldMesh->GetBodyInstance(); Body && Body->bOverrideMass)
+        {
+            Query.ImpactMass = FMath::Max(Body->GetMassOverride(), 0.01f);
+        }
+        return Query;
+    }
+}
+
 void UVRMeleeComponent::TryMeleeHits(const FVector& HandLoc, const FVector& Vel, bool bRightHand)
 {
     // 2단 임계 — bPush(밀치기) 이상이면 밀고, bStrike(데미지) 이상이면 공격(TakeDamage→피격자 인지).
@@ -72,35 +117,7 @@ void UVRMeleeComponent::TryMeleeHits(const FVector& HandLoc, const FVector& Vel,
     UWorld* World = GetWorld();
     if (!Pawn || !World) return;
 
-    // 무기를 쥐고 있으면 판정 형상을 그 무기로 바꾼다. 손 주변 구만 보면 검을 휘둘러도
-    // 칼날이 닿는 거리에서는 아무 일도 일어나지 않아 맨손과 사거리가 같아진다.
-    const EEquipmentSlot HandSlot = bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
-    const ADroppedItemBase* Held = Pawn->Inventory ? Pawn->Inventory->GetHeldItem(HandSlot) : nullptr;
-    const UStaticMeshComponent* HeldMesh = (Held && Held->ItemMesh) ? Held->ItemMesh : nullptr;
-
-    FVector QueryLoc = HandLoc;
-    FQuat QueryRot = FQuat::Identity;
-    FCollisionShape QueryShape = FCollisionShape::MakeSphere(MeleeSphereRadius);
-    float ImpactMass = WeaponMass;
-
-    if (HeldMesh && HeldMesh->GetStaticMesh())
-    {
-        // 회전은 컴포넌트에서 받고 크기는 로컬 바운즈에서 받는다. 월드 바운즈의 Extent 는
-        // 축 정렬이라 기울어진 검일수록 실제보다 큰 상자가 된다.
-        const FVector LocalExtent = HeldMesh->GetStaticMesh()->GetBounds().BoxExtent * HeldMesh->GetComponentScale();
-
-        QueryLoc = HeldMesh->GetComponentTransform().TransformPosition(HeldMesh->GetStaticMesh()->GetBounds().Origin);
-        QueryRot = HeldMesh->GetComponentQuat();
-        QueryShape = FCollisionShape::MakeBox(LocalExtent);
-
-        // 질량도 쥔 물건 것으로 — DroppedItemBase::BeginPlay 가 테이블 Weight 를 질량 오버라이드로 박아 뒀다.
-        // GetMass() 는 쓰면 안 된다: 쥔 동안 물리가 꺼져 있어 매 프레임 경고를 찍고 0 을 돌려주므로
-        // 근접 피해가 0.01kg 기준으로 뭉개진다. 오버라이드 없는 메시는 기본 WeaponMass.
-        if (const FBodyInstance* Body = HeldMesh->GetBodyInstance(); Body && Body->bOverrideMass)
-        {
-            ImpactMass = FMath::Max(Body->GetMassOverride(), 0.01f);
-        }
-    }
+    const FMeleeQuery Query = MakeMeleeQuery(*Pawn, bRightHand, HandLoc, MeleeSphereRadius, WeaponMass);
 
     // 능동 오버랩(Pawn 채널) — 패시브 overlap 의 본부착 불안정 회피.
     TArray<FOverlapResult> Overlaps;
@@ -109,56 +126,61 @@ void UVRMeleeComponent::TryMeleeHits(const FVector& HandLoc, const FVector& Vel,
     FCollisionObjectQueryParams ObjParams;
     ObjParams.AddObjectTypesToQuery(ECC_Pawn);
     ObjParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-    if (!World->OverlapMultiByObjectType(Overlaps, QueryLoc, QueryRot, ObjParams, QueryShape, Params)) return;
+    if (!World->OverlapMultiByObjectType(Overlaps, Query.Location, Query.Rotation, ObjParams, Query.Shape, Params)) return;
 
     const float Now = World->GetTimeSeconds();
-    const float Damage = KineticDamage::Compute(ImpactMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
+    const float Damage = KineticDamage::Compute(Query.ImpactMass, SpeedMs, KineticDamageScale, MaxKineticDamage);
 
-    for (const FOverlapResult& O : Overlaps)
+    for (const FOverlapResult& Overlap : Overlaps)
     {
-        ACombatCharacter* NPC = Cast<ACombatCharacter>(O.GetActor());
+        ACombatCharacter* NPC = Cast<ACombatCharacter>(Overlap.GetActor());
         if (!NPC) continue;
 
         // 같은 NPC 재타격 쿨다운 — 매 틱 쿼리라 쿨다운 없으면 연속 타격 폭주. NPC 자신이 시각 보유.
         if (Now - NPC->LastMeleeHitTime < MeleeHitCooldown) continue;
         NPC->LastMeleeHitTime = Now;
 
-        // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
-        // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
-        if (bStrike)
-        {
-            // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
-            // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
-            ASmartNPC* SmartTarget = Cast<ASmartNPC>(NPC);
-            FDiceResult ParryRoll;
-            const bool bParried = SmartTarget && SmartTarget->StateComponent
-                && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
-                                             SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
-            if (bParried)
-            {
-                // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
-                if (SmartTarget->ParrySound)
-                {
-                    UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
-                }
-                const FPerceptionData ParryPerc(
-                    ASmartNPC::PerceptionIdFor(Pawn), ESenseType::Parried,
-                    Pawn->GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
-                SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
-            }
-            else
-            {
-                // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
-                KineticDamage::ApplyToNPC(NPC, Damage, HandLoc, Vel.GetSafeNormal(), Pawn->GetController(), Pawn);
-            }
-        }
+        ApplyMeleeHit(*NPC, *Pawn, HandLoc, Vel, bStrike, Damage);
+    }
+}
 
-        // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
-        if (!NPC->bIsDead && KnockbackScale > 0.f)
+void UVRMeleeComponent::ApplyMeleeHit(ACombatCharacter& NPC, AVRPawn& Pawn, const FVector& HandLoc, const FVector& Vel, bool bStrike, float Damage)
+{
+    // 강타(bStrike) → 데미지. SmartNPC::TakeDamage 가 인지 이벤트(공격)를, EnemyCharacter 는 반격 타겟팅을 함.
+    // 가벼운 밀침(bStrike 미만)은 TakeDamage 를 안 불러 NPC 가 공격으로 인지하지 않음.
+    if (bStrike)
+    {
+        // RNG 패링(SPEC_realistic_combat §3.2) — LLM 인지가 있는 ASmartNPC 한정(필드 몹은 항상 피격).
+        // 성공 확률 = Agility / ParryDifficulty(UDiceSystem::CheckReflex 공식).
+        ASmartNPC* SmartTarget = Cast<ASmartNPC>(&NPC);
+        FDiceResult ParryRoll;
+        const bool bParried = SmartTarget && SmartTarget->StateComponent
+            && UDiceSystem::CheckReflex(SmartTarget->StateComponent->GetAttributes().BaseStats.Agility,
+                                         SmartTarget->StateComponent->ParryDifficulty, ParryRoll);
+        if (bParried)
         {
-            const float PushSpeed = FMath::Min(SpeedMs * KnockbackScale, MaxKnockbackSpeed);
-            NPC->LaunchCharacter(Vel.GetSafeNormal() * PushSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
+            // 데미지 무효 — 사운드 + LLM 인지용 이벤트만 큐잉(§2.3, emergency_report 로 이어짐).
+            if (SmartTarget->ParrySound)
+            {
+                UGameplayStatics::PlaySoundAtLocation(this, SmartTarget->ParrySound, SmartTarget->GetActorLocation());
+            }
+            const FPerceptionData ParryPerc(
+                ASmartNPC::PerceptionIdFor(&Pawn), ESenseType::Parried,
+                Pawn.GetActorLocation(), SmartTarget->GetActorLocation(), 1.0f);
+            SmartTarget->StateComponent->RequestEventCognition(ParryPerc);
         }
+        else
+        {
+            // 손 위치 기준 부위 인지 FPointDamageEvent — BoneName(부위 배율)·ShotDirection(래그돌 임펄스).
+            KineticDamage::ApplyToNPC(&NPC, Damage, HandLoc, Vel.GetSafeNormal(), Pawn.GetController(), &Pawn);
+        }
+    }
+
+    // 밀치기 — 가벼운 접촉도 밀되 공격 인지는 없음. 죽었으면 HandleDeath 의 래그돌 임펄스가 처리.
+    if (!NPC.bIsDead && KnockbackScale > 0.f)
+    {
+        const float PushSpeed = FMath::Min(Vel.Size() / 100.f * KnockbackScale, MaxKnockbackSpeed);
+        NPC.LaunchCharacter(Vel.GetSafeNormal() * PushSpeed, /*bXYOverride=*/true, /*bZOverride=*/false);
     }
 }
 

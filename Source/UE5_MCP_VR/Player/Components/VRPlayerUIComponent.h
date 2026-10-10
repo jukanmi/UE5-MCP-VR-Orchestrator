@@ -2,9 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+
 #include "Inventory/BP/ItemDataAsset.h"   // EEquipmentSlot
+
 #include "VRPlayerUIComponent.generated.h"
 
+class APlayerController;
 class AVRPawn;
 class ADroppedItemBase;
 class UPlayerHUDWidget;
@@ -198,6 +201,21 @@ private:
     /** 패널·포인터·이름표 장면 컴포넌트를 만들어 폰의 컨트롤러·카메라에 붙인다(한 번만). */
     void CreateSceneComponents();
 
+    /** CreateSceneComponents 단계 — HUD·채팅·메뉴 패널. */
+    void CreatePanelComponents(AVRPawn& Pawn);
+
+    /** CreateSceneComponents 단계 — 위젯 상호작용과 포인터 광선·히트점. */
+    void CreatePointerComponents(AVRPawn& Pawn);
+
+    /** Init 단계 — 포인터 광선·히트점의 메시·머티리얼·크기. 에셋이 없으면 비주얼만 생략한다. */
+    void InitPointerVisual();
+
+    /** Init 단계 — HUD·채팅 위젯을 패널에 싣는다. */
+    void InitHudAndChatWidgets(APlayerController& PC);
+
+    /** Init 단계 — 메뉴 위젯을 패널에 싣고 이벤트·신체 측정 안내를 연결한다. 위젯 클래스 미지정이면 메뉴 없음. */
+    void InitMenuWidget(APlayerController& PC, AVRPawn& Pawn);
+
     /** 패널·포인터 표시 동기 — 열림일 때만 포인터와 광선을 켠다.
      *  닫힘 상태에서 포인터를 켜두면 손을 흔들 때 슬롯이 호버되어 오작동한다. */
     void ApplyInventoryPresentation(bool bOpen);
@@ -221,6 +239,15 @@ private:
 
     /** 메뉴가 열려 있는 동안 현재 화면에 필요한 데이터를 위젯에 밀어 넣는다(Update 가 부른다). */
     void UpdateMenuInfo();
+
+    /** 지도 화면 — 플레이어·방향·퀘스트 목표·일행 위치(매 틱). */
+    void UpdateMapScreen(const AVRPawn& Pawn);
+
+    /** 파티 화면 — 일행 이름·체력(0.25초마다). */
+    void UpdatePartyScreen();
+
+    /** 퀘스트 화면 — 메인 퀘스트 로그와 서브퀘스트 목록(0.25초마다). */
+    void UpdateQuestScreen();
 
     /** 월드 좌표 → 지도 UV(0~1, 왼쪽 위 0,0). 위에서 내려다본 이미지에서 +X 는 위, +Y 는 오른쪽. */
     FVector2D WorldToMapUV(const FVector& World) const;

@@ -2,12 +2,13 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Player/BP/VRPawnAnimInstance.h"
 #include "Engine/OverlapResult.h"
-#include "Inventory/BP/DroppedItemBase.h"
-#include "Inventory/Components/InventoryComponent.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
+
+#include "Inventory/BP/DroppedItemBase.h"
+#include "Inventory/Components/InventoryComponent.h"
+#include "Player/BP/VRPawnAnimInstance.h"
 
 namespace
 {
@@ -144,49 +145,54 @@ ADroppedItemBase* UVRHandComponent::FindGraspedItem(int32& OutPartner) const
     UWorld* World = GetWorld();
     if (!GetPalmShapeCenter(PalmCenter) || !World) return nullptr;
 
-    // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 —
-    //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
-    //   주먹: 손바닥 모양이 닿고, 손가락 2개 이상이 닿으며, 손바닥 중심 → 그 캡슐 선이 아이템을 지난다.
-    //         주먹으로 감싸면 엄지가 물건이 아니라 손가락 위를 덮어 핀치로는 안 걸린다.
-    // "선이 지난다" = 사이에 끼었다. 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
+    // 손 근처(손바닥 중심 20cm) 드랍 아이템이 후보. 두 쥐기 중 하나라도 맞으면 쥔다 — 판정은 IsItemGrasped.
     // ponytail: 손바닥에 올려 받치기(손가락이 안 감쌈)는 안 걸린다.
     TArray<FOverlapResult> Overlaps;
     World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
-    const FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(GraspTrace), false);
     for (const FOverlapResult& Overlap : Overlaps)
     {
         ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
         if (!Item || Overlap.GetComponent() != Item->ItemMesh) continue;
         if (Grab.Item.Get() == Item) continue;   // 다른 손이 쥔 물건은 후보다(양손 쥐기)
-        auto LineCrossesItem = [&](const FVector& A, const FVector& B)
-        {
-            FHitResult Hit;
-            return Item->ItemMesh->LineTraceComponent(Hit, A, B, TraceParams);
-        };
-
-        // 손가락 오버랩은 물건마다 한 번 — 핀치·주먹 판정이 같은 결과를 나눠 쓴다.
-        const FFingerTouches Touched = TouchingFingers(Item->ItemMesh, ContactGrabMargin);
-        for (int32 Finger = 1; Finger < 5 && Touched[0]; ++Finger)
-        {
-            if (Touched[Finger] && LineCrossesItem(Touched[0]->GetComponentLocation(), Touched[Finger]->GetComponentLocation()))
-            {
-                OutPartner = Finger;
-                return Item;
-            }
-        }
-        if (!IsPalmTouching(Item->ItemMesh, ContactGrabMargin)) continue;
-        int32 WrappingFingers = 0;
-        for (int32 Finger = 1; Finger < 5; ++Finger)
-        {
-            if (Touched[Finger] && LineCrossesItem(PalmCenter, Touched[Finger]->GetComponentLocation())) ++WrappingFingers;
-        }
-        if (WrappingFingers >= 2)
-        {
-            OutPartner = PalmGripPartner;
-            return Item;
-        }
+        if (IsItemGrasped(*Item, PalmCenter, OutPartner)) return Item;
     }
     return nullptr;
+}
+
+bool UVRHandComponent::IsItemGrasped(const ADroppedItemBase& Item, const FVector& PalmCenter, int32& OutPartner) const
+{
+    //   핀치: 엄지와 다른 손가락이 같은 아이템에 닿고, 두 캡슐을 잇는 선이 아이템을 지난다.
+    //   주먹: 손바닥 모양이 닿고, 손가락 2개 이상이 닿으며, 손바닥 중심 → 그 캡슐 선이 아이템을 지난다.
+    //         주먹으로 감싸면 엄지가 물건이 아니라 손가락 위를 덮어 핀치로는 안 걸린다.
+    // "선이 지난다" = 사이에 끼었다. 같은 면을 나란히 누르는(밀기) 경우는 선이 표면 위로 지나가 걸리지 않는다.
+    const FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(GraspTrace), false);
+    auto LineCrossesItem = [&](const FVector& A, const FVector& B)
+    {
+        FHitResult Hit;
+        return Item.ItemMesh->LineTraceComponent(Hit, A, B, TraceParams);
+    };
+
+    // 손가락 오버랩은 물건마다 한 번 — 핀치·주먹 판정이 같은 결과를 나눠 쓴다.
+    const FFingerTouches Touched = TouchingFingers(Item.ItemMesh, ContactGrabMargin);
+    for (int32 Finger = 1; Finger < 5 && Touched[0]; ++Finger)
+    {
+        if (Touched[Finger] && LineCrossesItem(Touched[0]->GetComponentLocation(), Touched[Finger]->GetComponentLocation()))
+        {
+            OutPartner = Finger;
+            return true;
+        }
+    }
+    if (!IsPalmTouching(Item.ItemMesh, ContactGrabMargin)) return false;
+
+    int32 WrappingFingers = 0;
+    for (int32 Finger = 1; Finger < 5; ++Finger)
+    {
+        if (Touched[Finger] && LineCrossesItem(PalmCenter, Touched[Finger]->GetComponentLocation())) ++WrappingFingers;
+    }
+    if (WrappingFingers < 2) return false;
+
+    OutPartner = PalmGripPartner;
+    return true;
 }
 
 void UVRHandComponent::GetNearbyItemMeshes(TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const
@@ -218,25 +224,29 @@ void UVRHandComponent::ComputeGrip(const ADroppedItemBase* Item, bool bContact, 
     const UPhysicalMaterial* Material = ItemBody ? ItemBody->GetSimplePhysicalMaterial() : nullptr;
     const float Friction = Material ? Material->Friction : 0.7f;
 
-    if (!bContact)
+    if (bContact)
     {
-        // 컨트롤러 — 손가락 접촉이 없으니 손바닥 중심에서 주먹으로 감싸 쥔 것으로 본다.
-        FVector PalmCenter;
-        if (GetPalmShapeCenter(PalmCenter)) OutCenter = PalmCenter;
-        const float NormalSum = ControllerGripForce * GripValue;
-        OutForce = Friction * NormalSum;
-        OutTorque = Friction * NormalSum * ControllerGripRadius;
+        ComputeContactGrip(*Item->ItemMesh, Partner, Friction, OutForce, OutTorque, OutCenter);
         return;
     }
 
+    // 컨트롤러 — 손가락 접촉이 없으니 손바닥 중심에서 주먹으로 감싸 쥔 것으로 본다.
+    FVector PalmCenter;
+    if (GetPalmShapeCenter(PalmCenter)) OutCenter = PalmCenter;
+    const float NormalSum = ControllerGripForce * GripValue;
+    OutForce = Friction * NormalSum;
+    OutTorque = Friction * NormalSum * ControllerGripRadius;
+}
+
+void UVRHandComponent::ComputeContactGrip(const UPrimitiveComponent& ItemMesh, int32 Partner, float Friction, float& OutForce, float& OutTorque, FVector& OutCenter) const
+{
     // 핸드트래킹 — 표면에 닿은 손가락마다 N = 쥐는 정도 × 강성, 접촉점 = 닿은 캡슐 중심.
     // 주먹(손바닥 짝)이면 손바닥이 손가락들의 반작용(엄지 뺀 ΣN)을 받는다.
     // 쥔 중심 = 접촉점들의 가운데(힘 가중 아님 — 닿은 순간엔 N 이 0 이라 정할 수 없다). 핀치면 두 손끝 사이라 그 점을 축으로 돈다.
     // 회전 팔 rᵢ = 중심 ↔ 접촉점, 최소 FingerPadRadius — 접촉 분포가 넓을수록(주먹) 덜 돈다. 쿨롱 마찰이라 면적은 힘 크기엔 안 들어간다.
-    const UPrimitiveComponent* ItemMesh = Item->ItemMesh;
     TArray<TPair<FVector, float>, TInlineAllocator<6>> ContactPoints;
     float FingerNormalSum = 0.f;
-    const FFingerTouches Touched = TouchingFingers(ItemMesh, ContactReleaseMargin);
+    const FFingerTouches Touched = TouchingFingers(&ItemMesh, ContactReleaseMargin);
     for (int32 Finger = 0; Finger < 5; ++Finger)
     {
         if (!Touched[Finger]) continue;
@@ -245,7 +255,7 @@ void UVRHandComponent::ComputeGrip(const ADroppedItemBase* Item, bool bContact, 
         if (Finger > 0) FingerNormalSum += PressForce;
     }
     FVector PalmCenter;
-    if (Partner == PalmGripPartner && GetPalmShapeCenter(PalmCenter) && IsPalmTouching(ItemMesh, ContactReleaseMargin))
+    if (Partner == PalmGripPartner && GetPalmShapeCenter(PalmCenter) && IsPalmTouching(&ItemMesh, ContactReleaseMargin))
     {
         ContactPoints.Add({ PalmCenter, FingerNormalSum });
     }
@@ -295,10 +305,26 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
     FVector Center;
     ComputeGrip(Item, Grab.bContact, Grab.Partner, Force, Torque, Center);
 
+    AttachGrabConstraint(*Item, Center, Force, Torque, bKeepCollision);
+
+    // 튜닝용 — 쥘 때 물리 손이 실제 손에서 밀려난 거리, 질량, 쥔 점~무게중심 거리(토크 팔), 마찰 한계 대 무게.
+    const float Mass = Item->ItemMesh->CalculateMass();
+    UE_LOG(LogTemp, Log, TEXT("[VRHand] 쥠 상세: %s %s 손 어긋남 %.1fcm, 질량 %.2fkg, 무게중심 거리 %.1fcm, 힘 한계 %.0f(무게 %.0f), 토크 한계 %.0f, 충돌 %s"),
+           *Item->ItemData.ItemTemplateID, Grab.bContact ? TEXT("접촉") : TEXT("컨트롤러"), FVector::Dist(GetComponentLocation(), Palm->GetComponentLocation()),
+           Mass, FVector::Dist(Center, Item->ItemMesh->GetCenterOfMass()), Force, Mass * FMath::Abs(GetWorld()->GetGravityZ()), Torque,
+           bKeepCollision ? TEXT("유지") : TEXT("끔"));
+
+    if (!Grab.bSecondary) Inventory->HoldItem(Item, GetHandSlot());
+    Grab.Item = Item;
+    return true;
+}
+
+void UVRHandComponent::AttachGrabConstraint(ADroppedItemBase& Item, const FVector& Center, float Force, float Torque, bool bKeepCollision)
+{
     // 드라이브 강성·감쇠 — 질량(회전은 쥔 점 기준 관성 = 무게중심 관성 최대축 + m·d²) × ω², 임계감쇠 2·질량·ω.
     // ponytail: 관성은 최대축 하나로 — 길쭉한 물건의 긴 축 회전은 실제보다 단단하다. 축별로 달라야 하면 관성 텐서를 제약 축으로 돌려 쓸 것.
-    const float Mass = Item->ItemMesh->CalculateMass();
-    const float Inertia = Item->ItemMesh->GetInertiaTensor().GetMax() + Mass * FVector::DistSquared(Center, Item->ItemMesh->GetCenterOfMass());
+    const float Mass = Item.ItemMesh->CalculateMass();
+    const float Inertia = Item.ItemMesh->GetInertiaTensor().GetMax() + Mass * FVector::DistSquared(Center, Item.ItemMesh->GetCenterOfMass());
     Grab.LinStiffness = Mass * FMath::Square(GripLinearFrequency);
     Grab.LinDamping = 2.f * Mass * GripLinearFrequency;
     Grab.AngStiffness = Inertia * FMath::Square(GripAngularFrequency);
@@ -314,19 +340,9 @@ bool UVRHandComponent::GrabWithPhysics(ADroppedItemBase* Item, bool bKeepCollisi
     const FTransform GripFrame(Palm->GetComponentQuat(), Center);
     GrabConstraint->SetWorldLocationAndRotation(GripFrame.GetLocation(), GripFrame.GetRotation());
     GrabConstraint->SetDisableCollision(!bKeepCollision);
-    GrabConstraint->SetConstrainedComponents(Palm, NAME_None, Item->ItemMesh, NAME_None);
+    GrabConstraint->SetConstrainedComponents(Palm, NAME_None, Item.ItemMesh, NAME_None);
     Grab.FrameInPalm = GripFrame.GetRelativeTransform(Palm->GetComponentTransform());
-    Grab.FrameInItem = GripFrame.GetRelativeTransform(Item->ItemMesh->GetComponentTransform());
-
-    // 튜닝용 — 쥘 때 물리 손이 실제 손에서 밀려난 거리, 질량, 쥔 점~무게중심 거리(토크 팔), 마찰 한계 대 무게.
-    UE_LOG(LogTemp, Log, TEXT("[VRHand] 쥠 상세: %s %s 손 어긋남 %.1fcm, 질량 %.2fkg, 무게중심 거리 %.1fcm, 힘 한계 %.0f(무게 %.0f), 토크 한계 %.0f, 충돌 %s"),
-           *Item->ItemData.ItemTemplateID, Grab.bContact ? TEXT("접촉") : TEXT("컨트롤러"), FVector::Dist(GetComponentLocation(), Palm->GetComponentLocation()),
-           Mass, FVector::Dist(Center, Item->ItemMesh->GetCenterOfMass()), Force, Mass * FMath::Abs(GetWorld()->GetGravityZ()), Torque,
-           bKeepCollision ? TEXT("유지") : TEXT("끔"));
-
-    if (!Grab.bSecondary) Inventory->HoldItem(Item, GetHandSlot());
-    Grab.Item = Item;
-    return true;
+    Grab.FrameInItem = GripFrame.GetRelativeTransform(Item.ItemMesh->GetComponentTransform());
 }
 
 void UVRHandComponent::ReleaseGrab()
@@ -340,24 +356,41 @@ void UVRHandComponent::ReleaseGrab()
 
 void UVRHandComponent::SyncGrab()
 {
-    const UInventoryComponent* Inventory = GetInventory();
-    if (Inventory && Grab.Item.IsValid())
-    {
-        // 기록 손은 자기 슬롯이, 두 번째 손은 어느 슬롯이든 그 물건을 쥐고 있어야 한다. 아니면(수납·소모·기록 손이 놓음) 푼다.
-        const ADroppedItemBase* HeldItem = Grab.Item.Get();
-        const bool bStillInHand = Grab.bSecondary
-            ? (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == HeldItem || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == HeldItem)
-            : Inventory->GetHeldItem(GetHandSlot()) == HeldItem;
-        if (!bStillInHand) ReleaseGrab();
-    }
+    ReleaseIfNoLongerHeld();
+
     const ADroppedItemBase* Item = Grab.Item.Get();
     if (!IsValid(Item) || !IsValid(Item->ItemMesh) || !IsPhysicsActive()) return;
 
+    // 쥔 점이 손에서 너무 멀리 미끄러졌으면 놓쳤다(제약은 상한만 있어 스스로 끊기지 않는다).
+    // 두 번째 손이 놓친 건 그 손만 놓으면 된다(물건은 기록 손이 들고 있다).
+    const FTransform PalmInItem = UpdateGripLimits(*Item);
+    if (PalmInItem.GetLocation().Size() > GripSlipReleaseDistance)
+    {
+        if (Grab.bSecondary) ReleaseGrab();
+        else DropSlipped();
+    }
+}
+
+void UVRHandComponent::ReleaseIfNoLongerHeld()
+{
+    const UInventoryComponent* Inventory = GetInventory();
+    if (!Inventory || !Grab.Item.IsValid()) return;
+
+    // 기록 손은 자기 슬롯이, 두 번째 손은 어느 슬롯이든 그 물건을 쥐고 있어야 한다. 아니면(수납·소모·기록 손이 놓음) 푼다.
+    const ADroppedItemBase* HeldItem = Grab.Item.Get();
+    const bool bStillInHand = Grab.bSecondary
+        ? (Inventory->GetHeldItem(EEquipmentSlot::MainHand) == HeldItem || Inventory->GetHeldItem(EEquipmentSlot::OffHand) == HeldItem)
+        : Inventory->GetHeldItem(GetHandSlot()) == HeldItem;
+    if (!bStillInHand) ReleaseGrab();
+}
+
+FTransform UVRHandComponent::UpdateGripLimits(const ADroppedItemBase& Item)
+{
     // 마찰 한계 갱신 — 쥐는 힘을 빼면 한계가 내려가 물건이 스르륵 빠진다.
     // ponytail: 엔진 상한은 축별(X·Y·Z) 클램프라 대각 방향은 최대 √3 배까지 버틴다. 원뿔이 필요하면 상한을 축 분해해 넣을 것.
     float Force = 0.f, Torque = 0.f;
     FVector Center;
-    ComputeGrip(Item, Grab.bContact, Grab.Partner, Force, Torque, Center);
+    ComputeGrip(&Item, Grab.bContact, Grab.Partner, Force, Torque, Center);
     Grab.LastForce = Force;
     Force = FMath::Max(Force, 1.f);
     Torque = FMath::Max(Torque, 1.f);
@@ -371,7 +404,7 @@ void UVRHandComponent::SyncGrab()
     // 지금 자세 = 아이템 쪽 프레임 기준 손바닥 쪽 프레임 — 드라이브 목표 좌표. 반대(손바닥 기준 아이템)로 넣으면 목표가 거울 위치에 놓여
     // 드라이브가 운동 방향과 무관하게 한쪽으로만 상한만큼 밀어, 평형각 둘레로 감쇠 없이 출렁인다(PIE: 횃불 끝 쥐기 0°↔50°).
     const FTransform PalmFrame = Grab.FrameInPalm * Palm->GetComponentTransform();
-    const FTransform ItemFrame = Grab.FrameInItem * Item->ItemMesh->GetComponentTransform();
+    const FTransform ItemFrame = Grab.FrameInItem * Item.ItemMesh->GetComponentTransform();
     const FTransform PalmInItem = PalmFrame.GetRelativeTransform(ItemFrame);
 
     const FVector Stretch = Grab.LinTarget - PalmInItem.GetLocation();
@@ -388,14 +421,7 @@ void UVRHandComponent::SyncGrab()
         Grab.AngTarget = FQuat::Slerp(PalmInItem.GetRotation(), Grab.AngTarget, MaxTwist / Twist).GetNormalized();
         GrabConstraint->SetAngularOrientationTarget(Grab.AngTarget.Rotator());
     }
-
-    // 쥔 점이 손에서 너무 멀리 미끄러졌으면 놓쳤다(제약은 상한만 있어 스스로 끊기지 않는다).
-    // 두 번째 손이 놓친 건 그 손만 놓으면 된다(물건은 기록 손이 들고 있다).
-    if (PalmInItem.GetLocation().Size() > GripSlipReleaseDistance)
-    {
-        if (Grab.bSecondary) ReleaseGrab();
-        else DropSlipped();
-    }
+    return PalmInItem;
 }
 
 UVRHandComponent* UVRHandComponent::GetOtherHand() const

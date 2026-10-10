@@ -1,22 +1,22 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Core/Utils/MovementUtils.h"   // FSavedFriction
-#include "Core/Utils/PawnDeathUtils.h"  // FCheckpoint
-#include "GameFramework/Character.h"
-#include "Core/Interfaces/Entity.h"
-#include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "Perception/AIPerceptionStimuliSourceComponent.h"
-#include "Perception/AISightTargetInterface.h"
-#include "NativeGameplayTags.h"
-#include "Core/Types/PlayerGameplayTags.h"
+#include "GameFramework/Character.h"
 #include "HeadMountedDisplayTypes.h"
+#include "InputActionValue.h"
+#include "NativeGameplayTags.h"
+#include "Perception/AISightTargetInterface.h"
+#include "Core/Interfaces/Entity.h"
+#include "Core/Types/PlayerGameplayTags.h"
+#include "Core/Utils/MovementUtils.h"   // FSavedFriction
+#include "Core/Utils/PawnDeathUtils.h"  // FCheckpoint
 #include "VRPawn.generated.h"
 
 class UCameraComponent;
 class UMotionControllerComponent;
+class UAIPerceptionStimuliSourceComponent;
 class UAnimMontage;
 class USkeletalMeshComponent;
 class UInventoryComponent;
@@ -513,6 +513,19 @@ public:
     void SayToNpc(const FString& Text);
 
 private:
+    // --- BeginPlay 단계 ---
+    /** HMD 트래킹 원점을 바닥으로 맞추고 VROrigin 을 캡슐 절반 높이만큼 내린다. */
+    void InitTrackingOrigin();
+
+    /** Enhanced Input 매핑 컨텍스트를 등록하고(개발 빌드) 치트 매니저를 우리 클래스로 바꿔 끼운다. */
+    void RegisterInputAndCheats();
+
+    /** 몸 메시의 기준 위치와 머리 본 높이를 레퍼런스 포즈에서 읽는다. */
+    void InitBodyMeshReference();
+
+    /** 양손 물리를 만들고 몸 메시 애님을 물리 뒤로 미루며, 내 캡슐·몸이 손 채널을 무시하게 한다. */
+    void InitHandPhysics();
+
     // --- 입력 핸들러 ---
     void OnMove(const FInputActionValue& Value);
 
@@ -689,6 +702,12 @@ private:
 
     /** 그립 뗌 본체 — 인벤토리 열림이면 회수, 닫힘이면 거래접시→NPC 건네기→던지기. */
     void HandleGrabRelease(bool bLeft);
+
+    /** 놓은 손의 쥐기 제약을 푼다. 양손 쥐기라 아이템 처리가 필요 없으면(두 번째 손이 놓음·기록만 넘김) true. */
+    bool ReleaseHandConstraint(bool bLeft);
+
+    /** 손에서 놓인 아이템의 행선지 — 상인 매입 상자(판매) → 거래 접시 → NPC 건네기 → 던지기 순으로 처리한다. */
+    void RouteReleasedItem(ADroppedItemBase* Item, bool bLeft);
 
     /** 그립 아날로그값(누르는 동안 매 프레임) — 손의 마찰 한계로 넘기고, 약하게 쥐어 못 든 아이템은 더 세게 쥐면 다시 쥔다. */
     void OnGrabValueRight(const FInputActionValue& Value);

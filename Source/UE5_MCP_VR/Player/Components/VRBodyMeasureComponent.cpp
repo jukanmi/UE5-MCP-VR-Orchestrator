@@ -1,13 +1,14 @@
 #include "Player/Components/VRBodyMeasureComponent.h"
 
-#include "Player/Components/VRHandComponent.h"
-#include "Player/BP/VRPawn.h"
-#include "Core/Save/BodyMeasureSaveGame.h"
 #include "Engine/Engine.h"
 #include "HeadMountedDisplayTypes.h"
 #include "IXRTrackingSystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "MotionControllerComponent.h"
+
+#include "Core/Save/BodyMeasureSaveGame.h"
+#include "Player/BP/VRPawn.h"
+#include "Player/Components/VRHandComponent.h"
 
 namespace
 {
@@ -216,21 +217,7 @@ bool UVRBodyMeasureComponent::SampleStep(float& OutValue, FText& OutWhy) const
         return true;
 
     case EStep::ArmSpan:
-    {
-        if (bRequireTracking && !(IsHandLive(true) && IsHandLive(false)))
-        {
-            OutWhy = FText::FromString(TEXT("손이 안 보여요"));
-            return false;
-        }
-        if (!Pawn->HandLeft || !Pawn->HandRight)
-        {
-            OutWhy = FText::FromString(TEXT("손 컴포넌트가 없어요"));
-            return false;
-        }
-        // 실제 손(앵커) 사이 수평 거리 — 핸드트래킹이면 손바닥 관절, 아니면 컨트롤러 그립 포즈.
-        OutValue = FVector::Dist2D(Pawn->HandLeft->GetComponentLocation(), Pawn->HandRight->GetComponentLocation());
-        return true;
-    }
+        return SampleArmSpan(*Pawn, OutValue, OutWhy);
 
     case EStep::Knee:
     case EStep::Hip:
@@ -247,6 +234,23 @@ bool UVRBodyMeasureComponent::SampleStep(float& OutValue, FText& OutWhy) const
     default:
         return false;
     }
+}
+
+bool UVRBodyMeasureComponent::SampleArmSpan(const AVRPawn& Pawn, float& OutValue, FText& OutWhy) const
+{
+    if (bRequireTracking && !(IsHandLive(true) && IsHandLive(false)))
+    {
+        OutWhy = FText::FromString(TEXT("손이 안 보여요"));
+        return false;
+    }
+    if (!Pawn.HandLeft || !Pawn.HandRight)
+    {
+        OutWhy = FText::FromString(TEXT("손 컴포넌트가 없어요"));
+        return false;
+    }
+    // 실제 손(앵커) 사이 수평 거리 — 핸드트래킹이면 손바닥 관절, 아니면 컨트롤러 그립 포즈.
+    OutValue = FVector::Dist2D(Pawn.HandLeft->GetComponentLocation(), Pawn.HandRight->GetComponentLocation());
+    return true;
 }
 
 bool UVRBodyMeasureComponent::Validate(const float (&V)[4], FText& OutWhy) const

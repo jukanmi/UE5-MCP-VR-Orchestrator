@@ -4,28 +4,29 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
-#include "Player/BP/VRPawn.h"
-#include "Player/Components/VRBodyMeasureComponent.h"
-#include "Core/Utils/EngineShapes.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
-#include "Inventory/BP/DroppedItemBase.h"
-#include "Inventory/Components/InventoryComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "MotionControllerComponent.h"
-#include "Core/Save/SettingsSaveGame.h"
-#include "Kismet/GameplayStatics.h"
 #include "Sound/SoundSubmix.h"
+
+#include "Core/Save/SettingsSaveGame.h"
+#include "Core/Utils/EngineShapes.h"
+#include "Inventory/BP/DroppedItemBase.h"
+#include "Inventory/Components/InventoryComponent.h"
 #include "NPC/BP/SmartNPC.h"
 #include "NPC/Subsystems/NPCManager.h"
+#include "Player/BP/VRPawn.h"
+#include "Player/Components/VRBodyMeasureComponent.h"
 #include "Story/StorySubsystem.h"
 #include "UI/BP/ChatWidget.h"
 #include "UI/BP/MenuWidget.h"
-#include "UI/Components/MenuPanelUIComponent.h"
+#include "UI/BP/PlayerHUDWidget.h"
 #include "UI/Components/ChatPanelUIComponent.h"
 #include "UI/Components/HUDPanelUIComponent.h"
 #include "UI/Components/ItemTooltipUIComponent.h"
-#include "UI/BP/PlayerHUDWidget.h"
+#include "UI/Components/MenuPanelUIComponent.h"
 
 UVRPlayerUIComponent::UVRPlayerUIComponent()
 {
@@ -37,75 +38,87 @@ AVRPawn* UVRPlayerUIComponent::GetPawn() const
     return Cast<AVRPawn>(GetOwner());
 }
 
+namespace
+{
+    // 런타임 생성 컴포넌트는 등록 + 인스턴스 컴포넌트 목록에 올려야 에디터 상세·직렬화·GC 에서 폰의 일부로 취급된다.
+    void RegisterOnPawn(AVRPawn& Pawn, USceneComponent* Comp)
+    {
+        Comp->RegisterComponent();
+        Pawn.AddInstanceComponent(Comp);
+    }
+}
+
 void UVRPlayerUIComponent::CreateSceneComponents()
 {
     AVRPawn* Pawn = GetPawn();
     if (!Pawn || HUDPanel) return;   // 한 번만
 
-    // 런타임 생성 컴포넌트는 등록 + 인스턴스 컴포넌트 목록에 올려야 에디터 상세·직렬화·GC 에서 폰의 일부로 취급된다.
-    auto Register = [Pawn](USceneComponent* Comp)
-    {
-        Comp->RegisterComponent();
-        Pawn->AddInstanceComponent(Comp);
-    };
+    CreatePanelComponents(*Pawn);
+    CreatePointerComponents(*Pawn);
 
+    // 아이템 이름표 — 하나를 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
+    ItemTooltip = NewObject<UItemTooltipUIComponent>(Pawn, TEXT("ItemTooltipComp"));
+    ItemTooltip->SetupAttachment(Pawn->GetRootComponent());
+    RegisterOnPawn(*Pawn, ItemTooltip);
+}
+
+void UVRPlayerUIComponent::CreatePanelComponents(AVRPawn& Pawn)
+{
     // HUD 패널 — 왼손 컨트롤러에 얹힌 월드 공간 위젯. 카메라 정렬·시선 페이드·포인터 충돌은 UHUDPanelUIComponent.
-    HUDPanel = NewObject<UHUDPanelUIComponent>(Pawn, TEXT("HUDWidgetComp"));
-    HUDPanel->SetupAttachment(Pawn->MotionControllerLeft);
+    HUDPanel = NewObject<UHUDPanelUIComponent>(&Pawn, TEXT("HUDWidgetComp"));
+    HUDPanel->SetupAttachment(Pawn.MotionControllerLeft);
     HUDPanel->SetRelativeLocation(HUDPanelLocation);
     HUDPanel->SetDrawSize(HUDPanelDrawSize);
     HUDPanel->SetRelativeScale3D(FVector(HUDPanelScale));
-    Register(HUDPanel);
+    RegisterOnPawn(Pawn, HUDPanel);
 
     // 채팅 패널 — 예외적으로 카메라 부착(이유·자동 닫기는 UChatPanelUIComponent).
     // 카메라 앞에 있으니 Yaw 180 으로 카메라 쪽을 본다(양면이라 어느 면이든 읽힌다).
-    ChatPanel = NewObject<UChatPanelUIComponent>(Pawn, TEXT("ChatWidgetComp"));
-    ChatPanel->SetupAttachment(Pawn->VRCamera);
+    ChatPanel = NewObject<UChatPanelUIComponent>(&Pawn, TEXT("ChatWidgetComp"));
+    ChatPanel->SetupAttachment(Pawn.VRCamera);
     ChatPanel->SetRelativeLocation(ChatPanelOffset);
     ChatPanel->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
     ChatPanel->SetDrawSize(ChatPanelDrawSize);
     ChatPanel->SetRelativeScale3D(FVector(ChatPanelScale));
-    Register(ChatPanel);
+    RegisterOnPawn(Pawn, ChatPanel);
 
     // 메뉴 패널 — 루트에 붙지만 월드 고정(절대 좌표). 열 때 시선 앞에 놓는다(UMenuPanelUIComponent).
-    MenuPanel = NewObject<UMenuPanelUIComponent>(Pawn, TEXT("MenuWidgetComp"));
-    MenuPanel->SetupAttachment(Pawn->GetRootComponent());
+    MenuPanel = NewObject<UMenuPanelUIComponent>(&Pawn, TEXT("MenuWidgetComp"));
+    MenuPanel->SetupAttachment(Pawn.GetRootComponent());
     MenuPanel->SetDrawSize(MenuPanelDrawSize);
     MenuPanel->SetRelativeScale3D(FVector(MenuPanelScale));
-    Register(MenuPanel);
+    RegisterOnPawn(Pawn, MenuPanel);
+}
 
+void UVRPlayerUIComponent::CreatePointerComponents(AVRPawn& Pawn)
+{
     // UI 포인터 — 오른손 Aim 포즈 기준. Grip 포즈는 자연 조준축에서 ~30° 틀어져 있어 광선이 패널을 빗나간다.
-    Interactor = NewObject<UWidgetInteractionComponent>(Pawn, TEXT("HUDInteractor"));
-    Interactor->SetupAttachment(Pawn->MotionControllerRightAim);
+    Interactor = NewObject<UWidgetInteractionComponent>(&Pawn, TEXT("HUDInteractor"));
+    Interactor->SetupAttachment(Pawn.MotionControllerRightAim);
     Interactor->InteractionDistance = HUDInteractionDistance;
     Interactor->InteractionSource = EWidgetInteractionSource::World;
     Interactor->bEnableHitTesting = true;
     Interactor->bShowDebug = false;          // 조준이 안 맞을 때 켜서 광선 확인
     Interactor->bAutoActivate = false;       // 인벤토리·메뉴 열림 중에만 활성
-    Register(Interactor);
+    RegisterOnPawn(Pawn, Interactor);
 
     // 포인터 광선 실메시 — 원통을 조준축(+X)으로 눕혀 길이만 늘린다.
     // 기본 원통은 Z축 100cm 이므로 Pitch -90 으로 Z 를 부모의 +X 에 맞춘다.
-    PointerBeam = NewObject<UStaticMeshComponent>(Pawn, TEXT("PointerBeam"));
-    PointerBeam->SetupAttachment(Pawn->MotionControllerRightAim);
+    PointerBeam = NewObject<UStaticMeshComponent>(&Pawn, TEXT("PointerBeam"));
+    PointerBeam->SetupAttachment(Pawn.MotionControllerRightAim);
     PointerBeam->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
     // 광선이 자기 자신을 맞고 멈추지 않도록 콜리전 완전 차단. 그림자도 끈다(가는 막대의 그림자는 노이즈).
     PointerBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PointerBeam->SetCastShadow(false);
     PointerBeam->SetVisibility(false);
-    Register(PointerBeam);
+    RegisterOnPawn(Pawn, PointerBeam);
 
-    PointerDot = NewObject<UStaticMeshComponent>(Pawn, TEXT("PointerDot"));
-    PointerDot->SetupAttachment(Pawn->MotionControllerRightAim);
+    PointerDot = NewObject<UStaticMeshComponent>(&Pawn, TEXT("PointerDot"));
+    PointerDot->SetupAttachment(Pawn.MotionControllerRightAim);
     PointerDot->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PointerDot->SetCastShadow(false);
     PointerDot->SetVisibility(false);
-    Register(PointerDot);
-
-    // 아이템 이름표 — 하나를 들고 다니며 손 근처 아이템 위로 옮긴다(위치는 매 틱 월드 좌표).
-    ItemTooltip = NewObject<UItemTooltipUIComponent>(Pawn, TEXT("ItemTooltipComp"));
-    ItemTooltip->SetupAttachment(Pawn->GetRootComponent());
-    Register(ItemTooltip);
+    RegisterOnPawn(Pawn, PointerDot);
 }
 
 void UVRPlayerUIComponent::Init()
@@ -114,65 +127,14 @@ void UVRPlayerUIComponent::Init()
     if (!Pawn) return;
 
     CreateSceneComponents();
+    InitPointerVisual();
 
-    // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
-    // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
-    if (PointerBeam && PointerDot)
-    {
-        if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
-        if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
-
-        // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
-        PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
-        if (PointerMID)
-        {
-            PointerBeam->SetMaterial(0, PointerMID);
-            PointerDot->SetMaterial(0, PointerMID);
-        }
-
-        // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
-        PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
-    }
-
-    // HUD·채팅 위젯 생성 — 로컬 플레이어 컨트롤러일 때만.
-    // 위젯은 뷰포트가 아니라 왼손 패널(HUDWidgetComp)에 실린다. 화면 공간 위젯은
-    // 스테레오 렌더 타깃 위에 한 번만 합성되어 한쪽 눈에만 보이기 때문.
+    // HUD·채팅·메뉴 위젯 생성 — 로컬 플레이어 컨트롤러일 때만.
     APlayerController* PC = Cast<APlayerController>(Pawn->GetController());
     if (PC && PC->IsLocalController())
     {
-        if (HUDWidgetClass && HUDPanel)
-        {
-            HUDPanel->SetOwnerPlayer(PC->GetLocalPlayer());
-            HUDPanel->SetWidgetClass(HUDWidgetClass);
-            HUDPanel->InitWidget();
-            HUDWidget = Cast<UPlayerHUDWidget>(HUDPanel->GetUserWidgetObject());
-        }
-        if (ChatWidgetClass && ChatPanel)
-        {
-            ChatPanel->SetOwnerPlayer(PC->GetLocalPlayer());
-            ChatPanel->SetWidgetClass(ChatWidgetClass);
-            ChatPanel->InitWidget();
-            ChatWidget = Cast<UChatWidget>(ChatPanel->GetUserWidgetObject());
-        }
-    }
-
-    if (PC && PC->IsLocalController() && MenuWidgetClass && MenuPanel)
-    {
-        MenuPanel->SetOwnerPlayer(PC->GetLocalPlayer());
-        MenuPanel->SetWidgetClass(MenuWidgetClass);
-        MenuPanel->InitWidget();
-        MenuWidget = Cast<UMenuWidget>(MenuPanel->GetUserWidgetObject());
-        if (MenuWidget)
-        {
-            MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
-            MenuWidget->OnVolumeChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuVolumeChanged);
-            MenuWidget->OnCalibrationRequested.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuCalibration);
-            if (Pawn->BodyMeasure)
-            {
-                Pawn->BodyMeasure->OnTextChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnBodyMeasureText);
-                Pawn->BodyMeasure->ShowIdle();   // 저장값이 있으면 버튼 글·요약을 처음부터 보인다
-            }
-        }
+        InitHudAndChatWidgets(*PC);
+        InitMenuWidget(*PC, *Pawn);
     }
 
     // 메뉴 위젯이 없어도 저장된 볼륨은 적용한다.
@@ -187,6 +149,67 @@ void UVRPlayerUIComponent::Init()
     // 인벤토리는 닫힌 상태로 시작 — 포인터를 끄고 슬롯을 접는다.
     // 패널 자체는 계속 켜져 있다(HP·스태미나 게이지가 실려 있음).
     ApplyInventoryPresentation(false);
+}
+
+void UVRPlayerUIComponent::InitPointerVisual()
+{
+    // 포인터 비주얼 에셋 — 엔진 기본 도형 + 이미시브 머티리얼. 프로젝트 에셋을 만들지 않으려는 선택으로,
+    // 셋 중 하나라도 없으면 포인터만 조용히 안 보이고 클릭 기능 자체는 그대로 동작한다.
+    if (!PointerBeam || !PointerDot) return;
+
+    if (UStaticMesh* Cylinder = EngineShapes::LoadCylinder()) PointerBeam->SetStaticMesh(Cylinder);
+    if (UStaticMesh* Sphere   = EngineShapes::LoadSphere())   PointerDot->SetStaticMesh(Sphere);
+
+    // 빔·점이 한 MID 를 공유 — 조준 적중 시 색을 한 번에 바꾼다.
+    PointerMID = EngineShapes::MakeEmissiveMID(this, PointerColor);
+    if (PointerMID)
+    {
+        PointerBeam->SetMaterial(0, PointerMID);
+        PointerDot->SetMaterial(0, PointerMID);
+    }
+
+    // 굵기·크기는 여기서 한 번만. 길이(Z)는 매 Tick 조준 거리로 덮어쓴다.
+    PointerDot->SetRelativeScale3D(FVector(PointerDotSize / 100.f));
+}
+
+void UVRPlayerUIComponent::InitHudAndChatWidgets(APlayerController& PC)
+{
+    // 위젯은 뷰포트가 아니라 왼손 패널(HUDWidgetComp)에 실린다. 화면 공간 위젯은
+    // 스테레오 렌더 타깃 위에 한 번만 합성되어 한쪽 눈에만 보이기 때문.
+    if (HUDWidgetClass && HUDPanel)
+    {
+        HUDPanel->SetOwnerPlayer(PC.GetLocalPlayer());
+        HUDPanel->SetWidgetClass(HUDWidgetClass);
+        HUDPanel->InitWidget();
+        HUDWidget = Cast<UPlayerHUDWidget>(HUDPanel->GetUserWidgetObject());
+    }
+    if (ChatWidgetClass && ChatPanel)
+    {
+        ChatPanel->SetOwnerPlayer(PC.GetLocalPlayer());
+        ChatPanel->SetWidgetClass(ChatWidgetClass);
+        ChatPanel->InitWidget();
+        ChatWidget = Cast<UChatWidget>(ChatPanel->GetUserWidgetObject());
+    }
+}
+
+void UVRPlayerUIComponent::InitMenuWidget(APlayerController& PC, AVRPawn& Pawn)
+{
+    if (!MenuWidgetClass || !MenuPanel) return;
+
+    MenuPanel->SetOwnerPlayer(PC.GetLocalPlayer());
+    MenuPanel->SetWidgetClass(MenuWidgetClass);
+    MenuPanel->InitWidget();
+    MenuWidget = Cast<UMenuWidget>(MenuPanel->GetUserWidgetObject());
+    if (!MenuWidget) return;
+
+    MenuWidget->OnResume.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuResume);
+    MenuWidget->OnVolumeChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuVolumeChanged);
+    MenuWidget->OnCalibrationRequested.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnMenuCalibration);
+    if (Pawn.BodyMeasure)
+    {
+        Pawn.BodyMeasure->OnTextChanged.AddUniqueDynamic(this, &UVRPlayerUIComponent::OnBodyMeasureText);
+        Pawn.BodyMeasure->ShowIdle();   // 저장값이 있으면 버튼 글·요약을 처음부터 보인다
+    }
 }
 
 void UVRPlayerUIComponent::Update(float DeltaTime)
@@ -327,81 +350,85 @@ void UVRPlayerUIComponent::UpdateMenuInfo()
 
     switch (MenuWidget->GetScreen())
     {
-    case EMenuScreen::Map:
-    {
-        // 플레이어 위치·방향(HMD 정면) — 방향 점은 앞쪽으로 조금 떨어진 곳.
-        const FVector Loc = Pawn->GetActorLocation();
-        FVector Fwd = Pawn->VRCamera ? Pawn->VRCamera->GetForwardVector() : Pawn->GetActorForwardVector();
-        Fwd.Z = 0.f;
-        Fwd = Fwd.GetSafeNormal();
-        const FVector2D PlayerUV = WorldToMapUV(Loc);
-        const FVector2D HeadingUV = PlayerUV + FVector2D(Fwd.Y, -Fwd.X) * MapHeadingLength;
+    case EMenuScreen::Map:   UpdateMapScreen(*Pawn); break;
+    case EMenuScreen::Party: UpdatePartyScreen();    break;
+    case EMenuScreen::Quest: UpdateQuestScreen();    break;
+    default: break;
+    }
+}
 
-        // 퀘스트 목표 — 월드 마커와 같은 대상.
-        bool bQuest = false;
-        FVector2D QuestUV = FVector2D::ZeroVector;
-        if (const UStorySubsystem* Story = UStorySubsystem::Get(this))
-        {
-            if (const AActor* Target = Story->GetQuestTargetActor())
-            {
-                bQuest = true;
-                QuestUV = WorldToMapUV(Target->GetActorLocation());
-            }
-        }
+void UVRPlayerUIComponent::UpdateMapScreen(const AVRPawn& Pawn)
+{
+    // 플레이어 위치·방향(HMD 정면) — 방향 점은 앞쪽으로 조금 떨어진 곳.
+    const FVector Loc = Pawn.GetActorLocation();
+    FVector Fwd = Pawn.VRCamera ? Pawn.VRCamera->GetForwardVector() : Pawn.GetActorForwardVector();
+    Fwd.Z = 0.f;
+    Fwd = Fwd.GetSafeNormal();
+    const FVector2D PlayerUV = WorldToMapUV(Loc);
+    const FVector2D HeadingUV = PlayerUV + FVector2D(Fwd.Y, -Fwd.X) * MapHeadingLength;
 
-        // 일행(목업) 위치.
-        TArray<FVector2D> PartyUVs;
-        if (UNPCManager* Manager = UNPCManager::Get(this))
-        {
-            for (const FString& Id : MockPartyIds)
-            {
-                if (const ASmartNPC* NPC = Manager->GetNPCById(Id)) PartyUVs.Add(WorldToMapUV(NPC->GetActorLocation()));
-            }
-        }
-        MenuWidget->SetMapMarkers(true, PlayerUV, HeadingUV, bQuest, QuestUV, PartyUVs);
-        break;
-    }
-    case EMenuScreen::Party:
+    // 퀘스트 목표 — 월드 마커와 같은 대상.
+    bool bQuest = false;
+    FVector2D QuestUV = FVector2D::ZeroVector;
+    if (const UStorySubsystem* Story = UStorySubsystem::Get(this))
     {
-        if (MenuInfoAccum < 0.25f) break;
-        MenuInfoAccum = 0.f;
-        TArray<FMenuPartyEntry> Entries;
-        if (UNPCManager* Manager = UNPCManager::Get(this))
+        if (const AActor* Target = Story->GetQuestTargetActor())
         {
-            for (const FString& Id : MockPartyIds)
-            {
-                ASmartNPC* NPC = Manager->GetNPCById(Id);
-                if (!NPC) continue;
-                FMenuPartyEntry Entry;
-                Entry.Name = Id;
-                Entry.HealthPct = FMath::Clamp(INPC::Execute_GetNPCAttributes(NPC).Resources.GetHealthPercent(), 0.f, 1.f);
-                Entries.Add(Entry);
-            }
+            bQuest = true;
+            QuestUV = WorldToMapUV(Target->GetActorLocation());
         }
-        MenuWidget->SetPartyEntries(Entries);
-        break;
     }
-    case EMenuScreen::Quest:
+
+    // 일행(목업) 위치.
+    TArray<FVector2D> PartyUVs;
+    if (UNPCManager* Manager = UNPCManager::Get(this))
     {
-        if (MenuInfoAccum < 0.25f) break;
-        MenuInfoAccum = 0.f;
-        const UStorySubsystem* Story = UStorySubsystem::Get(this);
-        if (!Story || !Story->HasState())
+        for (const FString& Id : MockPartyIds)
         {
-            MenuWidget->SetQuestInfo(TEXT("아직 받은 퀘스트 정보가 없습니다."), FString());
-            break;
+            if (const ASmartNPC* NPC = Manager->GetNPCById(Id)) PartyUVs.Add(WorldToMapUV(NPC->GetActorLocation()));
         }
-        const FStoryState& State = Story->GetCurrentState();
-        auto TitleOf = [&State](const FString& Id) { const FString* T = State.SideTitles.Find(Id); return T ? *T : Id; };
-        FString Side;
-        for (const FString& Id : State.Side) Side += FString::Printf(TEXT("• %s\n"), *TitleOf(Id));
-        for (const FString& Id : State.AvailableSide) Side += FString::Printf(TEXT("• %s (수락 가능)\n"), *TitleOf(Id));
-        MenuWidget->SetQuestInfo(State.QuestLog.IsEmpty() ? TEXT("메인 퀘스트 완료") : State.QuestLog, Side.IsEmpty() ? TEXT("진행 중인 서브퀘스트 없음") : Side.TrimEnd());
-        break;
     }
-    default:
-        break;
+    MenuWidget->SetMapMarkers(true, PlayerUV, HeadingUV, bQuest, QuestUV, PartyUVs);
+}
+
+void UVRPlayerUIComponent::UpdatePartyScreen()
+{
+    if (MenuInfoAccum < 0.25f) return;
+    MenuInfoAccum = 0.f;
+
+    TArray<FMenuPartyEntry> Entries;
+    if (UNPCManager* Manager = UNPCManager::Get(this))
+    {
+        for (const FString& Id : MockPartyIds)
+        {
+            ASmartNPC* NPC = Manager->GetNPCById(Id);
+            if (!NPC) continue;
+            FMenuPartyEntry Entry;
+            Entry.Name = Id;
+            Entry.HealthPct = FMath::Clamp(INPC::Execute_GetNPCAttributes(NPC).Resources.GetHealthPercent(), 0.f, 1.f);
+            Entries.Add(Entry);
+        }
     }
+    MenuWidget->SetPartyEntries(Entries);
+}
+
+void UVRPlayerUIComponent::UpdateQuestScreen()
+{
+    if (MenuInfoAccum < 0.25f) return;
+    MenuInfoAccum = 0.f;
+
+    const UStorySubsystem* Story = UStorySubsystem::Get(this);
+    if (!Story || !Story->HasState())
+    {
+        MenuWidget->SetQuestInfo(TEXT("아직 받은 퀘스트 정보가 없습니다."), FString());
+        return;
+    }
+    const FStoryState& State = Story->GetCurrentState();
+    auto TitleOf = [&State](const FString& Id) { const FString* T = State.SideTitles.Find(Id); return T ? *T : Id; };
+    FString Side;
+    for (const FString& Id : State.Side) Side += FString::Printf(TEXT("• %s\n"), *TitleOf(Id));
+    for (const FString& Id : State.AvailableSide) Side += FString::Printf(TEXT("• %s (수락 가능)\n"), *TitleOf(Id));
+    MenuWidget->SetQuestInfo(State.QuestLog.IsEmpty() ? TEXT("메인 퀘스트 완료") : State.QuestLog, Side.IsEmpty() ? TEXT("진행 중인 서브퀘스트 없음") : Side.TrimEnd());
 }
 
 // ============================================================================

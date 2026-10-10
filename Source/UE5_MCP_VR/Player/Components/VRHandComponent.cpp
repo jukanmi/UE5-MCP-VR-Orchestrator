@@ -3,14 +3,15 @@
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Player/BP/VRPawnAnimInstance.h"
-#include "Core/Types/CollisionChannels.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"
 #include "IXRTrackingSystem.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
+
+#include "Core/Types/CollisionChannels.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
-#include "PhysicsEngine/PhysicsConstraintComponent.h"
+#include "Player/BP/VRPawnAnimInstance.h"
 
 // VR 손 — 생성·트래킹·드라이브·손 모양 배치. 쥐기는 VRHandGrab.cpp, NPC 밀어내기·밀기는 VRHandNPC.cpp.
 
@@ -180,6 +181,27 @@ void UVRHandComponent::UpdateTracking(float DeltaTime)
 {
     if (!IsPhysicsActive() || !PalmConstraint) return;
 
+    ReadTrackState();
+
+    const int32 PalmKey = static_cast<int32>(EHandKeypoint::Palm);
+    if (TrackState.bValid)
+    {
+        SetWorldLocationAndRotation(TrackState.HandKeyLocations[PalmKey], TrackState.HandKeyRotations[PalmKey]);
+    }
+
+    // 물리 엔진은 NPC 뼈 캡슐을 모르므로 드라이브 목표를 뼈 캡슐 밖으로 옮겨 손이 표면에서 멈추게 한다.
+    const FVector RealHand = GetComponentLocation();
+    const FQuat TargetRotation = GetComponentQuat() * PalmShapeOffset(TrackState.bValid);
+    ACombatCharacter* TouchedNPC = nullptr;
+    const FVector Target = ProjectOutOfNPCs(RealHand, TargetRotation, TouchedNPC);
+    PushTouchedNPC(TouchedNPC, Target, RealHand, DeltaTime);   // 드라이브 전 물리 손 위치로 "표면에 와 있나"를 본다
+    UpdatePassThrough(DriveBody(Target, TargetRotation, DeltaTime, HeldMassScale()));
+    UpdateFingertipShapes();
+    SmoothSqueeze(DeltaTime);
+}
+
+void UVRHandComponent::ReadTrackState()
+{
     // 손 위치는 항상 실제 손(핸드트래킹 손바닥 관절)이고, 컨트롤러는 버튼만 쓴다 — 컨트롤러를 쥔 손도 런타임이 관절을 넘겨 준다
     // (MetaSimultaneousHands). 이 컴포넌트(앵커)가 곧 "진짜 손" 이라 드라이브·이펙터·순간이동이 전부 앵커를 읽고,
     // 관절 상태는 손가락 포즈(애님 인스턴스)·이펙터 손목 보정·접촉 쥐기가 같이 읽는다.
@@ -212,22 +234,10 @@ void UVRHandComponent::UpdateTracking(float DeltaTime)
             TrackState.HandKeyRotations[Key] = OwnerTM.TransformRotation(LastTrackInOwner.HandKeyRotations[Key]);
         }
     }
+}
 
-    const int32 PalmKey = static_cast<int32>(EHandKeypoint::Palm);
-    if (TrackState.bValid)
-    {
-        SetWorldLocationAndRotation(TrackState.HandKeyLocations[PalmKey], TrackState.HandKeyRotations[PalmKey]);
-    }
-
-    // 물리 엔진은 NPC 뼈 캡슐을 모르므로 드라이브 목표를 뼈 캡슐 밖으로 옮겨 손이 표면에서 멈추게 한다.
-    const FVector RealHand = GetComponentLocation();
-    const FQuat TargetRotation = GetComponentQuat() * PalmShapeOffset(TrackState.bValid);
-    ACombatCharacter* TouchedNPC = nullptr;
-    const FVector Target = ProjectOutOfNPCs(RealHand, TargetRotation, TouchedNPC);
-    PushTouchedNPC(TouchedNPC, Target, RealHand, DeltaTime);   // 드라이브 전 물리 손 위치로 "표면에 와 있나"를 본다
-    UpdatePassThrough(DriveBody(Target, TargetRotation, DeltaTime, HeldMassScale()));
-    UpdateFingertipShapes();
-
+void UVRHandComponent::SmoothSqueeze(float DeltaTime)
+{
     // 쥐는 정도 평활화 — 애님의 직전 갱신 값(한 프레임 늦음)을 지수 평활.
     const UVRPawnAnimInstance* Anim = GetAnim();
     const float SmoothAlpha = SqueezeSmoothTime > KINDA_SMALL_NUMBER ? 1.f - FMath::Exp(-DeltaTime / SqueezeSmoothTime) : 1.f;
