@@ -1,6 +1,6 @@
 # 파인튜닝 데이터 소스 대장
 
-> 딥리서치(docs/lorebook_research_prompt.md) 결과 + HF 실존 검증. M2/M3 데이터 생성기가 소비할 외부 소스 목록.
+> 딥리서치(docs/llm/lorebook_research_prompt.md) 결과 + HF 실존 검증. M2/M3 데이터 생성기가 소비할 외부 소스 목록.
 > ⚠️ 라이선스·URL 은 사용 직전 재확인. GitHub 소스는 딥리서치 URL 환각 가능 — 미검증 표시 준수.
 
 ## 다운로드·실검토 완료 (2026-07-18) — raw/ 에 저장(gitignore, 921MB)

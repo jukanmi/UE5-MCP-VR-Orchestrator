@@ -66,7 +66,7 @@
 
 ### 아이템 메시 — 외부 무료 에셋으로 전량 교체 (2026-10-02~03)
 Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전부 삭제(그 생성 파이프라인 품질 이슈 4건은 이로써 폐기, 원문은 `주간기록/2026-W36`). 원본은 `ItemRegistry.csv` → `DT_ItemRegistry` 재생성(전체 치환, 양동이 무게 2.5 로 복귀). 크기는 각 메시 최장변을 예전 메시 치수(없으면 실물 추정)에 맞춰 임포트·병합 단계에서 굽고, 피벗은 대부분 중심. 충돌체는 2026-10-03 자동 생성 완료(`SPEC_item_collision_gen` M3, 아래 Done). 손안 자세(`HoldOffset`/`HoldRotation` 전부 0)는 아직 — 헤드셋 `TuneGrab`.
-- 아이템 72종 전부 메시 있음(2026-10-03). DivingHelmet·ShipWheel 은 사용자 결정으로 CSV·테이블·아이콘에서 삭제 — `docs/CORE_NPC_LOREBOOK.md` 친화도 목록과 Jev 학습 데이터(`finetune/jev/data/`)에는 이름이 남아 있음(런타임 미사용).
+- 아이템 72종 전부 메시 있음(2026-10-03). DivingHelmet·ShipWheel 은 사용자 결정으로 CSV·테이블·아이콘에서 삭제 — `docs/llm/CORE_NPC_LOREBOOK.md` 친화도 목록과 Jev 학습 데이터(`finetune/jev/data/`)에는 이름이 남아 있음(런타임 미사용).
 - 위치: 메시 전부 `/Game/Core/Mesh/Items/<ItemID>`(아이템당 1개, 이름 = ItemID), 머티리얼·텍스처는 `/Game/Core/Mesh/Items/Materials/<출처>/`(팩마다 같은 이름이 겹쳐 출처별로 나눔).
 - 출처: Quaternius 51(Fantasy Props MegaKit·Ultimate RPG·Ultimate Food·Pirate Kit·Survival) · Poly Pizza 17 · Fab 4(Lowpoly Stylized Medieval Weapons 2, Free Prop Bundle 랜턴 1, Medieval Blacksmith tools `tools_10` 1).
 - SpellScroll(Poly Pizza Parchment)은 StarMap(RPG Parchment)과 같은 모델이라 겉모습이 같다.
@@ -139,10 +139,11 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 
 ## Done
 
+- [x] **큐브 SPEC 작성·docs 폴더 정리 (2026-10-09)** — `SPEC_rubik_cube.md` 작성(핸드트래킹·2x2·완성 시작·수동 섞기·90° 스냅, 구현 착수 전, 인덱스 등록). docs 정리: `VERIFICATION_monster_drop_quest`→`done/`, `ROADMAP`·`NPC_REACTION_FLOW`→`archive/`, 루트 문서를 `llm/`·`story/`·`reports/` 로 분류하고 참조 경로 갱신, 음성 폐기 잔재(로컬 파일) 삭제.
 - [x] **자세 시스템 SPEC_posture M1~M4 (2026-10-08, `7ed86d1c`~`61e632ef`)** — M1 `Bending` 판정(HMD 피치 30°+높이 비율 0.75~0.93, 복귀 20°/0.95)·태그·전이 로그 / M2 허리 숙이기 걷기 `BendSpeedRatio` 0.75, 엎드리기 캡슐은 수직 최소 높이 유지로 결정 / M3 `AVRPawn` 이 `IAISightTargetInterface` 구현해 자세별 시야 거리(0.8·0.6·0.35 × 3000cm) 한 곳에서 제한(적·NPC 공용) / M4 몸 연속 변형 = 메시를 발 피벗으로 앞으로 눕히기(`BodyLeanDegPerRatio` 110°, 상한 68°) + 발을 뒤로 빼 머리 본을 HMD 에 맞춤, PBIK 병용 — 기하식은 머리 본이 15cm 높게 남아 PIE 실측 곡선으로 대체(오차 1.5~6.4cm). `/federated` 로 워크트리에서 구현 후 메인 체리픽. 헤드셋 확인 완료(DoList 2-10) — 로그에서 찾은 두 결함 수정: 쭈그리기→서기→허리 숙이기 한 프레임 깜박임(쭈그리기에서 바로 Bending), 편하게 선 비율이 0.94~0.95 라 `BendRatioMax` 0.93 은 고개만 숙여도 걸림 → 0.88/복귀 0.91.
 
 - [x] **NPC LLM·Jev 개선 3~5 (2026-10-08, `08b97bd3`·`16c07bc5`·`ef3ee85d`)** — Stage2 를 클라우드 `gemma4:31b-cloud`(4s 타임아웃·로컬 qwen3:8b 폴백·2회 실패 90s 쿨다운, `STAGE2_USE_CLOUD=0` 으로 끔), e4b keep_alive 30m + 240s 핑. Jev 운영 체크포인트 git 추적·기동 워밍·`/api/ws/status` jev 필드(`JEV_DEVICE`). 생성기 story_goal KeyError 수리·스모크 테스트, stage1_bench `--suite/--prod-tail/--seed-history` 파티·POI 케이스(Moca 기록 백업·원복). 반복 발화 문장 단위 감지 → 1회 재생성 → 그래도 반복이면 반복 문장 제거(PIE: Guard "성문은 여전히…" 제거 확인). 남은 것: v4 재학습 여부는 bench(파티 꼬리 없으면 JoinParty 0/5) 보고 결정, Guard 기록에 기존 반복 4줄 잔존.
-- [x] **NPC 대화 파티 의도 매핑·기록 정리 (2026-10-08, `945c6468`)** — "같이 가자"·"일행이 되어줘" → JoinParty(호감도 게이트 통과), 파티원 "멈춰" → Idle(해산 방지), "헤어지자" → LeaveParty. 목적지 붙은 이동 요청·부정·명사 단독 제외. 대화 기록에서 Event 분리, 파티 지시 꼬리는 키워드·파티원일 때만. 제안서 `docs/PROPOSAL_npc_llm_jev.md`. PIE 확인 완료. "파인튜닝 SLM 이 JoinParty·target_poi 를 내지 않음" Todo 는 서버 보정으로 해소(POI target_poi 는 bench 4/5).
+- [x] **NPC 대화 파티 의도 매핑·기록 정리 (2026-10-08, `945c6468`)** — "같이 가자"·"일행이 되어줘" → JoinParty(호감도 게이트 통과), 파티원 "멈춰" → Idle(해산 방지), "헤어지자" → LeaveParty. 목적지 붙은 이동 요청·부정·명사 단독 제외. 대화 기록에서 Event 분리, 파티 지시 꼬리는 키워드·파티원일 때만. 제안서 `docs/llm/PROPOSAL_npc_llm_jev.md`. PIE 확인 완료. "파인튜닝 SLM 이 JoinParty·target_poi 를 내지 않음" Todo 는 서버 보정으로 해소(POI target_poi 는 bench 4/5).
 
 - [x] **신체 측정 M2 (2026-10-08, `80f93d31`)** — 설정 → "신체 측정", 왼손 X 로 4단계(키·T자세 팔 벌림·오른손 컨트롤러 무릎·엉덩이) 측정, 큰 안내 텍스트(단계·결과·실패·취소), `UBodyMeasureSaveGame` 별도 슬롯, 저장값 있으면 2초 안정화 후 저장 키로 자동 보정 대체(저장·로드 모두 범위 검증). 팔·무릎·엉덩이는 저장·표시만 — 눕힌 몸 비례 연결은 `SPEC_body_measure_prone` M0·M1(미착수) 뒤. 헤드셋 확인 DoList 2-9.
 

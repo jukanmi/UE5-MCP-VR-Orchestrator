@@ -64,7 +64,7 @@
 
 ## 시드 데이터 페르소나 규칙 (2026-08-04)
 고정 루프 템플릿의 동일 대사 반복·전역 유사도 과적용으로 NPC별 정당한 반응 삭제·Moca 연막탄 획일화가 있었다.
-1. `docs/CORE_NPC_LOREBOOK.md` 가 코어 5인(Elara·Skadi·Moca·James·Guard)의 페르소나 기준.
+1. `docs/llm/CORE_NPC_LOREBOOK.md` 가 코어 5인(Elara·Skadi·Moca·James·Guard)의 페르소나 기준.
 2. 같은 상황이라도 NPC 가 다르면 독자 바리에이션으로 인정, 100% 보존.
 3. Moca 는 Strict Non-Combatant(`Attack` 금지). 4단계 비전투 응대: `Dodge/Flee` → `Sing/Comfort` → `UseItem(Bandage)/HandObject(HerbTea)` → 고립 시 `UseItem(SmokeBomb)`.
 4. `gold.speech_hint` 에 설명용 메타 텍스트 금지 — 인물이 직접 말하는 인게임 대사만.

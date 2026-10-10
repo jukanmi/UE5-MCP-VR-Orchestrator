@@ -36,7 +36,7 @@
 
 | 순위 | 출처 | 역할 | 비고 |
 |:--:|---|---|---|
-| 1 | `docs/CORE_NPC_LOREBOOK.md` **아이템 친화도** | **정본 ID** | 세계관·NPC 역할과 정합. 코어 5인 + 보조 10인 |
+| 1 | `docs/llm/CORE_NPC_LOREBOOK.md` **아이템 친화도** | **정본 ID** | 세계관·NPC 역할과 정합. 코어 5인 + 보조 10인 |
 | 2 | `finetune/data/synth/generated/scenarios.yaml` 빈도 | **런타임 충실도** | v3 SLM 이 실제로 뱉는 어휘. 빈도 = 등장 확률 |
 | 3 | 코드 요구 (`EItemType` / `EEquipmentSlot` / `bHasDurability` 분기) | **경로 커버리지** | 미사용 enum 값은 행 없이 방치 금지 |
 | 4 | 임의 창작 | 최후 | 1~3 에 근거 없으면 추가하지 말 것 |

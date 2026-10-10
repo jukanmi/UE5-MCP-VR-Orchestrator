@@ -1,7 +1,7 @@
 # 스토리 시나리오 초안 (Story Scenario Draft)
 
 > **프로젝트**: UE5_MCP_VR (OmniAgent Orchestrator)  
-> **시스템 연동**: [SPEC_story_director.md](SPEC_story_director.md) (`app/story/content/main.yaml` 비트 시트 매핑 전제)  
+> **시스템 연동**: [SPEC_story_director.md](../done/SPEC_story_director.md) (`app/story/content/main.yaml` 비트 시트 매핑 전제)  
 > **작성일**: 2026-09-18  
 
 ---

@@ -1,6 +1,6 @@
 <!--
 File: README.md
-Purpose: 프로젝트 최상위 개요. 상세 문서는 docs/index.html, 세션 메모는 docs/Memo.md, 로드맵은 docs/ROADMAP.md.
+Purpose: 프로젝트 최상위 개요. 상세 문서는 docs/index.html, 세션 메모는 docs/Memo.md, 로드맵은 docs/archive/ROADMAP.md.
 -->
 
 # OmniAgent VR System (UE5_MCP_VR)
@@ -114,7 +114,7 @@ python -m uvicorn OmniAgent_VR_System.CognitiveEngine.app.main:app --port 8000
 | 위치 | 내용 |
 | :--- | :--- |
 | `docs/index.html` | 통합 기술 문서(아키텍처·파이프라인·Envelope, Mermaid) — 브라우저로 열기 |
-| `docs/ROADMAP.md` | 통합 로드맵(RAG/VR/멀티플레이) |
+| `docs/archive/ROADMAP.md` | 통합 로드맵(RAG/VR/멀티플레이) |
 | `docs/Memo.md` | 세션 간 인수인계 메모(Todo/Done/Handoff) |
 | `docs/주간기록/` | 주차별 개발 일지 |
 | `CLAUDE.md` | 개발 규칙·컨벤션 |

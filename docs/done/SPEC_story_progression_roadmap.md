@@ -3,7 +3,7 @@
 
 > **문서 상태**: 확정 (2026-09-18)  
 > **적용 대상**: `feature/story-director` 브랜치  
-> **참조 문서**: `docs/STORY_SCENARIO.md`, `docs/SPEC_story_director.md`, `AGENTS.md`  
+> **참조 문서**: `docs/story/STORY_SCENARIO.md`, `docs/SPEC_story_director.md`, `AGENTS.md`  
 > **핵심 원칙**: 
 > 1. 결정론적 상태 머신(`app/story`)이 뼈대를 잡고, LLM(디렉터 및 Stage 2 플래너)은 동적 연출과 행동 계획을 담당한다.
 > 2. Elara를 비롯한 주역 NPC는 레벨 시작 시 우리에 정적으로 감금하지 않고, **Story Directive와 Stage 2 플래너를 통해 시나리오 전개에 맞춰 동적으로 이동 및 상태를 제어**한다.

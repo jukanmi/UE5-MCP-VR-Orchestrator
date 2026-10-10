@@ -109,7 +109,7 @@ def _lacks(*action_types: str):
     return lambda acts: not any(a.get("type") in action_types for a in acts)
 
 
-# 파티·POI 케이스 (2026-10-08 추가, docs/PROPOSAL_npc_llm_jev.md P1·P2). 자동 채점 — check(actions)->bool.
+# 파티·POI 케이스 (2026-10-08 추가, docs/llm/PROPOSAL_npc_llm_jev.md P1·P2). 자동 채점 — check(actions)->bool.
 #  party=True: 대상 NPC 가 이미 일행. pois=True: 프롬프트에 known_pois 를 싣는다. sentiment: 호감도 줄 덮어쓰기.
 #  corrected=False: 서버 보정 채점 제외(거절은 운영에서 호감도 게이트가 JoinParty 를 거르므로 원시 출력만 본다).
 NEW_CASES = [
