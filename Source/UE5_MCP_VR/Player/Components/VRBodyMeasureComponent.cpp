@@ -1,7 +1,7 @@
-#include "Core/BP/VRBodyMeasureComponent.h"
+#include "Player/Components/VRBodyMeasureComponent.h"
 
-#include "Core/BP/VRHandComponent.h"
-#include "Core/BP/VRPawn.h"
+#include "Player/Components/VRHandComponent.h"
+#include "Player/BP/VRPawn.h"
 #include "Core/Save/BodyMeasureSaveGame.h"
 #include "Engine/Engine.h"
 #include "HeadMountedDisplayTypes.h"

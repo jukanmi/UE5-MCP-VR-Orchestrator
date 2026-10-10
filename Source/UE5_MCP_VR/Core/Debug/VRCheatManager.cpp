@@ -1,7 +1,7 @@
 #include "Core/Debug/VRCheatManager.h"
 
-#include "Core/BP/VRPawn.h"
-#include "Core/BP/VRPlayerUIComponent.h"
+#include "Player/BP/VRPawn.h"
+#include "Player/Components/VRPlayerUIComponent.h"
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
 #include "Inventory/BP/DroppedItemBase.h"

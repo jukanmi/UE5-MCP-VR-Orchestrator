@@ -1,9 +1,9 @@
-#include "Core/BP/VRHandComponent.h"
+#include "Player/Components/VRHandComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Core/BP/VRPawnAnimInstance.h"
+#include "Player/BP/VRPawnAnimInstance.h"
 #include "Core/Types/CollisionChannels.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"

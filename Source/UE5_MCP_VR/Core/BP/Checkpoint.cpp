@@ -1,5 +1,5 @@
 #include "Core/BP/Checkpoint.h"
-#include "Core/BP/VRPawn.h"
+#include "Player/BP/VRPawn.h"
 
 ACheckpoint::ACheckpoint()
 {

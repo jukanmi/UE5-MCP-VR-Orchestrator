@@ -1,5 +1,5 @@
-#include "Core/BP/VRPawn.h"
-#include "Core/BP/VRBodyMeasureComponent.h"
+#include "Player/BP/VRPawn.h"
+#include "Player/Components/VRBodyMeasureComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"

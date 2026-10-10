@@ -1,8 +1,8 @@
-#include "Core/BP/VRMeleeComponent.h"
+#include "Player/Components/VRMeleeComponent.h"
 
 #include "Core/BP/CombatCharacter.h"
-#include "Core/BP/VRHandComponent.h"
-#include "Core/BP/VRPawn.h"
+#include "Player/Components/VRHandComponent.h"
+#include "Player/BP/VRPawn.h"
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Types/GameStateData.h"
 #include "Engine/Engine.h"

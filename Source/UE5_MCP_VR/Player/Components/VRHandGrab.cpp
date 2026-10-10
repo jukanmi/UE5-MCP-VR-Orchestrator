@@ -1,8 +1,8 @@
-#include "Core/BP/VRHandComponent.h"
+#include "Player/Components/VRHandComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Core/BP/VRPawnAnimInstance.h"
+#include "Player/BP/VRPawnAnimInstance.h"
 #include "Engine/OverlapResult.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"

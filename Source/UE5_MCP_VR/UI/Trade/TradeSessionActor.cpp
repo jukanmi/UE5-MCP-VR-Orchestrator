@@ -2,7 +2,7 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "UI/Components/ItemTooltipUIComponent.h"
-#include "Core/BP/VRPawn.h"
+#include "Player/BP/VRPawn.h"
 #include "Core/Utils/EngineShapes.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
