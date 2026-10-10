@@ -17,7 +17,7 @@
 | C++ | `Inventory/Components/InventoryComponent.cpp` | `AttachEquipmentMesh` 시 형상 유형을 AnimBP 에 전달(소켓 부착 자체는 기존 그대로). NPC 는 `ExecuteHandObject` → `EquipItem` → `AttachEquipmentMesh` 경로다. `AttachItemToHand` 는 플레이어 잡기·`TakeItemToHand` 전용이라 여기에 걸면 NPC 에선 안 불린다 |
 | C++ | `NPC/Struct/NPCActionTypes.h` 외 | 붙잡기 `EAction` 추가(4곳 규칙, `/add-eaction`) |
 | C++ | `NPC/Action/NPCActionComponent.{h,cpp}` | `ReflexRules` 에 붙잡기 룰 추가, 액션 실행(손 IK 타깃 = `AVRPawn::GetHandLocation()`) |
-| C++ | `Core/BP/VRPawn.{h,cpp}` | 붙잡힘 상태: 스틱 이동·대시 잠금(`SeatedFurniture` 착석 패턴), 손 속도로 뿌리치기 판정 |
+| C++ | `Player/BP/VRPawn.{h,cpp}` | 붙잡힘 상태: 스틱 이동·대시 잠금(`SeatedFurniture` 착석 패턴), 손 속도로 뿌리치기 판정 |
 
 ## 결정 사항
 

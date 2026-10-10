@@ -13,7 +13,7 @@
 | 층 | 파일 | 변경 |
 |---|---|---|
 | C++ | `NPC/Components/NPCRagdollComponent.{h,cpp}` | 잡힘 상태 추가: 잡힌 동안 안착 감지(`TickSettleDetection`)·기상(`BeginGetUp`) 억제, 놓으면 재개. 팔 부분 물리 블렌드(`Flinch` 패턴 재사용) |
-| C++ | `Core/BP/VRPawn.{h,cpp}` | 그립 지점 PD constraint, 릴리즈 시 손 속도 임펄스(`ThrowVelocityScale` 패턴) |
+| C++ | `Player/BP/VRPawn.{h,cpp}` | 그립 지점 PD constraint, 릴리즈 시 손 속도 임펄스(`ThrowVelocityScale` 패턴) |
 | C++ | 던지기 충돌 피해(자리 미정) | 던져진 NPC 충돌 속도가 임계 이상이면 기존 `TakeDamage` 경로로 피해 |
 | 에셋 | NPC 스켈레탈 메시 | 겨드랑이 트리거 존 |
 
