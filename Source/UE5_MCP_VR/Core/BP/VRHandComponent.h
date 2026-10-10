@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Containers/StaticArray.h"
 #include "HeadMountedDisplayTypes.h"
 #include "InputCoreTypes.h"
 #include "Inventory/BP/ItemDataAsset.h"   // EEquipmentSlot
@@ -184,10 +185,10 @@ public:
     bool HandOverToOtherHand();
 
     /** 인벤토리에 기록되지 않고 제약만 건 두 번째 손인가. */
-    bool IsSecondaryGrab() const { return bGrabSecondary; }
+    bool IsSecondaryGrab() const { return Grab.bSecondary; }
 
     /** 지금 제약으로 쥔 물건. */
-    ADroppedItemBase* GetGrabbedItem() const { return GrabbedItem.Get(); }
+    ADroppedItemBase* GetGrabbedItem() const { return Grab.Item.Get(); }
 
     /** 매 틱 — 쥔 아이템이 다른 경로(수납·소모)로 손을 떠났으면 남은 제약을 푼다. 쥐고 있으면 마찰 한계를 갱신하고,
      *  한계를 넘어 밀린 만큼 목표를 옮기며(재고착), 너무 밀리면 놓친다. */
@@ -207,8 +208,8 @@ public:
     bool IsGesturing() const { return bGesture; }
 
     /** 접촉 쥐기 중인가와 그 아이템. */
-    bool IsContactHeld() const { return bContactHeld; }
-    ADroppedItemBase* GetContactItem() const { return ContactItem.Get(); }
+    bool IsContactHeld() const { return Contact.bHeld; }
+    ADroppedItemBase* GetContactItem() const { return Contact.Item.Get(); }
 
     /** 보이는 손(물리 손바닥) 월드 위치. 시뮬레이션 전엔 앵커. */
     FVector GetVisibleLocation() const;
@@ -222,6 +223,12 @@ public:
 private:
     UVRPawnAnimInstance* GetAnim() const;
     UInventoryComponent* GetInventory() const;
+
+    /** InitPhysics 단계 — 물리 손바닥 바디와 그 바디를 앵커 쪽으로 끄는 드라이브 제약. */
+    void CreatePalm(AActor* Owner, const TCHAR* Side);
+
+    /** InitPhysics 단계 — 손바닥에 용접하는 손바닥 상자·손가락 캡슐. 치수는 ApplyColliderSizes 가 넣는다. */
+    void CreateHandShapes(AActor* Owner, const TCHAR* Side);
 
     /** 바디를 목표 위치·회전으로 끄는 드라이브 목표 갱신(목표 속도 앞먹임 포함). 너무 멀어지면(대쉬·리스폰) 목표로 순간이동.
      *  @return 갱신 전 바디↔목표 거리(cm) */
@@ -255,14 +262,15 @@ private:
     /** 핀치 또는 주먹으로 사이에 낀 아이템. OutPartner = 핀치면 엄지의 짝 손가락(1~4), 주먹이면 손바닥(5). */
     ADroppedItemBase* FindGraspedItem(int32& OutPartner) const;
 
-    /** 손가락 하나의 캡슐(끝마디 먼저, 가운데 마디) 중 물건 표면에서 Margin(cm) 안에 있는 것. 없으면 null. */
-    const UCapsuleComponent* FingerTouching(int32 Finger, const UPrimitiveComponent* Item, float Margin) const;
+    /** 손가락별(0 = 엄지) 물건 표면에서 Margin(cm) 안에 닿은 캡슐(끝마디 먼저, 가운데 마디). 안 닿은 손가락은 null. */
+    using FFingerTouches = TStaticArray<const UCapsuleComponent*, 5>;
+    FFingerTouches TouchingFingers(const UPrimitiveComponent* Item, float Margin) const;
 
     /** 손바닥 모양이 물건 표면에서 Margin(cm) 안에 있는지. */
     bool IsPalmTouching(const UPrimitiveComponent* Item, float Margin) const;
 
     /** 마찰 한계 — 이동 최대 힘 μ·ΣN, 회전 최대 토크 μ·Σ(Nᵢ·rᵢ), 쥔 중심(접촉점 가운데).
-     *  bContact = 손가락 접촉(핸드트래킹, Partner 는 ContactPartner 규약), 아니면 컨트롤러 그립값으로 손바닥 중심에서 감싸 쥔 것으로 본다. */
+     *  bContact = 손가락 접촉(핸드트래킹, Partner 는 Contact.Partner 규약), 아니면 컨트롤러 그립값으로 손바닥 중심에서 감싸 쥔 것으로 본다. */
     void ComputeGrip(const ADroppedItemBase* Item, bool bContact, int32 Partner, float& OutForce, float& OutTorque, FVector& OutCenter) const;
 
     /** 미끄러져 놓쳤다 — 던지지 않고 그 자리에 떨어뜨린다. 다른 손이 같이 쥐고 있으면 그 손에 넘기고 이 손만 놓는다. */
@@ -290,23 +298,25 @@ private:
     UPROPERTY(Transient)
     TArray<TObjectPtr<UCapsuleComponent>> FingerBodies;
 
-    /** 물리 쥐기 제약과 제약으로 쥔 아이템. */
+    /** 물리 쥐기 제약 — 쥘 때 손바닥 ↔ 아이템을 잇고, 놓을 때 끊는다. */
     UPROPERTY(Transient)
     TObjectPtr<UPhysicsConstraintComponent> GrabConstraint;
-    TWeakObjectPtr<ADroppedItemBase> GrabbedItem;
 
-    /** 쥐기 방식(접촉이면 짝)·제약 프레임(손바닥·아이템 기준)·드라이브 강성·감쇠·지금 드라이브 목표. 쥘 때 정한다. */
-    bool bGrabContact = false;
-    int32 GrabPartner = INDEX_NONE;
-    FTransform GrabFrameInPalm;
-    FTransform GrabFrameInItem;
-    float GrabLinStiffness = 0.f, GrabLinDamping = 0.f, GrabAngStiffness = 0.f, GrabAngDamping = 0.f;
-    FVector GrabLinTarget = FVector::ZeroVector;
-    FQuat GrabAngTarget = FQuat::Identity;
-
-    /** 두 번째 손(제약만 걸고 인벤토리 기록은 다른 손), 직전 틱에 계산한 마찰 힘 한계(양손 합산용). */
-    bool bGrabSecondary = false;
-    float LastGripForce = 0.f;
+    /** 제약으로 쥔 상태. GrabWithPhysics 가 채우고 ReleaseGrab 이 비운다. */
+    struct FGrabState
+    {
+        TWeakObjectPtr<ADroppedItemBase> Item;
+        bool bContact = false;          // 접촉 쥐기(손가락 힘) — 아니면 컨트롤러 그립값
+        int32 Partner = INDEX_NONE;     // 접촉 쥐기 짝(Contact.Partner 규약)
+        bool bSecondary = false;        // 두 번째 손 — 제약만 걸고 인벤토리 기록은 다른 손
+        float LastForce = 0.f;          // 직전 틱 마찰 힘 한계(양손 합산용)
+        FTransform FrameInPalm;         // 제약 프레임 — 손바닥·아이템 기준
+        FTransform FrameInItem;
+        float LinStiffness = 0.f, LinDamping = 0.f, AngStiffness = 0.f, AngDamping = 0.f;
+        FVector LinTarget = FVector::ZeroVector;   // 지금 드라이브 목표(재고착으로 옮겨 간다)
+        FQuat AngTarget = FQuat::Identity;
+    };
+    FGrabState Grab;
 
     /** 컨트롤러 그립 아날로그값, 손가락별 평활화한 쥐는 정도(라디안). */
     float GripValue = 0.f;
@@ -325,8 +335,12 @@ private:
     FVector PrevTarget = FVector::ZeroVector;
     bool bHasPrevTarget = false;
 
-    /** 접촉 쥐기 상태와 사이에 낀 아이템·짝(엄지의 짝 손가락 1~4, 주먹 5). 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
-    bool bContactHeld = false;
-    TWeakObjectPtr<ADroppedItemBase> ContactItem;
-    int32 ContactPartner = INDEX_NONE;
+    /** 접촉 쥐기 — 손가락 사이에 낀 아이템과 짝(엄지의 짝 손가락 1~4, 주먹 5). 쥐기가 실패·끊겨도 손을 펼 때까지 유지해 매 틱 다시 쥐지 않는다. */
+    struct FContactGrab
+    {
+        bool bHeld = false;
+        TWeakObjectPtr<ADroppedItemBase> Item;
+        int32 Partner = INDEX_NONE;
+    };
+    FContactGrab Contact;
 };

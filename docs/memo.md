@@ -137,6 +137,9 @@ Hunyuan3D 생성 메시(`/Game/Core/Mesh/Items`, 216개)는 품질 문제로 전
 
 ## Done
 
+- [x] **손 컴포넌트 구조 정리 (2026-10-10, Develop)** — 손가락 접촉 판정 함수화. `VRHandComponent::FingerTouching(손가락 하나)` 를 4곳에서 손가락 루프로 부르던 것을 `TouchingFingers(Item, Margin)` → 5칸 배열 한 번 계산으로 교체(접촉 쥐기 유지·`FindGraspedItem`·`ComputeGrip`). `FindGraspedItem` 은 핀치·주먹 판정이 검지~새끼를 각각 다시 오버랩하던 것(최대 9회)이 5회로. 판정 규칙 동일, `verify all` 통과. 헤드셋에서 핀치·주먹 접촉 쥐기 회귀 확인 필요.
+  이어서 가독성 정리: `InitPhysics` 100줄 → `CreatePalm`·`CreateHandShapes`·`MakeDriveConstraint`(손바닥·쥐기 제약 공용 6축 Free + 드라이브 설정) 로 쪼갬, 첫 틱 `DriveBody` 가 덮어쓰던 손바닥 드라이브 초기값 제거. 쥐기 멤버 13개 → `FGrabState Grab`(ReleaseGrab = `Grab = FGrabState()`), 접촉 쥐기 3개 → `FContactGrab Contact`. cpp 1008줄을 책임별 3파일로 분할(클래스는 그대로): `VRHandComponent.cpp`(생성·트래킹·드라이브·손 모양, 465줄) / `VRHandGrab.cpp`(제스처·접촉 쥐기·마찰 쥐기, 443줄) / `VRHandNPC.cpp`(NPC 투영·밀기, 123줄). 익명 namespace 헬퍼는 쓰는 파일로 이동(유니티 빌드 이름 충돌 없음).
+
 - [x] **C++ 중복 코드 정리 2건 (2026-10-10, Develop)** — jscpd(6줄·40토큰 이상)로 13건 탐지 → 2건 정리, 13→8건(1.14→0.6%). ① 적·주민 AI 컨트롤러 시야 감지 설정(생성자·OnPossess 4곳) → `Core/Utils/SightPerception.h` `Configure(..., bDefaults)` ② `StorySubsystem::ExecuteEvent` 의 `spawn_enemy/item/npc` 세 갈래 → `ResolveSpawn<T>`·`SpawnAt`. ②는 실패 경고가 세 갈래 모두 같은 형식으로 나오게 됨(전엔 npc 는 무음, item 은 영문). 남긴 것: Enemy/Villager 로코모션·TakeDamage 뒷부분(순서·조건 다름, 올리려면 UPROPERTY 이전 필요), 투사체 2종, 위젯 가드, POI 필터 루프. `verify all` 통과.
 
 - [x] **TakeDamage 공식 중복 정리 (2026-10-10, Develop)** — 4곳(`EnemyCharacter`·`VillagerCharacter`·`UNPCStateComponent::ApplyDamage`·`AVRPawn`)의 `max(0, Raw−Defense)×배율` 을 `FCombatStats::Mitigate(Raw, Multiplier=1)` 로 모음. 동작 동일. 중간 클래스안(②)은 기각 — 공유되는 건 공식 한 줄뿐이고 나머지 반응(반격·도망·인지·막기)은 클래스마다 달라 훅만 늘어남. `verify all` 통과.
