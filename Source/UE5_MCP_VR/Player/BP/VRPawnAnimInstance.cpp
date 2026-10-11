@@ -277,7 +277,7 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
     //   고정 안 된 끝 관절은 계속 트래킹을 따라 굽다가 닿으면 멈춘다(감싸 쥔 모양).
     //   고정한 관절은 실제 손가락이 고정 각도보다 UnfreezeSlack 넘게 펴지면 푼다. 근처에 장애물이 없으면 모두 푼다.
     // 충돌은 그대로 — 고정은 캡슐이 물체 속으로 순간이동하지 않게 할 뿐이다.
-    static constexpr float UnfreezeSlack = 0.087f;   // 5°(라디안)
+    static constexpr float UnfreezeSlack = 0.f;   // 0°(라디안)
     static constexpr int32 ContactSearchIters = 6;   // 이분 탐색 횟수 — 한 프레임 굽힘의 1/64 까지 좁힌다
     const bool bNoObstacles = Obstacles.IsEmpty() && Bones.IsEmpty();
     auto Curl = [](const FQuat& Local) { return FQuat::Identity.AngularDistance(Local); };
