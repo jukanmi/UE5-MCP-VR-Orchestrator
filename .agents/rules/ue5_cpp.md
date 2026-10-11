@@ -65,3 +65,32 @@ globs: Source/**/*.{h,cpp}
 - **BP 그래프 상한 ~20노드**: 넘으면 함수 분리 또는 C++ 이관. Tick 안에서 Cast/ForEach 금지 — `BeginPlay`에서 캐시.
 - **캐스팅 대신 인터페이스**: BP 간 통신은 `BPI_*` 인터페이스 또는 이벤트 디스패처. 구체 클래스 Cast 체인 금지.
 - **UI 프로파일**: `stat slate`, Widget Reflector. VR 목표 UI 예산 < 2ms.
+
+---
+
+## 7. C++ 코드 스타일
+신규·수정 코드에만 적용. 기존 코드 일괄 재정렬 금지.
+
+- **네이밍**: 타입·함수·변수 모두 `PascalCase`. 접두어 `U`/`A`/`F`/`E`/`I`/`T`/`S`. bool 은 `bFoo`. 지역 변수·인자도 `PascalCase`.
+- **들여쓰기**: 탭. 중괄호는 **Allman**(여는 `{` 새 줄). 줄 길이 제한 없음(가독성 기준).
+- **예외 금지·RTTI 금지**는 UE 도 동일. 캐스트는 `Cast<T>`/`ExactCast<T>`, 값 캐스트는 `static_cast`.
+- **컨테이너·문자열**: `TArray`/`TMap`/`FString`/`FName`/`FText` 사용, `std::` 컨테이너 금지. 표시용은 `FText`, 식별자는 `FName`.
+- **로그**: `UE_LOG` + 모듈별 `DEFINE_LOG_CATEGORY`. `printf`/`std::cout` 금지.
+- **Include What You Use**: 필요한 헤더를 직접 include. `.h` 는 단독 include 가능(self-contained). 순서: 짝 헤더 → 엔진 → 프로젝트 → `.generated.h` 마지막.
+- **전방 선언 우선(헤더)**: `.h` 에서는 포인터·참조만 쓰면 `class UFoo;` 전방 선언, include 는 `.cpp` 로.
+- **헤더에서 `using namespace` 금지.**
+- **지역 변수는 쓰기 직전에 선언·초기화.** 선언만 하고 나중에 대입 금지.
+- **`const` 적극**: 변경 안 하는 인자·지역·멤버 함수. `constexpr`/`static constexpr` 가능한 곳 전부.
+- **`auto` 는 타입이 우변에 드러나거나 장황할 때만** (`auto* Comp = FindComponentByClass<UFoo>()` 는 OK, `auto X = Foo()` 는 금지).
+- **`nullptr`** 만. `NULL`/`0` 포인터 금지.
+- **함수는 짧게(~40줄)**. 넘으면 책임별 분리. 오버로딩은 의미가 같을 때만.
+- **입력 인자 먼저, 출력 나중.** 출력은 반환값 우선, 불가피하면 `&` 출력 인자.
+- **단일 인자 생성자는 `explicit`.**
+- **상속보다 합성**: 컴포넌트로 쪼개는 UE 방식과 일치. `override` 항상 명시.
+- **매크로 지양**: `constexpr`·`inline`·`enum class` 우선. UE 리플렉션 매크로(`UPROPERTY` 등)는 예외.
+- **TODO 형식**: `// TODO(이름): 내용`.
+- `UObject` 는 GC 가 소유 → 멤버 포인터에 **`UPROPERTY()`** 필수(없으면 GC 후 댕글링). 소유권 전달 없음, `unique_ptr` 금지.
+- 비 `UObject` 는 `TUniquePtr`/`TSharedPtr`/`TSharedRef`. `TWeakObjectPtr` 로 관찰만 할 때 사용. raw `new`/`delete` 금지.
+- 사용 전 `IsValid()` 로 검사(§5).
+- 한국어. **무엇을·왜**만 적고 "어떻게"는 코드로 보인다면 생략.
+- 공개 함수·`UPROPERTY` 는 한 줄 설명(툴팁 겸용이면 `Tooltip`/`///` 사용).
