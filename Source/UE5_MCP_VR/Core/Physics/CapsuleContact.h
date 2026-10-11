@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 
 class ACombatCharacter;
+class UBoxComponent;
+class UCapsuleComponent;
 class UWorld;
 struct FNPCWorldCapsule;
 
@@ -22,6 +24,13 @@ namespace CapsuleContact
 {
     /** 관통 해소 반복 횟수 상한 — 밀린 곳에서 다른 캡슐에 박혔을 수 있어 몇 번 되풀이한다. */
     constexpr int32 MaxDepenetrationIters = 4;
+
+    /**
+     * 상자·캡슐 컴포넌트를 부모 기준 로컬 선분으로 근사해 OutSegments 에 덧붙인다(상대 변환 사용 — 부모 = 형상이 붙은 바디).
+     * 상자는 긴 축을 따라 짧은 축 양 끝에 선분 두 줄(반지름 = Z 두께 절반), 캡슐은 축 선분 그대로.
+     */
+    void AppendSegments(TArrayView<const TObjectPtr<UBoxComponent>> Boxes, TArrayView<const TObjectPtr<UCapsuleComponent>> Capsules,
+                        TArray<FContactSegment>& OutSegments);
 
     /** Location 에서 Reach(cm) 안으로 메시 경계가 걸친 전투 캐릭터들의 월드 뼈 캡슐. OutOwners 는 OutBones 와 같은 순서.
      *  뼈 캡슐 치수가 없는 NPC 는 빠진다(그 NPC 는 몸 캡슐이 막는다). */

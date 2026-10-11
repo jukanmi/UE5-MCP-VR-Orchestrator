@@ -1,6 +1,7 @@
 #include "Player/BP/VRPawnAnimInstance.h"
 #include "Player/BP/VRPawn.h"
 #include "Player/Components/VRHandComponent.h"
+#include "Core/Physics/NPCBoneCapsuleSet.h"
 #include "AnimationRuntime.h"
 #include "TwoBoneIK.h"
 #include "CollisionShape.h"
@@ -10,6 +11,8 @@
 #include "HeadMountedDisplayTypes.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "Rendering/SkeletalMeshLODRenderData.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogFingerContact, Log, All);
 
 namespace
 {
@@ -256,7 +259,8 @@ void UVRPawnAnimInstance::FingerFK(const FHandRig& Rig, const FVector& HandPos, 
     }
 }
 
-void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, TConstArrayView<const UPrimitiveComponent*> Obstacles, const FTransform& PalmWorld)
+void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, TConstArrayView<const UPrimitiveComponent*> Obstacles,
+                                                 TConstArrayView<FNPCWorldCapsule> Bones, const FTransform& PalmWorld)
 {
     // 손바닥 관절 기준(= 손바닥 바디 기준) 상대 좌표로 메시 손가락을 FK 한다. 트래킹 관절만 쓰고 메시·물리 결과는 안 쓴다 —
     // 메시 손(FBIK, 한 프레임 늦음)에서 출발하면 손이 밀릴 때 손끝 모양이 손바닥 기준으로 흔들려 표면에 박혔다 빠졌다 떤다.
@@ -269,19 +273,31 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
 
     // 감싸기 — 실제 손은 물체가 없어 끝까지 오므라지지만 가상 물체에 막힌 손가락 캡슐은 손바닥에 용접돼 따로 못 휜다.
     // 트래킹대로 물체 속에 옮기면 엔진이 손 전체를 밀어내고 다음 틱에 또 박혀 버벅인다. 그래서 관절별로 고정한다:
-    //   가운데 마디가 닿으면 첫째·둘째 관절, 끝마디가 닿으면 세 관절 모두를 직전 프레임(안 닿았던) 각도에 고정 →
+    //   가운데 마디가 닿으면 첫째·둘째 관절, 끝마디가 닿으면 세 관절 모두를 표면에 닿는 각도에 고정 →
     //   고정 안 된 끝 관절은 계속 트래킹을 따라 굽다가 닿으면 멈춘다(감싸 쥔 모양).
-    //   고정한 관절은 실제 손가락이 고정 각도보다 UnfreezeSlack 넘게 펴지면 푼다. 근처에 물체가 없으면 모두 푼다.
+    //   고정한 관절은 실제 손가락이 고정 각도보다 UnfreezeSlack 넘게 펴지면 푼다. 근처에 장애물이 없으면 모두 푼다.
     // 충돌은 그대로 — 고정은 캡슐이 물체 속으로 순간이동하지 않게 할 뿐이다.
-    static constexpr float UnfreezeSlack = 0.087f;   // 5°(라디안)
+    static constexpr float UnfreezeSlack = 0.f;   // 0°(라디안)
+    static constexpr int32 ContactSearchIters = 6;   // 이분 탐색 횟수 — 한 프레임 굽힘의 1/64 까지 좁힌다
+    const bool bNoObstacles = Obstacles.IsEmpty() && Bones.IsEmpty();
     auto Curl = [](const FQuat& Local) { return FQuat::Identity.AngularDistance(Local); };
-    auto Hits = [&](const FVector& Center, const FQuat& Rotation, const FCollisionShape& Shape)
+    auto Hits = [&](const FVector& Center, const FQuat& Rotation, int32 ShapeIdx)
     {
         const FVector WorldCenter = PalmWorld.TransformPosition(Center);
         const FQuat WorldRotation = PalmWorld.GetRotation() * Rotation;
+        const float Radius = Rig.ShapeRadius[ShapeIdx];
+        const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, Rig.ShapeHalfHeight[ShapeIdx]);
         for (const UPrimitiveComponent* Obstacle : Obstacles)
         {
             if (Obstacle->OverlapComponent(WorldCenter, WorldRotation, Shape)) return true;
+        }
+        // NPC 뼈 캡슐 — 컴포넌트가 아니라 선분이라 선분 대 선분 거리로 본다.
+        const FVector HalfAxis = WorldRotation.GetAxisZ() * FMath::Max(Rig.ShapeHalfHeight[ShapeIdx] - Radius, 0.f);
+        for (const FNPCWorldCapsule& Bone : Bones)
+        {
+            FVector OnFinger, OnBone;
+            FMath::SegmentDistToSegmentSafe(WorldCenter - HalfAxis, WorldCenter + HalfAxis, Bone.A, Bone.B, OnFinger, OnBone);
+            if (FVector::DistSquared(OnFinger, OnBone) < FMath::Square(Radius + Bone.Radius)) return true;
         }
         return false;
     };
@@ -303,7 +319,7 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
         // 실제 손가락이 고정 각도보다 펴졌으면 그 관절을. 감싸 쥔 동안은 실제 손가락이 물체 속까지 오므라져 계속 겹친다.
         bool bAnyFrozen = false;
         for (int32 Segment = 0; Segment < 3; ++Segment) bAnyFrozen |= Rig.bFrozen[Finger * 3 + Segment];
-        bool bTrackedClear = Obstacles.IsEmpty();
+        bool bTrackedClear = bNoObstacles;
         if (bAnyFrozen && !bTrackedClear)
         {
             FVector TrackedCenters[ShapesPerFinger];
@@ -312,8 +328,7 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
             bTrackedClear = true;
             for (int32 Shape = 0; Shape < ShapesPerFinger && bTrackedClear; ++Shape)
             {
-                const int32 j = ShapeIndex(Finger, Shape);
-                bTrackedClear = !Hits(TrackedCenters[Shape], TrackedRotations[Shape], FCollisionShape::MakeCapsule(Rig.ShapeRadius[j], Rig.ShapeHalfHeight[j]));
+                bTrackedClear = !Hits(TrackedCenters[Shape], TrackedRotations[Shape], ShapeIndex(Finger, Shape));
             }
         }
         for (int32 Segment = 0; Segment < 3; ++Segment)
@@ -340,25 +355,64 @@ void UVRPawnAnimInstance::UpdateFingertipTargets(FHandRig& Rig, const FXRHandTra
         };
         Build();
 
-        // 고정 — 닿은 마디를 움직이는 관절을 직전 프레임 각도에(처음 프레임이면 지금 각도에).
-        if (!Obstacles.IsEmpty())
+        // 고정 — 닿은 마디를 움직이는 새 관절을, 직전 프레임 각도(안 닿음)와 이번 트래킹 각도(닿음) 사이를 이분 탐색해
+        // 표면에 닿는 각도에. 직전 각도에 바로 고정하면 빨리 오므릴 때 표면 앞에 틈이 남는다(처음 프레임이면 지금 각도에).
+        // 가운데 마디를 고정하고 나서 끝마디가 마저 닿을 수 있어 마디 수만큼 되풀이한다.
+        for (int32 Pass = 0; Pass < ShapesPerFinger && !bNoObstacles; ++Pass)
         {
             int32 FreezeUpTo = -1;   // 이 관절까지 고정
             for (int32 Shape = ShapesPerFinger - 1; Shape >= 0 && FreezeUpTo < 0; --Shape)
             {
-                const int32 j = ShapeIndex(Finger, Shape);
-                if (Hits(Centers[Shape], Rotations[Shape], FCollisionShape::MakeCapsule(Rig.ShapeRadius[j], Rig.ShapeHalfHeight[j]))) FreezeUpTo = Shape + 1;
+                if (Hits(Centers[Shape], Rotations[Shape], ShapeIndex(Finger, Shape))) FreezeUpTo = Shape + 1;
             }
-            bool bChanged = false;
+            FQuat From[3];
+            FQuat To[3];
+            bool bNew[3] = {};
+            bool bAnyNew = false;
             for (int32 Segment = 0; Segment <= FreezeUpTo; ++Segment)
             {
                 const int32 i = Finger * 3 + Segment;
                 if (Rig.bFrozen[i]) continue;
-                Rig.bFrozen[i] = true;
-                Rig.FrozenLocal[i] = Rig.bLastValid ? Rig.LastLocal[i] : Local[Segment];
-                bChanged = true;
+                Rig.bFrozen[i] = bNew[Segment] = bAnyNew = true;
+                From[Segment] = Rig.bLastValid ? Rig.LastLocal[i] : Local[Segment];
+                To[Segment] = Local[Segment];
             }
-            if (bChanged) Build();
+            if (!bAnyNew) break;
+
+            auto FreezeAt = [&](float Alpha)
+            {
+                for (int32 Segment = 0; Segment <= FreezeUpTo; ++Segment)
+                {
+                    if (bNew[Segment]) Rig.FrozenLocal[Finger * 3 + Segment] = FQuat::Slerp(From[Segment], To[Segment], Alpha);
+                }
+                Build();
+            };
+            auto ContactShapesHit = [&]()
+            {
+                for (int32 Shape = 0; Shape < FreezeUpTo; ++Shape)
+                {
+                    if (Hits(Centers[Shape], Rotations[Shape], ShapeIndex(Finger, Shape))) return true;
+                }
+                return false;
+            };
+            float Clear = 0.f;
+            float Blocked = 1.f;
+            for (int32 Iter = 0; Iter < ContactSearchIters; ++Iter)
+            {
+                const float Mid = 0.5f * (Clear + Blocked);
+                FreezeAt(Mid);
+                (ContactShapesHit() ? Blocked : Clear) = Mid;
+            }
+            FreezeAt(Clear);
+
+            // 튜닝 로그(고정 순간에만) — 남은 오차 = 탐색 구간 폭만큼의 관절 각도.
+            float ResidualRad = 0.f;
+            for (int32 Segment = 0; Segment <= FreezeUpTo; ++Segment)
+            {
+                if (bNew[Segment]) ResidualRad += (Blocked - Clear) * From[Segment].AngularDistance(To[Segment]);
+            }
+            UE_LOG(LogFingerContact, Log, TEXT("[FingerContact] %s %s 관절 0~%d 고정 — 탐색 위치 %.3f, 남은 오차 %.2f°"),
+                   *Rig.HandBone.ToString(), FingerNames[Finger], FreezeUpTo, Clear, FMath::RadiansToDegrees(ResidualRad));
         }
 
         Rig.Squeeze[Finger] = 0.f;
@@ -379,7 +433,7 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     Super::NativeUpdateAnimation(DeltaSeconds);
 
     // 관절 데이터는 게임 스레드에서 복사해 두고, 워커 스레드 평가(프록시)는 이 복사본만 읽는다.
-    // 손 근처 아이템에 닿은 마디는 관절별로 고정한다(UpdateFingertipTargets). 벽 등 나머지는 손 전체 충돌로 막힌다.
+    // 손 근처 아이템·정적 월드·NPC 뼈에 닿은 마디는 관절별로 고정한다(UpdateFingertipTargets).
     const AVRPawn* Pawn = Cast<AVRPawn>(TryGetPawnOwner());
     for (int32 h = 0; h < 2; ++h)
     {
@@ -406,10 +460,11 @@ void UVRPawnAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
         const UVRHandComponent* HandComp = Pawn->GetHand(Hand);
         const UBoxComponent* Palm = HandComp ? HandComp->GetPalm() : nullptr;
-        TArray<const UPrimitiveComponent*, TInlineAllocator<4>> Obstacles;
-        if (IsValid(Palm)) HandComp->GetNearbyItemMeshes(Obstacles);
+        TArray<const UPrimitiveComponent*, TInlineAllocator<8>> Obstacles;
+        TArray<FNPCWorldCapsule> Bones;
+        if (IsValid(Palm)) HandComp->GetFingerObstacles(Obstacles, Bones);
         Rig.KeyRotations = State.HandKeyRotations;
-        UpdateFingertipTargets(Rig, State, Obstacles, IsValid(Palm) ? Palm->GetComponentTransform() : FTransform::Identity);
+        UpdateFingertipTargets(Rig, State, Obstacles, Bones, IsValid(Palm) ? Palm->GetComponentTransform() : FTransform::Identity);
     }
 }
 

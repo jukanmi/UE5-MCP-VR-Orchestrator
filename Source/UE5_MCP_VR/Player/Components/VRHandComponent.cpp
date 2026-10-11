@@ -8,7 +8,7 @@
 #include "IXRTrackingSystem.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 
-#include "Core/Types/CollisionChannels.h"
+#include "Core/Physics/CollisionChannels.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Player/BP/VRPawnAnimInstance.h"

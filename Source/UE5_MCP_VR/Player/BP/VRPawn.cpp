@@ -32,7 +32,7 @@
 #include "Core/BP/KineticProjectile.h"
 #include "Core/Debug/VRCheatManager.h"
 #include "Core/Physics/KineticDamage.h"
-#include "Core/Types/CollisionChannels.h"
+#include "Core/Physics/CollisionChannels.h"
 #include "Core/Utils/GameplayTagUtils.h"
 #include "Core/Utils/PawnDeathUtils.h"
 #include "Core/Utils/PlayerInteractionUtils.h"
