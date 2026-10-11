@@ -6,12 +6,15 @@
 #include "VRMeleeComponent.generated.h"
 
 class ACombatCharacter;
-class AVRPawn;
+class UInventoryComponent;
+class USceneComponent;
+struct FMeleeHitbox;
 
 /**
- * VR 플레이어 동역학 근접 전투 — 실제 손(트래킹 앵커) 속도 추적, 손·쥔 무기로 NPC 치기(½mv²), 쥔 물건으로 막기·패링.
+ * VR 플레이어 동역학 근접 전투 — 실제 손(트래킹 앵커) 속도 추적, 손·쥔 무기로 NPC 치기(½mv²), 쥔 물건으로 막기.
  * 손 속도와 J→HP 환산값은 던지기·투사체도 같이 쓴다(전투 일관성).
- * 매 틱 폰이 Update 를 부른다(컴포넌트 자체 틱 없음).
+ * 손 앵커·인벤토리는 소유자가 Init 으로 주입한다(폰 구체 타입 비의존). 판정 형상·대상 수집은 MeleeHitbox 유틸.
+ * 매 틱 소유자가 Update 를 부른다(컴포넌트 자체 틱 없음).
  * 데미지 = clamp(½·m·v² · KineticDamageScale, 0, MaxKineticDamage), v 는 m/s.
  */
 UCLASS(ClassGroup = (VR))
@@ -30,12 +33,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
     float KineticDamageScale = 1.0f;
 
-    /** 밀치기 임계(m/s). 이 미만 접촉은 무시. 이상~MeleeStrikeSpeed 미만은 밀침만(데미지·공격인지 없음). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
-    float MinImpactSpeed = 1.0f;
-
-    /** 데미지(=공격 인지) 임계(m/s). 이 이상 스윙만 TakeDamage → SmartNPC 가 공격으로 인지.
-     *  미만(밀치기 구간)은 NPC 밀려나되 LLM 이 공격으로 안 봄. MinImpactSpeed ≤ 이 값 권장. */
+    /** 때리기(=데미지·공격 인지·넉백) 임계(m/s). 이 이상 스윙만 TakeDamage → SmartNPC 가 공격으로 인지.
+     *  미만 접촉은 근접 판정을 하지 않는다(느린 밀기는 물리 손 담당). 던진 물건 타격 임계로도 쓴다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
     float MeleeStrikeSpeed = 2.0f;
 
@@ -55,11 +54,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic", meta = (ClampMin = "0.05", ClampMax = "1.0"))
     float HandVelSmoothing = 0.5f;
 
-    /** 근접 밀치기 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=밀치기 끔. 살아있는 NPC만. */
+    /** 때리기 넉백 강도(LaunchCharacter cm/s = 스윙속도 m/s × 이 값). 0=넉백 끔. 살아있는 NPC만. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
     float KnockbackScale = 150.f;
 
-    /** 밀치기 속도 상한(cm/s). */
+    /** 넉백 속도 상한(cm/s). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Kinetic")
     float MaxKnockbackSpeed = 600.f;
 
@@ -67,34 +66,50 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
     float BlockDotThreshold = 0.6f;
 
-    /** 패링 임계(cm/s). Block 성립 + 그 손 속도가 이 이상이면 데미지 0. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block")
-    float ParryHandSpeed = 150.f;
-
     /** 단순 Block 시 남는 데미지 배율(0.2 = 80% 경감). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float BlockDamageScale = 0.2f;
 
+    /** 트래킹 튐 판정 상한(cm/s) — 90m/s. 인간 스윙(~10m/s)으로는 불가능한 속도라 글리치로 본다. */
+    static constexpr float MaxPlausibleHandSpeed = 9000.f;
+
+    /** 의존성 주입 — 손 앵커(속도 추적 기준)와 쥔 무기를 조회할 인벤토리. 소유자 BeginPlay 에서 호출. */
+    void Init(USceneComponent* InLeftAnchor, USceneComponent* InRightAnchor, UInventoryComponent* InInventory);
+
     /** 매 틱(손 갱신 뒤) — 실제 손 속도를 갱신하고 그 손으로 NPC 를 친다. */
     void Update(float DeltaTime);
 
-    /** 실제 손 속도(cm/s, EMA). 던지기·패링이 쓴다. */
+    /** 원시 손 속도(cm/s)를 EMA 로 섞는다. MaxPlausibleHandSpeed 초과(트래킹 튐)는 0 으로 섞는다. */
+    static FVector SmoothHandVelocity(const FVector& PrevVel, const FVector& RawVel, float Smoothing);
+
+    /** 실제 손 속도(cm/s, EMA). 던지기가 쓴다. */
     FVector GetHandVelocity(bool bLeft) const { return HandVel[bLeft ? 0 : 1]; }
 
     /** 텔레포트(리스폰) 뒤 — 이전 손 위치를 버린다. 남으면 다음 프레임 위치 델타가 통째로 스윙 속도로 잡힌다. */
     void ResetHandVelocity();
 
-    /** 피격 데미지(방어력 차감 뒤)에 막기·패링을 적용한 값. 아이템을 쥔 손이 공격자 쪽이면 막은 것. */
-    float ApplyBlock(float Damage, const AActor* DamageCauser) const;
+    /** 피격 데미지(방어력 차감 뒤)에 막기를 적용한 값. 아이템을 쥔 손이 공격자 쪽이면 막은 것.
+     *  손 위치는 호출측이 넘긴다 — 막기는 트래킹 앵커가 아니라 보이는(물리) 손 기준이다. */
+    float ApplyBlock(float Damage, const FVector& AttackerLoc, const FVector& DefenderLoc,
+                     const FVector& LeftHandLoc, const FVector& RightHandLoc) const;
 
 private:
-    AVRPawn* GetPawn() const;
+    /** 맨손 구로 시작해 쥔 무기가 있으면 그 무기 상자·질량으로 덮어쓴다. */
+    FMeleeHitbox BuildHitbox(const FVector& HandLoc, bool bRightHand) const;
 
-    /** 손(또는 쥔 무기) 위치에서 능동 오버랩 — 밀치기 임계 이상이면 밀고, 타격 임계 이상이면 데미지. */
+    /** 때리기 임계 이상 스윙이면 손(또는 쥔 무기) 위치에서 능동 오버랩 → 겹친 NPC 에 데미지 + 넉백. */
     void TryMeleeHits(const FVector& HandLoc, const FVector& Vel, bool bRightHand);
 
-    /** 겹친 NPC 하나에 대한 반응 — 강타면 패링 판정 뒤 데미지, 그 위에 밀치기(가벼운 접촉도 민다). */
-    void ApplyMeleeHit(ACombatCharacter& NPC, AVRPawn& Pawn, const FVector& HandLoc, const FVector& Vel, bool bStrike, float Damage);
+    void LogBlock(bool bRight, float Result, float Damage) const;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USceneComponent> LeftAnchor;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USceneComponent> RightAnchor;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UInventoryComponent> Inventory;
 
     // 손 속도 추적 — 실제 손 위치 델타/dt. cm/s. 왼손 0·오른손 1.
     FVector PrevHandLoc[2] = { FVector::ZeroVector, FVector::ZeroVector };

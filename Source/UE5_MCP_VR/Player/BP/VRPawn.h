@@ -153,7 +153,7 @@ public:
     // 손 메시 제거됨 — 풀바디 FBIK 손이 컨트롤러를 향해 역산. 별도 손 메시 중복.
     // 무기·아이템은 X_Bot hand 본 소켓(GetMesh())에 부착.
 
-    /** 동역학 근접 전투 — 손 속도 추적·손/무기로 치기(½mv²)·막기/패링·J→HP 환산(던지기·투사체도 사용). */
+    /** 동역학 근접 전투 — 손 속도 추적·손/무기로 치기(½mv²)·막기·J→HP 환산(던지기·투사체도 사용). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Kinetic")
     UVRMeleeComponent* MeleeCombat;
 
@@ -334,7 +334,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
     UAnimMontage* AttackMontage = nullptr;
 
-    // 동역학 데미지 튜닝(½·m·v²·환산·상한)·막기/패링은 UVRMeleeComponent.
+    // 동역학 데미지 튜닝(½·m·v²·환산·상한)·막기는 UVRMeleeComponent.
 
     /** IA_Attack 으로 발사할 투사체 클래스. BP_KineticProjectile 지정. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Kinetic")

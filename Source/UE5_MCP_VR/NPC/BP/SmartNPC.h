@@ -55,10 +55,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MCP|Components")
 	UNPCInventoryComponent* InventoryComponent;
 
-    // 플레이어 근접 공격을 쳐냈을 때(RNG 패링 성공) 재생할 3D 사운드 — 미배정이면 조용히 스킵.
-    UPROPERTY(EditDefaultsOnly, Category = "MCP|Combat")
-    USoundBase* ParrySound = nullptr;
-
     // === Identity ===
 
     /** NPC 고유 ID (예: "Guard_1", "Merchant_A") */

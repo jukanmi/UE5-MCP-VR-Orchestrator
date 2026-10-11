@@ -5,6 +5,7 @@
 #include "Inventory/Subsystems/ItemManager.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Core/Interfaces/Entity.h"
+#include "Core/Physics/MeleeHitbox.h"
 #include "NPC/Subsystems/NPCManager.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
@@ -773,6 +774,12 @@ ADroppedItemBase* UInventoryComponent::GetHeldItem(EEquipmentSlot HandSlot) cons
 {
     const TObjectPtr<ADroppedItemBase>* Found = HeldItems.Find(HandSlot);
     return (Found && IsValid(*Found)) ? Found->Get() : nullptr;
+}
+
+bool UInventoryComponent::GetHeldHitbox(EEquipmentSlot HandSlot, FMeleeHitbox& Out) const
+{
+    const ADroppedItemBase* Held = GetHeldItem(HandSlot);
+    return Held && MeleeHitbox::FromMesh(Held->ItemMesh, Out);   // 맨손이면 false — 정상 경로라 로그 없음
 }
 
 void UInventoryComponent::AttachItemToHand(ADroppedItemBase* Item, EEquipmentSlot HandSlot)

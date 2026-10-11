@@ -39,6 +39,12 @@ enum class EEquipmentSlot : uint8
     Back        UMETA(DisplayName = "Back")       // 망토, 배낭 등 등짝 장착물
 };
 
+/** 손 → 쥐는 슬롯. 오른손 = MainHand, 왼손 = OffHand. */
+inline EEquipmentSlot HandSlotOf(bool bRightHand)
+{
+    return bRightHand ? EEquipmentSlot::MainHand : EEquipmentSlot::OffHand;
+}
+
 /**
  * 아이템 데이터 구조체 (데이터 테이블 행 기반)
  * - 게임 내 모든 아이템의 기본 속성을 정의하는 원본 템플릿입니다.

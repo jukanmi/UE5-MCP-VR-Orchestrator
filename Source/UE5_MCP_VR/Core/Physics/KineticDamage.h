@@ -14,6 +14,15 @@ struct FHitResult;
  */
 namespace KineticDamage
 {
+    /** 언리얼 단위(cm) ↔ m. ½mv² 는 m/s 로 계산한다. */
+    constexpr float CmPerMeter = 100.f;
+
+    /** 속도 벡터(cm/s) → 속력(m/s). */
+    inline float ToMetersPerSec(const FVector& VelCmPerSec)
+    {
+        return VelCmPerSec.Size() / CmPerMeter;
+    }
+
     /** ½·m·v² · Scale 를 [0, MaxDamage] 로 클램프. MassKg=kg, SpeedMs=m/s, 반환=HP 데미지. */
     inline float Compute(float MassKg, float SpeedMs, float Scale, float MaxDamage)
     {

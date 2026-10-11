@@ -165,6 +165,9 @@ void AVRPawn::BeginPlay()
     Posture->InitBodyMeshReference();
     InitHandPhysics();
 
+    // 근접 컴포넌트는 폰 타입을 모른다 — 손 앵커·인벤토리를 여기서 주입.
+    if (MeleeCombat) MeleeCombat->Init(HandLeft, HandRight, Inventory);
+
 #if !UE_BUILD_SHIPPING
     // show 는 켜고 끄는 토글이고 PIE 마다 새 뷰포트라 꺼진 채 시작한다 — 한 번 보내면 켜진다.
     if (bShowCollisionOnStart && GetWorld() && GetWorld()->GetGameViewport())
@@ -1177,8 +1180,12 @@ float AVRPawn::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageE
     const float Raw = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     float Actual = CurrentStats.Combat.Mitigate(Raw);
 
-    // 아이템을 쥔 손이 공격자 쪽이면 막기(경감)·패링(무효).
-    if (MeleeCombat) Actual = MeleeCombat->ApplyBlock(Actual, DamageCauser);
+    // 아이템을 쥔 손이 공격자 쪽이면 막기(경감).
+    if (MeleeCombat && DamageCauser)
+    {
+        Actual = MeleeCombat->ApplyBlock(Actual, DamageCauser->GetActorLocation(), GetActorLocation(),
+                                         GetHandLocation(false), GetHandLocation(true));
+    }
 
     CurrentStats.Resources.Health = FMath::Max(0.f, CurrentStats.Resources.Health - Actual);
 

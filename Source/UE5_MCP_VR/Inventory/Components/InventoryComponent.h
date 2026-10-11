@@ -5,6 +5,8 @@
 #include "Inventory/BP/ItemDataAsset.h"
 #include "InventoryComponent.generated.h"
 
+struct FMeleeHitbox;
+
 /**
  * 인벤토리의 한 슬롯을 정의하는 구조체 (슬롯 번호 없음, 배열 인덱스 기반).
  */
@@ -128,6 +130,10 @@ public:
     /** 해당 손에 쥔 아이템(없으면 nullptr). */
     UFUNCTION(BlueprintPure, Category = "Inventory|Hand")
     ADroppedItemBase* GetHeldItem(EEquipmentSlot HandSlot) const;
+
+    /** 쥔 물건 메시로 Out 의 타격 판정 형상(회전된 상자)을 덮어쓴다. 쥔 게 없거나 메시가 없으면 false(Out 불변).
+     *  질량은 메시에 오버라이드가 있을 때만 덮어쓴다 — 호출측이 맨손 판정(MeleeHitbox::Sphere)을 미리 채워 넘긴다. */
+    bool GetHeldHitbox(EEquipmentSlot HandSlot, FMeleeHitbox& Out) const;
 
     /** 인벤토리 변경 이벤트 — Add/Remove/Equip/Unequip 성공 시 브로드캐스트. */
     UPROPERTY(BlueprintAssignable, Category = "Inventory|Event")
