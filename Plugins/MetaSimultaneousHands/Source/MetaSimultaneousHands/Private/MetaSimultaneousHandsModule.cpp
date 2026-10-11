@@ -56,7 +56,14 @@ public:
         XrSystemProperties Props{ XR_TYPE_SYSTEM_PROPERTIES, &Simultaneous };
         if (XR_SUCCEEDED(xrGetSystemProperties(InInstance, InSystem, &Props)))
         {
-            UE_LOG(LogMetaSimultaneousHands, Log, TEXT("동시 추적 지원: %s"), Simultaneous.supportsSimultaneousHandsAndControllers ? TEXT("예") : TEXT("아니오"));
+            // 에디터가 HMD 연결 확인으로 xrGetSystem 을 주기적으로 부른다 — 값이 바뀔 때만 남긴다.
+            const bool bSupported = Simultaneous.supportsSimultaneousHandsAndControllers != XR_FALSE;
+            if (!bLoggedSupport || bSupported != bLastSupported)
+            {
+                UE_LOG(LogMetaSimultaneousHands, Log, TEXT("동시 추적 지원: %s"), bSupported ? TEXT("예") : TEXT("아니오"));
+                bLoggedSupport = true;
+                bLastSupported = bSupported;
+            }
         }
     }
 
@@ -83,6 +90,8 @@ public:
 private:
     XrInstance Instance = XR_NULL_HANDLE;
     bool bResumeTried = false;
+    bool bLoggedSupport = false;
+    bool bLastSupported = false;
 };
 
 IMPLEMENT_MODULE(FMetaSimultaneousHandsModule, MetaSimultaneousHands)
