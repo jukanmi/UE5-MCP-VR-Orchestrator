@@ -1,7 +1,7 @@
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Physics/NPCBoneCapsuleSet.h"
-#include "Core/Types/CollisionChannels.h"
+#include "Core/Physics/CollisionChannels.h"
 #include "Core/Types/PlayerGameplayTags.h"
 #include "Core/Types/CharacterAttributes.h"
 #include "Core/Utils/GameplayTagUtils.h"

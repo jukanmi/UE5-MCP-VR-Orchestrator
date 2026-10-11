@@ -1,5 +1,8 @@
 #include "Misc/AutomationTest.h"
 
+#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
+
 #include "Core/Physics/CapsuleContact.h"
 #include "Core/Physics/KineticDamage.h"
 #include "Core/Physics/MeleeHitbox.h"
@@ -80,6 +83,26 @@ bool FCapsuleContactTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("최소 깊이 미만은 0"), CapsuleContact::PushVelocity(FVector::ZeroVector, FVector(2.f, 0.f, 0.f), 3.f, 8.f, 120.f).IsZero());
     TestTrue(TEXT("수직 관통은 0(수평만 민다)"), CapsuleContact::PushVelocity(FVector::ZeroVector, FVector(0.f, 0.f, 10.f), 3.f, 8.f, 120.f).IsZero());
     TestEqual(TEXT("상한 클램프"), CapsuleContact::PushVelocity(FVector::ZeroVector, FVector(100.f, 0.f, 0.f), 3.f, 8.f, 120.f).X, 120.0);
+
+    // 형상 → 선분: 상자(절반 4×2×1, X+10)는 긴 축 X 를 따라 Y=±1 에 반지름 1 선분 두 줄(길이 절반 3), 캡슐(반지름 1·절반 높이 3)은 축 ±2.
+    UBoxComponent* Box = NewObject<UBoxComponent>(GetTransientPackage());
+    Box->SetBoxExtent(FVector(4.f, 2.f, 1.f), false);
+    Box->SetRelativeLocation(FVector(10.f, 0.f, 0.f));
+    UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(GetTransientPackage());
+    Capsule->SetCapsuleSize(1.f, 3.f, false);
+    const TObjectPtr<UBoxComponent> Boxes[] = { Box };
+    const TObjectPtr<UCapsuleComponent> Capsules[] = { Capsule };
+    TArray<FContactSegment> Segments;
+    CapsuleContact::AppendSegments(Boxes, Capsules, Segments);
+    if (TestEqual(TEXT("선분 수 = 상자 2 + 캡슐 1"), Segments.Num(), 3))
+    {
+        TestEqual(TEXT("상자 선분 시작"), Segments[0].Start, FVector(7.f, 1.f, 0.f));
+        TestEqual(TEXT("상자 선분 끝"), Segments[0].End, FVector(13.f, 1.f, 0.f));
+        TestEqual(TEXT("상자 둘째 줄"), Segments[1].Start, FVector(7.f, -1.f, 0.f));
+        TestEqual(TEXT("상자 반지름 = 두께 절반"), Segments[0].Radius, 1.f);
+        TestEqual(TEXT("캡슐 축"), Segments[2].End, FVector(0.f, 0.f, 2.f));
+        TestEqual(TEXT("캡슐 반지름"), Segments[2].Radius, 1.f);
+    }
 
     return true;
 }

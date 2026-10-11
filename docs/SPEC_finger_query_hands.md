@@ -1,6 +1,6 @@
 # SPEC: finger_query_hands
 
-작성 2026-10-10 (인터뷰 완료). 브랜치: 구현 착수 시 `Develop` 에서 `feature/finger-query-hands` 분기.
+작성 2026-10-10 (인터뷰 완료), 개정 2026-10-11(결정 8 일부 선반영 반영). 브랜치: 구현 착수 시 `Develop` 에서 `feature/finger-query-hands` 분기.
 
 ## 목표
 핸드트래킹 손가락이 물체·벽·NPC 에 닿을 때 생기는 떨림과 "한 프레임 일찍 멈춤"을 없앤다.
@@ -15,7 +15,8 @@
 ## 범위 (변경 파일·시스템)
 - `Player/BP/VRPawnAnimInstance.{h,cpp}` — 감싸기: 접촉 각도 계산 방식, 장애물 목록.
 - `Player/Components/VRHandComponent.{h,cpp}`·`VRHandNPC.cpp` — 손가락 캡슐 용접 해제·쿼리 전용(`UpdateFingertipShapes`, `ApplyColliderSizes` 손가락 부분), 손바닥 목표 밀어내기(`ProjectOutOfNPCs` 확장), 손가락 밀기 힘(신규), `PushTouchedNPC` 손가락 접촉 확장.
-- **`Core/Physics/` 로 판정 이전** — 신규 `HandCollision.{h,cpp}`(손 선분 구성 + 선분 대 캡슐 밀어내기 계산), `CollisionChannels.h` 를 `Core/Types` 에서 이동. 아래 결정 8.
+- **`Core/Physics/` 로 판정 이전** — `CapsuleContact.{h,cpp}`(2026-10-11 `Develop` 커밋 `6ae9aac0` 로 신설: 뼈 캡슐 수집·선분 대 캡슐 밀어내기·깊이 비례 밀기), 여기에 손 선분 구성 추가, `CollisionChannels.h` 를 `Core/Types` 에서 이동. 아래 결정 8.
+  - 이름은 SPEC 초안의 `HandCollision` 대신 `CapsuleContact` — 손 전용이 아니라 NPC 손·무기 접촉도 같은 함수를 쓴다.
 - 건드리지 않는 것: 트래킹·`DriveBody` 스프링, 양손 끼임 해소(`UpdatePassThrough`), 제스처, 쥐기 판정(`FingerTouching`·`FindGraspedItem` — 원래 캡슐 위치 오버랩 쿼리라 그대로 동작), `ComputeGrip`·`GrabConstraint`·손 넘기기·미끄러져 떨어뜨리기, 손바닥 모양(`PalmShapes`, 계속 용접·솔버 충돌), 컨트롤러 입력(손가락 충돌 꺼진 상태 유지), Python 서버.
 
 ## 결정 사항
@@ -26,7 +27,7 @@
    - "무거운 물체" = 질량이 손이 들 수 있는 한계(`MaxCarryMass`)를 넘는 물체. 그보다 가벼운 동적 물체는 목표를 밀어내지 않고 결정 5 의 힘으로 민다.
 5. **손가락 밀기 힘 = 트래킹 손끝 위치 − 막힌 손끝 위치**. 힘 = 강성 × 차이(상한 있음), 막힌 손끝 위치에 `AddForceAtLocation`. 굽혀 누르기와 손 전체로 툭 밀기가 같은 식으로 처리된다. 쥐는 힘(`Squeeze` → `ComputeGrip`)은 지금처럼 각도 기반을 유지한다.
    - 이 손이 쥐고 있는 물체에는 밀기 힘을 주지 않는다(쥐기 제약이 맡음).
-6. **NPC 도 같은 힘으로 민다 — 이동 컴포넌트에 힘을 준다**. `PushTouchedNPC` 를 손가락 접촉까지 넓히고, 위치를 직접 옮기던 `AddActorWorldOffset` 스윕을 `UCharacterMovementComponent::AddForce` 로 바꾼다. 입력은 결정 5 와 같은 접촉 깊이(트래킹 손끝 − 막힌 손끝)다.
+6. **NPC 도 같은 힘으로 민다 — 이동 컴포넌트에 힘을 준다**. 2026-10-11 부터 근접 스윙(`UVRMeleeComponent`)은 때리기 임계(`MeleeStrikeSpeed`) 미만이면 아무것도 안 하므로, 느린 손으로 NPC 를 미는 건 이 경로 하나뿐이다. `PushTouchedNPC` 를 손가락 접촉까지 넓히고, 위치를 직접 옮기던 `AddActorWorldOffset` 스윕을 `UCharacterMovementComponent::AddForce` 로 바꾼다. 입력은 결정 5 와 같은 접촉 깊이(트래킹 손끝 − 막힌 손끝)다.
    - 아이템(`AddForceAtLocation`)과 NPC(이동 컴포넌트 `AddForce`)는 **"접촉 깊이 → 힘 크기" 계산을 한 함수로 공유**하고, 힘을 주는 호출만 다르다. 질량은 NPC 이동 컴포넌트의 `Mass` 를 쓴다 — 가벼운 NPC 는 쉽게, 무거운 NPC 는 느리게 밀린다.
    - 지면 마찰·벽·내비 제약은 이동 컴포넌트가 처리하므로 기존 스윕의 "벽에서 멈춤"을 따로 두지 않는다.
    - NPC 메시를 늘 시뮬레이션하지 않는다(항상 시뮬레이션은 애니메이션·내비·캡슐 이동과 충돌). 키네마틱 바디만 켜는 안도 이번엔 하지 않는다(팔 바디가 없어 물리 에셋 보강이 먼저).
@@ -34,12 +35,14 @@
 7. **검증은 헤드셋 + 로그 수치**. 트래킹 주입 경로는 만들지 않는다. 튜닝용 로그: 접촉 각도 이분 탐색 결과 오차, 손바닥 목표 밀어낸 거리, 손가락 밀기 힘.
 8. **충돌 판정은 이 작업과 같이 `Core/Physics` 로 뺀다 — 손 컴포넌트에 두지 않는다** (2026-10-10 결정, 이 SPEC 에서 기능을 넓히기 전에 먼저, 동작 유지로).
    - 옮기는 것: ① `ProjectOutOfNPCs` 의 계산 본문(선분 대 캡슐 최소거리, 가장 깊은 겹침만큼 밀어내기 4회, 뼈 축을 넘은 손은 들어온 쪽으로 비춤) ② 손 선분 구성(손바닥 상자마다 선분 2개 + 켜진 손가락 캡슐) ③ `CollisionChannels.h`(손 채널 상수) 이동.
+   - **진행(2026-10-11)**: ① 완료 — `CapsuleContact::GatherBoneCapsules`·`ProjectOut`(+ `FContactSegment`), 테스트 `Project.Physics.CapsuleContact`. ②·③ 은 M0 첫 단계로 마저 한다: 선분 구성은 상자·캡슐 컴포넌트 목록을 받는 범용 함수로(NPC 손도 재사용), 지금은 `VRHandNPC.cpp` 파일 로컬 `BuildHandSegments`. `CollisionChannels.h` 사용처 3곳(`VRPawn.cpp`·`VRHandComponent.cpp`·`CombatCharacter.cpp`) include 만 바꾼다.
+   - **②·③ 완료(2026-10-11, `feature/finger-query-hands`)** — `CapsuleContact::AppendSegments(Boxes, Capsules, Out)`(상자 → 선분 2줄, 캡슐 → 축 선분, 부모 기준 상대 변환), 손은 손바닥 상자 + 켜진 손가락만 넘긴다. `CollisionChannels.h` → `Core/Physics`. 테스트 `Project.Physics.CapsuleContact` 에 선분 구성 추가. `verify all` 통과.
    - 입력은 손 컴포넌트 멤버가 아니라 값이다 — 손 선분 목록, 대상 캡슐 목록(`FNPCWorldCapsule` 과 같은 모양), 목표 자세, 물리 손바닥 자세. 그래서 결정 4 의 정적 월드·무거운 물체 캡슐을 같은 함수에 넘기기만 하면 된다.
-   - 결정 5·6 의 "접촉 깊이 → 힘 크기" 계산도 같은 파일에 둔다. 아이템(`AddForceAtLocation`)과 NPC(이동 컴포넌트 `AddForce`)는 깊이 계산을 공유하고 힘을 주는 호출만 손/호출부에 남는다.
+   - 결정 5·6 의 "접촉 깊이 → 힘 크기" 계산도 같은 파일에 둔다. 아이템(`AddForceAtLocation`)과 NPC(이동 컴포넌트 `AddForce`)는 깊이 계산을 공유하고 힘을 주는 호출만 손/호출부에 남는다. 지금 있는 `CapsuleContact::PushVelocity`(깊이 → 수평 속도, NPC 스윕용)는 M1 에서 NPC 가 힘으로 바뀌면 쓸 곳이 없어지므로 힘 함수로 대체·삭제한다.
    - 손에 남기는 것: 상태(`Grab`·`Contact`), 틱 순서, 드라이브, 쥐기 제약, 쥐기 판정(`TouchingFingers`·`IsPalmTouching`·`FindGraspedItem` — 쓰는 곳이 손 하나뿐이라 옮겨도 재사용이 없다).
 
 ## 완료 기준
-- [ ] 아이템·테이블·벽·NPC 에 손가락을 빨리 오므려도 표면 앞 틈 없이 닿는다(헤드셋).
+- [x] 아이템·테이블·벽·NPC 에 손가락을 빨리 오므려도 표면 앞 틈 없이 닿는다(헤드셋).
 - [ ] 손가락 하나만 테이블에 대고 눌러도 손 전체가 들리거나 떨지 않는다(헤드셋, 손바닥 위치 로그 진폭 확인).
 - [ ] 편 검지로 벽·테이블을 찔러도 손가락이 박히지 않고 손이 표면에서 멈춘다.
 - [ ] 가벼운 물건(공·큐브)을 손가락으로 굽혀 누르기·툭 밀기 둘 다 움직인다. 쥐고 있는 물건엔 밀기 힘이 안 들어간다.
@@ -48,7 +51,8 @@
 - [ ] `python tools/sol_pi.py verify all` 통과.
 
 ## 단계 (Phase/Milestone)
-- **M0 정확 접촉 각도 + 장애물 확장** — 결정 8(판정을 `Core/Physics` 로 이전, 동작 유지 — `verify all` 통과 후 시작) 먼저, 이어서 결정 1·2. 용접은 그대로라 단독으로도 "틈"이 개선된다. 헤드셋 확인.
+- **M0 정확 접촉 각도 + 장애물 확장** — 결정 8 남은 ②·③(손 선분 구성·`CollisionChannels.h` 이전, 동작 유지 — `verify all` 통과 후 시작) 먼저, 이어서 결정 1·2. 용접은 그대로라 단독으로도 "틈"이 개선된다. 헤드셋 확인.
+  - **M0 완료(2026-10-11 구현·헤드셋 확인, DoList 2-11)**. 결정 1: `UpdateFingertipTargets` 가 새로 고정할 관절을 직전 각도 ↔ 트래킹 각도 사이 `Slerp` 로 6회 이분 탐색(닿은 마디까지만 판정), 가운데 마디 고정 뒤 끝마디가 마저 닿으면 같은 프레임에 한 번 더. 고정 순간마다 `LogFingerContact` 에 탐색 위치·남은 오차(°). 결정 2: `UVRHandComponent::GetFingerObstacles`(구 `GetNearbyItemMeshes`) 가 손바닥 20cm 안 드랍 아이템 메시 + `WorldStatic` 컴포넌트(자기 폰 제외) + `GatherBoneCapsules` 뼈 캡슐을 모음, 뼈는 손가락 캡슐 선분 대 뼈 선분 거리로 판정. `verify all` 통과.
 - **M1 손가락 솔버 분리** — 결정 3·4·5·6 을 한 번에(용접만 풀면 찌르기가 박히므로 4 와 분리 불가). 헤드셋 확인.
 - **M2 튜닝** — 밀기 강성·상한, 이분 탐색 횟수, 무거운 물체 기준, NPC 밀기 게인.
 

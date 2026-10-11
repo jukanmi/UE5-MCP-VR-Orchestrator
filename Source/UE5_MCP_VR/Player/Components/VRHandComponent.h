@@ -18,6 +18,7 @@ class UVRPawnAnimInstance;
 class USkeletalMeshComponent;
 class ADroppedItemBase;
 class ACombatCharacter;
+struct FNPCWorldCapsule;
 
 /**
  * VR 손 하나 — 트래킹 목표(이 컴포넌트 = 앵커)와 그 목표를 드라이브로 쫓는 물리 손바닥을 분리해 벽·물건에 손이 막히게 한다.
@@ -219,8 +220,9 @@ public:
     /** 손 이펙터 — 몸 메시 컴포넌트 공간. 핸드트래킹 중이면 손목 관절 위치·손바닥 관절 보정, 아니면 컨트롤러 그립 보정. */
     FTransform GetEffectorCS(const USkeletalMeshComponent* BodyMesh) const;
 
-    /** 손바닥 20cm 안 드랍 아이템 메시(쥔 것 포함). 손가락 감싸기(애님 인스턴스)가 마디 고정 판정에 쓴다. */
-    void GetNearbyItemMeshes(TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const;
+    /** 손가락 감싸기(애님 인스턴스)가 마디 고정 판정에 쓰는 손바닥 근처 장애물 — 드랍 아이템 메시(쥔 것 포함)·정적 월드 컴포넌트,
+     *  NPC 뼈 월드 캡슐. */
+    void GetFingerObstacles(TArray<const UPrimitiveComponent*, TInlineAllocator<8>>& OutComponents, TArray<FNPCWorldCapsule>& OutBones) const;
 
 private:
     UVRPawnAnimInstance* GetAnim() const;

@@ -17,7 +17,7 @@ SPEC 마다 열어 보지 않고 여기서 상태를 본다. 상세·근거·완
 | [friction_grip](SPEC_friction_grip.md) | 🔶 M0 ✅ M1 ✅(헤드셋 확인) M2 ✅ 구현(헤드셋 없는 PIE 확인, 헤드셋 대기 DoList 1-23) | 쥐는 힘 환산 강성·평활화·컨트롤러 그립 힘 튜닝, `UseSimd 0` 전역 비용(래그돌 여럿 프레임 시간 미측정), 회전 강성은 관성 최대축 하나 | **다음: M2 헤드셋 확인(DoList 1-23).** 던지기·건네기·양동이 손잡이 체감, `HoldOffset` 0 은 완료 기준 밖 |
 | [npc_lift_throw](SPEC_npc_lift_throw.md) | ⏸ M1 구현 후 코드 제거(2026-10-02) | 충돌 피해 속도 임계·계수 PIE 튜닝 | friction_grip M2(양손) 구현으로 선행 조건 충족, 헤드셋 확인 뒤 재착수. 실측·함정은 memo |
 | [npc_grip](SPEC_npc_grip.md) | ⬜ M1~M3 착수 전(인터뷰 2026-09-24) | 붙잡기 `EAction` 을 LLM 선택지에서 뺄지, 반사 룰 발동 조건, 룸스케일로 걸어서 벗어날 때 처리, 뿌리치기 속도·최대 지속 시간 | grip_pose M1(`FItemData` 형상 유형) 선행 |
-| [finger_query_hands](SPEC_finger_query_hands.md) | ⬜ M0~M2 착수 전(인터뷰 2026-10-10) | 정적 월드 오버랩 비용(이분 탐색 4회로 시작), 손가락 밀기 힘만으로 가벼운 물체 칠 때 체감, 손바닥 목표 밀어내기와 솔버 충돌 이중 반응, NPC 이동 컴포넌트 `AddForce` 가 지면 마찰에 상쇄되는 정도·종류별 `Mass`, 래그돌 NPC 판정 기준 | **M0 전에 충돌 판정을 `Core/Physics` 로 이전**(결정 8, 동작 유지). 손가락 캡슐을 솔버에서 빼고 감싸기를 정확 접촉 각도로, 밀기 힘은 직접 `AddForceAtLocation`·NPC 는 `CMC->AddForce`. 완료 뒤 rubik_cube 입력 방식 재검토 |
+| [finger_query_hands](SPEC_finger_query_hands.md) | 🟨 M0 완료(헤드셋 2026-10-11)·M1 진행 중(브랜치 `feature/finger-query-hands`) | 정적 월드 오버랩 비용(이분 탐색 4회로 시작), 손가락 밀기 힘만으로 가벼운 물체 칠 때 체감, 손바닥 목표 밀어내기와 솔버 충돌 이중 반응, NPC 이동 컴포넌트 `AddForce` 가 지면 마찰에 상쇄되는 정도·종류별 `Mass`, 래그돌 NPC 판정 기준 | **M1 손가락 솔버 분리**(용접 해제·손바닥 목표 밀어내기·밀기 힘 한 번에). 손가락 캡슐을 솔버에서 빼고 감싸기를 정확 접촉 각도로, 밀기 힘은 직접 `AddForceAtLocation`·NPC 는 `CMC->AddForce`. 완료 뒤 rubik_cube 입력 방식 재검토 |
 
 ### VR 장난감
 

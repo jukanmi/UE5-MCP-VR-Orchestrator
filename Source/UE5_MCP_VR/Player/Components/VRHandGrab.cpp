@@ -6,6 +6,8 @@
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 
+#include "Core/Physics/CapsuleContact.h"
+#include "Core/Physics/NPCBoneCapsuleSet.h"
 #include "Inventory/BP/DroppedItemBase.h"
 #include "Inventory/Components/InventoryComponent.h"
 #include "Player/BP/VRPawnAnimInstance.h"
@@ -195,18 +197,29 @@ bool UVRHandComponent::IsItemGrasped(const ADroppedItemBase& Item, const FVector
     return true;
 }
 
-void UVRHandComponent::GetNearbyItemMeshes(TArray<const UPrimitiveComponent*, TInlineAllocator<4>>& Out) const
+void UVRHandComponent::GetFingerObstacles(TArray<const UPrimitiveComponent*, TInlineAllocator<8>>& OutComponents, TArray<FNPCWorldCapsule>& OutBones) const
 {
+    static constexpr float ObstacleReach = 20.f;   // 손바닥 중심 → 손끝 + 여유(cm)
     FVector PalmCenter;
     UWorld* World = GetWorld();
     if (!GetPalmShapeCenter(PalmCenter) || !World) return;
+
+    FCollisionObjectQueryParams ObjectTypes(ECC_PhysicsBody);
+    ObjectTypes.AddObjectTypesToQuery(ECC_WorldStatic);
     TArray<FOverlapResult> Overlaps;
-    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, FCollisionObjectQueryParams(ECC_PhysicsBody), FCollisionShape::MakeSphere(20.f));
+    World->OverlapMultiByObjectType(Overlaps, PalmCenter, FQuat::Identity, ObjectTypes, FCollisionShape::MakeSphere(ObstacleReach),
+                                    FCollisionQueryParams(SCENE_QUERY_STAT(FingerObstacles), false, GetOwner()));
     for (const FOverlapResult& Overlap : Overlaps)
     {
+        const UPrimitiveComponent* Component = Overlap.GetComponent();
+        if (!Component) continue;
+        // 드랍 아이템은 몸체 메시만(트리거 등 부속 컴포넌트 제외), 정적 월드는 그대로.
         const ADroppedItemBase* Item = Cast<ADroppedItemBase>(Overlap.GetActor());
-        if (Item && Overlap.GetComponent() == Item->ItemMesh) Out.AddUnique(Item->ItemMesh);
+        if (Item ? Component == Item->ItemMesh : Component->GetCollisionObjectType() == ECC_WorldStatic) OutComponents.AddUnique(Component);
     }
+
+    TArray<ACombatCharacter*> BoneOwners;
+    CapsuleContact::GatherBoneCapsules(World, PalmCenter, ObstacleReach, OutBones, BoneOwners);
 }
 
 // ============================================================================

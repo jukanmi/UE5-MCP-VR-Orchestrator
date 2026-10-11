@@ -1,10 +1,35 @@
 #include "Core/Physics/CapsuleContact.h"
 
+#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 
 #include "Core/BP/CombatCharacter.h"
 #include "Core/Physics/NPCBoneCapsuleSet.h"
+
+void CapsuleContact::AppendSegments(TArrayView<const TObjectPtr<UBoxComponent>> Boxes, TArrayView<const TObjectPtr<UCapsuleComponent>> Capsules,
+                                    TArray<FContactSegment>& OutSegments)
+{
+    for (const UBoxComponent* Shape : Boxes)
+    {
+        if (!Shape) continue;
+        const FTransform ShapeRel = Shape->GetRelativeTransform();
+        const FVector Extent = Shape->GetUnscaledBoxExtent();
+        const float HalfThickness = Extent.Z;
+        const FVector LongAxis = Extent.X >= Extent.Y ? FVector(FMath::Max(Extent.X - HalfThickness, 0.f), 0.f, 0.f) : FVector(0.f, FMath::Max(Extent.Y - HalfThickness, 0.f), 0.f);
+        const FVector ShortAxis = Extent.X >= Extent.Y ? FVector(0.f, FMath::Max(Extent.Y - HalfThickness, 0.f), 0.f) : FVector(FMath::Max(Extent.X - HalfThickness, 0.f), 0.f, 0.f);
+        OutSegments.Add({ ShapeRel.TransformPosition(ShortAxis - LongAxis), ShapeRel.TransformPosition(ShortAxis + LongAxis), HalfThickness });
+        OutSegments.Add({ ShapeRel.TransformPosition(-ShortAxis - LongAxis), ShapeRel.TransformPosition(-ShortAxis + LongAxis), HalfThickness });
+    }
+    for (const UCapsuleComponent* Shape : Capsules)
+    {
+        if (!Shape) continue;
+        const FTransform ShapeRel = Shape->GetRelativeTransform();
+        const FVector HalfAxis(0.f, 0.f, Shape->GetUnscaledCapsuleHalfHeight_WithoutHemisphere());
+        OutSegments.Add({ ShapeRel.TransformPosition(-HalfAxis), ShapeRel.TransformPosition(HalfAxis), Shape->GetUnscaledCapsuleRadius() });
+    }
+}
 
 void CapsuleContact::GatherBoneCapsules(UWorld* World, const FVector& Location, float Reach,
                                         TArray<FNPCWorldCapsule>& OutBones, TArray<ACombatCharacter*>& OutOwners)

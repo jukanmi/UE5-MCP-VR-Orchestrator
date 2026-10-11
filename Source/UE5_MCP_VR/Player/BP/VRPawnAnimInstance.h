@@ -7,6 +7,8 @@
 #include "HeadMountedDisplayTypes.h"
 #include "VRPawnAnimInstance.generated.h"
 
+struct FNPCWorldCapsule;
+
 /**
  * VR 폰 몸 메시 AnimBP 의 부모 클래스.
  * AnimBP 그래프(FBIK 포함)를 평가한 뒤, 핸드트래킹이 추적 중인 손의 손가락 본 회전을
@@ -82,7 +84,7 @@ private:
         FVector TargetCenter[NumFingerShapes];
         FQuat TargetRotation[NumFingerShapes];
         bool bTipTargets = false;
-        /** 관절별 고정 — 마디가 물체에 닿으면 그 마디를 움직이는 관절을 직전 프레임 각도(부모 관절 기준 로컬 회전)에 고정한다.
+        /** 관절별 고정 — 마디가 물체에 닿으면 그 마디를 움직이는 관절을 표면에 닿는 각도(부모 관절 기준 로컬 회전)에 고정한다.
          *  실제 손가락이 고정 각도보다 펴지면 푼다. LastLocal = 직전 프레임에 실제로 쓴 관절 로컬 회전. */
         FQuat LastLocal[NumFingerBones];
         FQuat FrozenLocal[NumFingerBones];
@@ -108,9 +110,10 @@ private:
     const FHandRig& RigOf(EControllerHand Hand) const { return Hands[Hand == EControllerHand::Left ? 0 : 1]; }
 
     /** 트래킹 관절만으로 손바닥 기준 메시 손가락을 FK 해 손가락 캡슐 목표를 채운다.
-     *  Obstacles(손 근처 아이템)에 마디가 닿으면 관절별로 고정한다(감싸기) — Rig.KeyRotations 도 그 자세로 바꾼다.
-     *  PalmWorld = 손바닥 바디 월드 변환(손가락 캡슐이 붙는 기준). */
-    void UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, TConstArrayView<const UPrimitiveComponent*> Obstacles, const FTransform& PalmWorld);
+     *  손 근처 장애물(아이템·정적 월드 컴포넌트 Obstacles, NPC 뼈 캡슐 Bones)에 마디가 닿으면 관절별로 고정한다(감싸기)
+     *  — Rig.KeyRotations 도 그 자세로 바꾼다. PalmWorld = 손바닥 바디 월드 변환(손가락 캡슐이 붙는 기준). */
+    void UpdateFingertipTargets(FHandRig& Rig, const FXRHandTrackingState& State, TConstArrayView<const UPrimitiveComponent*> Obstacles,
+                                TConstArrayView<FNPCWorldCapsule> Bones, const FTransform& PalmWorld);
 
     /** 손가락 하나 FK — Rel = 관절 3개의 손바닥 관절 기준 회전, HandPos = 손바닥 관절 기준 손 본 위치. 캡슐 2개(가운데·끝마디)의 중점·회전(손바닥 기준)을 낸다. */
     static void FingerFK(const FHandRig& Rig, const FVector& HandPos, int32 Finger, const FQuat Rel[3], FVector OutCenter[ShapesPerFinger], FQuat OutRotation[ShapesPerFinger]);
